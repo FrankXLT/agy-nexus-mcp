@@ -376,6 +376,26 @@ agy-nexus-mcp/
 │   └── run_permutation_suite.py      # End-to-end automated test suite
 ├── docker-compose.yml                # Docker Compose manifest
 ├── DEPLOYMENT.md                     # Step-by-step setup, reverse proxy & HTTPS PWA guide
+├── LICENSE                           # GNU Affero General Public License v3.0 (AGPL-3.0-or-later)
+├── NOTICE                            # AGPLv3 Section 7 Attribution, Brand & Security-Integrity Terms
 ├── pyproject.toml                    # Python package metadata (v2.3.0)
 └── requirements.txt                  # Python dependencies
 ```
+
+---
+
+## License, Attribution & Security Integrity (`GNU AGPLv3`)
+
+`agy-nexus-mcp` is free and open-source software licensed under the **GNU Affero General Public License v3.0 or later (`AGPL-3.0-or-later`)** — see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE) for full terms.
+
+### What This Means in Plain Language
+1. **Always Open & Share-Alike (Including Network / Hosted Use — AGPLv3 §13)**:
+   - You are free to use, study, modify, and self-host `agy-nexus-mcp`.
+   - If you distribute modified versions—or run a modified version as a hosted service or network-accessible MCP / `/web` server for others—you **must** make the complete corresponding source code publicly available under `AGPLv3`. Nobody can take this project private or wrap it into a proprietary commercial offering.
+2. **Required Attribution & Brand Protection (AGPLv3 §7(b), §7(c) & §7(e))**:
+   - All copies, forks, and derivative works must preserve the copyright notices, license notices, and upstream attribution in [`NOTICE`](NOTICE) and in the `/web` and ASCII telemetry interfaces.
+   - Modified versions must be clearly marked as modified and **may not** be advertised or misrepresented as the official original `agy-nexus-mcp` release.
+3. **Security-Integrity Disclosure (AGPLv3 §7(c) & §5(a))**:
+   - The voice-passphrase deadbolt (`PASS_HASH`), unguessable `PATH_SECRET` routing, path-traversal sandboxing, and read-only SQLite isolation are core security guarantees of `agy-nexus-mcp`.
+   - Any fork or derivative work that weakens, bypasses, or strips these security controls **must** prominently disclose that its security boundary has been removed or altered and may not present itself under the unmodified `agy-nexus-mcp` / `AGY-NEXUS` identity.
+

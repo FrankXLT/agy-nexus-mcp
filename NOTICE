@@ -1,0 +1,23 @@
+# NOTICE — GNU AGPLv3 Section 7 Additional Terms & Attribution Policy
+
+**Project:** `agy-nexus-mcp` (`AGY-NEXUS`)
+**Copyright:** Copyright (C) 2026 The `agy-nexus-mcp` Original Authors and Contributors.
+**License:** GNU Affero General Public License v3.0 or later (`AGPL-3.0-or-later`) — see [LICENSE](LICENSE).
+
+Pursuant to **Section 7 (Additional Terms)**, **Section 5 (Conveying Modified Source Versions)**, and **Section 13 (Remote Network Interaction)** of the GNU Affero General Public License v3.0, the following supplementary terms apply to all copies, modified versions, and network-hosted deployments of this software:
+
+### 1. Preservation of Attribution & User-Interface Legal Notices (AGPLv3 §7(b) & §5(d))
+- You must retain all copyright notices, license references, and author attribution in all source files, documentation, and configuration manifests.
+- Interactive user interfaces—including the `/web` Overwatch Dashboard, the Chromium Standalone Web App (PWA), and the MCP / ASCII telemetry headers—must continue to display appropriate legal notices and attribution to the original `agy-nexus-mcp` (`AGY-NEXUS`) project. Stripping author attribution to present the software as an unrelated original work is expressly prohibited.
+
+### 2. Prohibition of Misrepresentation & Security-Modification Disclosure (AGPLv3 §7(c) & §5(a))
+- The origin of this software must not be misrepresented; you must not claim that you wrote the original software.
+- **Security-Integrity Disclosure**: `agy-nexus-mcp` is architected with defense-in-depth security controls (including capability URL path secrets, constant-time SHA-256 passphrase deadbolt verification with automatic TTL expiration, and strict workspace path-traversal boundaries). If you modify, bypass, weaken, or remove any of these security mechanisms in a fork or derivative work, you **must**:
+  1. Prominently mark all modified files with clear notices stating what was changed and the date of the change (AGPLv3 §5(a)), and
+  2. Clearly disclose to users in your README and user interface that the original `agy-nexus-mcp` security model has been modified or disabled, and that your modified version is not endorsed by or affiliated with the original authors.
+
+### 3. No Trademark or Endorsement Rights (AGPLv3 §7(e))
+- Neither the name `agy-nexus-mcp`, the brand `AGY-NEXUS`, nor the names/handles of its original authors may be used to market, sell, endorse, or promote modified versions or third-party commercial offerings without prior written permission, except as required for reasonable and customary attribution describing the origin of the work.
+
+### 4. Mandatory Network Share-Alike (AGPLv3 §13)
+- If you modify this software and run it as a network service (including exposing the Streamable HTTP `/mcp` endpoint or the `/web` dashboard to users over a network), you **must** make the complete Corresponding Source Code of your modified version publicly available under the terms of the GNU AGPLv3.

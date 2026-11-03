@@ -139,18 +139,36 @@ def main() -> int:
         print(f"ERROR: Unexpected response checking repo (HTTP {status_repo}): {repo_data.get('message')}", file=sys.stderr)
         return 1
 
-    # 3. Export clean working tree into a temporary Git repo with a single squashed commit
+    # 3. Export clean working tree into a temporary Git repo (incremental fast-forward if main exists)
     src_root = Path(__file__).resolve().parent.parent
     author_name = args.author_name.strip() or gh_login
     author_email = args.author_email.strip() or (
         f"{gh_id}+{gh_login}@users.noreply.github.com" if gh_id else f"{gh_login}@users.noreply.github.com"
     )
+    basic_auth = base64.b64encode(f"x-access-token:{token}".encode("utf-8")).decode("ascii")
+    auth_header = f"http.https://github.com/.extraheader=AUTHORIZATION: basic {basic_auth}"
+    remote_url = f"https://github.com/{gh_login}/{repo_name}.git"
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
+        subprocess.run(["git", "init", "-b", "main"], cwd=str(tmp_path), check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.name", author_name], cwd=str(tmp_path), check=True)
+        subprocess.run(["git", "config", "user.email", author_email], cwd=str(tmp_path), check=True)
+
+        fetch_proc = subprocess.run(
+            ["git", "-c", auth_header, "fetch", "--depth=1", remote_url, "main"],
+            cwd=str(tmp_path),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        has_existing_main = fetch_proc.returncode == 0
+        if has_existing_main:
+            subprocess.run(["git", "checkout", "-B", "main", "FETCH_HEAD"], cwd=str(tmp_path), check=True, capture_output=True)
+
         subprocess.run(
             [
-                "rsync", "-a",
+                "rsync", "-a", "--delete",
                 "--exclude=.git/",
                 "--exclude=.venv/",
                 "--exclude=__pycache__/",
@@ -163,27 +181,32 @@ def main() -> int:
             ],
             check=True,
         )
-        subprocess.run(["git", "init", "-b", "main"], cwd=str(tmp_path), check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.name", author_name], cwd=str(tmp_path), check=True)
-        subprocess.run(["git", "config", "user.email", author_email], cwd=str(tmp_path), check=True)
         subprocess.run(["git", "add", "-A"], cwd=str(tmp_path), check=True)
+        diff_proc = subprocess.run(["git", " status", "--porcelain"], cwd=str(tmp_path), capture_output=True, text=True, check=False)
+        status_proc = subprocess.run(["git", "status", "--porcelain"], cwd=str(tmp_path), capture_output=True, text=True, check=True)
+        if not status_proc.stdout.strip():
+            print(f"[✓] GitHub repository https://github.com/{gh_login}/{repo_name} is already up to date.")
+            return 0
+
+        commit_msg = (
+            "docs: add GNU AGPLv3 LICENSE and Section 7 attribution & security NOTICE"
+            if has_existing_main
+            else "feat: initial public release of agy-nexus-mcp (v2.3)"
+        )
         subprocess.run(
-            ["git", "commit", "-m", "feat: initial public release of agy-nexus-mcp (v2.3)"],
+            ["git", "commit", "-m", commit_msg],
             cwd=str(tmp_path),
             check=True,
             capture_output=True,
         )
 
         # Push using transient HTTP header so the token is never written to .git/config or process argv URL
-        basic_auth = base64.b64encode(f"x-access-token:{token}".encode("utf-8")).decode("ascii")
-        remote_url = f"https://github.com/{gh_login}/{repo_name}.git"
         push_proc = subprocess.run(
             [
                 "git",
                 "-c",
-                f"http.https://github.com/.extraheader=AUTHORIZATION: basic {basic_auth}",
+                auth_header,
                 "push",
-                "--force",
                 remote_url,
                 "main:main",
             ],
@@ -196,7 +219,7 @@ def main() -> int:
             print(f"ERROR: git push failed:\n{push_proc.stderr}", file=sys.stderr)
             return 1
 
-    print(f"[✓] Successfully exported clean single-commit release to https://github.com/{gh_login}/{repo_name}")
+    print(f"[✓] Successfully published to https://github.com/{gh_login}/{repo_name}")
     return 0
 
 
