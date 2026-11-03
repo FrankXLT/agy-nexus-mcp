@@ -259,15 +259,17 @@ mcp = FastMCP(
         "AGY-NEXUS-MCP: Antigravity Mission Control, Cross-Session FTS5 Memory, Quota Overwatch & Governance MCP Server. "
         "Enables Gemini to authenticate via voice passphrase, discover and inspect active Antigravity conversations, "
         "explore local codebases in read-only mode, audit 4-layer Skills/Agents/Rules, view live Dual-Pool Quota & Activity Heatmaps, and dispatch synthesized research handoffs.\n"
-        "CRITICAL ANTI-DEADLOCK & ONE-SHOT RULES:\n"
-        "1. STRICT 1-TOOL-CALL-PER-TURN RULE: NEVER emit multiple tool calls in a single turn or chain back-to-back tool calls before replying with text. "
-        "Google Gemini's web UI confirmation cards lock up if a turn chains a second tool call before outputting a response.\n"
-        "2. USE BUNDLED ONE-SHOT PARAMETERS: "
-        "- `load_session_into_gemini` automatically returns `execution_status` (including `pending_approval` if stalled), `git_summary`, `latest_assistant_response`, `task.md`, `implementation_plan.md`, `walkthrough.md`, AND accepts optional comma-separated `include_files`.\n"
-        "- `ask_workspace_readonly` automatically returns `selected_session_status` and accepts comma-separated file paths in `file_subpath` (with optional `start_line`/`end_line`).\n"
-        "- `manage_background_run(action='stats', period='current_month'|'last_month'|'last_90d'|'last_year')` returns the pre-rendered <=44-char `ascii_mobile_report` for Gemini Mobile + full Dual-Pool Quota Pacing and Activity Heatmap metrics (`agy-nexus-stats` skill).\n"
-        "3. CONCISE HANDOFF SIZE LIMIT (`<= 4,500 chars`): Keep `research_markdown` concise (`<= 4,500 characters`) or use `append_to_existing=True`.\n"
-        "4. PROJECT ROUTING: When creating a new session with `send_handoff_and_resume(create_new_session=True, ...)`, pass `project_name` and `workspace_path`."
+        "AUTONOMOUS MULTI-FILE RESEARCH & WORKFLOW RULES:\n"
+        "1. AUTONOMOUS FILE READING (NO MID-TASK NAG PROMPTS): When investigating a session, auditing code, or preparing an architectural handoff, "
+        "figure out all the files you need to inspect, read them (batching comma-separated paths in `file_subpath='path1,path2,path3'` up to 12 files / 120 KB per call, "
+        "and chaining additional read-only tool calls in the same turn whenever you discover more files to read), and come back to the user with the complete synthesis. "
+        "NEVER stop mid-task to ask the user for permission to read another file or to read remaining lines of a file.\n"
+        "2. USE BUNDLED ONE-SHOT PARAMETERS:\n"
+        "- `load_session_into_gemini` returns full `task.md`, `implementation_plan.md`, `walkthrough.md`, `execution_status`, `git_summary`, `latest_assistant_response`, AND accepts optional comma-separated `include_files`.\n"
+        "- `ask_workspace_readonly` reads up to 12 comma-separated files in full (`file_subpath='a.py,b.py,skill:name'`, up to 48 KB per file / 120 KB total per call), runs repo-wide `git grep` (`search_query`), and queries SQLite FTS5 history.\n"
+        "- `manage_background_run(action='stats', period='current_month'|'last_month'|'last_90d'|'last_year', style='default'|'quick'|'rich')` returns the pre-rendered ASCII telemetry report + Dual-Pool Quota Pacing.\n"
+        "3. LOCKED DEADBOLT ONLY: Only stop immediately to ask the user if `locked=True` (when the security deadbolt requires their spoken passphrase).\n"
+        "4. PROJECT ROUTING: When calling `send_handoff_and_resume`, pass `session_identifier` (for existing sessions) or `project_name` and `workspace_path` (when `create_new_session=True`)."
     ),
 )
 
@@ -764,10 +766,9 @@ def unlock_sessions(spoken_passphrase: str, search_query: str = "", style: str =
         "locked": False,
         "message": "Deadbolt unlocked. Session list and live telemetry stats retrieved successfully.",
         "assistant_guidance": (
-            "STRICT 1-TOOL-CALL-PER-TURN RULE: Do NOT chain a second MCP tool call in this turn "
-            "(Google Gemini's UI confirmation card hangs on back-to-back tool calls). "
-            "If the user asked for stats, display ascii_mobile_report inside a ```text block now; otherwise present the sessions list now! "
-            "NOTE: When calling send_handoff_and_resume on a subsequent turn, always pass session_identifier (e.g. '1' or the target conversation_id/title) so it routes to the exact chat."
+            "Deadbolt unlocked. If the user asked for stats, display ascii_mobile_report inside a ```text block now. "
+            "If the user asked to inspect a session or codebase, proceed directly to load_session_into_gemini or ask_workspace_readonly "
+            "(batching needed files via comma-separated file_subpath) without asking for confirmation."
         ),
         "ttl_seconds": TTL_SECONDS,
         "selected_session": sel_id,
@@ -819,7 +820,8 @@ def list_saved_sessions(
     return _compact_json({
         "ok": True,
         "assistant_guidance": (
-            "STRICT 1-TOOL-CALL-PER-TURN RULE: Do NOT chain a second MCP tool call in this turn. Reply to the user first!"
+            "Sessions listed. If the user asked to inspect a specific session or codebase, call load_session_into_gemini "
+            "or ask_workspace_readonly directly to gather all needed files before replying."
         ),
         "count": len(sessions),
         "available_projects": list(projects_map.values()),
@@ -915,10 +917,11 @@ def _resolve_and_read_files(
         }
     )
     items_slice = raw_items[:MAX_FILES_PER_CALL]
-    per_file_cap = min(max_chars_per_file, max(1200, max_total_chars // len(items_slice)))
+    remaining_total_chars = max_total_chars
     files_list: list[dict[str, Any]] = []
 
     for raw_sub in items_slice:
+        per_file_cap = min(max_chars_per_file, max(4000, remaining_total_chars))
         cleaned = re.sub(r"^file://", "", raw_sub.strip())
         # Strip leading "[repo_name] " prefix if copied from code_search_matches
         cleaned = re.sub(r"^\[[^\]]+\]\s*", "", cleaned)
@@ -975,6 +978,7 @@ def _resolve_and_read_files(
                     inline_end_line=in_end,
                     center_line=in_center,
                 )
+                remaining_total_chars = max(4000, remaining_total_chars - len(slice_meta.get("content", "")))
                 entry_obj: dict[str, Any] = {
                     "requested": raw_sub,
                     "path": str(target_path),
@@ -1336,14 +1340,13 @@ def load_session_into_gemini(
     _save_session_state()
 
     has_inc = bool(include_files.strip())
-    # Dynamically scale artifact budgets when include_files is also requested so total payload stays <16 KB
-    task_cap = 3000 if has_inc else MAX_TASK_DOC_CHARS
-    plan_cap = 2200 if has_inc else 4200
-    walk_cap = 1000 if has_inc else 1800
-    resp_cap = 1400 if has_inc else 2200
-    turns_cap = 3 if has_inc else MAX_TRANSCRIPT_TURNS
+    task_cap = MAX_TASK_DOC_CHARS
+    plan_cap = 24000
+    walk_cap = 24000
+    resp_cap = 8000
+    turns_cap = MAX_TRANSCRIPT_TURNS
 
-    # Read artifacts with compact head+tail budget so neither the top overview nor the bottom active checklist gets clipped
+    # Read artifacts with generous full-document budget (only compacting if a massive artifact exceeds 24,000 chars)
     task_file = session_dir / "task.md"
     task_raw = task_file.read_text(encoding="utf-8", errors="replace") if task_file.is_file() else ""
     task_content = _compact_markdown(task_raw, max_chars=task_cap) if task_raw else ""
@@ -1418,8 +1421,8 @@ def load_session_into_gemini(
             include_files,
             ws=ws_path,
             session_dir=session_dir,
-            max_chars_per_file=1500,
-            max_total_chars=4500,
+            max_chars_per_file=MAX_FILE_CHARS,
+            max_total_chars=MAX_TOTAL_FILE_CHARS,
         )
         if has_inc
         else {}
@@ -1433,9 +1436,9 @@ def load_session_into_gemini(
         "project_name": project_name,
         "workspace_path": workspace,
         "assistant_guidance": (
-            "STOP AND REPLY TO USER NOW: execution_status, git_summary, latest_assistant_response, task_content, "
-            "implementation_plan, and project_hygiene_standards are ALL included below. "
-            "Do NOT call another tool in this same turn—reply to the user first, or use ask_workspace_readonly with start_line/end_line in a subsequent turn for deep single-file reads."
+            "Session context loaded (execution_status, git_summary, task_content, implementation_plan, walkthrough, and recent turns). "
+            "If you need to inspect any source files, skills, or scripts to complete your analysis or build a handoff, "
+            "call ask_workspace_readonly now (batching comma-separated paths in file_subpath='f1,f2,f3')—do NOT stop mid-task to ask the user for permission to read files."
         ),
         "project_hygiene_standards": MODULAR_HYGIENE_STANDARDS,
         "execution_status": db_status_info,
@@ -1461,7 +1464,7 @@ def ask_workspace_readonly(
     end_line: int = 0,
     spoken_passphrase: str = "",
 ) -> str:
-    """Read-only codebase explorer querying one or multiple comma-separated files (supports line ranges via start_line/end_line or inline 'path/file.py:100-350' / 'path/file.py:420' centered syntax, plus 'skill:<name>' / 'agent:<name>' / 'rule:<name>'), git grep across local repositories, and SQLite FTS5 conversation history."""
+    """Read-only codebase explorer querying one or up to 12 comma-separated files in full (up to 48 KB per file / 120 KB total per call; also supports line ranges via start_line/end_line or inline 'path/file.py:100-350' / 'path/file.py:420' syntax, plus 'skill:<name>' / 'agent:<name>' / 'rule:<name>'), git grep across local repositories, and SQLite FTS5 conversation history."""
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
 
@@ -1505,8 +1508,8 @@ def ask_workspace_readonly(
         "question": question,
         "workspace": str(ws),
         "assistant_guidance": (
-            "STOP AND REPLY TO USER NOW: selected_session_status, file_details, and code_search_matches are ALL included below. "
-            "If a file has truncated=True, check next_range_hint to read subsequent line ranges. Do NOT chain a second tool call in this turn."
+            "Workspace query complete. If you identified additional files to inspect (or if a >1,000-line file has truncated=True and you need its remaining lines), "
+            "call ask_workspace_readonly again immediately in this turn (batching comma-separated file_subpath='f1,f2,f3')—NEVER stop mid-task to ask the user whether you should read another file or section."
         ),
         "selected_session_status": _get_selected_session_quick_status(),
         "file_details": file_result,
@@ -2202,7 +2205,10 @@ def inspect_git_diff(
                     return _compact_json({
                         "ok": True,
                         "workspace": str(ws_res),
-                        "assistant_guidance": "STOP AND REPLY TO USER NOW: selected_session_status, status_short, diff_stat, untracked_files, and diff are ALL included below. If diff_truncated=True, check pagination_hint to inspect remaining files or pages.",
+                        "assistant_guidance": (
+                            "Git diff inspection complete. If you need to inspect any modified or untracked files in full, "
+                            "call ask_workspace_readonly immediately (batching comma-separated file_subpath) before replying."
+                        ),
                         "selected_session_status": _get_selected_session_quick_status(),
                         "configured_mcp_servers": configured_mcps,
                         "branch": current_branch,
@@ -2237,7 +2243,10 @@ def inspect_git_diff(
         return _compact_json({
             "ok": True,
             "workspace": host_res.get("workspace", ws_str),
-            "assistant_guidance": "STOP AND REPLY TO USER NOW: selected_session_status, status_short, diff_stat, untracked_files, and diff are ALL included below. Do NOT chain a second tool call in this turn.",
+            "assistant_guidance": (
+                "Git diff inspection complete. If you need to inspect any modified or untracked files in full, "
+                "call ask_workspace_readonly immediately (batching comma-separated file_subpath) before replying."
+            ),
             "selected_session_status": _get_selected_session_quick_status(),
             "configured_mcp_servers": configured_mcps,
             "branch": br,
@@ -2328,7 +2337,10 @@ def list_models_and_agents(
     out_payload: dict[str, Any] = {
         "ok": True,
         "status": "OK",
-        "assistant_guidance": "STOP AND REPLY TO USER NOW: All agents, skills, plugin bundles, rules, quota_and_pools, and hygiene standards are included below. Pass inspect_name='<name>' in a subsequent turn to read any specific SKILL.md, agent, or rule.",
+        "assistant_guidance": (
+            "Inventory loaded. If you need to read specific skills, agents, or rules, call ask_workspace_readonly "
+            "with comma-separated skill:<name> / agent:<name> paths immediately in this turn without asking the user first."
+        ),
         "active_profile": active_profile,
         "quota_and_pools": quota_status,
         "customization_scope_policy": CUSTOMIZATION_SCOPE_POLICY,

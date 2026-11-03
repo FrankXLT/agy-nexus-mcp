@@ -16,12 +16,12 @@ from typing import Any
 # Configurable Session & Context Window Limits (via secrets.env or container env)
 MIN_TTL_SECONDS = int(os.getenv("MIN_TTL_SECONDS", "300"))
 TTL_SECONDS = max(int(os.getenv("TTL_SECONDS", "7200")), MIN_TTL_SECONDS)
-MAX_FILE_CHARS = int(os.getenv("MAX_FILE_CHARS", "12000"))
-MAX_TOTAL_FILE_CHARS = int(os.getenv("MAX_TOTAL_FILE_CHARS", "15000"))
-MAX_FILES_PER_CALL = int(os.getenv("MAX_FILES_PER_CALL", "6"))
-MAX_DIFF_CHARS = int(os.getenv("MAX_DIFF_CHARS", "12000"))
-MAX_TRANSCRIPT_TURNS = int(os.getenv("MAX_TRANSCRIPT_TURNS", "6"))
-MAX_TASK_DOC_CHARS = int(os.getenv("MAX_TASK_DOC_CHARS", "5500"))
+MAX_FILE_CHARS = int(os.getenv("MAX_FILE_CHARS", "48000"))
+MAX_TOTAL_FILE_CHARS = int(os.getenv("MAX_TOTAL_FILE_CHARS", "120000"))
+MAX_FILES_PER_CALL = int(os.getenv("MAX_FILES_PER_CALL", "12"))
+MAX_DIFF_CHARS = int(os.getenv("MAX_DIFF_CHARS", "40000"))
+MAX_TRANSCRIPT_TURNS = int(os.getenv("MAX_TRANSCRIPT_TURNS", "8"))
+MAX_TASK_DOC_CHARS = int(os.getenv("MAX_TASK_DOC_CHARS", "24000"))
 
 ENFORCE_MODULAR_HYGIENE = os.getenv("ENFORCE_MODULAR_HYGIENE", "true").strip().lower() in ("1", "true", "yes", "on")
 TARGET_FILE_LINES = int(os.getenv("TARGET_FILE_LINES", "300"))
@@ -113,7 +113,7 @@ def slice_file_content(
     st = explicit_start_line if explicit_start_line > 0 else inline_start_line
     en = explicit_end_line if explicit_end_line > 0 else inline_end_line
 
-    if st <= 0 and center_line > 0 and len(full_text) > per_file_cap:
+    if st <= 0 and center_line > 0 and (len(full_text) > per_file_cap or total_lines > 350):
         st = max(1, center_line - 60)
         en = min(total_lines, center_line + 180)
 
@@ -149,10 +149,10 @@ def slice_file_content(
     }
     if actual_end < total_lines:
         next_st = actual_end + 1
-        next_en = min(total_lines, next_st + 299)
+        next_en = min(total_lines, next_st + 499)
         result["next_range_hint"] = (
             f"Showing lines {st}-{actual_end} of {total_lines}. "
-            f"Pass start_line={next_st}, end_line={next_en} (or file_subpath='{clean_path}:{next_st}-{next_en}') to read the next section."
+            f"If you need the rest, call ask_workspace_readonly(file_subpath='{clean_path}:{next_st}-{next_en}') immediately in this turn—do NOT ask the user for permission."
         )
     if ENFORCE_MODULAR_HYGIENE and total_lines > HARD_MAX_FILE_LINES:
         result["modularity_advisory"] = (
