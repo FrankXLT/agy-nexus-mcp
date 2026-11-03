@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ag_bridge_ascii_default import (
+from agy_nexus.ascii_default import (
     build_quota_bar_with_pin,
     build_reversed_8h_stack_canvas,
     build_reversed_weeks,
@@ -16,7 +16,6 @@ from ag_bridge_ascii_default import (
     fmt_short_date,
     fmt_tok,
 )
-
 
 def _share_gauge(pct: float, width: int = 6) -> str:
     val = max(0.0, min(100.0, float(pct or 0.0)))
@@ -28,14 +27,11 @@ def _share_gauge(pct: float, width: int = 6) -> str:
         cells[full] = "▍"
     return f"{''.join(cells)} {val:>4.1f}%"
 
-
 def _box_split(left_36: str, right_37: str) -> str:
     return f"║ {left_36[:35].ljust(35)}│ {right_37[:35].ljust(35)} ║"
 
-
 def _box_full(inner_72: str) -> str:
     return f"║ {inner_72[:72].ljust(72)} ║"
-
 
 def render_ascii_rich(bundle: dict[str, Any]) -> str:
     """Render Rich 76-Column Box-Drawn TUI Telemetry Rig."""

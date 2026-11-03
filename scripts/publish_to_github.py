@@ -90,6 +90,7 @@ def main() -> int:
     parser.add_argument("--private", action="store_true", help="Create the GitHub repository as private (default: public)")
     parser.add_argument("--author-name", default="", help="Override Git author name (defaults to GitHub login)")
     parser.add_argument("--author-email", default="", help="Override Git author email (defaults to <login>@users.noreply.github.com)")
+    parser.add_argument("--message", default="", help="Custom Git commit message")
     args = parser.parse_args()
 
     token = _load_token_from_env_files()
@@ -188,8 +189,8 @@ def main() -> int:
             print(f"[✓] GitHub repository https://github.com/{gh_login}/{repo_name} is already up to date.")
             return 0
 
-        commit_msg = (
-            "docs: add GNU AGPLv3 LICENSE and Section 7 attribution & security NOTICE"
+        commit_msg = args.message.strip() or (
+            "refactor: modularize into src/agy_nexus, split /web PWA, and add CHANGELOG, AGENTS, SECURITY & CONTRIBUTING"
             if has_existing_main
             else "feat: initial public release of agy-nexus-mcp (v2.3)"
         )

@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
 """
-ag_bridge_hygiene.py — Modular Architecture Standards, Line-Range File Slicing,
-and Diff Pagination Helpers for ag-bridge-mcp.
-
+agy_nexus.hygiene — Modular Architecture Standards, Line-Range File Slicing,
+and Diff Pagination Helpers for AGY-Nexus MCP.
 Keeps file-slicing, diff-pagination, and modular code hygiene logic cleanly
 separated (< 250 lines) in accordance with the Modular Architecture Standard.
 """
-
 from __future__ import annotations
-
+import json
 import os
 import re
 from typing import Any
-
 # Configurable Session & Context Window Limits (via secrets.env or container env)
 MIN_TTL_SECONDS = int(os.getenv("MIN_TTL_SECONDS", "300"))
 TTL_SECONDS = max(int(os.getenv("TTL_SECONDS", "7200")), MIN_TTL_SECONDS)
@@ -22,11 +19,9 @@ MAX_FILES_PER_CALL = int(os.getenv("MAX_FILES_PER_CALL", "12"))
 MAX_DIFF_CHARS = int(os.getenv("MAX_DIFF_CHARS", "40000"))
 MAX_TRANSCRIPT_TURNS = int(os.getenv("MAX_TRANSCRIPT_TURNS", "8"))
 MAX_TASK_DOC_CHARS = int(os.getenv("MAX_TASK_DOC_CHARS", "24000"))
-
 ENFORCE_MODULAR_HYGIENE = os.getenv("ENFORCE_MODULAR_HYGIENE", "true").strip().lower() in ("1", "true", "yes", "on")
 TARGET_FILE_LINES = int(os.getenv("TARGET_FILE_LINES", "300"))
 HARD_MAX_FILE_LINES = int(os.getenv("HARD_MAX_FILE_LINES", "400"))
-
 MODULAR_HYGIENE_STANDARDS: dict[str, Any] = {
     "enabled": ENFORCE_MODULAR_HYGIENE,
     "target_lines_per_file": f"100-{TARGET_FILE_LINES} lines (<= 12 KB)",
@@ -38,7 +33,6 @@ MODULAR_HYGIENE_STANDARDS: dict[str, Any] = {
         "When modifying a legacy file that already exceeds 400 lines, extract new features or subsystems into a dedicated helper module rather than expanding the monolith.",
     ],
 }
-
 MODULAR_HYGIENE_MARKDOWN_BLOCK = f"""
 ---
 ## Mandatory Modular Architecture, Verification & File Hygiene Standard
@@ -48,7 +42,6 @@ When standing up or modifying this project, enforce the following rules automati
 3. **Cohesive Domain Decomposition (No Micro-File Sprawl)**: Group code by domain responsibility (`config`, `models`, `repository`, `services`, `routes`, `utils`) with zero circular dependencies.
 4. **Root-Directory Hygiene & Brownfield Rule**: Keep the repo root clean (manifests only; code in `src/`, tests in `tests/`, scripts in `scripts/`, scratch in `scratch/`). If a target file exceeds `{HARD_MAX_FILE_LINES}` lines, extract newly added logic into a companion module.
 """
-
 
 def parse_inline_line_spec(raw_sub: str) -> tuple[str, int, int, int]:
     """
@@ -68,21 +61,17 @@ def parse_inline_line_spec(raw_sub: str) -> tuple[str, int, int, int]:
         if en > 0:
             return base, st, max(st, en), 0
         return base, 0, 0, st
-
     m_range = re.search(r":(\d+)-(\d+)(?::.*)?$", s)
     if m_range:
         base = s[: m_range.start()].strip()
         st = int(m_range.group(1))
         en = int(m_range.group(2))
         return base, st, max(st, en), 0
-
     m_single = re.search(r":(\d+)(?::.*)?$", s)
     if m_single:
         base = s[: m_single.start()].strip()
         return base, 0, 0, int(m_single.group(1))
-
     return s, 0, 0, 0
-
 
 def slice_file_content(
     full_text: str,
@@ -109,19 +98,15 @@ def slice_file_content(
             "truncated": False,
             "content": "",
         }
-
     st = explicit_start_line if explicit_start_line > 0 else inline_start_line
     en = explicit_end_line if explicit_end_line > 0 else inline_end_line
-
-    if st <= 0 and center_line > 0 and (len(full_text) > per_file_cap or total_lines > 350):
+    if st <= 0 and center_line > 0 and (len(full_text) > per_file_cap or total_lines > 140):
         st = max(1, center_line - 60)
         en = min(total_lines, center_line + 180)
-
     if st <= 0:
         st = 1
     st = max(1, min(st, total_lines))
     max_en = min(total_lines, en) if en >= st else total_lines
-
     out_chunks: list[str] = []
     char_count = 0
     actual_end = st - 1
@@ -136,7 +121,6 @@ def slice_file_content(
         out_chunks.append(line_str)
         char_count += len(line_str)
         actual_end = idx + 1
-
     content = "".join(out_chunks)
     truncated = (st > 1) or (actual_end < total_lines)
     result: dict[str, Any] = {
@@ -160,7 +144,6 @@ def slice_file_content(
             f"If modifying this area, extract new logic into a focused helper module (<= {TARGET_FILE_LINES} lines)."
         )
     return result
-
 
 def slice_git_diff(
     diff_out: str,
@@ -207,3 +190,44 @@ def slice_git_diff(
             f"Pass offset_chars={end_offset} (or start_line/end_line) to read the next page, or pass file_path='<subpath>'."
         )
     return res
+
+def _compact_markdown(text: str, max_chars: int = 5500) -> str:
+    """Keep markdown under max_chars while preserving all section headings, intro, and the latest trailing sections."""
+    if len(text) <= max_chars:
+        return text
+    toc_cap = max(300, int(max_chars * 0.14))
+    head_cap = max(600, int(max_chars * 0.35))
+    tail_cap = max(800, int(max_chars * 0.43))
+    headings = [line.strip() for line in text.splitlines() if line.lstrip().startswith("#")][:40]
+    toc = "\n".join(headings)[:toc_cap]
+    head_part = text[:head_cap]
+    tail_part = text[-tail_cap:]
+    return (
+        f"[Document Outline ({len(text)} total chars — use ask_workspace_readonly(file_subpath=..., start_line=..., end_line=...) for middle sections)]:\n"
+        f"{toc}\n\n"
+        f"--- [Beginning] ---\n{head_part}\n\n"
+        f"... [middle omitted] ...\n\n"
+        f"--- [End (Latest Checkpoints)] ---\n{tail_part}"
+    )
+
+def _summarize_jsonl_line(raw_line: str) -> dict[str, Any]:
+    """Parse a raw transcript.jsonl line into a compact, readable summary object."""
+    try:
+        entry = json.loads(raw_line)
+        if not isinstance(entry, dict):
+            return {"raw": raw_line[:300]}
+        summary: dict[str, Any] = {
+            "step_index": entry.get("step_index"),
+            "type": entry.get("type") or entry.get("role") or "EVENT",
+            "status": entry.get("status", ""),
+            "created_at": entry.get("created_at", ""),
+        }
+        content = str(entry.get("content") or entry.get("text") or "").strip()
+        if content:
+            summary["content_preview"] = content[:350]
+        tool_calls = entry.get("tool_calls")
+        if isinstance(tool_calls, list) and tool_calls:
+            summary["tools"] = [str(tc.get("name") or tc.get("toolAction") or "call") for tc in tool_calls[:5] if isinstance(tc, dict)]
+        return summary
+    except Exception:
+        return {"raw": raw_line[:300]}

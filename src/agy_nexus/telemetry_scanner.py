@@ -32,7 +32,6 @@ MODEL_TARGET_ALLOCATION = {
     },
 }
 
-
 def detect_product_name(raw_product: str = "", user_agent: str = "", tool_name: str = "") -> str:
     s = f"{raw_product or ''} {user_agent or ''}".lower()
     if any(k in s for k in ("mobile", "android", "iphone", "gsa/")):
@@ -44,7 +43,6 @@ def detect_product_name(raw_product: str = "", user_agent: str = "", tool_name: 
     if "antigravity" in s or "agy" in s:
         return "Antigravity IDE"
     return raw_product.strip() or "Gemini MCP Client"
-
 
 def record_wire_telemetry(
     tool_or_event: str | dict[str, Any],
@@ -94,7 +92,6 @@ def record_wire_telemetry(
         pass
     return entry
 
-
 def get_wire_telemetry_summary(bg_dir_or_limit: Any = None, limit: int = 25) -> dict[str, Any]:
     """Return summary metrics, product breakdown, and recent entries from the persistent wire telemetry ledger."""
     lim = int(bg_dir_or_limit) if isinstance(bg_dir_or_limit, int) else int(limit or 25)
@@ -120,7 +117,6 @@ def get_wire_telemetry_summary(bg_dir_or_limit: Any = None, limit: int = 25) -> 
         rec["tokens"] += int(x.get("est_tokens", 0) or round(int(x.get("bytes", 0)) / 4.0))
         rec["bytes"] += int(x.get("bytes", 0))
     return {"total_recorded_calls": len(records), "avg_kb": round(sum(kb_vals) / len(kb_vals), 2), "max_kb": round(max(kb_vals), 2), "total_mcp_tokens": tot_tokens, "budget_compliance_pct": round((compliant / len(records)) * 100.0, 1), "by_product": by_prod, "recent_calls": recent}
-
 
 def extract_pending_approval(transcript_or_brain_dir: Path, conv_id: str = "") -> dict[str, Any] | None:
     """Inspect transcript.jsonl tail to extract exact tool call details when waiting/running."""
@@ -152,7 +148,6 @@ def extract_pending_approval(transcript_or_brain_dir: Path, conv_id: str = "") -
         return None
     return None
 
-
 def get_live_quota_and_pool_status(data_or_config_dir: Path, config_dir: Path | None = None) -> dict[str, Any]:
     """Read live Dual-Pool Quota Pacing (`ultra-20x` vs `ultra-5x`), 429 cooldowns, and Partner Pool weekly pace."""
     agy_config_dir = config_dir if config_dir is not None else data_or_config_dir
@@ -178,7 +173,6 @@ def get_live_quota_and_pool_status(data_or_config_dir: Path, config_dir: Path | 
     day_idx = datetime.now(timezone.utc).weekday() + 1
     return {"active_tier_profile": active_profile, "pools": pools_out, "partner_weekly_pacing": {"day_of_week_index": day_idx, "daily_target_pct": 14.28, "recommended_cumulative_ceiling_pct": round(min(100.0, day_idx * 14.28), 1)}, "target_model_allocation": MODEL_TARGET_ALLOCATION.get(active_profile, MODEL_TARGET_ALLOCATION["ultra-20x"]), "recent_quota_events": (state_data.get("events") or [])[-8:]}
 
-
 def classify_model_key(raw_model: str, agent_name: str = "") -> str:
     s = f"{raw_model or ''} {agent_name or ''}".lower()
     if any(k in s for k in ("claude", "sonnet", "opus")):
@@ -186,7 +180,6 @@ def classify_model_key(raw_model: str, agent_name: str = "") -> str:
     if "gpt" in s or "120b" in s:
         return "gpt_oss"
     return "flash" if ("flash" in s or "m322" in s) else "argon_pro"
-
 
 def normalize_workspace_name(ws_raw: str) -> str:
     parts = [p for p in (ws_raw or "").rstrip("/").split("/") if p and p != ".git"]
@@ -197,7 +190,6 @@ def normalize_workspace_name(ws_raw: str) -> str:
         ws_name = parts[-1] if parts else "unassigned"
     return re.sub(r"-wt-\d+$", "", ws_name)
 
-
 def to_4h_slot(c_str: str, fallback_mtime: float) -> tuple[str, str]:
     if len(c_str) >= 13 and c_str[4] == "-" and c_str[10] in ("T", " "):
         day_s = c_str[:10]
@@ -207,7 +199,6 @@ def to_4h_slot(c_str: str, fallback_mtime: float) -> tuple[str, str]:
             return day_s, f"{day_s}T12"
     dt = datetime.fromtimestamp(fallback_mtime, tz=timezone.utc)
     return dt.strftime("%Y-%m-%d"), f"{dt.strftime('%Y-%m-%d')}T{(dt.hour // 4) * 4:02d}"
-
 
 def scan_transcript_stats(brain_dir: Path, bg_dir: Path) -> dict[str, Any]:
     cache_file = bg_dir / "nexus_stats_cache.json"

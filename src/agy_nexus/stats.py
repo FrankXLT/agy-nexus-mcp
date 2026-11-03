@@ -12,9 +12,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from ag_bridge_ascii_default import render_ascii_default, render_ascii_quick
-from ag_bridge_ascii_rich import render_ascii_rich
-from ag_bridge_telemetry_scanner import (
+from agy_nexus.ascii_default import render_ascii_default, render_ascii_quick
+from agy_nexus.ascii_rich import render_ascii_rich
+from agy_nexus.telemetry_scanner import (
     CACHE_VERSION,
     MAX_WIRE_RING,
     MODEL_TARGET_ALLOCATION,
@@ -46,7 +46,6 @@ __all__ = [
     "render_ascii_stats",
 ]
 
-
 def _smooth_series(vals: list[int]) -> list[int]:
     n = len(vals)
     return (
@@ -62,7 +61,6 @@ def _smooth_series(vals: list[int]) -> list[int]:
         ]
     )
 
-
 def render_ascii_stats(bundle: dict[str, Any], style: str = "default") -> str:
     """Dispatch telemetry bundle to the requested ASCII style: 'default' (72c), 'quick' (40c), or 'rich' (76c)."""
     sk = (style or "default").strip().lower()
@@ -71,7 +69,6 @@ def render_ascii_stats(bundle: dict[str, Any], style: str = "default") -> str:
     if sk in ("rich", "tui", "76", "full"):
         return render_ascii_rich(bundle)
     return render_ascii_default(bundle)
-
 
 def build_nexus_stats_bundle(
     brain_dir: Path | None = None,

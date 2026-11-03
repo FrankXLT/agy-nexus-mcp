@@ -9,3 +9,7 @@ secrets.env
 dist/
 build/
 .pytest_cache/
+uv.lock
+*.egg-info/
+dist/
+build/

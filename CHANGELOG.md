@@ -1,0 +1,58 @@
+# Changelog
+
+All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## [2.3.0] — 2026-11-03
+
+### Added
+- **Clean Modular Package Architecture (`src/agy_nexus/`)**:
+  - Decomposed the 2,730-line monolithic `ag_bridge.py` and 7 loose root helper files into 19 cohesive domain modules inside `src/agy_nexus/` (`config`, `hygiene`, `inventory`, `telemetry_scanner`, `ascii_default`, `ascii_rich`, `stats`, `workflows`, `sessions`, `routing`, `search`, `workspace`, `tools_session`, `tools_workspace`, `tools_ops`, `handoff`, `middleware`, `server`, `__init__`), keeping every module within the `100–340 line` modular budget (`< 400 lines` hard ceiling).
+  - Retained a 51-line backward-compatible `ag_bridge.py` root shim so existing Docker Compose, `systemd`, and CLI invocations continue working with zero breaking changes.
+- **Modular Web Overwatch PWA (`web/`)**:
+  - Split the 1,913-line `web/index.html` into `web/index.html` (`341 lines`), `web/styles.css` (`113 lines`), `web/charts.js` (`302 lines`), and `web/app.js` (`358 lines`), registered in `BridgeCompatMiddleware` and `web/sw.js`.
+- **Autonomous Multi-File Research & Generous Context Window Pool (`src/agy_nexus/hygiene.py`, `src/agy_nexus/search.py`)**:
+  - Raised `MAX_FILE_CHARS` to `48,000` (`~1,200 lines`), `MAX_TOTAL_FILE_CHARS` to `120,000` (`~3,000+ lines`), `MAX_FILES_PER_CALL` to `12`, and `MAX_TASK_DOC_CHARS` to `24,000`.
+  - Replaced rigid equal division (`MAX_FILE_CHARS // len(paths)`) with a dynamic shared `120,000`-character pool across up to 12 files per `ask_workspace_readonly` call so Gemini can read entire multi-file subsystems in a single turn without mid-task permission prompts.
+- **Bundled 8-Agent Orthogonal Roster (`agents/`) & Governance Docs**:
+  - Added portable, depersonalized agent definitions in `agents/*.md` (`flash-scout`, `argon-architect`, `flash-surgeon`, `argon-surgeon`, `flash-auditor`, `argon-sentinel`, `claude-specialist`, `claude-sentinel`, `pool-failover`, `image-generator`).
+  - Added `AGENTS.md`, `CHANGELOG.md`, `SECURITY.md`, and `CONTRIBUTING.md`.
+- **GNU AGPLv3 + Section 7 Attribution & Security-Integrity Terms (`LICENSE`, `NOTICE`)**:
+  - Licensed under GNU AGPLv3 (`SPDX-License-Identifier: AGPL-3.0-or-later`) with Section 7 attribution, origin notice preservation, and security-gate integrity protection.
+
+---
+
+## [2.2.0] — 2026-11-02
+
+### Added
+- **3-Format Live ASCII Telemetry (`get_quota_and_system_stats`)**:
+  - Added `format_type="default"` (`44-col` mobile-first Unicode blocks `░▒▓█`), `format_type="compact"` (`38-col` dense HUD card), and `format_type="desktop"` (`78-col` side-by-side matrix with 7-day rolling window).
+  - Added per-surface client detection (`Gemini Mobile`, `Gemini Web`, `Antigravity IDE`, `Headless CLI`) via User-Agent and heuristic tool-call fingerprinting.
+- **Manifest V3 Chrome Extension (`chrome-extension/`)**:
+  - Added Side Panel + Popup companion extension (`manifest.json`, `background.js`, `panel.html`, `panel.js`, `panel.css`) with native Web Speech API voice passphrase unlock, 1-click session resume, and copyable ASCII telemetry cards.
+- **5 Cross-App Workflow Accelerators (`src/agy_nexus/workflows.py`)**:
+  - `audit_multi_repo_drift`: Cross-repo dependency, schema, and dirty-tree drift scanner.
+  - `export_notebook_bundle`: Deduplicated SHA-256 Markdown knowledge bundles for NotebookLM and Gemini Gems.
+  - `capture_thought_to_workspace`: Append timestamped mobile voice notes and tasks into any repository (`docs/MOBILE_INBOX.md` or `task.md`).
+  - `triage_recent_failures`: Instant log/trace and git regression correlate-and-triage bundle.
+  - `generate_standup_digest`: Multi-repo git commit + Antigravity session standup generator.
+
+---
+
+## [2.0.0] — 2026-11-01
+
+### Added
+- **AGY-Nexus Overwatch PWA (`web/`)**:
+  - Added responsive Desktop + Mobile glassmorphic telemetry dashboard at `/web` with SVG dual-pool quota gauges, 14-day stacked token charts, 35-day activity heatmap, and one-tap Deadbolt Lock/Unlock controls.
+- **Dual-Pool Quota Pacing & Antigravity Inventory (`src/agy_nexus/inventory.py`, `src/agy_nexus/routing.py`)**:
+  - Added real-time monitoring of Google 20x Ultra (`Gemini 4 Argon`, `Gemini 3.8 Flash`) and Weekly Partner Pool (`Claude Sonnet 5.5`, `Claude Opus 5.5`, `GPT-OSS 120B`) with automated failover routing.
+
+---
+
+## [1.0.0] — 2026-10-31
+
+### Added
+- Initial release of **AGY-Nexus MCP** (`ag-bridge-mcp`) with 3-Layer Security (`SUBDOMAIN_HASH`, 192-bit `PATH_SECRET`, and Voice-Normalized SHA-256 Spoken Passphrase Deadbolt with sliding TTL), SQLite session discovery (`list_saved_sessions`, `load_session_into_gemini`), read-only workspace research (`ask_workspace_readonly`, `inspect_git_diff`), and headless Language Server handoff (`send_handoff_and_resume`, `manage_background_run`).

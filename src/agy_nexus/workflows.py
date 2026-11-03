@@ -16,14 +16,12 @@ import sqlite3
 import subprocess
 from typing import Any
 
-
 def _slugify(value: str, fallback: str = "session", max_len: int = 36) -> str:
     """Convert arbitrary title or project string into a filesystem-safe lowercase slug."""
     cleaned = re.sub(r"[^a-z0-9]+", "-", (value or "").lower()).strip("-")
     if not cleaned:
         return fallback
     return cleaned[:max_len].rstrip("-") or fallback
-
 
 def export_notebook_bundle(
     brain_dir: Path, db_file: Path, bg_dir: Path, projects_map: dict[str, dict[str, Any]], limit: int = 25
@@ -155,7 +153,6 @@ def export_notebook_bundle(
         "files": exported_files,
     }
 
-
 def inspect_multi_repo_drift(
     gitlab_dir: Path,
     data_dir: Path,
@@ -243,7 +240,6 @@ def inspect_multi_repo_drift(
         "clean_repositories_count": clean_count,
         "repositories": repo_reports,
     }
-
 
 def stage_quarantine_handoff(
     bg_dir: Path,

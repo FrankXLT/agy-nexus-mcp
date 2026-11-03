@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """Antigravity Agents, Skills, Plugins & Rules Inventory and Scope-Isolation Engine."""
 from __future__ import annotations
-
 import re
 from pathlib import Path
 from typing import Any
-
 CUSTOMIZATION_SCOPE_POLICY: dict[str, Any] = {
     "policy_name": "Antigravity Customization Scope-Isolation Standard",
     "core_rule": (
@@ -31,7 +29,6 @@ CUSTOMIZATION_SCOPE_POLICY: dict[str, Any] = {
     ),
 }
 
-
 def parse_markdown_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     """Parse YAML-style frontmatter between --- delimiters and return (metadata_dict, markdown_body)."""
     lines = text.splitlines()
@@ -40,7 +37,6 @@ def parse_markdown_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     end_idx = next((i for i in range(1, min(len(lines), 60)) if lines[i].strip() == "---"), -1)
     if end_idx == -1:
         return {}, text
-
     meta: dict[str, Any] = {}
     list_key: str | None = None
     for line in lines[1:end_idx]:
@@ -59,7 +55,6 @@ def parse_markdown_frontmatter(text: str) -> tuple[dict[str, Any], str]:
                 meta[key] = (val.lower() == "true") if val.lower() in ("true", "false") else val
     return meta, "\n".join(lines[end_idx + 1 :]).strip()
 
-
 def collect_agents_inventory(config_dir: Path, workspace_dir: Path | None = None) -> list[dict[str, Any]]:
     """Collect structured metadata for all global and workspace-scoped Antigravity agent definitions."""
     agents: list[dict[str, Any]] = []
@@ -68,7 +63,6 @@ def collect_agents_inventory(config_dir: Path, workspace_dir: Path | None = None
         sources.append(("global", config_dir / "agents", False))
     if workspace_dir and (workspace_dir / ".agents" / "agents").is_dir():
         sources.append(("workspace", workspace_dir / ".agents" / "agents", True))
-
     for scope, folder, editable_in_proj in sources:
         for fpath in sorted(folder.glob("*.md")):
             try:
@@ -90,7 +84,6 @@ def collect_agents_inventory(config_dir: Path, workspace_dir: Path | None = None
                 continue
     return agents
 
-
 def collect_skills_inventory(
     config_dir: Path,
     data_dir: Path,
@@ -109,7 +102,6 @@ def collect_skills_inventory(
         candidates.extend(("builtin", p, False) for p in sorted((data_dir / "builtin" / "skills").glob("*/SKILL.md")))
     if sf != "core" and (config_dir / "plugins").is_dir():
         candidates.extend((f"plugin:{p.parents[2].name}", p, False) for p in sorted((config_dir / "plugins").glob("*/skills/*/SKILL.md")))
-
     for scope, skill_md, editable_in_proj in candidates:
         if sf not in ("all", "core", "") and sf not in scope.lower():
             continue
@@ -129,7 +121,6 @@ def collect_skills_inventory(
             continue
     return skills[:40]
 
-
 def collect_plugin_bundles_summary(config_dir: Path) -> list[dict[str, Any]]:
     """Return a compact summary of installed plugins and their skill names so the default inventory stays <10 KB."""
     bundles: list[dict[str, Any]] = []
@@ -148,7 +139,6 @@ def collect_plugin_bundles_summary(config_dir: Path) -> list[dict[str, Any]]:
                 "skills_preview": preview,
             })
     return bundles
-
 
 def collect_rules_inventory(config_dir: Path, workspace_dir: Path | None = None) -> dict[str, Any]:
     """Collect global GEMINI.md sections, global rules/*.md, and workspace-specific rules/locks."""
@@ -192,7 +182,6 @@ def collect_rules_inventory(config_dir: Path, workspace_dir: Path | None = None)
         "workspace_customizations": ws_cust,
     }
 
-
 def evaluate_session_customization_scope(workspace_str: str, config_dir: Path, gitlab_dir: Path) -> dict[str, Any]:
     """Evaluate whether the currently selected session/workspace is suitable for editing global skills/rules/agents."""
     ws_clean = (workspace_str or "").strip()
@@ -217,7 +206,6 @@ def evaluate_session_customization_scope(workspace_str: str, config_dir: Path, g
         ),
     }
 
-
 def resolve_customization_file(query: str, config_dir: Path, data_dir: Path, workspace_dir: Path | None = None) -> Path | None:
     """Resolve shorthand ('skill:agy-nexus-stats', 'agent:argon-sentinel', 'rule:GEMINI.md', or name) to a Path."""
     q = (query or "").strip()
@@ -228,13 +216,11 @@ def resolve_customization_file(query: str, config_dir: Path, data_dir: Path, wor
         p_cand, rest = q.split(":", 1)
         if p_cand.lower() in ("skill", "skills", "agent", "agents", "rule", "rules"):
             prefix, q = p_cand.lower().rstrip("s"), rest.strip()
-
     q_slug = q.lower().removesuffix(".md").strip("/")
     if q.lower() in ("gemini.md", "global:gemini.md") or (prefix == "rule" and q_slug == "gemini"):
         if workspace_dir and q.lower() == "workspace:gemini.md" and (workspace_dir / "GEMINI.md").is_file():
             return (workspace_dir / "GEMINI.md").resolve()
         return (config_dir / "GEMINI.md").resolve() if (config_dir / "GEMINI.md").is_file() else None
-
     if prefix in ("", "agent"):
         for folder in (([workspace_dir / ".agents" / "agents"] if workspace_dir else []) + [config_dir / "agents"]):
             if (folder / f"{q_slug}.md").is_file():
@@ -253,7 +239,6 @@ def resolve_customization_file(query: str, config_dir: Path, data_dir: Path, wor
                 return (rfolder / f"{q_slug}.md").resolve()
     return None
 
-
 def build_interjection_directive(
     activate_skills: str,
     target_agent_role: str,
@@ -268,7 +253,6 @@ def build_interjection_directive(
     ws_path = Path(workspace_str).resolve() if workspace_str and Path(workspace_str).exists() else None
     scope_eval = evaluate_session_customization_scope(workspace_str, config_dir, gitlab_dir)
     edit_scope = (customization_edit_scope or "none").strip().lower()
-
     resolved_skills = [
         {"name": s.strip(), "path": str(p) if (p := resolve_customization_file(f"skill:{s.strip()}", config_dir, data_dir, ws_path)) else f"(unresolved: {s.strip()})"}
         for s in re.split(r"[,;\n]+", activate_skills or "") if s.strip()
@@ -276,7 +260,6 @@ def build_interjection_directive(
     ag_clean = target_agent_role.strip()
     ag_path = resolve_customization_file(f"agent:{ag_clean}", config_dir, data_dir, ws_path) if ag_clean else None
     resolved_agent = str(ag_path) if ag_path else ag_clean
-
     touches_global = bool(re.search(r"(\.gemini/config/(skills|agents|rules|GEMINI\.md)|antigravity-config/\.gemini/config)", research_markdown))
     scope_warning = (
         f"SCOPE-ISOLATION WARNING: Modifying global skills, agent roles, or global rules (~/.gemini/config/*) should NOT happen inside project session '{scope_eval['current_workspace']}'. Use a dedicated session outside this project (create_new_session=True, workspace_path='antigravity-config') unless the change is strictly project-local (<workspace>/.agents/*)."

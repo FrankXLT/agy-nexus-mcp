@@ -8,7 +8,6 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-
 def fmt_tok(val: int | float, tilde: bool = True) -> str:
     v, p = float(val or 0), ("~" if tilde else "")
     if v <= 0:
@@ -20,7 +19,6 @@ def fmt_tok(val: int | float, tilde: bool = True) -> str:
     if v >= 1_000:
         return f"{p}{v / 1_000.0:.1f}k"
     return f"{int(v)}"
-
 
 def fmt_rate(val: int | float) -> str:
     v = float(val or 0)
@@ -34,18 +32,15 @@ def fmt_rate(val: int | float) -> str:
         return f"{v / 1_000.0:.1f}k"
     return f"{int(v)}"
 
-
 def fmt_k(val: int | float) -> str:
     v = float(val or 0)
     return f"{v / 1_000.0:.1f}k" if v >= 1_000 else f"{int(v)}"
-
 
 def fmt_short_date(iso_str: str) -> str:
     try:
         return datetime.strptime(iso_str[:10], "%Y-%m-%d").strftime("%b %d")
     except Exception:
         return iso_str[:10]
-
 
 def build_quota_bar_with_pin(actual_pct: float, target_pct: float, width: int = 20) -> str:
     filled = max(0, min(width, round((max(0.0, actual_pct) / 100.0) * width)))
@@ -55,7 +50,6 @@ def build_quota_bar_with_pin(actual_pct: float, target_pct: float, width: int = 
     pin_idx = max(0, min(width - 1, round((max(0.0, target_pct) / 100.0) * (width - 1))))
     cells[pin_idx] = "▏" if pin_idx == 0 else "┼"
     return "".join(cells)
-
 
 def build_reversed_weeks(heatmap_series: list[dict[str, Any]], num_weeks: int = 22) -> list[dict[str, Any]]:
     """Group daily heatmap_series into Monday..Sunday weeks ordered NEWEST (W01) on LEFT to OLDEST on RIGHT."""
@@ -73,7 +67,6 @@ def build_reversed_weeks(heatmap_series: list[dict[str, Any]], num_weeks: int = 
     while len(rev) < num_weeks:
         rev.append({"days": {}, "steps": 0})
     return rev
-
 
 def build_reversed_8h_stack_canvas(
     bundle: dict[str, Any], width: int = 65, height: int = 4
@@ -121,7 +114,6 @@ def build_reversed_8h_stack_canvas(
             elif r == avg_row:
                 grid[r][c] = "─"
     return ["".join(r) for r in grid], col_dates, peak_v, avg_v
-
 
 def render_ascii_default(bundle: dict[str, Any]) -> str:
     """Render Default 72-Column Stats: 2-col split header (40┆31), then full-width 72-col sections."""
@@ -226,7 +218,6 @@ def render_ascii_default(bundle: dict[str, Any]) -> str:
             lines.append(f"{sn} {int(sa.get('runs', 0)):>3}r {int(sa.get('steps', 0)):>7,}  {fmt_tok(sa.get('tokens', 0)):>9}  {fmt_rate(sa.get('tok_per_day', 0)):>7}  {fmt_rate(sa.get('tok_per_week', 0)):>7}  {float(sa.get('share_pct', 0.0)):>5.1f}%"[:72])
     lines.append("════════════════════════════════════════════════════════════════════════")
     return "\n".join(lines)
-
 
 def render_ascii_quick(bundle: dict[str, Any]) -> str:
     """Render Quick 40-Column Mobile Stats (strictly <= 40 chars per line)."""

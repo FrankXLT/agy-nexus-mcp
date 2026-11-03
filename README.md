@@ -30,7 +30,7 @@ From your phone or browser, you can check on running coding sessions, see what a
 
 ### 2. Built for Reliability on Gemini Web & Mobile
 - **One-Call Bundled Responses**: Google Gemini's web and mobile confirmation cards can hang if an MCP server forces back-to-back tool calls in the same turn. Every tool in `agy-nexus-mcp` bundles the context you need into a single turn.
-- **Fast `< 20 KB` Payloads**: Large files and git diffs are automatically sliced by line range (`src/app.py:100-250`) or paged so responses never time out over mobile or cloud connections.
+- **Autonomous Multi-File Research (`120 KB` Shared Context Pool)**: Reads up to 12 files (`48,000` chars per file, `120,000` chars combined pool) in a single `ask_workspace_readonly` turn so Gemini can explore entire subsystems without nagging mid-task permission prompts, while still supporting targeted line ranges (`src/app.py:100-250`) and paged git diffs.
 - **Voice-Friendly Passphrase Lock**: Protected by a randomized URL path plus an interactive passphrase lock (`unlock_sessions`). It automatically strips punctuation and voice filler (like *"The passphrase is ..."*) so you can unlock it hands-free using Gemini Live or Mobile Voice, and auto-locks after a configurable timeout.
 
 ### 3. Installable Chromium App (PWA) & Visual Usage Dashboard (`/web`)
@@ -62,7 +62,7 @@ python3 ag_bridge.py --self-test
 python3 ag_bridge.py
 ```
 
-*(See [DEPLOYMENT.md](DEPLOYMENT.md) for Docker Compose, reverse proxy, and Cloudflare Tunnel setup.)*
+*(See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for Docker Compose, reverse proxy, and Cloudflare Tunnel setup.)*
 
 ### Step 2: Connect It in Google Gemini
 1. Open **Google Gemini** on the web $\rightarrow$ **Settings** $\rightarrow$ **Connected Apps** $\rightarrow$ **Add custom MCP server**.
@@ -326,13 +326,18 @@ Because `agy-nexus-mcp` requires your interactive passphrase to unlock, a schedu
 
 ---
 
-## Optional: Starter Subagents Prompt
+## Bundled 8-Agent Orthogonal Roster (`agents/`)
 
-If you haven't set up custom subagents in Antigravity yet and want a ready-made set of helper agents (`flash-scout`, `flash-surgeon`, `flash-auditor`, `argon-sentinel`), paste this prompt into an Antigravity chat:
+`agy-nexus-mcp` ships with a ready-to-use set of subagent definitions in [`agents/`](agents/) (`flash-scout`, `argon-architect`, `flash-surgeon`, `argon-surgeon`, `flash-auditor`, `argon-sentinel`, `claude-specialist`, `claude-sentinel`).
 
-> *"Create four global subagent definitions in `~/.gemini/config/agents/`: `flash-scout.md` (read-only codebase search on `flash`), `flash-surgeon.md` (focused code edits and refactors on `flash`), `flash-auditor.md` (test and linter runner on `flash`), and `argon-sentinel.md` (read-only architecture and bug reviewer on `pro`)."*
+To install them into your local Antigravity IDE config:
 
-As soon as Antigravity runs those subagents, their activity and token usage will automatically appear in the `/web` dashboard and ASCII reports.
+```bash
+mkdir -p ~/.gemini/config/agents
+cp agents/*.md ~/.gemini/config/agents/
+```
+
+As soon as Antigravity runs those subagents, their activity and token usage automatically appear in the `/web` dashboard and ASCII reports. See [`AGENTS.md`](AGENTS.md) and [`agents/README.md`](agents/README.md) for full details.
 
 ---
 
@@ -340,28 +345,47 @@ As soon as Antigravity runs those subagents, their activity and token usage will
 
 ```text
 agy-nexus-mcp/
-├── ag_bridge.py                      # Main FastMCP HTTP server (9 tools + /web & PWA routes)
-├── ag_bridge_workflows.py            # Gemini Notebook export, multi-repo drift audit & quarantine staging
-├── ag_bridge_hygiene.py              # File line-range slicer, diff paginator & code modularity helper
-├── ag_bridge_inventory.py            # Skills, Agent Roles & Rules discovery helper
-├── ag_bridge_stats.py                # Usage stats, Mon–Sun heatmap, sub-daily series & ASCII router
-├── ag_bridge_telemetry_scanner.py    # Transcript & SQLite step/token/subagent/workspace scanner
-├── ag_bridge_ascii_default.py        # Tier 1 (72-col Default) & Tier 2 (40-col Quick) ASCII renderers
-├── ag_bridge_ascii_rich.py           # Tier 3 (76-col Rich Widescreen) ASCII renderer
+├── src/
+│   └── agy_nexus/                    # Modular Python package (all modules <= 335 lines)
+│       ├── __init__.py               # Package metadata (v2.3.0)
+│       ├── config.py                 # Secrets loader, SHA-256 voice deadbolt & FastMCP init
+│       ├── hygiene.py                # 120 KB context pool, line-range slicer & diff paginator
+│       ├── inventory.py              # Skills, Agent Roles, Rules & workspace discovery
+│       ├── telemetry_scanner.py      # Transcript & SQLite step/token/subagent/workspace scanner
+│       ├── ascii_default.py          # Tier 1 (72-col Default) & Tier 2 (40-col Quick) ASCII renderers
+│       ├── ascii_rich.py             # Tier 3 (76-col Rich Widescreen) ASCII renderer
+│       ├── stats.py                  # Usage stats, Mon–Sun heatmap, sub-daily series & ASCII router
+│       ├── workflows.py              # Gemini Notebook export, multi-repo drift audit & quarantine staging
+│       ├── sessions.py               # Read-only SQLite session indexer & transcript turn parser
+│       ├── routing.py                # Language Server (agentapi) bridge & quota failover router
+│       ├── search.py                 # Multi-file reader, git grep scanner & FTS5 search
+│       ├── workspace.py              # Workspace path resolver, git diff & background job monitor
+│       ├── tools_session.py          # MCP tools: unlock_sessions, lock_bridge, list/load sessions
+│       ├── tools_workspace.py        # MCP tools: ask_workspace_readonly, inspect_git_diff, manage_background_run
+│       ├── tools_ops.py              # MCP tools: list_models_and_agents, stats & workflow accelerators
+│       ├── handoff.py                # MCP tool: send_handoff_and_resume & git worktree orchestration
+│       ├── middleware.py             # BridgeCompatMiddleware (/web PWA, /healthz & CORS)
+│       └── server.py                 # Starlette/Uvicorn builder, --self-test suite & CLI entrypoint
+├── ag_bridge.py                      # 51-line backward-compatible root entrypoint shim
 ├── web/
-│   ├── index.html                    # Responsive /web Dashboard (4 Themes × 4 Densities + PWA client)
+│   ├── index.html                    # Responsive /web Dashboard shell (4 Themes × 4 Densities)
+│   ├── styles.css                    # Dashboard theme tokens & responsive layout rules
+│   ├── charts.js                     # Mon–Sun Calendar Heatmap & 4h/8h Stacked Area SVG renderers
+│   ├── app.js                        # Dashboard state, live polling & Chromium PWA installer logic
 │   ├── manifest.webmanifest          # Chromium Standalone Web App Manifest
 │   ├── sw.js                         # Root-scoped network-first Service Worker
 │   ├── icon.svg                      # Vector radar & heatmap app icon
 │   ├── icon-192.png                  # 192×192 RGBA PWA icon
 │   └── icon-512.png                  # 512×512 RGBA PWA icon
-├── docs/
-│   └── assets/
-│       ├── dashboard-desktop.png     # Depersonalized desktop dashboard & App popover screenshot
-│       └── dashboard-mobile.png      # Depersonalized mobile dashboard screenshot
+├── agents/                           # Bundled 8-Agent Orthogonal Roster templates (*.md)
 ├── skills/
 │   └── agy-nexus-stats/
 │       └── SKILL.md                  # Bundled skill for rendering 3-tier ASCII & web stats in Gemini
+├── docs/
+│   ├── DEPLOYMENT.md                 # Step-by-step setup, reverse proxy & HTTPS PWA guide
+│   └── assets/
+│       ├── dashboard-desktop.png     # Depersonalized desktop dashboard & App popover screenshot
+│       └── dashboard-mobile.png      # Depersonalized mobile dashboard screenshot
 ├── host_bridge/
 │   └── agy_host_bridge.py            # Lightweight host daemon (:8098) for waking sessions & git inspection
 ├── scripts/
@@ -374,10 +398,13 @@ agy-nexus-mcp/
 │   └── agy-host-bridge.service       # Systemd user service for the host companion daemon
 ├── tests/
 │   └── run_permutation_suite.py      # End-to-end automated test suite
-├── docker-compose.yml                # Docker Compose manifest
-├── DEPLOYMENT.md                     # Step-by-step setup, reverse proxy & HTTPS PWA guide
+├── AGENTS.md                         # AI coding assistant & multi-agent architecture guide
+├── CHANGELOG.md                      # Release history (v1.0.0 – v2.3.0)
+├── CONTRIBUTING.md                   # Contribution & modular hygiene guidelines
+├── SECURITY.md                       # 3-Layer Deadbolt architecture & vulnerability reporting policy
 ├── LICENSE                           # GNU Affero General Public License v3.0 (AGPL-3.0-or-later)
 ├── NOTICE                            # AGPLv3 Section 7 Attribution, Brand & Security-Integrity Terms
+├── docker-compose.yml                # Docker Compose manifest
 ├── pyproject.toml                    # Python package metadata (v2.3.0)
 └── requirements.txt                  # Python dependencies
 ```
