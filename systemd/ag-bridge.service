@@ -1,0 +1,22 @@
+[Unit]
+Description=ag-bridge-mcp - Antigravity to Gemini Handshake FastMCP Bridge
+After=network-online.target agy-incident-bridge.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/ag-bridge-mcp/secrets.env
+ExecStart=%h/.local/share/ag-bridge-mcp/venv/bin/python %h/gitlab/ag-bridge-mcp/ag_bridge.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=%h/gitlab/ag-bridge-mcp
+
+# User Sandboxing & Permissions
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=%h/.gemini/antigravity/brain %h/.gemini/antigravity/sidecar_data
+
+[Install]
+WantedBy=default.target

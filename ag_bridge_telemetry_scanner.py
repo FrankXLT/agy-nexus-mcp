@@ -1,0 +1,281 @@
+#!/usr/bin/env python3
+"""
+agy-nexus-mcp — Wire Telemetry Ledger, Quota Pool Pacing & Transcript Mtime Scanner
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+CACHE_VERSION = 2
+WIRE_TELEMETRY_RING: list[dict[str, Any]] = []
+MAX_WIRE_RING = 200
+
+MODEL_TARGET_ALLOCATION = {
+    "ultra-20x": {
+        "argon_pro": {"label": "Gemini 4 Argon (Pro)", "pool": "20x Google Ultra", "target_pct": 65.0},
+        "flash": {"label": "Gemini 3.8 Flash", "pool": "20x Google Ultra", "target_pct": 25.0},
+        "claude_partner": {"label": "Claude Sonnet/Opus 5.5", "pool": "Partner Pool (Weekly)", "target_pct": 8.0},
+        "gpt_oss": {"label": "GPT-OSS 120B", "pool": "Partner Pool (Failover)", "target_pct": 2.0},
+    },
+    "ultra-5x": {
+        "argon_pro": {"label": "Gemini 4 Argon (Pro)", "pool": "5x Google Pool", "target_pct": 40.0},
+        "flash": {"label": "Gemini 3.8 Flash", "pool": "5x Google Pool", "target_pct": 35.0},
+        "claude_partner": {"label": "Claude Sonnet/Opus 5.5", "pool": "Partner Pool (Weekly)", "target_pct": 20.0},
+        "gpt_oss": {"label": "GPT-OSS 120B", "pool": "Partner Pool (Failover)", "target_pct": 5.0},
+    },
+}
+
+
+def detect_product_name(raw_product: str = "", user_agent: str = "", tool_name: str = "") -> str:
+    s = f"{raw_product or ''} {user_agent or ''}".lower()
+    if any(k in s for k in ("mobile", "android", "iphone", "gsa/")):
+        return "Gemini Mobile"
+    if "web_ui" in tool_name or "web_stats" in tool_name or "mozilla" in s:
+        return "Web Dashboard"
+    if any(k in s for k in ("gemini", "google", "vertex", "http-client")):
+        return "Gemini Web / Cloud MCP"
+    if "antigravity" in s or "agy" in s:
+        return "Antigravity IDE"
+    return raw_product.strip() or "Gemini MCP Client"
+
+
+def record_wire_telemetry(
+    tool_or_event: str | dict[str, Any],
+    payload_or_bg_dir: Any = "",
+    duration_ms: float = 0.0,
+    *,
+    bg_dir: Path | None = None,
+    product: str = "",
+    reported_tokens: int = 0,
+) -> dict[str, Any]:
+    """Record wire payload size, estimated context tokens, product source, and latency for MCP calls."""
+    req_bytes, user_agent = 0, ""
+    if isinstance(tool_or_event, dict):
+        byte_len = int(tool_or_event.get("bytes", 0) or 0)
+        req_bytes = int(tool_or_event.get("req_bytes", 0) or 0)
+        tool_name = str(tool_or_event.get("tool") or tool_or_event.get("rpc") or "mcp")
+        dur = float(tool_or_event.get("ms", duration_ms) or 0.0)
+        product = str(tool_or_event.get("product") or product or "")
+        user_agent = str(tool_or_event.get("user_agent") or "")
+        reported_tokens = int(tool_or_event.get("reported_tokens", reported_tokens) or 0)
+        if isinstance(payload_or_bg_dir, Path) and bg_dir is None:
+            bg_dir = payload_or_bg_dir
+    else:
+        byte_len = len(str(payload_or_bg_dir or "").encode("utf-8"))
+        tool_name, dur = str(tool_or_event or "mcp"), float(duration_ms or 0.0)
+
+    est_tokens = reported_tokens if reported_tokens > 0 else max(1, round((byte_len + req_bytes) / 4.0))
+    entry = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "tool": tool_name,
+        "product": detect_product_name(product, user_agent, tool_name),
+        "bytes": byte_len,
+        "kb": round(byte_len / 1024.0, 2),
+        "est_tokens": est_tokens,
+        "under_20kb_budget": byte_len <= 20480,
+        "duration_ms": round(dur, 1),
+    }
+    WIRE_TELEMETRY_RING.append(entry)
+    if len(WIRE_TELEMETRY_RING) > MAX_WIRE_RING:
+        del WIRE_TELEMETRY_RING[: len(WIRE_TELEMETRY_RING) - MAX_WIRE_RING]
+    target_bg = bg_dir or (Path(os.getenv("AGY_DATA_DIR", str(Path.home() / ".gemini/antigravity"))).expanduser() / "sidecar_data/ag-bridge-bg")
+    try:
+        target_bg.mkdir(parents=True, exist_ok=True)
+        with open(target_bg / "mcp_telemetry_ledger.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception:
+        pass
+    return entry
+
+
+def get_wire_telemetry_summary(bg_dir_or_limit: Any = None, limit: int = 25) -> dict[str, Any]:
+    """Return summary metrics, product breakdown, and recent entries from the persistent wire telemetry ledger."""
+    lim = int(bg_dir_or_limit) if isinstance(bg_dir_or_limit, int) else int(limit or 25)
+    bg_dir = bg_dir_or_limit if isinstance(bg_dir_or_limit, Path) else (Path(os.getenv("AGY_DATA_DIR", str(Path.home() / ".gemini/antigravity"))).expanduser() / "sidecar_data/ag-bridge-bg")
+    records = list(WIRE_TELEMETRY_RING)
+    ledger_path = bg_dir / "mcp_telemetry_ledger.jsonl"
+    if not records and ledger_path.exists():
+        try:
+            lines = ledger_path.read_text(encoding="utf-8", errors="replace").splitlines()[-MAX_WIRE_RING:]
+            records = [json.loads(line) for line in lines if line.strip().startswith("{")]
+        except Exception:
+            records = []
+    if not records:
+        return {"total_recorded_calls": 0, "avg_kb": 0.0, "max_kb": 0.0, "total_mcp_tokens": 0, "budget_compliance_pct": 100.0, "by_product": {}, "recent_calls": []}
+    recent = list(reversed(records[-max(1, min(lim, 100)) :]))
+    kb_vals = [float(x.get("kb", 0.0)) for x in records]
+    compliant = sum(1 for x in records if x.get("under_20kb_budget", True))
+    tot_tokens = sum(int(x.get("est_tokens", 0) or round(int(x.get("bytes", 0)) / 4.0)) for x in records)
+    by_prod: dict[str, dict[str, int]] = {}
+    for x in records:
+        rec = by_prod.setdefault(str(x.get("product") or "Gemini MCP Client"), {"calls": 0, "tokens": 0, "bytes": 0})
+        rec["calls"] += 1
+        rec["tokens"] += int(x.get("est_tokens", 0) or round(int(x.get("bytes", 0)) / 4.0))
+        rec["bytes"] += int(x.get("bytes", 0))
+    return {"total_recorded_calls": len(records), "avg_kb": round(sum(kb_vals) / len(kb_vals), 2), "max_kb": round(max(kb_vals), 2), "total_mcp_tokens": tot_tokens, "budget_compliance_pct": round((compliant / len(records)) * 100.0, 1), "by_product": by_prod, "recent_calls": recent}
+
+
+def extract_pending_approval(transcript_or_brain_dir: Path, conv_id: str = "") -> dict[str, Any] | None:
+    """Inspect transcript.jsonl tail to extract exact tool call details when waiting/running."""
+    t_path = transcript_or_brain_dir / conv_id / ".system_generated" / "logs" / "transcript.jsonl" if conv_id else transcript_or_brain_dir
+    if not t_path.exists():
+        return None
+    try:
+        fsize = t_path.stat().st_size
+        with open(t_path, "rb") as f:
+            if fsize > 49152:
+                f.seek(fsize - 49152)
+            lines = f.read().decode("utf-8", errors="replace").splitlines()
+        for raw in reversed(lines[-20:]):
+            if not raw.strip().startswith("{"):
+                continue
+            obj = json.loads(raw)
+            tcs = obj.get("tool_calls")
+            if isinstance(tcs, list) and tcs and isinstance(tcs[-1], dict):
+                tc = tcs[-1]
+                args = tc.get("arguments") or tc.get("args") or {}
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except Exception:
+                        args = {"raw": args[:160]}
+                detail = str(args.get("CommandLine") or args.get("TargetFile") or args.get("AbsolutePath") or args.get("Url") or args.get("toolSummary") or "")[:180] if isinstance(args, dict) else ""
+                return {"step_index": obj.get("step_index"), "step_status": obj.get("status", "UNKNOWN"), "tool_name": str(tc.get("name") or tc.get("tool_name") or "tool_call"), "tool_action": str(args.get("toolAction") or args.get("toolSummary") or "") if isinstance(args, dict) else "", "detail": detail, "created_at": obj.get("created_at", "")}
+    except Exception:
+        return None
+    return None
+
+
+def get_live_quota_and_pool_status(data_or_config_dir: Path, config_dir: Path | None = None) -> dict[str, Any]:
+    """Read live Dual-Pool Quota Pacing (`ultra-20x` vs `ultra-5x`), 429 cooldowns, and Partner Pool weekly pace."""
+    agy_config_dir = config_dir if config_dir is not None else data_or_config_dir
+    q_file = Path(os.getenv("QUOTA_STATE_FILE", str(Path.home() / ".cache/antigravity/quota_state.json"))).expanduser()
+    p_file = agy_config_dir / ".active-tier-profile"
+    active_profile = "ultra-20x"
+    if p_file.exists():
+        try:
+            active_profile = p_file.read_text(encoding="utf-8").strip() or "ultra-20x"
+        except Exception:
+            pass
+    state_data: dict[str, Any] = {"pools": {"google": {}, "claude": {}, "gpt_oss": {}}, "events": []}
+    if q_file.exists():
+        try:
+            state_data = json.loads(q_file.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    now_epoch, pools_out = int(time.time()), {}
+    for pk in ("google", "claude", "gpt_oss"):
+        pi = (state_data.get("pools") or {}).get(pk) or {}
+        rem = max(0, int(pi.get("cooldown_until", 0) or 0) - now_epoch)
+        pools_out[pk] = {"status": "COOLDOWN_429" if rem > 0 else "HEALTHY", "cooldown_remaining_seconds": rem, "total_429_count": int(pi.get("count_429", 0) or 0), "last_reason": str(pi.get("last_reason", ""))}
+    day_idx = datetime.now(timezone.utc).weekday() + 1
+    return {"active_tier_profile": active_profile, "pools": pools_out, "partner_weekly_pacing": {"day_of_week_index": day_idx, "daily_target_pct": 14.28, "recommended_cumulative_ceiling_pct": round(min(100.0, day_idx * 14.28), 1)}, "target_model_allocation": MODEL_TARGET_ALLOCATION.get(active_profile, MODEL_TARGET_ALLOCATION["ultra-20x"]), "recent_quota_events": (state_data.get("events") or [])[-8:]}
+
+
+def classify_model_key(raw_model: str, agent_name: str = "") -> str:
+    s = f"{raw_model or ''} {agent_name or ''}".lower()
+    if any(k in s for k in ("claude", "sonnet", "opus")):
+        return "claude_partner"
+    if "gpt" in s or "120b" in s:
+        return "gpt_oss"
+    return "flash" if ("flash" in s or "m322" in s) else "argon_pro"
+
+
+def normalize_workspace_name(ws_raw: str) -> str:
+    parts = [p for p in (ws_raw or "").rstrip("/").split("/") if p and p != ".git"]
+    if "worktrees" in parts:
+        idx = parts.index("worktrees")
+        ws_name = parts[idx + 1] if (idx > 0 and parts[idx - 1] == "antigravity" and (idx + 1) < len(parts)) else (parts[idx - 1] if idx > 0 else parts[-1])
+    else:
+        ws_name = parts[-1] if parts else "unassigned"
+    return re.sub(r"-wt-\d+$", "", ws_name)
+
+
+def to_4h_slot(c_str: str, fallback_mtime: float) -> tuple[str, str]:
+    if len(c_str) >= 13 and c_str[4] == "-" and c_str[10] in ("T", " "):
+        day_s = c_str[:10]
+        try:
+            return day_s, f"{day_s}T{(int(c_str[11:13]) // 4) * 4:02d}"
+        except Exception:
+            return day_s, f"{day_s}T12"
+    dt = datetime.fromtimestamp(fallback_mtime, tz=timezone.utc)
+    return dt.strftime("%Y-%m-%d"), f"{dt.strftime('%Y-%m-%d')}T{(dt.hour // 4) * 4:02d}"
+
+
+def scan_transcript_stats(brain_dir: Path, bg_dir: Path) -> dict[str, Any]:
+    cache_file = bg_dir / "nexus_stats_cache.json"
+    cache: dict[str, Any] = {"cache_version": CACHE_VERSION, "conversations": {}}
+    if cache_file.exists():
+        try:
+            loaded = json.loads(cache_file.read_text(encoding="utf-8"))
+            if loaded.get("cache_version") == CACHE_VERSION:
+                cache = loaded
+        except Exception:
+            pass
+    conv_cache, updated = cache.setdefault("conversations", {}), False
+    if brain_dir.exists():
+        for entry in brain_dir.iterdir():
+            if not entry.is_dir() or entry.name.startswith("."):
+                continue
+            t_path = entry / ".system_generated" / "logs" / "transcript.jsonl"
+            if not t_path.exists():
+                continue
+            try:
+                st = t_path.stat()
+                mtime, fsize = round(st.st_mtime, 2), st.st_size
+            except Exception:
+                continue
+            cached = conv_cache.get(entry.name)
+            if cached and cached.get("mtime") == mtime and cached.get("size") == fsize:
+                continue
+            d_steps, d_tools, d_tokens, slot_steps = {}, {}, {}, {}
+            m_counts = {"argon_pro": 0, "flash": 0, "claude_partner": 0, "gpt_oss": 0}
+            m_tokens = {"argon_pro": 0, "flash": 0, "claude_partner": 0, "gpt_oss": 0}
+            subs_cnt = 0
+            try:
+                with open(t_path, "r", encoding="utf-8", errors="replace") as f:
+                    for line in f:
+                        if not line.startswith("{"):
+                            continue
+                        obj = json.loads(line)
+                        day_s, slot_s = to_4h_slot(str(obj.get("created_at") or ""), mtime)
+                        d_steps[day_s] = d_steps.get(day_s, 0) + 1
+                        slot_steps[slot_s] = slot_steps.get(slot_s, 0) + 1
+                        step_chars = len(str(obj.get("content") or "")) + len(str(obj.get("thinking") or ""))
+                        tcs = obj.get("tool_calls")
+                        if isinstance(tcs, list) and tcs:
+                            d_tools[day_s] = d_tools.get(day_s, 0) + len(tcs)
+                            for tc in tcs:
+                                if isinstance(tc, dict):
+                                    step_chars += len(str(tc.get("arguments") or tc.get("args") or ""))
+                                    if tc.get("name") == "invoke_subagent":
+                                        args = tc.get("arguments") or tc.get("args") or {}
+                                        for s in (args.get("Subagents") if isinstance(args, dict) else []) or []:
+                                            if isinstance(s, dict):
+                                                subs_cnt += 1
+                                                mk = classify_model_key(str(s.get("Model") or ""), str(s.get("TypeName") or s.get("Role") or ""))
+                                                m_counts[mk] = m_counts.get(mk, 0) + 1
+                        est_tok = max(12, round(step_chars / 4.0))
+                        d_tokens[day_s] = d_tokens.get(day_s, 0) + est_tok
+                        if obj.get("type") == "PLANNER_RESPONSE":
+                            mk = classify_model_key(str(obj.get("model") or ""), "")
+                            m_counts[mk] = m_counts.get(mk, 0) + 1
+                            m_tokens[mk] = m_tokens.get(mk, 0) + est_tok
+                conv_cache[entry.name] = {"mtime": mtime, "size": fsize, "day_steps": d_steps, "day_tools": d_tools, "day_tokens": d_tokens, "slot_steps": slot_steps, "model_counts": m_counts, "model_tokens": m_tokens, "subagents_spawned": subs_cnt}
+                updated = True
+            except Exception:
+                continue
+    if updated:
+        try:
+            bg_dir.mkdir(parents=True, exist_ok=True)
+            cache_file.write_text(json.dumps(cache), encoding="utf-8")
+        except Exception:
+            pass
+    return conv_cache

@@ -1,0 +1,48 @@
+services:
+  ag-bridge-mcp:
+    image: python:3.12-slim
+    container_name: ag-bridge-mcp
+    restart: unless-stopped
+    init: true
+    mem_limit: 512m
+    ports:
+      - "${BIND_PORT:-8765}:8765"
+    environment:
+      - HOME=${HOME}
+      - PYTHONUNBUFFERED=1
+      - AG_BRIDGE_ENV_FILE=/config/secrets.env
+      - AGY_DATA_DIR=${HOME}/.gemini/antigravity
+      - AGY_BRAIN_DIR=${HOME}/.gemini/antigravity/brain
+      - AGY_DB_FILE=${HOME}/.gemini/antigravity/conversation_summaries.db
+      - AGY_PRESENCE_DIR=${HOME}/.gemini/antigravity/presence
+      - AGY_CONFIG_DIR=${HOME}/.gemini/config
+      - AGY_GITLAB_DIR=${HOME}/gitlab
+      - AGY_BG_DIR=${HOME}/.gemini/antigravity/sidecar_data/ag-bridge-bg
+      - AGY_HOST_BRIDGE_URL=${AGY_HOST_BRIDGE_URL:-http://host.docker.internal:8098/agentapi}
+      - BIND_HOST=0.0.0.0
+      - BIND_PORT=8765
+      - TTL_SECONDS=${TTL_SECONDS:-7200}
+      - MAX_FILE_CHARS=${MAX_FILE_CHARS:-15000}
+      - MAX_TOTAL_FILE_CHARS=${MAX_TOTAL_FILE_CHARS:-24000}
+      - MAX_FILES_PER_CALL=${MAX_FILES_PER_CALL:-6}
+      - MAX_DIFF_CHARS=${MAX_DIFF_CHARS:-15000}
+      - MAX_TRANSCRIPT_TURNS=${MAX_TRANSCRIPT_TURNS:-10}
+      - ENFORCE_MODULAR_HYGIENE=${ENFORCE_MODULAR_HYGIENE:-true}
+      - TARGET_FILE_LINES=${TARGET_FILE_LINES:-300}
+      - HARD_MAX_FILE_LINES=${HARD_MAX_FILE_LINES:-400}
+    volumes:
+      - .:/app:ro
+      - ${HOME}/.local/share/ag-bridge-mcp/venv:/venv:rw
+      - ${HOME}/.config/ag-bridge-mcp:/config:ro
+      - ${HOME}/.gemini/antigravity:${HOME}/.gemini/antigravity:rw
+      - ${HOME}/.gemini/config:${HOME}/.gemini/config:ro
+      - ${HOME}/gitlab:${HOME}/gitlab:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        apt-get update && apt-get install -y --no-install-recommends git grep >/dev/null 2>&1 || true
+        if [ ! -x /venv/bin/python ]; then
+          python3 -m venv /venv
+          /venv/bin/pip install --no-cache-dir -r /app/requirements.txt
+        fi
+        exec /venv/bin/python /app/ag_bridge.py

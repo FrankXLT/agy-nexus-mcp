@@ -1,0 +1,15 @@
+[Unit]
+Description=agy-host-bridge - Antigravity Host Companion Bridge (agentapi & git-inspect)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/gitlab/ag-bridge-mcp/host_bridge/agy_host_bridge.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=%h/gitlab/ag-bridge-mcp
+
+[Install]
+WantedBy=default.target
