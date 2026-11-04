@@ -3,6 +3,7 @@
 from __future__ import annotations
 import json
 from pathlib import Path
+import re
 import sqlite3
 import time
 from typing import Any
@@ -32,6 +33,7 @@ from agy_nexus.hygiene import (
     MODULAR_HYGIENE_STANDARDS,
     _compact_markdown,
 )
+from agy_nexus.media import build_visual_artifact_content, discover_visual_artifacts
 from agy_nexus.routing import _resolve_session_identifier
 from agy_nexus.search import _search_workspaces_and_history
 from agy_nexus.sessions import _list_saved_sessions_internal, _load_projects_map
@@ -131,8 +133,9 @@ def load_session_into_gemini(
     session_identifier: str,
     spoken_passphrase: str = "",
     include_files: str = "",
-) -> str:
-    """Load complete conversation context in a single call (live execution_status, git_summary with untracked files, Antigravity's latest_assistant_response, task.md, implementation_plan.md, walkthrough.md, and recent transcript turns).
+    include_visual_artifact: str = "",
+) -> Any:
+    """Load complete conversation context in a single call (live execution_status, git_summary, visual_artifacts with 30-min signed /web/media/ links, task.md, implementation_plan.md, walkthrough.md, and recent transcript turns). Pass include_visual_artifact='probe' or an image filename to return a multimodal MCP ImageContent block.
     IMPORTANT: Because execution_status and git_summary are already included in this response, DO NOT chain manage_background_run or inspect_git_diff after calling this tool—reply directly to the user!
     """
     if not is_unlocked(spoken_passphrase):
@@ -273,21 +276,25 @@ def load_session_into_gemini(
         if has_inc
         else {}
     )
+    visual_artifacts = discover_visual_artifacts(conv_id, workspace, limit=15)
     payload: dict[str, Any] = {
         "ok": True, "status": "LOADED",
         "conversation_id": conv_id, "project_id": project_id,
         "project_name": project_name, "workspace_path": workspace,
         "assistant_guidance": (
-            "Session context loaded (execution_status, git_summary, task_content, implementation_plan, walkthrough, and recent turns). "
+            "Session context loaded (execution_status, git_summary, visual_artifacts, task_content, implementation_plan, walkthrough, and recent turns). "
             "If you need to inspect any source files, skills, or scripts to complete your analysis or build a handoff, "
             "call ask_workspace_readonly now (batching comma-separated paths in file_subpath='f1,f2,f3')—do NOT stop mid-task to ask the user for permission to read files."
         ),
         "project_hygiene_standards": MODULAR_HYGIENE_STANDARDS, "execution_status": db_status_info,
-        "git_summary": git_summary, "latest_assistant_response": latest_assistant_response,
+        "git_summary": git_summary, "visual_artifacts": visual_artifacts,
+        "latest_assistant_response": latest_assistant_response,
         "task_content": task_content, "implementation_plan": plan_content,
         "walkthrough": walk_content, "scratch_files": scratch_files,
         "recent_transcript_turns": recent_turns,
     }
     if included_files:
         payload["included_files"] = included_files
+    if include_visual_artifact.strip():
+        return build_visual_artifact_content(conv_id, workspace, include_visual_artifact, payload)
     return _compact_json(payload)

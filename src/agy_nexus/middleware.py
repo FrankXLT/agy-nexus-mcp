@@ -19,6 +19,7 @@ from agy_nexus.config import (
     AGY_DB_FILE,
     verify_passphrase,
 )
+from agy_nexus.media import verify_and_resolve_media
 from agy_nexus.stats import build_nexus_stats_bundle, record_wire_telemetry
 
 class BridgeCompatMiddleware:
@@ -78,6 +79,29 @@ class BridgeCompatMiddleware:
 
         # 1b. Serve Chromium PWA static assets (/web/manifest.webmanifest, /web/sw.js, /web/icon-*.png, /web/icon.svg)
         if method == "GET" and "/web/" in req_path:
+            if "/web/media/" in req_path:
+                target_file, mime_bytes, status_code, msg_text = verify_and_resolve_media(req_path)
+                if status_code == 200 and target_file is not None:
+                    media_bytes = target_file.read_bytes()
+                    await send({
+                        "type": "http.response.start",
+                        "status": 200,
+                        "headers": [
+                            (b"content-type", mime_bytes),
+                            (b"content-length", str(len(media_bytes)).encode("ascii")),
+                            (b"cache-control", b"private, max-age=1800"),
+                        ],
+                    })
+                    await send({"type": "http.response.body", "body": media_bytes})
+                    return
+                err_b = json.dumps({"ok": False, "error": msg_text}).encode("utf-8")
+                await send({
+                    "type": "http.response.start",
+                    "status": status_code,
+                    "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(err_b)).encode("ascii"))],
+                })
+                await send({"type": "http.response.body", "body": err_b})
+                return
             asset_name = req_path.rsplit("/web/", 1)[-1]
             if asset_name in self.pwa_assets:
                 asset_path = self.web_dir / asset_name

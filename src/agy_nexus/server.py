@@ -32,6 +32,12 @@ from agy_nexus.config import (
     verify_passphrase,
 )
 import agy_nexus.handoff  # noqa: F401
+from agy_nexus.media import (
+    build_visual_artifact_content,
+    generate_tiny_probe_png,
+    sign_media_url,
+    verify_and_resolve_media,
+)
 from agy_nexus.middleware import BridgeCompatMiddleware
 from agy_nexus.search import _search_workspaces_and_history
 from agy_nexus.sessions import _list_saved_sessions_internal, _load_projects_map
@@ -108,6 +114,19 @@ def run_self_test() -> int:
         nb_res2 = export_notebook_bundle(AGY_BRAIN_DIR, AGY_DB_FILE, Path(tmp_bg), pmap, limit=3)
         assert nb_res2["unchanged"] == nb_res1["total_exported"], "Expected 100% SHA-256 deduplication on second Notebook export pass"
     print(f"  [+] Multi-repo drift audit ({drift_res['scanned_repositories_count']} repos) & Notebook SHA-256 deduplication ({nb_res1['total_exported']} bundles): PASS")
+
+    # 7. Ephemeral HMAC /web/media/ Signing, Path Sandboxing & MCP ImageContent Probe
+    cfg.PASS_HASH = expected_hash
+    probe_png = generate_tiny_probe_png(16, 16)
+    assert probe_png.startswith(b"\x89PNG\r\n\x1a\n") and len(probe_png) < 200
+    probe_blocks = build_visual_artifact_content("", "", "probe", {"ok": True})
+    assert len(probe_blocks) == 2 and getattr(probe_blocks[1], "type", "") == "image"
+    signed_expired = sign_media_url("repo:antigravity-config", "docs/assets/dashboard-desktop.png", exp_ts=int(time.time()) - 10)
+    assert verify_and_resolve_media(signed_expired)[2] == 403, "Expected 403 on expired media link"
+    signed_traversal = sign_media_url("repo:antigravity-config", "../../etc/passwd.png")
+    assert verify_and_resolve_media(signed_traversal)[2] == 403, "Expected 403 on path traversal media link"
+    cfg.PASS_HASH = orig_hash
+    print(f"  [+] Visual Artifact HMAC /web/media/ signing, sandbox & MCP ImageContent probe ({len(probe_png)}B PNG): PASS")
 
     print("[✓] All agy-nexus-mcp v2.3 self-tests completed successfully!")
     return 0

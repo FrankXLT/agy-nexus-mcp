@@ -54,6 +54,7 @@ from agy_nexus.stats import (
     get_live_quota_and_pool_status,
     get_wire_telemetry_summary,
 )
+from agy_nexus.media import build_visual_artifact_content
 from agy_nexus.workflows import export_notebook_bundle
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def manage_background_run(
@@ -65,13 +66,18 @@ def manage_background_run(
     client_product: str = "",
     client_tokens_reported: int = 0,
     spoken_passphrase: str = "",
-) -> str:
-    """Monitor background jobs, inspect live transcript progress, review session status, export session plans/walkthroughs for Gemini Notebook (action='export_notebook'), or retrieve live Dual-Pool Quota Pacing, Activity Heatmaps, and Wire Telemetry (action='stats' or action='telemetry', period='last_90d'|'current_month'|'last_month'|'last_year', style='default'|'quick'|'rich'). Optionally pass client_product ('Gemini Mobile', 'Gemini Web', 'Antigravity IDE') and client_tokens_reported to log client telemetry."""
+) -> Any:
+    """Monitor background jobs, inspect live transcript progress, review session status, export session plans/walkthroughs for Gemini Notebook (action='export_notebook'), test MCP ImageContent vision delivery (action='test_image', job_id='probe' or filename), or retrieve live Dual-Pool Quota Pacing, Activity Heatmaps, and Wire Telemetry (action='stats' or action='telemetry', period='last_90d'|'current_month'|'last_month'|'last_year', style='default'|'quick'|'rich'). Optionally pass client_product ('Gemini Mobile', 'Gemini Web', 'Antigravity IDE') and client_tokens_reported to log client telemetry."""
     action_clean = action.strip().lower()
     is_stats_action = action_clean in ("stats", "dashboard", "quota", "heatmap", "telemetry", "wire", "logs")
     if not is_unlocked(spoken_passphrase):
         if not (ALLOW_LOCKED_STATS and is_stats_action):
             return LOCKED_RESPONSE
+    if action_clean in ("test_image", "probe_image"):
+        sel_conv = SESSION_STATE.get("selected_session", "")
+        sel_ws = SESSION_STATE.get("selected_workspace", str(AGY_GITLAB_DIR))
+        spec = job_id.strip() or "probe"
+        return build_visual_artifact_content(sel_conv, sel_ws, spec, {"ok": True, "action": "test_image"})
     if action_clean in ("export_notebook", "notebook", "sync_notebook"):
         export_res = export_notebook_bundle(
             brain_dir=AGY_BRAIN_DIR,
