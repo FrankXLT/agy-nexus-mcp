@@ -19,10 +19,10 @@ from agy_nexus.sessions import _list_saved_sessions_internal, _load_projects_map
 from agy_nexus.workspace import _resolve_workspace_str
 
 def _resolve_session_identifier(ident_raw: str) -> str:
-    """Resolve index ('1', '#1'), conversation UUID/prefix, title keyword, project name, or workspace URI to a conversation_id."""
+    """Resolve index ('1', '#1', 'latest'), conversation UUID/prefix, title keyword, project name, or workspace URI to a conversation_id."""
     ident = (ident_raw or "").strip()
-    if not ident:
-        return ""
+    if not ident or ident.lower() in ("latest", "current", "active", "recent", "top", "last"):
+        ident = "1"
     ident_num = re.sub(r"^(?:session|index|item|#)\s*", "", ident, flags=re.I).strip()
     conv_id = SESSION_STATE["session_index_map"].get(ident_num) or SESSION_STATE["session_index_map"].get(ident, "")
     if conv_id and (AGY_BRAIN_DIR / conv_id).is_dir():

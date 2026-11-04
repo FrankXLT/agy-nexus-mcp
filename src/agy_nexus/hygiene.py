@@ -136,7 +136,7 @@ def slice_file_content(
         next_en = min(total_lines, next_st + 499)
         result["next_range_hint"] = (
             f"Showing lines {st}-{actual_end} of {total_lines}. "
-            f"If you need the rest, call ask_workspace_readonly(file_subpath='{clean_path}:{next_st}-{next_en}') immediately in this turn—do NOT ask the user for permission."
+            f"Pass start_line={next_st}, end_line={next_en} (or file_subpath='{clean_path}:{next_st}-{next_en}') in a subsequent turn if needed (do NOT call a second tool in this turn)."
         )
     if ENFORCE_MODULAR_HYGIENE and total_lines > HARD_MAX_FILE_LINES:
         result["modularity_advisory"] = (

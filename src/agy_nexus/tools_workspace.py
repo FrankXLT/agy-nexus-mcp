@@ -42,15 +42,6 @@ def ask_workspace_readonly(
         ws = AGY_GITLAB_DIR
     conv_id = SESSION_STATE.get("selected_session", "")
     session_dir = (AGY_BRAIN_DIR / conv_id) if conv_id else None
-    file_result = _resolve_and_read_files(
-        file_subpath,
-        ws=ws,
-        session_dir=session_dir,
-        max_chars_per_file=MAX_FILE_CHARS,
-        max_total_chars=MAX_TOTAL_FILE_CHARS,
-        start_line=start_line,
-        end_line=end_line,
-    )
     effective_query = search_query.strip()
     if not effective_query and not file_subpath.strip() and question.strip():
         # Extract meaningful keywords only when no explicit file_subpath was requested
@@ -67,13 +58,38 @@ def ask_workspace_readonly(
             "historical_session_matches": [],
         }
     )
+    effective_subpath = file_subpath.strip()
+    if not effective_subpath and search_bundle["code_search_matches"]:
+        auto_specs: list[str] = []
+        seen_files: set[str] = set()
+        for m_str in search_bundle["code_search_matches"]:
+            m_hit = re.match(r"^(\[[^\]]+\]\s*([^:]+)):(\d+):", str(m_str))
+            if m_hit:
+                file_key = m_hit.group(1).strip()
+                if file_key not in seen_files:
+                    seen_files.add(file_key)
+                    auto_specs.append(f"{file_key}:{m_hit.group(3)}")
+                    if len(auto_specs) >= 4:
+                        break
+        if auto_specs:
+            effective_subpath = ",".join(auto_specs)
+    file_result = _resolve_and_read_files(
+        effective_subpath,
+        ws=ws,
+        session_dir=session_dir,
+        max_chars_per_file=MAX_FILE_CHARS,
+        max_total_chars=MAX_TOTAL_FILE_CHARS,
+        start_line=start_line,
+        end_line=end_line,
+    )
     out_ws: dict[str, Any] = {
         "ok": True,
         "question": question,
         "workspace": str(ws),
         "assistant_guidance": (
-            "Workspace query complete. If you identified additional files to inspect (or if a file has truncated=True and you need its remaining lines), "
-            "call ask_workspace_readonly again immediately in this turn (batching comma-separated file_subpath='f1,f2,f3' or inline line ranges 'file.py:250-500')—NEVER stop mid-task to ask the user whether you should read another file or section."
+            "STOP AND REPLY TO USER NOW (CRITICAL GEMINI WEB PLATFORM RULE: Google Gemini Web freezes on 'Trying to connect...' "
+            "if you invoke two MCP tools in the same turn. NEVER call a second MCP tool in this turn—selected_session_status, "
+            "file_details, and code_search_matches are ALL included below)."
         ),
         "selected_session_status": _get_selected_session_quick_status(),
         "file_details": file_result,
@@ -196,8 +212,9 @@ def inspect_git_diff(
                         "ok": True,
                         "workspace": str(ws_res),
                         "assistant_guidance": (
-                            "Git diff inspection complete. If you need to inspect any modified or untracked files in full, "
-                            "call ask_workspace_readonly immediately (batching comma-separated file_subpath) before replying."
+                            "STOP AND REPLY TO USER NOW (CRITICAL GEMINI WEB PLATFORM RULE: Google Gemini Web freezes on 'Trying to connect...' "
+                            "if you invoke two MCP tools in the same turn. NEVER call a second MCP tool in this turn—status_short, diff_stat, "
+                            "untracked_files, and diff are ALL included below)."
                         ),
                         "selected_session_status": _get_selected_session_quick_status(),
                         "configured_mcp_servers": configured_mcps,
@@ -233,8 +250,8 @@ def inspect_git_diff(
             "ok": True,
             "workspace": host_res.get("workspace", ws_str),
             "assistant_guidance": (
-                "Git diff inspection complete. If you need to inspect any modified or untracked files in full, "
-                "call ask_workspace_readonly immediately (batching comma-separated file_subpath) before replying."
+                "STOP AND REPLY TO USER NOW (CRITICAL GEMINI WEB PLATFORM RULE: Google Gemini Web freezes on 'Trying to connect...' "
+                "if you invoke two MCP tools in the same turn. NEVER call a second MCP tool in this turn)."
             ),
             "selected_session_status": _get_selected_session_quick_status(),
             "configured_mcp_servers": configured_mcps,

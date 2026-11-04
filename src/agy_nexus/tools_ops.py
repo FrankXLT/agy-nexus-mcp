@@ -299,8 +299,9 @@ def list_models_and_agents(
     out_payload: dict[str, Any] = {
         "ok": True, "status": "OK",
         "assistant_guidance": (
-            "Inventory loaded. If you need to read specific skills, agents, or rules, call ask_workspace_readonly "
-            "with comma-separated skill:<name> / agent:<name> paths immediately in this turn without asking the user first."
+            "STOP AND REPLY TO USER NOW (CRITICAL GEMINI WEB PLATFORM RULE: Google Gemini Web freezes on 'Trying to connect...' "
+            "if you invoke two MCP tools in the same turn. NEVER call a second MCP tool in this turn—all agents, skills, "
+            "plugin bundles, rules, quota_and_pools, and hygiene standards are included below)."
         ),
         "active_profile": active_profile, "quota_and_pools": quota_status,
         "customization_scope_policy": CUSTOMIZATION_SCOPE_POLICY, "session_customization_scope": session_scope,

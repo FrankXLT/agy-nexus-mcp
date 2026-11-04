@@ -76,9 +76,9 @@ def unlock_sessions(spoken_passphrase: str, search_query: str = "", style: str =
         "ok": True, "locked": False,
         "message": "Deadbolt unlocked. Session list and live telemetry stats retrieved successfully.",
         "assistant_guidance": (
-            "Deadbolt unlocked. If the user asked for stats, display ascii_mobile_report inside a ```text block now. "
-            "If the user asked to inspect a session or codebase, proceed directly to load_session_into_gemini or ask_workspace_readonly "
-            "(batching needed files via comma-separated file_subpath) without asking for confirmation."
+            "STOP AND REPLY TO USER NOW (CRITICAL GEMINI WEB PLATFORM RULE: Google Gemini Web freezes on 'Trying to connect...' "
+            "if you invoke two MCP tools in the same turn. NEVER call a second MCP tool in this turn). "
+            "If the user asked for stats, display ascii_mobile_report inside a ```text block now; otherwise present the active sessions."
         ),
         "ttl_seconds": TTL_SECONDS, "selected_session": sel_id,
         "selected_session_title": SESSION_STATE["session_title_map"].get(sel_id, ""),
@@ -110,7 +110,7 @@ def list_saved_sessions(
     include_subagents: bool = False,
     spoken_passphrase: str = "",
 ) -> str:
-    """List recent Antigravity conversations with execution status, project, workspace, step count, and task previews."""
+    """List recent Antigravity conversations with execution status, project, workspace, step count, and task previews. (Tip: To inspect a specific session directly in 1 call, use load_session_into_gemini with session_identifier='1'|'latest'|<keyword> instead of calling list_saved_sessions first.)"""
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
     sessions = _list_saved_sessions_internal(
@@ -119,15 +119,41 @@ def list_saved_sessions(
         include_subagents=include_subagents,
     )
     projects_map = _load_projects_map()
-    return _compact_json({
+    top_detail: dict[str, Any] = {}
+    if sessions:
+        top_s = sessions[0]
+        top_cid = str(top_s.get("conversation_id") or "")
+        if top_cid and not SESSION_STATE.get("selected_session"):
+            SESSION_STATE["selected_session"] = top_cid
+            SESSION_STATE["selected_workspace"] = str(top_s.get("workspace_path") or "")
+            _save_session_state()
+        s_dir = AGY_BRAIN_DIR / top_cid if top_cid else None
+        if s_dir and s_dir.is_dir():
+            t_md = (s_dir / "task.md").read_text(encoding="utf-8", errors="replace") if (s_dir / "task.md").is_file() else ""
+            w_md = (s_dir / "walkthrough.md").read_text(encoding="utf-8", errors="replace") if (s_dir / "walkthrough.md").is_file() else ""
+            top_detail = {
+                "conversation_id": top_cid,
+                "title": top_s.get("title", ""),
+                "status": top_s.get("status", ""),
+                "workspace_path": top_s.get("workspace_path", ""),
+                "task_content": _compact_markdown(t_md, max_chars=2000) if t_md else "",
+                "walkthrough_preview": _compact_markdown(w_md, max_chars=1200) if w_md else "",
+            }
+    out_obj: dict[str, Any] = {
         "ok": True,
         "assistant_guidance": (
-            "Sessions listed. If the user asked to inspect a specific session or codebase, call load_session_into_gemini "
-            "or ask_workspace_readonly directly to gather all needed files before replying."
+            "STOP AND REPLY TO USER NOW (CRITICAL GEMINI WEB PLATFORM RULE: Google Gemini Web freezes on 'Trying to connect...' "
+            "if you invoke two MCP tools in the same turn. NEVER call load_session_into_gemini or ask_workspace_readonly in this same turn—present the sessions, task previews, and top_session_detail below to the user immediately)."
         ),
         "count": len(sessions), "available_projects": list(projects_map.values()),
+        "top_session_detail": top_detail,
         "sessions": sessions,
-    })
+    }
+    out_s = _compact_json(out_obj)
+    if len(out_s.encode("utf-8")) > 19000:
+        out_obj.pop("top_session_detail", None)
+        out_s = _compact_json(out_obj)
+    return out_s
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def load_session_into_gemini(
     session_identifier: str,
@@ -268,8 +294,9 @@ def load_session_into_gemini(
         "conversation_id": conv_id, "project_id": project_id,
         "project_name": project_name, "workspace_path": workspace,
         "assistant_guidance": (
-            "Session context loaded in full (execution_status, git_summary, visual_artifacts, task_content, implementation_plan, walkthrough, and recent turns). "
-            "If this answers the user's question (or if include_files was already loaded), STOP AND REPLY TO THE USER NOW so Google Gemini's UI does not stall on chained calls."
+            "STOP AND REPLY TO USER NOW (CRITICAL GEMINI WEB PLATFORM RULE: Google Gemini Web freezes on 'Trying to connect...' "
+            "if you invoke two MCP tools in the same turn. NEVER call a second MCP tool in this turn—execution_status, git_summary, "
+            "visual_artifacts, task_content, implementation_plan, walkthrough, and recent_transcript_turns are ALL included below)."
         ),
         "project_hygiene_standards": MODULAR_HYGIENE_STANDARDS, "execution_status": db_status_info,
         "git_summary": git_summary, "visual_artifacts": visual_artifacts,
@@ -287,12 +314,12 @@ def load_session_into_gemini(
                 payload[k_trim] = _compact_markdown(str(payload[k_trim]), max_chars=cap_trim)
         payload["recent_transcript_turns"] = recent_turns[-2:]
         out_str = _compact_json(payload)
-        if len(out_str.encode("utf-8")) > 19500 and isinstance(payload.get("included_files"), dict):
+        if len(out_str.encode("utf-8")) > 19200 and isinstance(payload.get("included_files"), dict):
             inc_files = payload["included_files"].get("files")
-            if isinstance(inc_files, dict):
-                for fk, fv in inc_files.items():
-                    if isinstance(fv, dict) and isinstance(fv.get("content"), str) and len(fv["content"]) > 2500:
-                        fv["content"] = fv["content"][:2500]
+            if isinstance(inc_files, list):
+                for fv in inc_files:
+                    if isinstance(fv, dict) and isinstance(fv.get("content"), str) and len(fv["content"]) > 2200:
+                        fv["content"] = fv["content"][:2200] + "\n... [compacted for <20KB wire ceiling]"
                         fv["truncated"] = True
             out_str = _compact_json(payload)
     return out_str

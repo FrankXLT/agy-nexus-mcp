@@ -124,8 +124,10 @@ def _resolve_and_read_files(
     for raw_sub in items_slice:
         per_file_cap = min(max_chars_per_file, max(4000, remaining_total_chars))
         cleaned = re.sub(r"^file://", "", raw_sub.strip())
-        # Strip leading "[repo_name] " prefix if copied from code_search_matches
-        cleaned = re.sub(r"^\[[^\]]+\]\s*", "", cleaned)
+        m_repo_prefix = re.match(r"^\[([^\]]+)\]\s*(.*)", cleaned)
+        repo_prefix = m_repo_prefix.group(1).strip() if m_repo_prefix else ""
+        if m_repo_prefix:
+            cleaned = m_repo_prefix.group(2).strip()
         cleaned_no_line, in_start, in_end, in_center = parse_inline_line_spec(cleaned)
 
         candidates: list[Path] = []
@@ -138,6 +140,8 @@ def _resolve_and_read_files(
             if variant.startswith("/"):
                 candidates.append(Path(os.path.normpath(variant)).resolve())
             norm_sub = os.path.normpath(variant).lstrip("/")
+            if repo_prefix:
+                candidates.append((AGY_GITLAB_DIR / repo_prefix.split(" ")[0] / norm_sub).resolve())
             for sroot in search_roots:
                 candidates.append((sroot / norm_sub).resolve())
                 if norm_sub.startswith("packages/"):
