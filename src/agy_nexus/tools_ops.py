@@ -264,7 +264,7 @@ def list_models_and_agents(
             slice_meta = slice_file_content(
                 full_text=raw_txt,
                 clean_path=resolved_f.name,
-                per_file_cap=MAX_FILE_CHARS,
+                per_file_cap=min(MAX_FILE_CHARS, 7500),
                 inline_start_line=in_s,
                 inline_end_line=in_e,
                 center_line=in_c,
@@ -317,4 +317,17 @@ def list_models_and_agents(
     }
     if inspected_item:
         out_payload["inspected_item"] = inspected_item
-    return _compact_json(out_payload)
+    out_json = _compact_json(out_payload)
+    if len(out_json.encode("utf-8")) > 19200 and inspected_item and isinstance(inspected_item.get("content"), str):
+        content_s = inspected_item["content"]
+        excess = len(out_json.encode("utf-8")) - 18500
+        new_len = max(1200, len(content_s) - max(excess, 1500))
+        inspected_item["content"] = content_s[:new_len] + "\n... [compacted for <20KB wire ceiling — use ask_workspace_readonly with start_line/end_line]"
+        inspected_item["truncated"] = True
+        out_json = _compact_json(out_payload)
+    if len(out_json.encode("utf-8")) > 19200 and isinstance(out_payload.get("skills"), list):
+        for sk in out_payload["skills"]:
+            if isinstance(sk, dict) and "description" in sk:
+                sk["description"] = str(sk["description"])[:60]
+        out_json = _compact_json(out_payload)
+    return out_json

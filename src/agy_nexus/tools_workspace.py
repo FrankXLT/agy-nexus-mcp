@@ -33,7 +33,7 @@ def ask_workspace_readonly(
     end_line: int = 0,
     spoken_passphrase: str = "",
 ) -> str:
-    """Read-only codebase explorer querying one or up to 12 comma-separated files in full (up to 48 KB per file / 120 KB total per call; also supports line ranges via start_line/end_line or inline 'path/file.py:100-350' / 'path/file.py:420' syntax, plus 'skill:<name>' / 'agent:<name>' / 'rule:<name>'), git grep across local repositories, and SQLite FTS5 conversation history."""
+    """Read-only codebase explorer querying one or up to 12 comma-separated files (up to 14 KB per file / 16.5 KB total per call to stay within the <20 KB wire ceiling; supports line ranges via start_line/end_line or inline 'path/file.py:100-350' / 'path/file.py:420' syntax, plus 'skill:<name>' / 'agent:<name>' / 'rule:<name>'), git grep across local repositories, and SQLite FTS5 conversation history."""
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
     ws_str = SESSION_STATE.get("selected_workspace") or str(AGY_GITLAB_DIR)
@@ -72,8 +72,8 @@ def ask_workspace_readonly(
         "question": question,
         "workspace": str(ws),
         "assistant_guidance": (
-            "Workspace query complete. If you identified additional files to inspect (or if a >1,000-line file has truncated=True and you need its remaining lines), "
-            "call ask_workspace_readonly again immediately in this turn (batching comma-separated file_subpath='f1,f2,f3')—NEVER stop mid-task to ask the user whether you should read another file or section."
+            "Workspace query complete. If you identified additional files to inspect (or if a file has truncated=True and you need its remaining lines), "
+            "call ask_workspace_readonly again immediately in this turn (batching comma-separated file_subpath='f1,f2,f3' or inline line ranges 'file.py:250-500')—NEVER stop mid-task to ask the user whether you should read another file or section."
         ),
         "selected_session_status": _get_selected_session_quick_status(),
         "file_details": file_result,
@@ -83,7 +83,24 @@ def ask_workspace_readonly(
     if not file_subpath.strip():
         out_ws["configured_mcp_servers"] = search_bundle["configured_mcp_servers"]
         out_ws["available_repositories"] = search_bundle["available_repositories"]
-    return _compact_json(out_ws)
+    out_json = _compact_json(out_ws)
+    if len(out_json.encode("utf-8")) > 19200:
+        out_ws["historical_session_matches"] = out_ws.get("historical_session_matches", [])[:2]
+        out_ws["code_search_matches"] = out_ws.get("code_search_matches", [])[:5]
+        out_json = _compact_json(out_ws)
+    if len(out_json.encode("utf-8")) > 19200 and isinstance(out_ws.get("file_details"), dict):
+        files_arr = out_ws["file_details"].get("files") or []
+        while len(out_json.encode("utf-8")) > 19200 and files_arr:
+            largest = max(files_arr, key=lambda f: len(str(f.get("content", ""))))
+            content_str = str(largest.get("content", ""))
+            if len(content_str) <= 800:
+                break
+            excess = len(out_json.encode("utf-8")) - 18800
+            new_len = max(800, len(content_str) - max(excess, 1500))
+            largest["content"] = content_str[:new_len] + "\n... [compacted for <20KB wire ceiling — use start_line/end_line for remaining lines]"
+            largest["truncated"] = True
+            out_json = _compact_json(out_ws)
+    return out_json
 
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 

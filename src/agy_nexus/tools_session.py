@@ -194,7 +194,7 @@ def load_session_into_gemini(
     SESSION_STATE["selected_project"] = project_id
     _save_session_state()
     has_inc = bool(include_files.strip())
-    task_cap, plan_cap, walk_cap, resp_cap, turns_cap = 3200, 2400, 2800, 2000, 5
+    task_cap, plan_cap, walk_cap, resp_cap, turns_cap = (1800, 1200, 1400, 1000, 3) if has_inc else (3200, 2400, 2800, 2000, 5)
     task_file = session_dir / "task.md"
     task_raw = task_file.read_text(encoding="utf-8", errors="replace") if task_file.is_file() else ""
     task_content = _compact_markdown(task_raw, max_chars=task_cap) if task_raw else ""
@@ -206,7 +206,6 @@ def load_session_into_gemini(
     walk_content = _compact_markdown(walk_raw, max_chars=walk_cap) if walk_raw else ""
     scratch_dir = session_dir / "scratch"
     scratch_files = [f.name for f in scratch_dir.iterdir() if f.is_file()][:20] if scratch_dir.is_dir() else []
-    # Read recent transcript turns AND capture Antigravity's latest final assistant response text
     transcript_file = session_dir / ".system_generated" / "logs" / "transcript.jsonl"
     recent_turns: list[dict[str, Any]] = []
     latest_assistant_response = ""
@@ -221,11 +220,7 @@ def load_session_into_gemini(
                     etype = entry.get("type") or entry.get("role") or ""
                     if etype in ("USER_INPUT", "user"):
                         content = str(entry.get("content") or entry.get("text") or "")
-                        recent_turns.append({
-                            "type": "USER_INPUT",
-                            "created_at": entry.get("created_at", ""),
-                            "content": content[:500],
-                        })
+                        recent_turns.append({"type": "USER_INPUT", "created_at": entry.get("created_at", ""), "content": content[:500]})
                     elif etype in ("PLANNER_RESPONSE", "assistant", "model"):
                         content = str(entry.get("content") or entry.get("text") or "").strip()
                         thinking = str(entry.get("thinking") or "").strip()
@@ -238,10 +233,7 @@ def load_session_into_gemini(
                         if content:
                             latest_assistant_response = content[:resp_cap]
                         if content or thinking or tool_summary:
-                            turn_obj: dict[str, Any] = {
-                                "type": "PLANNER_RESPONSE",
-                                "created_at": entry.get("created_at", ""),
-                            }
+                            turn_obj: dict[str, Any] = {"type": "PLANNER_RESPONSE", "created_at": entry.get("created_at", "")}
                             if content:
                                 turn_obj["content"] = content[:650]
                             elif thinking:
@@ -264,8 +256,8 @@ def load_session_into_gemini(
             include_files,
             ws=ws_path,
             session_dir=session_dir,
-            max_chars_per_file=MAX_FILE_CHARS,
-            max_total_chars=MAX_TOTAL_FILE_CHARS,
+            max_chars_per_file=5500,
+            max_total_chars=8000,
         )
         if has_inc
         else {}
@@ -276,9 +268,8 @@ def load_session_into_gemini(
         "conversation_id": conv_id, "project_id": project_id,
         "project_name": project_name, "workspace_path": workspace,
         "assistant_guidance": (
-            "Session context loaded (execution_status, git_summary, visual_artifacts, task_content, implementation_plan, walkthrough, and recent turns). "
-            "If you need to inspect any source files, skills, or scripts to complete your analysis or build a handoff, "
-            "call ask_workspace_readonly now (batching comma-separated paths in file_subpath='f1,f2,f3')—do NOT stop mid-task to ask the user for permission to read files."
+            "Session context loaded in full (execution_status, git_summary, visual_artifacts, task_content, implementation_plan, walkthrough, and recent turns). "
+            "If this answers the user's question (or if include_files was already loaded), STOP AND REPLY TO THE USER NOW so Google Gemini's UI does not stall on chained calls."
         ),
         "project_hygiene_standards": MODULAR_HYGIENE_STANDARDS, "execution_status": db_status_info,
         "git_summary": git_summary, "visual_artifacts": visual_artifacts,
@@ -290,10 +281,18 @@ def load_session_into_gemini(
     if included_files:
         payload["included_files"] = included_files
     out_str = _compact_json(payload)
-    if not has_inc and len(out_str.encode("utf-8")) > 19000:
-        for k_trim, cap_trim in (("walkthrough", 1000), ("implementation_plan", 1000), ("latest_assistant_response", 1000), ("task_content", 1500)):
+    if len(out_str.encode("utf-8")) > 19000:
+        for k_trim, cap_trim in (("walkthrough", 900), ("implementation_plan", 900), ("latest_assistant_response", 900), ("task_content", 1200)):
             if payload.get(k_trim):
                 payload[k_trim] = _compact_markdown(str(payload[k_trim]), max_chars=cap_trim)
-        payload["recent_transcript_turns"] = recent_turns[-3:]
+        payload["recent_transcript_turns"] = recent_turns[-2:]
         out_str = _compact_json(payload)
+        if len(out_str.encode("utf-8")) > 19500 and isinstance(payload.get("included_files"), dict):
+            inc_files = payload["included_files"].get("files")
+            if isinstance(inc_files, dict):
+                for fk, fv in inc_files.items():
+                    if isinstance(fv, dict) and isinstance(fv.get("content"), str) and len(fv["content"]) > 2500:
+                        fv["content"] = fv["content"][:2500]
+                        fv["truncated"] = True
+            out_str = _compact_json(payload)
     return out_str

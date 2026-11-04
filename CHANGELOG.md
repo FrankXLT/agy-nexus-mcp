@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [2.3.3] — 2026-11-04
+
+### Fixed
+- **Strict `< 20 KB` Wire-Budget Enforcement Across Chained Tool Calls (`src/agy_nexus/hygiene.py`, `tools_session.py`, `tools_workspace.py`, `tools_ops.py`)**:
+  - Removed the `if not has_inc` bypass in `load_session_into_gemini` so calls passing `include_files` are still bounded by the `< 19,000`-byte progressive compaction guard instead of emitting `40+ KB` payloads that stall Gemini Web's Cloud MCP proxy when chaining multiple tool calls in a single turn.
+  - Added `< 19,200`-byte (`<= 20,480` bytes on the wire) progressive compaction guards to `ask_workspace_readonly` and `list_models_and_agents`, and tuned `MAX_FILE_CHARS` (`14,000`) and `MAX_TOTAL_FILE_CHARS` (`16,500`).
+- **Web Overwatch PWA Deadbolt Unlock Fix (`web/charts.js`, `web/app.js`, `web/index.html`, `web/sw.js`)**:
+  - Fixed a commented closing brace (`// 0 = Mon .. 6 = Sun }`) in `web/charts.js` that prevented `charts.js` from loading `renderDashboard`, updated `fetchStats()` error handling so network/parse errors are surfaced instead of silently entering `demoMode`, and added `node --check` + brace validation to `ag_bridge.py --self-test`.
+- **3-Tier ASCII Telemetry Renderer Polish (`src/agy_nexus/ascii_default.py`, `src/agy_nexus/ascii_rich.py`)**:
+  - Added explicit numeric column headers (`M T W T F S S (0-5+ runs)`) and legends to the 35-day activity heatmaps, switched `compact` (`38-col`) to a stacked 2-line per-model layout so `0%` bars never clip on mobile viewports, and exposed both `total_calls` and `avg_wire_bytes` on the `MCP BRIDGE` line.
+
+---
+
 ## [2.3.0] — 2026-11-03
 
 ### Added
