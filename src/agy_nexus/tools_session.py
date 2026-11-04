@@ -33,7 +33,7 @@ from agy_nexus.hygiene import (
     MODULAR_HYGIENE_STANDARDS,
     _compact_markdown,
 )
-from agy_nexus.media import build_visual_artifact_content, discover_visual_artifacts
+from agy_nexus.media import discover_visual_artifacts
 from agy_nexus.routing import _resolve_session_identifier
 from agy_nexus.search import _search_workspaces_and_history
 from agy_nexus.sessions import _list_saved_sessions_internal, _load_projects_map
@@ -133,9 +133,8 @@ def load_session_into_gemini(
     session_identifier: str,
     spoken_passphrase: str = "",
     include_files: str = "",
-    include_visual_artifact: str = "",
-) -> Any:
-    """Load complete conversation context in a single call (live execution_status, git_summary, visual_artifacts with 30-min signed /web/media/ links, task.md, implementation_plan.md, walkthrough.md, and recent transcript turns). Pass include_visual_artifact='probe' or an image filename to return a multimodal MCP ImageContent block.
+) -> str:
+    """Load complete conversation context in a single call (live execution_status, git_summary, visual_artifacts with 30-min signed /web/media/ links, task.md, implementation_plan.md, walkthrough.md, and recent transcript turns).
     IMPORTANT: Because execution_status and git_summary are already included in this response, DO NOT chain manage_background_run or inspect_git_diff after calling this tool—reply directly to the user!
     """
     if not is_unlocked(spoken_passphrase):
@@ -295,6 +294,4 @@ def load_session_into_gemini(
     }
     if included_files:
         payload["included_files"] = included_files
-    if include_visual_artifact.strip():
-        return build_visual_artifact_content(conv_id, workspace, include_visual_artifact, payload)
     return _compact_json(payload)

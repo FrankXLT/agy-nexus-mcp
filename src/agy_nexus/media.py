@@ -1,29 +1,21 @@
 #!/usr/bin/env python3
 """
-agy_nexus.media — Ephemeral 30-Minute HMAC-Signed /web/media/ Serving, Visual Artifact Discovery,
-and MCP ImageContent Multimodal Probe Helper.
+agy_nexus.media — Ephemeral 30-Minute HMAC-Signed /web/media/ Serving & Visual Artifact Discovery.
 """
 
 from __future__ import annotations
 
-import base64
 from datetime import datetime, timezone
 import hashlib
 import hmac
-import io
 import os
 from pathlib import Path
 import re
-import struct
 import time
 from typing import Any
 import urllib.parse
-import zlib
-
-from mcp.types import ImageContent, TextContent
 
 import agy_nexus.config as cfg
-from agy_nexus.config import _compact_json
 
 ALLOWED_MEDIA_EXTENSIONS: dict[str, bytes] = {
     ".png": b"image/png",
@@ -38,8 +30,13 @@ MEDIA_TTL_SECONDS = int(os.getenv("AG_BRIDGE_MEDIA_TTL", "1800"))
 
 
 def get_public_base_url() -> str:
-    """Return configured public base URL (if any) without trailing slash."""
-    return os.getenv("AG_BRIDGE_PUBLIC_URL", "").strip().rstrip("/")
+    """Return configured public base URL, falling back to the host bridge hostname + BIND_PORT."""
+    explicit = os.getenv("AG_BRIDGE_PUBLIC_URL", "").strip().rstrip("/")
+    if explicit:
+        return explicit
+    parsed = urllib.parse.urlparse(cfg.AGY_HOST_BRIDGE_URL)
+    host = parsed.hostname or "127.0.0.1"
+    return f"http://{host}:{cfg.BIND_PORT}"
 
 
 def compute_media_hmac(exp_ts: int, scope: str, rel_path: str, pass_hash: str | None = None) -> str:
@@ -178,83 +175,3 @@ def discover_visual_artifacts(conv_id: str, workspace_path: str = "", limit: int
 
     candidates.sort(key=lambda item: item[0], reverse=True)
     return [item[1] for item in candidates[: max(1, min(limit, 30))]]
-
-
-def generate_tiny_probe_png(width: int = 16, height: int = 16) -> bytes:
-    """Generate a valid <150-byte RGB PNG in memory using stdlib struct + zlib (zero external dependencies)."""
-    raw_rows = b"".join(b"\x00" + (b"\x10\xb9\x81" * width) for _ in range(height))
-
-    def _chunk(ctype: bytes, data: bytes) -> bytes:
-        crc = zlib.crc32(ctype + data) & 0xFFFFFFFF
-        return struct.pack(">I", len(data)) + ctype + data + struct.pack(">I", crc)
-
-    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
-    idat = zlib.compress(raw_rows, level=9)
-    return b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", ihdr) + _chunk(b"IDAT", idat) + _chunk(b"IEND", b"")
-
-
-def build_visual_artifact_content(
-    conv_id: str,
-    workspace_path: str,
-    artifact_spec: str,
-    base_payload: dict[str, Any],
-) -> list[Any]:
-    """Build a multimodal [TextContent, ImageContent] response for 'probe' or a discovered visual artifact."""
-    spec = artifact_spec.strip()
-    if spec.lower() == "probe":
-        png_bytes = generate_tiny_probe_png(16, 16)
-        b64_str = base64.b64encode(png_bytes).decode("ascii")
-        base_payload["visual_probe"] = {
-            "mode": "probe",
-            "mime_type": "image/png",
-            "dimensions": "16x16",
-            "raw_bytes": len(png_bytes),
-            "b64_chars": len(b64_str),
-            "description": "16x16 emerald (#10b981) solid square probe image returned as native MCP ImageContent.",
-        }
-        return [
-            TextContent(type="text", text=_compact_json(base_payload)),
-            ImageContent(type="image", data=b64_str, mimeType="image/png"),
-        ]
-
-    artifacts = discover_visual_artifacts(conv_id, workspace_path, limit=40)
-    matched = next(
-        (a for a in artifacts if a["name"] == spec or a["rel_path"] == spec or a["rel_path"].endswith(f"/{spec}")),
-        None,
-    )
-    if not matched:
-        base_payload["visual_artifact_error"] = f"Visual artifact '{spec}' not found in session or workspace."
-        return [TextContent(type="text", text=_compact_json(base_payload))]
-
-    base_dir = _resolve_scope_base_dir(matched["scope"])
-    target = (base_dir / matched["rel_path"]).resolve() if base_dir else None
-    if not target or not target.is_file():
-        base_payload["visual_artifact_error"] = f"Unable to resolve file for '{spec}'."
-        return [TextContent(type="text", text=_compact_json(base_payload))]
-
-    raw_bytes = target.read_bytes()
-    mime_str = ALLOWED_MEDIA_EXTENSIONS.get(target.suffix.lower(), b"image/png").decode("ascii")
-    out_bytes = raw_bytes
-    if len(raw_bytes) > 80_000 and target.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"):
-        try:
-            from PIL import Image  # type: ignore
-            with Image.open(io.BytesIO(raw_bytes)) as im:
-                im.thumbnail((1024, 1024))
-                buf = io.BytesIO()
-                im.save(buf, format="WEBP", quality=80)
-                out_bytes = buf.getvalue()
-                mime_str = "image/webp"
-        except Exception:
-            pass
-
-    b64_str = base64.b64encode(out_bytes).decode("ascii")
-    base_payload["loaded_visual_artifact"] = {
-        **matched,
-        "mime_type": mime_str,
-        "inline_bytes": len(out_bytes),
-        "b64_chars": len(b64_str),
-    }
-    return [
-        TextContent(type="text", text=_compact_json(base_payload)),
-        ImageContent(type="image", data=b64_str, mimeType=mime_str),
-    ]

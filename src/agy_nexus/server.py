@@ -33,8 +33,7 @@ from agy_nexus.config import (
 )
 import agy_nexus.handoff  # noqa: F401
 from agy_nexus.media import (
-    build_visual_artifact_content,
-    generate_tiny_probe_png,
+    discover_visual_artifacts,
     sign_media_url,
     verify_and_resolve_media,
 )
@@ -115,18 +114,17 @@ def run_self_test() -> int:
         assert nb_res2["unchanged"] == nb_res1["total_exported"], "Expected 100% SHA-256 deduplication on second Notebook export pass"
     print(f"  [+] Multi-repo drift audit ({drift_res['scanned_repositories_count']} repos) & Notebook SHA-256 deduplication ({nb_res1['total_exported']} bundles): PASS")
 
-    # 7. Ephemeral HMAC /web/media/ Signing, Path Sandboxing & MCP ImageContent Probe
+    # 7. Ephemeral HMAC /web/media/ Signing, Path Sandboxing & Visual Artifact Discovery
     cfg.PASS_HASH = expected_hash
-    probe_png = generate_tiny_probe_png(16, 16)
-    assert probe_png.startswith(b"\x89PNG\r\n\x1a\n") and len(probe_png) < 200
-    probe_blocks = build_visual_artifact_content("", "", "probe", {"ok": True})
-    assert len(probe_blocks) == 2 and getattr(probe_blocks[1], "type", "") == "image"
+    artifacts = discover_visual_artifacts("", str(AGY_GITLAB_DIR / "antigravity-config"), limit=5)
+    assert isinstance(artifacts, list) and len(artifacts) > 0, "Expected visual artifacts in antigravity-config"
+    assert verify_and_resolve_media(artifacts[0]["signed_url"])[2] == 200, "Expected 200 on valid signed media URL"
     signed_expired = sign_media_url("repo:antigravity-config", "docs/assets/dashboard-desktop.png", exp_ts=int(time.time()) - 10)
     assert verify_and_resolve_media(signed_expired)[2] == 403, "Expected 403 on expired media link"
     signed_traversal = sign_media_url("repo:antigravity-config", "../../etc/passwd.png")
     assert verify_and_resolve_media(signed_traversal)[2] == 403, "Expected 403 on path traversal media link"
     cfg.PASS_HASH = orig_hash
-    print(f"  [+] Visual Artifact HMAC /web/media/ signing, sandbox & MCP ImageContent probe ({len(probe_png)}B PNG): PASS")
+    print(f"  [+] Visual Artifact HMAC /web/media/ signing, sandbox & discovery ({len(artifacts)} artifacts): PASS")
 
     print("[✓] All agy-nexus-mcp v2.3 self-tests completed successfully!")
     return 0
