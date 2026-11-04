@@ -62,7 +62,7 @@ const SERIES_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899", "#
       let totalSteps = 0, totalTools = 0, totalTokens = 0, activeDays = 0, peakSteps = 0, peakDate = "";
       const startMs = now.getTime() - (daysSpan - 1) * 86400000;
       const startDateObj = new Date(startMs);
-      const startDow = (startDateObj.getUTCDay() + 6) % 7; // 0 = Mon .. 6 = Sun
+      const startDow = (startDateObj.getUTCDay() + 6) % 7;
       const alignedStartMs = startMs - startDow * 86400000;
       const totalGridDays = daysSpan + startDow;
       for (let idx = 0; idx < totalGridDays; idx++) {
@@ -79,31 +79,20 @@ const SERIES_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899", "#
         const level = steps === 0 ? 0 : (steps < 900 ? 1 : (steps < 2200 ? 2 : (steps < 3900 ? 3 : 4)));
         if (steps > 0) activeDays++;
         if (steps > peakSteps) { peakSteps = steps; peakDate = dStr; }
-        totalSteps += steps;
-        totalTools += tools;
-        totalTokens += tokens;
+        totalSteps += steps; totalTools += tools; totalTokens += tokens;
         series.push({ date: dStr, weekday: dow, steps, tools, tokens, sessions, level, future: false, in_window: true }); }
-      const subDailyLabels = [];
-      const subDailyVel = [];
+      const subDailyLabels = [], subDailyVel = [];
       for (let i = 0; i < 84; i++) {
         const d = new Date(now.getTime() - (83 - i) * 4 * 3600000);
         subDailyLabels.push(d.toISOString().slice(0, 13).replace("T", " ") + ":00");
         subDailyVel.push(Math.round(280 + 220 * Math.sin(i * 0.42) + 140 * Math.cos(i * 0.19))); }
-      const periodLabels = {
-        "current_month": "This Month — MTD",
-        "last_month": "Last Month",
-        "last_90d": "Rolling 90 Days",
-        "last_year": "Rolling 52 Weeks", };
+      const periodLabels = { "current_month": "This Month — MTD", "last_month": "Last Month", "last_90d": "Rolling 90 Days", "last_year": "Rolling 52 Weeks" };
       return {
-        server: "agy-nexus-mcp",
-        version: "2.3.0",
+        server: "agy-nexus-mcp", version: "2.3.2",
         period: { key: period, label: periodLabels[period] || "Rolling 90 Days", total_days: series.length, active_days: activeDays, resolution: "4h sub-daily" },
         kpis: {
-          total_conversations: 54,
-          total_subagents_spawned: 227,
-          window_steps: totalSteps,
-          window_tool_calls: totalTools,
-          window_tokens: totalTokens,
+          total_conversations: 54, total_subagents_spawned: 227, window_steps: totalSteps,
+          window_tool_calls: totalTools, window_tokens: totalTokens,
           avg_daily_steps: Math.round(totalSteps / Math.max(1, activeDays)),
           peak_day: { date: peakDate, steps: peakSteps },
         },
@@ -114,11 +103,7 @@ const SERIES_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899", "#
             claude: { status: "HEALTHY", cooldown_remaining_seconds: 0 },
             gpt_oss: { status: "HEALTHY", cooldown_remaining_seconds: 0 },
           },
-          partner_weekly_pacing: {
-            day_of_week_index: 2,
-            daily_target_pct: 14.28,
-            recommended_cumulative_ceiling_pct: 28.6,
-          },
+          partner_weekly_pacing: { day_of_week_index: 2, daily_target_pct: 14.28, recommended_cumulative_ceiling_pct: 28.6 },
         },
         model_usage_vs_target: [
           { model_key: "argon_pro", label: "Gemini 4 Argon (Pro)", actual_pct: 70.3, target_pct: 65.0 },
@@ -147,15 +132,8 @@ const SERIES_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899", "#
         ],
         velocity_series: { dates: subDailyLabels, values: subDailyVel, resolution: "4h sub-daily" },
         wire_telemetry: {
-          total_recorded_calls: 64,
-          avg_kb: 11.4,
-          max_kb: 18.9,
-          total_mcp_tokens: 186400,
-          budget_compliance_pct: 100.0,
-          by_product: {
-            "Gemini Mobile": { calls: 42, tokens: 124000 },
-            "Gemini Web / Cloud MCP": { calls: 22, tokens: 62400 },
-          },
+          total_recorded_calls: 64, avg_kb: 11.4, max_kb: 18.9, total_mcp_tokens: 186400, budget_compliance_pct: 100.0,
+          by_product: { "Gemini Mobile": { calls: 42, tokens: 124000 }, "Gemini Web / Cloud MCP": { calls: 22, tokens: 62400 } },
         },
         heatmap_series: series, };
     }
@@ -168,13 +146,14 @@ const SERIES_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899", "#
         renderDashboard(state.bundle);
         return; }
       const statusEl = document.getElementById("authStatus");
+      if (statusEl) statusEl.textContent = "Verifying passphrase...";
       try {
         const apiPath = window.location.pathname.replace(/\/web\/?$/, "") + "/web/api/stats?period=" + encodeURIComponent(period);
         const resp = await fetch(apiPath, {
           method: "GET",
           headers: { "X-Nexus-Passphrase": state.passphrase, "X-Client-Product": "Web Dashboard" }, });
         if (resp.status === 401 || resp.status === 403) {
-          statusEl.textContent = "Invalid passphrase. Try again or click Preview Sample Data.";
+          if (statusEl) statusEl.textContent = "Invalid passphrase. Try again or click Preview Sample Data.";
           localStorage.removeItem("nexus_passphrase");
           sessionStorage.removeItem("nexus_passphrase");
           document.getElementById("authOverlay").classList.remove("hidden");
@@ -182,22 +161,19 @@ const SERIES_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899", "#
           return; }
         const data = await resp.json();
         if (data.ok === false) {
-          statusEl.textContent = data.error || "Unable to load dashboard data.";
+          if (statusEl) statusEl.textContent = data.error || "Unable to load dashboard data.";
           return; }
         localStorage.setItem("nexus_passphrase", state.passphrase);
         sessionStorage.setItem("nexus_passphrase", state.passphrase);
         localStorage.removeItem("nexus_demo_mode");
+        if (statusEl) statusEl.textContent = "";
         state.bundle = data;
         document.getElementById("authOverlay").classList.add("hidden");
         document.getElementById("dashboardMain").classList.remove("hidden");
         renderDashboard(data);
       } catch (err) {
-        state.demoMode = true;
-        localStorage.setItem("nexus_demo_mode", "1");
-        state.bundle = generateDemoBundle(period);
-        document.getElementById("authOverlay").classList.add("hidden");
-        document.getElementById("dashboardMain").classList.remove("hidden");
-        renderDashboard(state.bundle); }
+        if (statusEl) statusEl.textContent = "Connection or render error: " + (err && err.message ? err.message : String(err));
+      }
     }
     function renderStackedAreaChart(svgId, legendId, resTagId, seriesBundle, heatDays, fallbackItems) {
       const svg = document.getElementById(svgId);
@@ -294,9 +270,12 @@ const SERIES_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899", "#
       }).join(""); }
     function computeIsoWeekday(dateStr, fallbackWeekday) {
       if (typeof fallbackWeekday === "number" && fallbackWeekday >= 0 && fallbackWeekday <= 6) {
-        return fallbackWeekday; }
+        return fallbackWeekday;
+      }
       const parts = String(dateStr || "").split("-").map(Number);
       if (parts.length === 3 && !isNaN(parts[0])) {
         const dt = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
-        return (dt.getUTCDay() + 6) % 7; // 0 = Mon .. 6 = Sun }
-      return 0; }
+        return (dt.getUTCDay() + 6) % 7;
+      }
+      return 0;
+    }

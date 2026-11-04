@@ -7,6 +7,9 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -91,7 +94,7 @@ def run_self_test() -> int:
     assert "ascii_mobile_report" in stats_bundle and "quota_and_pools" in stats_bundle
     print(f"  [+] Telemetry & Activity Heatmap engine ({stats_bundle['summary']['period_steps']} steps indexed): PASS")
 
-    # 5. FastMCP Stateless JSON Route Generation & /web HTML Check
+    # 5. FastMCP Stateless JSON Route Generation, /web HTML & JS Syntax Check
     test_secret = "test_path_secret_at_least_32_characters_long_12345"
     raw_app = mcp.http_app(
         path=f"/{test_secret}/mcp",
@@ -102,7 +105,19 @@ def run_self_test() -> int:
     )
     app = BridgeCompatMiddleware(raw_app)
     assert app is not None and app.web_html_path.is_file(), "Failed generating Starlette HTTP app or missing web/index.html"
-    print("  [+] FastMCP stateless JSON HTTP route & /web Overwatch dashboard mounting: PASS")
+    node_bin = shutil.which("node")
+    for js_name in ("charts.js", "app.js", "sw.js"):
+        js_path = app.web_dir / js_name
+        assert js_path.is_file(), f"Missing web/{js_name}"
+        js_text = js_path.read_text(encoding="utf-8")
+        for ln_no, ln in enumerate(js_text.splitlines(), 1):
+            if "//" in ln and "http://" not in ln and "https://" not in ln:
+                comment_part = ln.split("//", 1)[1]
+                assert not re.search(r"\}\s*$", comment_part), f"Commented closing brace in web/{js_name}:{ln_no}"
+        if node_bin:
+            proc = subprocess.run([node_bin, "--check", str(js_path)], capture_output=True, text=True, timeout=10, check=False)
+            assert proc.returncode == 0, f"JS syntax error in web/{js_name}: {proc.stderr}"
+    print("  [+] FastMCP stateless JSON HTTP route, /web dashboard & JS syntax check: PASS")
 
     # 6. Multi-Repo Drift Audit & Notebook Export Deduplication
     drift_res = inspect_multi_repo_drift(AGY_GITLAB_DIR, AGY_DATA_DIR, workspace_override="ALL")
