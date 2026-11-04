@@ -24,6 +24,8 @@ def fmt_rate(val: int | float) -> str:
     v = float(val or 0)
     if v <= 0:
         return "0"
+    if v >= 10_000_000:
+        return f"{v / 1_000_000.0:.1f}M"
     if v >= 1_000_000:
         return f"{v / 1_000_000.0:.2f}M"
     if v >= 10_000:
@@ -153,7 +155,7 @@ def render_ascii_default(bundle: dict[str, Any]) -> str:
         _sr(f"PARTNER 1x : {p_rem:>5.1f}% [{p_bar}] ON PACE", f" {wk_left:>4.1f}% Wk Left | Lim <=14.3%/d"),
         _sr(f"STEPS/TOOLS: {tot_steps:,}s | {tot_tools:,}t | {tot_chats}c", f" {tot_steps // act_days:,} s/act-d | {tot_steps // cal_days:,} s/cal-d"),
         _sr(f"TOKEN BURN : {fmt_tok(tot_tok)} Total ({tot_subs} sub runs)", f" {fmt_rate(tot_tok / act_days)} tok/d   | {fmt_rate(tot_tok / max(1.0, act_days / 7.0))} tok/wk"),
-        _sr(f"MCP WIRE   : {w_pct}% <20KB (avg {w_avg:.1f}/{w_max:.1f} KB)", f" {w_calls} Reqs ({w_tok} tok) | Gemini Web"),
+        _sr(f"MCP WIRE   : {w_pct}% <20KB (avg {w_avg:.1f}/{w_max:.1f}KB)", f" {w_calls} req ({w_tok} tok) | Gemini Web"),
         "────────────────────────────────────────┴───────────────────────────────",
     ]
 
@@ -202,7 +204,7 @@ def render_ascii_default(bundle: dict[str, Any]) -> str:
 
     lines.extend([
         "────────────────────────────────────────────────────────────────────────",
-        f"WORKSPACES ({len(workspaces)})       CHATS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE"[:72],
+        f"{f'WORKSPACES ({len(workspaces)})':<20}CHATS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE"[:72],
     ])
     for idx, w in enumerate(workspaces, start=1):
         wn = f"{idx}. {str(w.get('workspace', 'root'))}"[:19].ljust(19)
@@ -211,7 +213,7 @@ def render_ascii_default(bundle: dict[str, Any]) -> str:
     if subagents:
         lines.extend([
             "────────────────────────────────────────────────────────────────────────",
-            f"SUBAGENTS ({len(subagents)})         RUNS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE"[:72],
+            f"{f'SUBAGENTS ({len(subagents)})':<20} RUNS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE"[:72],
         ])
         for idx, sa in enumerate(subagents, start=1):
             sn = f"{idx}. {str(sa.get('role', 'subagent'))}"[:19].ljust(19)
@@ -250,7 +252,7 @@ def render_ascii_quick(bundle: dict[str, Any]) -> str:
     pk = kpis.get("peak_day") or {"date": "", "steps": 0}
     callouts = [
         f"Pk: {str(pk.get('date') or '')[-5:].replace('-', '/')}",
-        f"{int(pk.get('steps') or 0):,} steps",
+        f"{int(pk.get('steps') or 0):,} stp",
         f"Avg:{tot_steps // act_days:,}/d",
         f"Chats: {int(kpis.get('total_conversations', 0))}c",
         f"Subs : {int(kpis.get('total_subagents_spawned', 0))}r",

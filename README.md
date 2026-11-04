@@ -101,8 +101,8 @@ AGY-NEXUS // 90d (Nov 03 ◄── Aug 06)    ┆ EXTENDED TELEMETRY & AVERAGES
 GOOGLE 20x : 100.0% [████████┼█] HEALTHY┆ 0x 429s | Ultra-20x (T:>=90%) 
 PARTNER 1x : 100.0% [░┼░░░░░░░░] ON PACE┆ 71.4% Wk Left | Lim <=14.3%/d 
 STEPS/TOOLS: 187,877s | 93,195t | 54c   ┆ 4,369 s/act-d | 2,020 s/cal-d 
-TOKEN BURN : ~69.3M Total (227 sub runs)┆ 1.61M tok/d   | 11.28M tok/wk 
-MCP WIRE   : 100% <20KB (avg 3.0/17.5 KB┆ 77 Reqs (62.5k tok) | Gemini W
+TOKEN BURN : ~69.3M Total (227 sub runs)┆ 1.61M tok/d   | 11.3M tok/wk  
+MCP WIRE   : 100% <20KB (avg 3.0/17.5KB)┆ 77 req (62.5k tok) | Gemini Web
 ────────────────────────────────────────┴───────────────────────────────
 DAILY HEATMAP (NOW: W01 ──► 22w AGO)   Peak: 10/31 (11,118s) | Act: 43d
 Wk    01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22
@@ -130,7 +130,7 @@ Flash 3.8   [█████┼▓░░░░░░░░░░░░░]  29.6
 Claude 5.5  [░░┼░░░░░░░░░░░░░░░░░]   0.0%       31         0  -8.0%  OK
 GPT-OSS 120 [▏░░░░░░░░░░░░░░░░░░░]   0.0%        0         0  -2.0%  OK
 ────────────────────────────────────────────────────────────────────────
-WORKSPACES (9)       CHATS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE
+WORKSPACES (9)      CHATS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE
 1. core-platform-ap  10c  65,811     ~29.2M     679k    4.75M   42.1%
 2. web-dashboard-ui  19c  45,032     ~17.2M     400k    2.80M   24.8%
 3. agent-orchestrat   5c  20,107     ~16.5M     384k    2.69M   23.8%
@@ -141,7 +141,7 @@ WORKSPACES (9)       CHATS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE
 8. docs-portal        1c   1,126      ~294k     6.8k      48k    0.4%
 9. sdk-client-py      1c      21      ~4.5k      104      727    0.0%
 ────────────────────────────────────────────────────────────────────────
-SUBAGENTS (8)         RUNS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE
+SUBAGENTS (8)        RUNS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE
 1. flash-surgeon    116r  21,704      ~8.9M     207k    1.45M   58.2%
 2. flash-auditor     78r   8,170      ~2.7M      63k     441k   17.7%
 3. argon-sentinel     3r   3,142      ~1.3M      30k     209k    8.4%
@@ -162,16 +162,16 @@ AGY-NEXUS // 90d (Nov 03 ◄── Aug 06)
 G-20x: 100% [████████┼█] OK | 0x 429s
 P-1x : 100% [░┼░░░░░░░░] OK | 71% WkLft
 Steps:187.9k | Tools:93.2k | Act:43d
-Burns:~69.3M | 1.61M/d | 11.28M/wk
+Burns:~69.3M | 1.61M/d | 11.3M/wk
 ────────────────────────────────────────
 HEATMAP (NOW ──► 13w Ago)  │ PEAK & VOL
 Mo ▒█░▒▓▒·······           │ Pk: 10/31
-Tu ░▓▒▒▒░░······           │ 11,118 step
+Tu ░▓▒▒▒░░······           │ 11,118 stp
 We ·▓░░▒▓░······           │ Avg:4,369/d
 Th ·█░▒▓█░······           │ Chats: 54c
 Fr ·▓█▓▒▓▓······           │ Subs : 227r
 Sa ·██░▒██······           │ Tok/d:1.61M
-Su ·██▓▓█▒······           │ Tok/w:11.28
+Su ·██▓▓█▒······           │ Tok/w:11.3M
 ────────────────────────────────────────
 8H PACE & STACK (NOW──►OLD) Pk:3.2k
 3.2k╷  ▄   █▄▄                       
@@ -213,7 +213,7 @@ telemetry-pipeli  897k    21k    146k
 ║ TOKEN BURN & ROLLING AVERAGES      │ MCP WIRE & CLIENT SURFACES          ║
 ║ Total : ~69.3M (~63.0M direct)     │ Wire  : 100% <20KB (avg 3.0/17.5KB) ║
 ║ Daily : 1.61M tok/act-d            │ Calls : 77 MCP reqs (62.5k tok)     ║
-║ Weekly: 11.28M tok/wk              │ Client: Gemini Web (100% / 0 Mob)   ║
+║ Weekly: 11.3M tok/wk               │ Client: Gemini Web (100% / 0 Mob)   ║
 ╠════════════════════════════════════╩═════════════════════════════════════╣
 ║ DAILY ACTIVITY MATRIX (NOW: W01 ──► W13)     [·· 0  ░░ <1k  ▒▒ <4k  ██]  ║
 ║ Wk   W01 W02 W03 W04 W05 W06 W07 W08 W09 W10 W11 W12 W13  ┌─ PEAK DAY ─┐ ║
@@ -225,7 +225,7 @@ telemetry-pipeli  897k    21k    146k
 ║ Sat  ··· ███ ███ ░░░ ▒▒▒ ███ ███ ··· ··· ··· ··· ··· ···  │ Sub: 227r  │ ║
 ║ Sun  ··· ███ ███ ▓▓▓ ▓▓▓ ███ ▒▒▒ ··· ··· ··· ··· ··· ···  └────────────┘ ║
 ║ Vol  ▁▁▁ ███ ▅▅▅ ▃▃▃ ▄▄▄ ▅▅▅ ▃▃▃ ─── ─── ─── ─── ─── ───  PeakWk:46.8k   ║
-║ Steps2.9 46. 35. 20. 27. 36. 19.  ·   ·   ·   ·   ·   ·                  ║
+║ Steps  3k 47k 35k 20k 27k 36k 19k  ·   ·   ·   ·   ·   ·                 ║
 ╠══════════════════════════════════════════════════════════════════════════╣
 ║ 8H SUB-DAILY HORIZON CURVE & PROJECT STACK (NOW ──► SEP 21)              ║
 ║ 3.7k ╷     █       ▄ ▄                                                   ║

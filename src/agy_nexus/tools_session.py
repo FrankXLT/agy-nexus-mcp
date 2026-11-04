@@ -194,12 +194,7 @@ def load_session_into_gemini(
     SESSION_STATE["selected_project"] = project_id
     _save_session_state()
     has_inc = bool(include_files.strip())
-    task_cap = MAX_TASK_DOC_CHARS
-    plan_cap = 24000
-    walk_cap = 24000
-    resp_cap = 8000
-    turns_cap = MAX_TRANSCRIPT_TURNS
-    # Read artifacts with generous full-document budget (only compacting if a massive artifact exceeds 24,000 chars)
+    task_cap, plan_cap, walk_cap, resp_cap, turns_cap = 3200, 2400, 2800, 2000, 5
     task_file = session_dir / "task.md"
     task_raw = task_file.read_text(encoding="utf-8", errors="replace") if task_file.is_file() else ""
     task_content = _compact_markdown(task_raw, max_chars=task_cap) if task_raw else ""
@@ -275,7 +270,7 @@ def load_session_into_gemini(
         if has_inc
         else {}
     )
-    visual_artifacts = discover_visual_artifacts(conv_id, workspace, limit=15)
+    visual_artifacts = discover_visual_artifacts(conv_id, workspace, limit=6)
     payload: dict[str, Any] = {
         "ok": True, "status": "LOADED",
         "conversation_id": conv_id, "project_id": project_id,
@@ -294,4 +289,11 @@ def load_session_into_gemini(
     }
     if included_files:
         payload["included_files"] = included_files
-    return _compact_json(payload)
+    out_str = _compact_json(payload)
+    if not has_inc and len(out_str.encode("utf-8")) > 19000:
+        for k_trim, cap_trim in (("walkthrough", 1000), ("implementation_plan", 1000), ("latest_assistant_response", 1000), ("task_content", 1500)):
+            if payload.get(k_trim):
+                payload[k_trim] = _compact_markdown(str(payload[k_trim]), max_chars=cap_trim)
+        payload["recent_transcript_turns"] = recent_turns[-3:]
+        out_str = _compact_json(payload)
+    return out_str

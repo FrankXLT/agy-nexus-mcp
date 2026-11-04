@@ -33,6 +33,13 @@ def _box_split(left_36: str, right_37: str) -> str:
 def _box_full(inner_72: str) -> str:
     return f"║ {inner_72[:72].ljust(72)} ║"
 
+def _fmt_wk_3c(steps: int) -> str:
+    if steps <= 0:
+        return " · "
+    if steps >= 950:
+        return f"{int(round(steps / 1000.0)):>2}k"
+    return f"{steps:>3}"
+
 def render_ascii_rich(bundle: dict[str, Any]) -> str:
     """Render Rich 76-Column Box-Drawn TUI Telemetry Rig."""
     kpis, period = bundle.get("kpis") or {}, bundle.get("period") or {}
@@ -99,10 +106,10 @@ def render_ascii_rich(bundle: dict[str, Any]) -> str:
     max_wk = max(max((w["steps"] for w in weeks_13), default=1), 1)
     sp3 = ["───", "▁▁▁", "▂▂▂", "▃▃▃", "▄▄▄", "▅▅▅", "▆▆▆", "███"]
     vol3 = " ".join("───" if w["steps"] <= 0 else sp3[min(7, max(1, int(round((w["steps"] / float(max_wk)) * 7))))] for w in weeks_13)
-    stp3 = " ".join(" · " if w["steps"] <= 0 else f"{fmt_k(w['steps']):>3}"[:3] for w in weeks_13)
+    stp3 = " ".join(_fmt_wk_3c(int(w["steps"])) for w in weeks_13)
     lines.extend([
         _box_full(f"Vol  {vol3}  PeakWk:{fmt_k(max_wk):>5}"),
-        _box_full(f"Steps{stp3}"),
+        _box_full(f"Steps {stp3}"),
         "╠══════════════════════════════════════════════════════════════════════════╣",
     ])
 
@@ -139,7 +146,7 @@ def render_ascii_rich(bundle: dict[str, Any]) -> str:
 
     lines.extend([
         "╠══════════════════════════════════════════════════════════════════════════╣",
-        _box_full(f"WORKSPACES ({len(workspaces)})     CHATS   STEPS  TOTAL TOK  TOK/DAY  TOK/WK SHARE GAUGE"),
+        _box_full(f"{f'WORKSPACES ({len(workspaces)})':<18} CHATS   STEPS  TOTAL TOK  TOK/DAY  TOK/WK SHARE GAUGE"),
     ])
     for idx, w in enumerate(workspaces, start=1):
         wn = f"{idx}. {str(w.get('workspace', 'root'))}"[:17].ljust(17)
@@ -149,7 +156,7 @@ def render_ascii_rich(bundle: dict[str, Any]) -> str:
     if subagents:
         lines.extend([
             "╟──────────────────────────────────────────────────────────────────────────╢",
-            _box_full(f"SUBAGENTS ({len(subagents)})       RUNS   STEPS  TOTAL TOK  TOK/DAY  TOK/WK SHARE GAUGE"),
+            _box_full(f"{f'SUBAGENTS ({len(subagents)})':<18}  RUNS   STEPS  TOTAL TOK  TOK/DAY  TOK/WK SHARE GAUGE"),
         ])
         for idx, sa in enumerate(subagents, start=1):
             sn = f"{idx}. {str(sa.get('role', 'subagent'))}"[:17].ljust(17)
