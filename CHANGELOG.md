@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [2.3.4] — 2026-11-05
+
+### Fixed
+- **Unified Time-Series Alignment & Local Timezone Bucketing (`src/agy_nexus/telemetry_scanner.py`, `src/agy_nexus/stats.py`, `web/charts.js`, `web/app.js`)**:
+  - **Local Timezone Conversion (`TZ` / `America/New_York`)**: Converted `transcript.jsonl` UTC timestamps (`...Z`) to local timezone before bucketing into 4h slots (`to_4h_slot`), eliminating the `+5h` UTC offset that shifted evening coding sessions after `7:00 PM EST` into tomorrow's date and excluded future 4h slots later today from dragging the right edge of today's chart line to zero.
+  - **Locked X-Axes Across All 3 Time-Series Charts**: Removed independent per-chart leading-zero slicing (`firstNonZero` in `web/charts.js` and `firstIdx` in `web/app.js`) and the 14-day October backfill on `current_month`, ensuring `Activity Over Time`, `Subagent Activity Over Time`, and `Project Activity Over Time` share the exact same X-axis start/end timestamps and vertical spike positions in every period tab.
+  - **Exact Period-Scoped Project & Subagent Totals**: Unified `ws_map` and `ws_slots` (including `"unassigned"`, subagent steps, and an `"other-projects"` / `"other-subagents"` 6th layer for items `#6..#N`), filtered `subagent_role_breakdown` and `model_usage_vs_target` strictly to the active date window (`s_iso <= d_str <= e_iso`), removed `_smooth_series` peak distortion, and added title-aware workspace resolution (`_pick_primary_workspace`) for multi-URI conversations.
+- **Single-Call-Per-Turn Gemini Web Guardrail & Auto-Bundled Context (`src/agy_nexus/config.py`, `tools_session.py`, `tools_workspace.py`, `tools_ops.py`, `hygiene.py`)**:
+  - Enforced the strict `1 MCP Tool Call Per Turn` rule across `mcp.instructions` and all `assistant_guidance` strings to prevent Google Gemini Web's Connected Apps UI from freezing on `"Trying to connect..."`, while upgrading `ask_workspace_readonly` to auto-read the top 4 matched files from `code_search_matches` and `list_saved_sessions` to bundle `top_session_detail` in a single call.
+
+---
+
 ## [2.3.3] — 2026-11-04
 
 ### Fixed

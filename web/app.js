@@ -150,12 +150,6 @@ function renderDashboard(b) {
       const resLabel = (velSeries.resolution || "4h sub-daily").toUpperCase();
       document.getElementById("linePlotTag").textContent = `${resLabel} // SOLID = ACTUAL, DASHED = AVG`;
       if (vDates.length > 0) {
-        let firstIdx = 0;
-        for (let i = 0; i < vVals.length; i++) {
-          if (vVals[i] > 0) { firstIdx = Math.max(0, i - 1); break; } }
-        if (firstIdx > 0 && vDates.length - firstIdx >= 6) {
-          vDates = vDates.slice(firstIdx);
-          vVals = vVals.slice(firstIdx); }
         const W = 620, H = 185, padL = 44, padR = 14, padT = 14, padB = 24;
         const plotW = W - padL - padR;
         const plotH = H - padT - padB;
@@ -204,7 +198,7 @@ function renderDashboard(b) {
             ? "Claude 5.5"
             : (rLow.includes("flash") ? "Flash 3.8" : "Argon 4 Pro");
           const share = ((item.steps / totSubSteps) * 100).toFixed(1) + "%";
-          const dotColor = idx < 5 ? SERIES_COLORS[idx % SERIES_COLORS.length] : "var(--border-grid)";
+          const dotColor = idx < 5 ? SERIES_COLORS[idx % SERIES_COLORS.length] : SERIES_COLORS[5];
           const tr = document.createElement("tr");
           tr.innerHTML = `
             <td><span class="swatch-dot" style="background:${dotColor};margin-right:6px;"></span><strong class="mono">${item.role}</strong></td>
@@ -231,7 +225,7 @@ function renderDashboard(b) {
       if (wsTag) wsTag.textContent = wsList.length + " PROJECTS";
       wsList.forEach((ws, idx) => {
         const share = ((ws.steps / totWsSteps) * 100).toFixed(1) + "%";
-        const dotColor = idx < 5 ? SERIES_COLORS[idx % SERIES_COLORS.length] : "var(--border-grid)";
+        const dotColor = idx < 5 ? SERIES_COLORS[idx % SERIES_COLORS.length] : SERIES_COLORS[5];
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td><span class="swatch-dot" style="background:${dotColor};margin-right:6px;"></span><strong>${ws.workspace}</strong></td>

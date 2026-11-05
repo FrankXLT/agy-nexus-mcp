@@ -182,7 +182,7 @@ const SERIES_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899", "#
       const resLabel = (seriesBundle && seriesBundle.resolution) ? seriesBundle.resolution.toUpperCase() : "4H SUB-DAILY";
       const resEl = document.getElementById(resTagId);
       if (resEl) resEl.textContent = resLabel + " STACKED";
-      let keys = (seriesBundle && Array.isArray(seriesBundle.keys) && seriesBundle.keys.length) ? seriesBundle.keys.slice(0, 5) : [];
+      let keys = (seriesBundle && Array.isArray(seriesBundle.keys) && seriesBundle.keys.length) ? seriesBundle.keys.slice(0, 6) : [];
       let dates = (seriesBundle && Array.isArray(seriesBundle.dates) && seriesBundle.dates.length) ? seriesBundle.dates : [];
       let layers = (seriesBundle && seriesBundle.layers) ? seriesBundle.layers : {};
       if (!keys.length || !dates.length) {
@@ -192,8 +192,8 @@ const SERIES_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899", "#
           ["00:00", "04:00", "08:00", "12:00", "16:00", "20:00"].forEach((hr) => {
             dates.push(`${d.date} ${hr}`); });
         });
-        keys = (fallbackItems || []).slice(0, 5).map(x => x.name);
-        const totalWeight = Math.max(1, (fallbackItems || []).slice(0, 5).reduce((a, b) => a + (b.steps || 1), 0));
+        keys = (fallbackItems || []).slice(0, 6).map(x => x.name);
+        const totalWeight = Math.max(1, (fallbackItems || []).slice(0, 6).reduce((a, b) => a + (b.steps || 1), 0));
         layers = {};
         keys.forEach((k, kIdx) => {
           const item = fallbackItems[kIdx] || { steps: 100 };
@@ -207,19 +207,6 @@ const SERIES_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899", "#
         svg.innerHTML = `<text class="axis-label" x="20" y="95">No activity recorded for this time period.</text>`;
         legendEl.innerHTML = "";
         return; }
-      let firstNonZero = 0;
-      for (let i = 0; i < dates.length; i++) {
-        const colSum = keys.reduce((acc, k) => acc + Number((layers[k] && layers[k][i]) || 0), 0);
-        if (colSum > 0) {
-          firstNonZero = Math.max(0, i - 1);
-          break; }
-      }
-      if (firstNonZero > 0 && dates.length - firstNonZero >= 6) {
-        dates = dates.slice(firstNonZero);
-        const trimmedLayers = {};
-        keys.forEach((k) => {
-          trimmedLayers[k] = (layers[k] || []).slice(firstNonZero); });
-        layers = trimmedLayers; }
       const nPts = dates.length;
       const W = 620, H = 185, padL = 44, padR = 14, padT = 14, padB = 24;
       const plotW = W - padL - padR;

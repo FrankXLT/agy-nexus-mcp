@@ -12,10 +12,28 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 WIRE_TELEMETRY_RING: list[dict[str, Any]] = []
 MAX_WIRE_RING = 200
+
+def get_display_tz() -> Any:
+    tz_env = (os.getenv("AGY_TIMEZONE") or os.getenv("TZ") or "").strip()
+    if tz_env:
+        try:
+            return ZoneInfo(tz_env)
+        except Exception:
+            pass
+    local_tz = datetime.now().astimezone().tzinfo
+    if local_tz and str(local_tz) not in ("UTC", "Etc/UTC"):
+        return local_tz
+    try:
+        return ZoneInfo("America/New_York")
+    except Exception:
+        return timezone.utc
+
+DISPLAY_TZ = get_display_tz()
 
 MODEL_TARGET_ALLOCATION = {
     "ultra-20x": {
@@ -191,14 +209,20 @@ def normalize_workspace_name(ws_raw: str) -> str:
     return re.sub(r"-wt-\d+$", "", ws_name)
 
 def to_4h_slot(c_str: str, fallback_mtime: float) -> tuple[str, str]:
-    if len(c_str) >= 13 and c_str[4] == "-" and c_str[10] in ("T", " "):
-        day_s = c_str[:10]
+    if c_str:
         try:
-            return day_s, f"{day_s}T{(int(c_str[11:13]) // 4) * 4:02d}"
+            dt = datetime.fromisoformat(c_str)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            dt_loc = dt.astimezone(DISPLAY_TZ)
+            day_s = f"{dt_loc.year:04d}-{dt_loc.month:02d}-{dt_loc.day:02d}"
+            return day_s, f"{day_s}T{(dt_loc.hour // 4) * 4:02d}"
         except Exception:
-            return day_s, f"{day_s}T12"
-    dt = datetime.fromtimestamp(fallback_mtime, tz=timezone.utc)
-    return dt.strftime("%Y-%m-%d"), f"{dt.strftime('%Y-%m-%d')}T{(dt.hour // 4) * 4:02d}"
+            if len(c_str) >= 10 and c_str[4] == "-":
+                return c_str[:10], f"{c_str[:10]}T12"
+    dt_fb = datetime.fromtimestamp(fallback_mtime, tz=DISPLAY_TZ)
+    day_fb = dt_fb.strftime("%Y-%m-%d")
+    return day_fb, f"{day_fb}T{(dt_fb.hour // 4) * 4:02d}"
 
 def scan_transcript_stats(brain_dir: Path, bg_dir: Path) -> dict[str, Any]:
     cache_file = bg_dir / "nexus_stats_cache.json"
@@ -227,6 +251,8 @@ def scan_transcript_stats(brain_dir: Path, bg_dir: Path) -> dict[str, Any]:
             if cached and cached.get("mtime") == mtime and cached.get("size") == fsize:
                 continue
             d_steps, d_tools, d_tokens, slot_steps = {}, {}, {}, {}
+            d_models: dict[str, dict[str, int]] = {}
+            d_mtoks: dict[str, dict[str, int]] = {}
             m_counts = {"argon_pro": 0, "flash": 0, "claude_partner": 0, "gpt_oss": 0}
             m_tokens = {"argon_pro": 0, "flash": 0, "claude_partner": 0, "gpt_oss": 0}
             subs_cnt = 0
@@ -253,13 +279,24 @@ def scan_transcript_stats(brain_dir: Path, bg_dir: Path) -> dict[str, Any]:
                                                 subs_cnt += 1
                                                 mk = classify_model_key(str(s.get("Model") or ""), str(s.get("TypeName") or s.get("Role") or ""))
                                                 m_counts[mk] = m_counts.get(mk, 0) + 1
+                                                dm = d_models.setdefault(day_s, {})
+                                                dm[mk] = dm.get(mk, 0) + 1
                         est_tok = max(12, round(step_chars / 4.0))
                         d_tokens[day_s] = d_tokens.get(day_s, 0) + est_tok
                         if obj.get("type") == "PLANNER_RESPONSE":
                             mk = classify_model_key(str(obj.get("model") or ""), "")
                             m_counts[mk] = m_counts.get(mk, 0) + 1
                             m_tokens[mk] = m_tokens.get(mk, 0) + est_tok
-                conv_cache[entry.name] = {"mtime": mtime, "size": fsize, "day_steps": d_steps, "day_tools": d_tools, "day_tokens": d_tokens, "slot_steps": slot_steps, "model_counts": m_counts, "model_tokens": m_tokens, "subagents_spawned": subs_cnt}
+                            dm = d_models.setdefault(day_s, {})
+                            dm[mk] = dm.get(mk, 0) + 1
+                            dtk = d_mtoks.setdefault(day_s, {})
+                            dtk[mk] = dtk.get(mk, 0) + est_tok
+                conv_cache[entry.name] = {
+                    "mtime": mtime, "size": fsize, "day_steps": d_steps, "day_tools": d_tools,
+                    "day_tokens": d_tokens, "slot_steps": slot_steps, "day_models": d_models,
+                    "day_model_tokens": d_mtoks, "model_counts": m_counts, "model_tokens": m_tokens,
+                    "subagents_spawned": subs_cnt,
+                }
                 updated = True
             except Exception:
                 continue

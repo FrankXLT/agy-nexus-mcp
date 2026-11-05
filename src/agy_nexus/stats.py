@@ -16,6 +16,7 @@ from agy_nexus.ascii_default import render_ascii_default, render_ascii_quick
 from agy_nexus.ascii_rich import render_ascii_rich
 from agy_nexus.telemetry_scanner import (
     CACHE_VERSION,
+    DISPLAY_TZ,
     MAX_WIRE_RING,
     MODEL_TARGET_ALLOCATION,
     WIRE_TELEMETRY_RING,
@@ -46,20 +47,22 @@ __all__ = [
     "render_ascii_stats",
 ]
 
-def _smooth_series(vals: list[int]) -> list[int]:
-    n = len(vals)
-    return (
-        vals
-        if n < 3
-        else [
-            round(
-                0.22 * (vals[i - 1] if i > 0 else vals[i])
-                + 0.56 * vals[i]
-                + 0.22 * (vals[i + 1] if i + 1 < n else vals[i])
-            )
-            for i in range(n)
-        ]
-    )
+def _pick_primary_workspace(uris: list[str], title: str) -> str:
+    if not uris:
+        return ""
+    cleaned = [str(u).replace("file://", "").rstrip("/") for u in uris if u]
+    if len(cleaned) <= 1:
+        return cleaned[0] if cleaned else ""
+    t_low = (title or "").lower()
+    if any(k in t_low for k in ("mcp", "antigravity", "nexus", "bridge")):
+        for u in cleaned:
+            if "antigravity-config" in u:
+                return u
+    for u in cleaned:
+        bname = u.rsplit("/", 1)[-1].lower()
+        if bname and bname in t_low:
+            return u
+    return cleaned[0]
 
 def render_ascii_stats(bundle: dict[str, Any], style: str = "default") -> str:
     """Dispatch telemetry bundle to the requested ASCII style: 'default' (72c), 'quick' (40c), or 'rich' (76c)."""
@@ -87,8 +90,8 @@ def build_nexus_stats_bundle(
     db_file = db_file or (base_data / "conversation_summaries.db")
     agy_config_dir = agy_config_dir or config_dir or (Path.home() / ".gemini/config")
     bg_dir = bg_dir or (base_data / "sidecar_data/ag-bridge-bg")
-    now_utc = datetime.now(timezone.utc)
-    today = now_utc.date()
+    now_loc = datetime.now(DISPLAY_TZ)
+    today = now_loc.date()
     pk = (period or "last_90d").strip().lower()
     if pk in ("current_month", "this_month", "mtd"):
         pk = "current_month"
@@ -128,19 +131,11 @@ def build_nexus_stats_bundle(
                     if isinstance(r["workspace_uris"], str) and r["workspace_uris"].startswith("[")
                     else []
                 )
-                ws = uris[0].replace("file://", "") if uris else ""
+                title_str = str(r["title"] or cid[:8])
+                ws = _pick_primary_workspace(uris, title_str)
                 steps, lmt = int(r["step_count"] or 0), str(r["last_modified_time"] or "")
-                d_str = lmt[:10] if len(lmt) >= 10 and lmt[4] == "-" else e_iso
-                if parent_id:
-                    rk = agent_name or "subagent"
-                    rec = subagent_roles.setdefault(rk, {"runs": 0, "steps": 0, "tokens": 0})
-                    rec["runs"] += 1
-                    rec["steps"] += steps
-                    if s_iso <= d_str <= e_iso:
-                        mk = classify_model_key("", rk)
-                        model_totals[mk] = model_totals.get(mk, 0) + steps
                 db_convs[cid] = {
-                    "title": str(r["title"] or cid[:8]),
+                    "title": title_str,
                     "step_count": steps,
                     "last_modified": lmt,
                     "workspace": ws,
@@ -150,16 +145,19 @@ def build_nexus_stats_bundle(
                     "agent_name": agent_name or "subagent",
                 }
             for cid, info in db_convs.items():
-                if not info["workspace"] and info["parent_id"] and info["parent_id"] in db_convs:
-                    info["workspace"] = db_convs[info["parent_id"]].get("workspace", "")
+                if info["parent_id"] and info["parent_id"] in db_convs:
+                    parent_ws = db_convs[info["parent_id"]].get("workspace", "")
+                    if parent_ws:
+                        info["workspace"] = parent_ws
         except Exception:
             pass
 
-    chart_s_iso = min(s_iso, (today - timedelta(days=13)).strftime("%Y-%m-%d")) if pk == "current_month" else s_iso
+    chart_s_iso = s_iso
     daily_steps, daily_tools, daily_tokens, daily_sessions, slot_totals, ws_map, ws_slots, sub_slots = {}, {}, {}, {}, {}, {}, {}, {}
+    active_parent_convs = 0
     for cid, cdata in conv_cache.items():
         meta = db_convs.get(cid, {})
-        ws_name = normalize_workspace_name(meta.get("workspace") or "")
+        ws_name = normalize_workspace_name(meta.get("workspace") or "") or "unassigned"
         is_sub = bool(meta.get("is_subagent"))
         agent_role = str(meta.get("agent_name") or "subagent")
         win_steps, win_toks = 0, 0
@@ -175,37 +173,54 @@ def build_nexus_stats_bundle(
         for sl_k, sl_cnt in (cdata.get("slot_steps") or {}).items():
             if chart_s_iso <= sl_k[:10] <= e_iso:
                 slot_totals[sl_k] = slot_totals.get(sl_k, 0) + sl_cnt
-                if ws_name and ws_name != "unassigned":
-                    ws_slots.setdefault(ws_name, {})[sl_k] = ws_slots.get(ws_name, {}).get(sl_k, 0) + sl_cnt
+                ws_slots.setdefault(ws_name, {})[sl_k] = ws_slots.get(ws_name, {}).get(sl_k, 0) + sl_cnt
                 if is_sub:
                     sub_slots.setdefault(agent_role, {})[sl_k] = sub_slots.get(agent_role, {}).get(sl_k, 0) + sl_cnt
         for ds, tcnt in (cdata.get("day_tools") or {}).items():
             daily_tools[ds] = daily_tools.get(ds, 0) + tcnt
-        if is_sub and agent_role in subagent_roles:
-            subagent_roles[agent_role]["tokens"] = subagent_roles[agent_role].get("tokens", 0) + win_toks
-        if win_steps > 0 and not is_sub:
-            for mk, mval in (cdata.get("model_counts") or {}).items():
-                model_totals[mk] = model_totals.get(mk, 0) + int(mval)
-            for mk, mtok in (cdata.get("model_tokens") or {}).items():
-                model_tokens[mk] = model_tokens.get(mk, 0) + int(mtok)
+        for ds, dm_map in (cdata.get("day_models") or {}).items():
+            if s_iso <= ds <= e_iso and isinstance(dm_map, dict):
+                for mk, mval in dm_map.items():
+                    model_totals[mk] = model_totals.get(mk, 0) + int(mval)
+        for ds, dtk_map in (cdata.get("day_model_tokens") or {}).items():
+            if s_iso <= ds <= e_iso and isinstance(dtk_map, dict):
+                for mk, mtok in dtk_map.items():
+                    model_tokens[mk] = model_tokens.get(mk, 0) + int(mtok)
+        if win_steps > 0:
             we = ws_map.setdefault(ws_name, {"workspace": ws_name, "sessions": 0, "steps": 0, "tokens": 0})
-            we["sessions"] += 1
+            if not is_sub:
+                we["sessions"] += 1
+                active_parent_convs += 1
+            else:
+                rec = subagent_roles.setdefault(agent_role, {"runs": 0, "steps": 0, "tokens": 0})
+                rec["runs"] += 1
+                rec["steps"] += win_steps
+                rec["tokens"] += win_toks
             we["steps"] += win_steps
             we["tokens"] += win_toks
-        elif win_toks > 0 and is_sub and ws_name in ws_map:
-            ws_map[ws_name]["tokens"] += win_toks
 
     for cid, meta in db_convs.items():
         if meta.get("is_subagent") and cid not in conv_cache and int(meta.get("step_count") or 0) > 0:
             d_str, sl_str = to_4h_slot(str(meta.get("last_modified") or ""), time.time())
-            if len(d_str) == 10 and chart_s_iso <= d_str <= e_iso:
+            if len(d_str) == 10 and s_iso <= d_str <= e_iso:
                 role, st_c = str(meta.get("agent_name") or "subagent"), int(meta["step_count"])
-                if role in subagent_roles and s_iso <= d_str <= e_iso:
-                    subagent_roles[role]["tokens"] = subagent_roles[role].get("tokens", 0) + st_c * 380
+                tok_est = st_c * 380
+                daily_steps[d_str] = daily_steps.get(d_str, 0) + st_c
+                daily_tokens[d_str] = daily_tokens.get(d_str, 0) + tok_est
+                slot_totals[sl_str] = slot_totals.get(sl_str, 0) + st_c
+                rec = subagent_roles.setdefault(role, {"runs": 0, "steps": 0, "tokens": 0})
+                rec["runs"] += 1
+                rec["steps"] += st_c
+                rec["tokens"] += tok_est
                 sub_slots.setdefault(role, {})[sl_str] = sub_slots.get(role, {}).get(sl_str, 0) + st_c
-                ws_n = normalize_workspace_name(meta.get("workspace") or "")
-                if ws_n and ws_n != "unassigned":
-                    ws_slots.setdefault(ws_n, {})[sl_str] = ws_slots.get(ws_n, {}).get(sl_str, 0) + st_c
+                ws_n = normalize_workspace_name(meta.get("workspace") or "") or "unassigned"
+                ws_slots.setdefault(ws_n, {})[sl_str] = ws_slots.get(ws_n, {}).get(sl_str, 0) + st_c
+                we = ws_map.setdefault(ws_n, {"workspace": ws_n, "sessions": 0, "steps": 0, "tokens": 0})
+                we["steps"] += st_c
+                we["tokens"] += tok_est
+                mk = classify_model_key("", role)
+                model_totals[mk] = model_totals.get(mk, 0) + st_c
+                model_tokens[mk] = model_tokens.get(mk, 0) + tok_est
 
     cur, win_steps_sum, win_tools_sum, win_tokens_sum, active_days, peak = start_d, 0, 0, 0, 0, {"date": "", "steps": 0}
     while cur <= end_d:
@@ -221,10 +236,9 @@ def build_nexus_stats_bundle(
     if pk == "current_month":
         nxt_m = (today.replace(day=28) + timedelta(days=4)).replace(day=1)
         heat_end_d = nxt_m - timedelta(days=1)
-        heat_start_d = min(start_d, heat_end_d - timedelta(days=55))
+        heat_start_d = start_d
     elif pk == "last_month":
-        heat_end_d = end_d
-        heat_start_d = min(start_d, end_d - timedelta(days=41))
+        heat_start_d, heat_end_d = start_d, end_d
     else:
         heat_start_d, heat_end_d = start_d, end_d
     heat_start_d -= timedelta(days=heat_start_d.weekday())
@@ -241,30 +255,49 @@ def build_nexus_stats_bundle(
         h_cur += timedelta(days=1)
 
     act_d, act_w = max(1, active_days), max(1.0, max(1, active_days) / 7.0)
-    ws_tok_sum = max(1, sum(int(w.get("tokens", 0)) for w in ws_map.values()))
+    ws_step_sum = max(1, sum(int(w.get("steps", 0)) for w in ws_map.values()))
     all_ws_list = sorted(ws_map.values(), key=lambda x: x["steps"], reverse=True)
     for w in all_ws_list:
-        tk = int(w.get("tokens", 0))
-        w["tok_per_day"], w["tok_per_week"], w["share_pct"] = round(tk / act_d), round(tk / act_w), round((tk / ws_tok_sum) * 100.0, 1)
+        tk, st_w = int(w.get("tokens", 0)), int(w.get("steps", 0))
+        w["tok_per_day"], w["tok_per_week"], w["share_pct"] = round(tk / act_d), round(tk / act_w), round((st_w / ws_step_sum) * 100.0, 1)
 
-    sa_tok_sum = max(1, sum(int(v.get("tokens", 0)) for v in subagent_roles.values()))
+    sa_step_sum = max(1, sum(int(v.get("steps", 0)) for v in subagent_roles.values()))
     subagent_list = []
     for rk, rv in sorted(subagent_roles.items(), key=lambda kv: kv[1]["steps"], reverse=True):
-        tk = int(rv.get("tokens", 0))
-        rv["tok_per_day"], rv["tok_per_week"], rv["share_pct"] = round(tk / act_d), round(tk / act_w), round((tk / sa_tok_sum) * 100.0, 1)
+        tk, st_s = int(rv.get("tokens", 0)), int(rv.get("steps", 0))
+        rv["tok_per_day"], rv["tok_per_week"], rv["share_pct"] = round(tk / act_d), round(tk / act_w), round((st_s / sa_step_sum) * 100.0, 1)
         subagent_list.append({"role": rk, **rv})
 
-    ws_keys, sub_keys = [w["workspace"] for w in all_ws_list[:5]], [s["role"] for s in subagent_list[:5]]
-    chart_days = [x for x in heatmap_series if not x.get("future") and x["date"] >= chart_s_iso]
+    ws_keys = [w["workspace"] for w in all_ws_list[:5]]
+    other_ws_keys = [w["workspace"] for w in all_ws_list[5:]]
+    if other_ws_keys:
+        ws_keys.append("other-projects")
+    sub_keys = [s["role"] for s in subagent_list[:5]]
+    other_sub_keys = [s["role"] for s in subagent_list[5:]]
+    if other_sub_keys:
+        sub_keys.append("other-subagents")
+
+    chart_days = [x for x in heatmap_series if not x.get("future") and s_iso <= x["date"] <= e_iso]
     first_act_idx = next((idx for idx, x in enumerate(chart_days) if x["steps"] > 0), 0)
     trimmed_days = [x["date"] for x in (chart_days[max(0, first_act_idx - 1) :] if len(chart_days) > 7 else chart_days)]
-    all_4h_slots = [f"{d_iso}T{hr:02d}" for d_iso in trimmed_days for hr in (0, 4, 8, 12, 16, 20)]
+    today_iso, cur_slot_hr = today.strftime("%Y-%m-%d"), (now_loc.hour // 4) * 4
+    all_4h_slots = [f"{d_iso}T{hr:02d}" for d_iso in trimmed_days for hr in (0, 4, 8, 12, 16, 20) if d_iso < today_iso or (d_iso == today_iso and hr <= cur_slot_hr)]
     slot_group = 1 if len(all_4h_slots) <= 150 else (2 if len(all_4h_slots) <= 320 else (3 if len(all_4h_slots) <= 560 else 6))
     resolution_label = f"{slot_group * 4}h sub-daily" if slot_group < 6 else "daily"
     chart_labels = [f"{all_4h_slots[i : i + slot_group][-1][:10]} {all_4h_slots[i : i + slot_group][-1][11:13]}:00" if slot_group < 6 else all_4h_slots[i : i + slot_group][-1][:10] for i in range(0, len(all_4h_slots), slot_group)]
     vel_points = [sum(slot_totals.get(s, 0) for s in all_4h_slots[i : i + slot_group]) for i in range(0, len(all_4h_slots), slot_group)]
-    ws_layers = {k: _smooth_series([sum(ws_slots.get(k, {}).get(s, 0) for s in all_4h_slots[i : i + slot_group]) for i in range(0, len(all_4h_slots), slot_group)]) for k in ws_keys}
-    sub_layers = {k: _smooth_series([sum(sub_slots.get(k, {}).get(s, 0) for s in all_4h_slots[i : i + slot_group]) for i in range(0, len(all_4h_slots), slot_group)]) for k in sub_keys}
+    ws_layers: dict[str, list[int]] = {}
+    for k in ws_keys:
+        if k == "other-projects":
+            ws_layers[k] = [sum(sum(ws_slots.get(ok, {}).get(s, 0) for ok in other_ws_keys) for s in all_4h_slots[i : i + slot_group]) for i in range(0, len(all_4h_slots), slot_group)]
+        else:
+            ws_layers[k] = [sum(ws_slots.get(k, {}).get(s, 0) for s in all_4h_slots[i : i + slot_group]) for i in range(0, len(all_4h_slots), slot_group)]
+    sub_layers: dict[str, list[int]] = {}
+    for k in sub_keys:
+        if k == "other-subagents":
+            sub_layers[k] = [sum(sum(sub_slots.get(ok, {}).get(s, 0) for ok in other_sub_keys) for s in all_4h_slots[i : i + slot_group]) for i in range(0, len(all_4h_slots), slot_group)]
+        else:
+            sub_layers[k] = [sum(sub_slots.get(k, {}).get(s, 0) for s in all_4h_slots[i : i + slot_group]) for i in range(0, len(all_4h_slots), slot_group)]
 
     quota_info = get_live_quota_and_pool_status(agy_config_dir)
     targets, tot_calls = quota_info["target_model_allocation"], max(1, sum(model_totals.values()))
@@ -275,14 +308,14 @@ def build_nexus_stats_bundle(
         dp = round(ap - tp, 1)
         model_comp.append({"model_key": mk, "label": tm["label"], "pool": tm["pool"], "actual_calls": ac, "est_tokens": model_tokens.get(mk, 0), "actual_pct": ap, "target_pct": tp, "delta_pct": dp, "status": "ON_TARGET" if abs(dp) <= 12.0 else ("OVER_TARGET" if dp > 12.0 else "UNDER_TARGET")})
 
-    parent_cnt = sum(1 for v in db_convs.values() if not v.get("is_subagent")) or len(conv_cache)
+    parent_cnt = active_parent_convs or sum(1 for v in db_convs.values() if not v.get("is_subagent"))
     kpis_obj = {"total_conversations": parent_cnt, "total_subagents_spawned": sum(v["runs"] for v in subagent_roles.values()), "window_steps": win_steps_sum, "period_steps": win_steps_sum, "window_tool_calls": win_tools_sum, "period_tool_calls": win_tools_sum, "window_tokens": win_tokens_sum, "active_days": active_days, "avg_daily_steps": round(win_steps_sum / act_d, 1), "tok_per_day": round(win_tokens_sum / act_d), "tok_per_week": round(win_tokens_sum / act_w), "peak_day": peak}
     bundle = {
-        "server": "agy-nexus-mcp", "version": "3.8.0", "generated_at": now_utc.isoformat(), "style": (style or "default").strip().lower(),
-        "period": {"key": pk, "label": p_label, "start_date": s_iso, "end_date": e_iso, "total_days": len(heatmap_series), "active_days": active_days, "resolution": resolution_label},
+        "server": "agy-nexus-mcp", "version": "3.8.0", "generated_at": now_loc.isoformat(), "style": (style or "default").strip().lower(),
+        "period": {"key": pk, "label": p_label, "start_date": s_iso, "end_date": e_iso, "total_days": len([x for x in heatmap_series if x.get("in_window")]), "active_days": active_days, "resolution": resolution_label},
         "kpis": kpis_obj, "summary": kpis_obj, "quota_and_pools": quota_info, "model_usage_vs_target": model_comp, "subagent_role_breakdown": subagent_roles,
         "subagent_list": subagent_list, "all_workspaces": all_ws_list, "top_workspaces": all_ws_list[:10],
-        "velocity_series": {"dates": chart_labels, "values": _smooth_series(vel_points), "resolution": resolution_label},
+        "velocity_series": {"dates": chart_labels, "values": vel_points, "resolution": resolution_label},
         "workspace_series": {"keys": ws_keys, "dates": chart_labels, "layers": ws_layers, "resolution": resolution_label},
         "subagent_series": {"keys": sub_keys, "dates": chart_labels, "layers": sub_layers, "resolution": resolution_label},
         "heatmap_series": heatmap_series, "wire_telemetry": get_wire_telemetry_summary(bg_dir, limit=15),

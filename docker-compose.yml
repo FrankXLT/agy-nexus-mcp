@@ -9,6 +9,7 @@ services:
       - "${BIND_PORT:-8765}:8765"
     environment:
       - HOME=${HOME}
+      - TZ=${TZ:-America/New_York}
       - PYTHONUNBUFFERED=1
       - AG_BRIDGE_ENV_FILE=/config/secrets.env
       - AGY_DATA_DIR=${HOME}/.gemini/antigravity

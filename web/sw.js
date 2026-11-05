@@ -1,7 +1,7 @@
-const CACHE_NAME = "agy-nexus-overwatch-v2.3.2";
-const SHELL_ASSETS = ["/web", "/web/styles.css?v=2.3.2",
-  "/web/charts.js?v=2.3.2",
-  "/web/app.js?v=2.3.2",
+const CACHE_NAME = "agy-nexus-overwatch-v2.3.4";
+const SHELL_ASSETS = ["/web", "/web/styles.css?v=2.3.4",
+  "/web/charts.js?v=2.3.4",
+  "/web/app.js?v=2.3.4",
   "/web/manifest.webmanifest", "/web/icon.svg", "/web/icon-192.png", "/web/icon-512.png"];
 
 self.addEventListener("install", (event) => {
