@@ -37,7 +37,7 @@ From your phone or browser, you can check on running coding sessions, inspect a 
 
 ### 3. Installable Chromium App (PWA) & Visual Usage Dashboard (`/web`)
 - **One-Click Standalone App**: Open `/web` over HTTPS and click the top-bar **`App`** button to install the dashboard as a native-feeling **Chromium Standalone App** on desktop or mobile (or copy the `--app=` terminal launcher).
-- **Unified Project, Chat & Session Hierarchy Panel (`col-12`)**: Inspect every project, active/pinned slot, `SHARED REPO` badge, and 3-2-1 backup sync status (`3-2-1 SYNC: 9f4a2c1 ✓`) with 1-click `📋` copy buttons for `project_id`, `session_id`, chat title, and `workspace`.
+- **Unified Project, Chat & Session Hierarchy Panel (`col-12`)**: Inspect every project, active/pinned slot, `SHARED REPO` badge, and 3-2-1 backup sync status (`3-2-1 SYNC: 55d0304 ✓`) with 1-click inline copy for `project_id`, `session_id`, chat title, and `workspace`.
 - **Locked X-Axes & Local-Timezone `4h` Stacked Charts**: Activity velocity, subagent runs, and project token stacks are bucketed in local timezone and locked to the exact same X-axis window across **`This Month (MTD)`**, **`Last Month`**, **`Rolling 90 Days`**, and **`Rolling 52 Weeks`**.
 - **4 Themes & 4 Spacing Modes**: Choose between `Obsidian`, `Dark Paper`, `Warm Paper`, and `Pure White` themes alongside 4 compactness levels (`D1`–`D4`) in a single dropdown.
 
@@ -78,7 +78,7 @@ Once connected, just talk or type naturally in Gemini Web or Gemini Mobile:
 - **Unlock & check status**: *"Unlock Antigravity with passphrase [your phrase] and show me my active sessions."*
 - **View the Project & Session ID Tree**: *"Show me my session tree so I can copy the session ID and project ID."*
 - **Inspect a session in one shot**: *"Load session `quantum-dsp-workbench` and tell me what it's working on or waiting for."*
-- **Search & read code across parallel tabs**: *"Search `cloud-gitops-stack` for the compose healthcheck rules and read the matching files."*
+- **Search & read code across parallel tabs**: *"Search `automation-gitops` for the compose healthcheck rules and read the matching files."*
 - **Audit uncommitted git changes**: *"Check git diff across all my repositories to see what hasn't been committed yet."*
 - **Send a plan back to Antigravity**: *"Send this implementation plan to my `quantum-dsp-workbench` session and wake it up in plan mode."*
 - **View ASCII stats in chat**: *"Show me my latest usage stats"* (or ask for `quick` mobile view or `rich` desktop view).
@@ -93,53 +93,117 @@ Call `get_session_tree()` (or `manage_background_run(action="sessions")`) to ren
 ╔══════════════════════════════════════════════════════════════════════════╗
 ║ AGY-NEXUS // PROJECT -> CHAT -> SESSION ID HIERARCHY (COPY-READY)        ║
 ╠══════════════════════════════════════════════════════════════════════════╣
-║ ACTIVE SLOTS: 3 | PINNED: 42 | AUTO-PATH: 2 | TTL: 118.0m                ║
-║ 3-2-1 BACKUP: 9f4a2c1 (SYNCED ✓ · 842.0 KB · 12m ago)                    ║
+║ ACTIVE SLOTS: 5 | PINNED: 22 | AUTO-PATH: 6 | TTL: 119.5m                ║
+║ 3-2-1 BACKUP: 55d0304 (SYNCED ✓ · 2263.1 KB · 1h ago)                    ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
-[PROJECT 1] quantum-dsp-workbench [SHARED REPO]
-  project_id : quantum-dsp-workbench
-  workspaces : /home/dev/workspaces/quantum-dsp-workbench
-  ├─ [#1] Real-Time FFT Kernel & SIMD Pipeline Optimization
-  │   session_id : 7a4e91c2-8b3d-4f10-9a6e-2c5d8f01e3b4
-  │   workspace  : /home/dev/workspaces/quantum-dsp-workbench
-  │   status     : [● RUNNING] · MAIN WRITER · 486 steps · 5m ago
-  ├─ [#2] Spectral Waterfall Shader & WebGPU Buffer Audit
-  │   session_id : 3f8b12d9-5c4a-4e21-b871-9d0e4a62c1f8
-  │   workspace  : /home/dev/workspaces/quantum-dsp-workbench
-  │   status     : [◉ PINNED · IDLE] · SHARED (READ-ONLY) · 214 steps · 28m ago
-  └─ [#3] Lock-Free Ring Buffer Benchmark Suite
-      session_id : c91d40e6-2a7b-4d83-9c15-6e3f8b20a4d1
-      workspace  : /home/dev/workspaces/.worktrees/quantum-dsp-c91d40e6
-      status     : [○ IDLE] · WORKTREE · 158 steps · 2h ago
+[PROJECT 1] Core Infrastructure & Container GitOps
+  project_id : 491f269e-6a46-6930-b114-8a596add625a
+  workspaces : /home/dev/gitlab/container-gitops, /home/dev/gitlab/agy-nexus-config, /home/dev/gitlab/mesh-mesh-infra-ops, /home/dev/.gemini/antigravity/worktrees/container-gitops/prevent_container_flush_bug, /home/dev/.gemini/antigravity/worktrees/container-gitops/research_container_ldap_support
+  ├─ [#1] Antigravity MCP Integration
+  │   session_id : 031d6672-9375-a94d-ee14-21e19d067ef5
+  │   workspace  : /home/dev/gitlab/agy-nexus-config
+  │   status     : [● RUNNING] · MAIN WRITER · 4,164 steps · 1m ago
+  ├─ [#20] Container Management & Repairs
+  │   session_id : 71bf3617-da78-cfad-ec6f-3034f1b76421
+  │   workspace  : /home/dev/.gemini/antigravity/worktrees/container-gitops/prevent_container_flush_bug
+  │   status     : [○ IDLE] · WORKTREE · 1,271 steps · 7d ago
+  └─ [#23] Container LDAP Support Research
+      session_id : 5d03d9c3-8668-71f0-2a26-ef9f993c4e1e
+      workspace  : /home/dev/.gemini/antigravity/worktrees/container-gitops/research_container_ldap_support
+      status     : [○ IDLE] · WORKTREE · 422 steps · 13d ago
 
-[PROJECT 2] cloud-gitops-stack
-  project_id : cloud-gitops-stack
-  workspaces : /home/dev/workspaces/cloud-gitops-stack
-  ├─ [#4] Declarative Multi-Node Compose & 3-2-1 Bundle Sync
-  │   session_id : e52a90b4-6d1c-4a72-8f39-1b4c7d92e0a5
-  │   workspace  : /home/dev/workspaces/cloud-gitops-stack
-  │   status     : [● RUNNING] · MAIN WRITER · 342 steps · 7m ago
-  └─ [#5] Zero-Downtime Ingress & TLS Certificate Rotation
-      session_id : 9b3c61f0-4e8a-4c19-a254-7f1e3d80b6c2
-      workspace  : /home/dev/workspaces/cloud-gitops-stack
-      status     : [○ COMPLETED] · MAIN TREE · 275 steps · 4h ago
+[PROJECT 2] chronos-board
+  project_id : f45b9fc8-3341-770a-a5e9-6b51edd7d403
+  workspaces : /home/dev/chronos-board, /home/dev/.gemini/antigravity/worktrees/chronos-board/plan_sprint_one, /home/dev/.gemini/antigravity/worktrees/chronos-board/sunburst_chart_legend_slideout, /home/dev/.gemini/antigravity/worktrees/chronos-board/collect_phase_one_ux, /home/dev/.gemini/antigravity/worktrees/chronos-board/chronos-board_business_case
+  ├─ [#28] Project Infrastructure And Development Plan
+  │   session_id : 6cfff61b-3207-3d03-60ef-acd0ef2dadce
+  │   workspace  : /home/dev/chronos-board
+  │   status     : [● RUNNING] · MAIN WRITER · 5,592 steps · 17d ago
+  ├─ [#18] Phase 1 Sprints & Bugs
+  │   session_id : 96c5da58-741a-063a-b7fa-d45a5e38c0fe
+  │   workspace  : /home/dev/.gemini/antigravity/worktrees/chronos-board/plan_sprint_one
+  │   status     : [○ IDLE] · WORKTREE · 8,389 steps · 5d ago
+  └─ [#24] Sunburst And Chord Chart Refinement
+      session_id : fe94ac36-73db-ed55-54e8-2c2240a80c42
+      workspace  : /home/dev/.gemini/antigravity/worktrees/chronos-board/sunburst_chart_legend_slideout
+      status     : [○ IDLE] · WORKTREE · 1,026 steps · 14d ago
 
-[PROJECT 3] neural-mesh-anms
-  project_id : neural-mesh-anms
-  workspaces : /home/dev/workspaces/neural-mesh-anms
-  └─ [#6] Anomaly Detection Graph & Telemetry Ingestion
-      session_id : 4d7e23a1-9f0b-4b68-8c42-5a9d1e73f2b0
-      workspace  : /home/dev/workspaces/neural-mesh-anms
-      status     : [○ IDLE] · MAIN TREE · 194 steps · 1d ago
+[PROJECT 3] quantum-dsp-workbench [SHARED REPO]
+  project_id : e1676a6d-c5ba-1829-f129-86a6cea0e5bd
+  workspaces : /home/dev/gitlab/quantum-dsp-workbench
+  ├─ [#3] [QDSP-Portal] Landing Page & Platform Shell
+  │   session_id : b5e74c3c-15dd-1552-8f4a-5ff63090b4db
+  │   workspace  : /home/dev/gitlab/quantum-dsp-workbench
+  │   status     : [◉ PINNED · IDLE] · MAIN TREE · 2,544 steps · 1h ago
+  ├─ [#4] [QDSP-Learn-RF] RF & DSP Data Communications
+  │   session_id : 859dbded-76ce-bd86-861c-8397545e55c8
+  │   workspace  : /home/dev/gitlab/quantum-dsp-workbench
+  │   status     : [◉ PINNED · IDLE] · PINNED (READ-ONLY) · 1,390 steps · 1h ago
+  └─ [#5] [QDSP-Core] Chief Architect & Audit Team
+      session_id : bc9fca12-1ee9-f0f5-c26f-66781c29ba51
+      workspace  : /home/dev/gitlab/quantum-dsp-workbench
+      status     : [○ COMPLETED] · MAIN TREE · 5,883 steps · 5h ago
 
-[PROJECT 4] chronos-tasks
-  project_id : chronos-tasks
-  workspaces : /home/dev/workspaces/chronos-tasks
-  └─ [#7] Calendar Time-Block Counter-Event Scheduler
-      session_id : 1a8f54c7-3b2e-4d91-9e06-8c2b4f19d7e3
-      workspace  : /home/dev/workspaces/chronos-tasks
-      status     : [○ COMPLETED] · MAIN TREE · 312 steps · 1d ago
+[PROJECT 4] Unscoped Workspace
+  project_id : unscoped-workspace
+  workspaces : /home/dev/gitlab
+  ├─ [#6] Anti-Slop Visual Architecture Engine Testing And Implementation
+  │   session_id : 882e8349-52d4-bee1-35bb-6e985a4150e8
+  │   workspace  : /home/dev/gitlab
+  │   status     : [◉ PINNED · IDLE] · PINNED (READ-ONLY) · 4,014 steps · 10h ago
+  └─ [#25] Antigravity Subagent Tasking Support
+      session_id : 8cf8341b-fd77-1af6-dd3f-39a63bfa11cc
+      workspace  : /home/dev/gitlab
+      status     : [○ IDLE] · MAIN TREE · 244 steps · 14d ago
+
+[PROJECT 5] mail-taxonomy-ai
+  project_id : 4f009432-b083-7ae1-fae3-74fc93ac6fd5
+  workspaces : /home/dev/gitlab/mail-taxonomy-ai
+  └─ [#2] Ideation of Features
+      session_id : 21e3d46d-c57e-82cb-02ce-ae50d3d6fd02
+      workspace  : /home/dev/gitlab/mail-taxonomy-ai
+      status     : [◉ PINNED · IDLE] · MAIN WRITER · 1,327 steps · 2m ago
+
+[PROJECT 6] NexusMesh ANMS (Network Telemetry Platform)
+  project_id : 17a366d5-ffca-a150-7130-7a36567ed847
+  workspaces : /home/dev/gitlab/nexus-mesh-telemetry, /home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/rearchitect_api_strategy_redis, /home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/optimize_canvas_generation_dynamic_devices, /home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/hide_single_node_devices
+  ├─ [#17] Redesigning Server Architecture And Strategy
+  │   session_id : 2b1f7c7d-8e70-44c1-450b-c981e059f7e3
+  │   workspace  : /home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/rearchitect_api_strategy_redis
+  │   status     : [○ COMPLETED] · WORKTREE · 1,959 steps · 4d ago
+  ├─ [#21] Canvas Node Optimization and Setup
+  │   session_id : 6ad3b743-488e-17f8-f998-698ceac4d64d
+  │   workspace  : /home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/optimize_canvas_generation_dynamic_devices
+  │   status     : [○ IDLE] · WORKTREE · 12,829 steps · 8d ago
+  └─ [#29] Filtering Single Unbounded Nodes
+      session_id : 8c40259a-ba02-976b-0fea-b595d0c72470
+      workspace  : /home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/hide_single_node_devices
+      status     : [○ IDLE] · WORKTREE · 707 steps · 21d ago
+
+[PROJECT 7] Automation & Edge Security GitOps
+  project_id : d9b08096-bed9-3429-4073-40913fd89752
+  workspaces : /home/dev/gitlab/automation-gitops, /home/dev/.gemini/antigravity/worktrees/automation-gitops/cam_grid_security_dashboard_migration, /home/dev/.gemini/antigravity/worktrees/automation-gitops/audit_home_automations, /home/dev/.gemini/antigravity/worktrees/automation-gitops/mobile_wall_panel_redesign, /home/dev/.gemini/antigravity/worktrees/automation-gitops/orbital_ember_rolls_11h46
+  ├─ [#7] Security Automation DevSecOps (& Audit Cron)
+  │   session_id : d7590de0-5a72-be58-b123-c77c1a76f1dd
+  │   workspace  : /home/dev/.gemini/antigravity/worktrees/automation-gitops/cam_grid_security_dashboard_migration
+  │   status     : [○ IDLE] · WORKTREE · 4,314 steps · 11h ago
+  ├─ [#8] Home Automation DevOps (& Audit Cron)
+  │   session_id : 11822340-57c1-2caf-e121-f55e3f0105db
+  │   workspace  : /home/dev/.gemini/antigravity/worktrees/automation-gitops/audit_home_automations
+  │   status     : [○ IDLE] · WORKTREE · 4,813 steps · 11h ago
+  └─ [#19] Mobile Automation Edge Dashboard Redesign
+      session_id : 8c12f68a-76d4-898d-c0ea-dca7246f244d
+      workspace  : /home/dev/.gemini/antigravity/worktrees/automation-gitops/mobile_wall_panel_redesign
+      status     : [○ IDLE] · WORKTREE · 1,249 steps · 6d ago
+
+[PROJECT 8] rf-signal-lab
+  project_id : 7068307a-2ee8-21cd-2002-85faad4ccbc9
+  workspaces : /home/dev/gitlab/rf-signal-lab
+  └─ [#22] RF Lab Edition 6
+      session_id : 13977fe1-0589-276b-fec0-ba77614900c9
+      workspace  : /home/dev/gitlab/rf-signal-lab
+      status     : [○ IDLE] · MAIN TREE · 5,097 steps · 8d ago
 ```
 
 ---
@@ -161,57 +225,59 @@ When you ask Gemini for your usage stats (`manage_background_run(action="stats",
 AGY-NEXUS // 90d (Nov 07 ◄── Aug 10)    ┆ EXTENDED TELEMETRY & AVERAGES 
 ════════════════════════════════════════╪═══════════════════════════════
 GOOGLE 20x : 100.0% [████████┼█] HEALTHY┆ 0x 429s | Ultra-20x (T:>=90%) 
-PARTNER 1x : 100.0% [░┼░░░░░░░░] ON PACE┆ 71.4% Wk Left | Lim <=14.3%/d 
-STEPS/TOOLS: 187,877s | 93,195t | 54c   ┆ 4,369 s/act-d | 2,020 s/cal-d 
-TOKEN BURN : ~69.3M Total (227 sub runs)┆ 1.61M tok/d   | 11.3M tok/wk  
-MCP WIRE   : 100% <20KB (avg 3.0/17.5KB)┆ 77 req (62.5k tok) | Gemini Web
+PARTNER 1x : 100.0% [░┼░░░░░░░░] ON PACE┆ 14.3% Wk Left | Lim <=14.3%/d 
+STEPS/TOOLS: 208,496s | 103,976t | 65c  ┆ 4,436 s/act-d | 2,316 s/cal-d 
+TOKEN BURN : ~77.4M Total (227 sub runs)┆ 1.65M tok/d   | 11.5M tok/wk  
+MCP WIRE   : 96% <20KB (avg 9.3/33.7KB) ┆ 200 req (514k tok) | Gemini We
 ────────────────────────────────────────┴───────────────────────────────
-DAILY HEATMAP (NOW: W01 ──► 22w AGO)   Peak: 10/31 (11,118s) | Act: 43d
+DAILY HEATMAP (NOW: W01 ──► 22w AGO)   Peak: 10/31 (10,964s) | Act: 47d
 Wk    01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22
 Mon   ▒▒ ██ ░░ ▒▒ ▓▓ ▒▒ ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ··
-Tue   ░░ ▓▓ ▒▒ ▒▒ ▒▒ ░░ ░░ ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ··
-Wed   ·· ▓▓ ░░ ░░ ▒▒ ▓▓ ░░ ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ··
-Thu   ·· ██ ░░ ▒▒ ▓▓ ██ ░░ ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ··
-Fri   ·· ▓▓ ██ ▓▓ ▒▒ ▓▓ ▓▓ ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ··
-Sat   ·· ██ ██ ░░ ▒▒ ██ ██ ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ··
-Sun   ·· ██ ██ ▓▓ ▓▓ ██ ▒▒ ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ··
-Vol   ▁▁ ██ ▅▅ ▃▃ ▄▄ ▅▅ ▃▃ ── ── ── ── ── ── ── ── ── ── ── ── ── ── ──
+Tue   ▒▒ ▓▓ ▒▒ ▒▒ ▒▒ ░░ ░░ ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ··
+Wed   ▓▓ ██ ░░ ░░ ▒▒ ▓▓ ░░ ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ··
+Thu   ░░ ▓▓ ░░ ▒▒ ▓▓ ██ ░░ ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ··
+Fri   ▓▓ ▓▓ ██ ▒▒ ░░ ██ ██ ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ··
+Sat   ▓▓ ██ ██ ░░ ▒▒ ██ ██ ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ··
+Sun   ·· ▓▓ ██ ▓▓ ▓▓ ██ ▒▒ ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ··
+Vol   ▄▄ ██ ▆▆ ▃▃ ▄▄ ▆▆ ▃▃ ── ── ── ── ── ── ── ── ── ── ── ── ── ── ──
 ────────────────────────────────────────────────────────────────────────
-8H SUB-DAILY PACE (NOW ──► SEP 25)   [Avg: 1.5k/8h | Peak: 3.7k | ░▒▓█]
-3.7k ╷     █        ▄▄                                                 
-1.9k ┤   ▄██  ▄▄  ▄████▄                     ▄    █▄  ▄▄      ▄        
-1.5k ┼──▄████▄██▄███████───▄──▄──█──────█▄──▄█───████████───▄─███──────
-   0 ╵ ▄▒█▒▒▓▓█████▒█▒▒▒▒▄▒▒▄▒▒▄▄███▄▄█▓███▄████████████▓▓▄▓▓▓▓▓▓▄▓▄   
+8H SUB-DAILY PACE (NOW ──► SEP 21)   [Avg: 1.6k/8h | Peak: 4.5k | ░▒▓█]
+4.5k ╷                 ▄█ █                                            
+2.4k ┤█                █████  ▄                     ██  ▄      ▄▄      
+1.6k ┼██▄─────▄██─█▄──██████──█──────█───█─▄█──█─▄──██─██▄▄──▄─██──────
+   0 ╵░▓▓ ▓▓▓▄█▒▓▓█▒▓▄███▒▒▒  ▒▄ ▒▄▄▄██▄ █▄██ ██▄██ ████▓▓▓ ▓▓▄▓▓▓▄  ▄ 
      └─▲────────────▲────────────▲────────────▲────────────▲──────────▲─
-      Nov 07       Oct 30       Oct 21       Oct 12       Oct 03     Sep
-      Stack: [█] quantum-dsp (42%)  [▓] cloud-gitops (25%)  [▒] neural-m
+      Nov 07       Oct 29       Oct 19       Oct 09       Sep 30     Sep
+      Stack: [█] nexus-mesh-te (36%)  [▓] automation-gi (28%)  [▒] chron
 ────────────────────────────────────────────────────────────────────────
 MODEL QUOTA vs TARGET (┼ = Target Pin)      CALLS   EST TOK  DELTA  STAT
-Argon 4 Pro [████████████┼█▓░░░░░]  70.4%   77,856    ~18.0M  +5.4%  OK
-Flash 3.8   [█████┼▓░░░░░░░░░░░░░]  29.6%   32,675  FastTier  +4.6%  OK
-Claude 5.5  [░░┼░░░░░░░░░░░░░░░░░]   0.0%       31         0  -8.0%  OK
+Argon 4 Pro [████████████┼████▓░░]  83.3%   83,381    ~21.3M +18.3%  WAR
+Flash 3.8   [███▓░┼░░░░░░░░░░░░░░]  16.7%   16,707     ~3.7M  -8.3%  OK
+Claude 5.5  [░░┼░░░░░░░░░░░░░░░░░]   0.0%       12     ~4.1k  -8.0%  OK
 GPT-OSS 120 [▏░░░░░░░░░░░░░░░░░░░]   0.0%        0         0  -2.0%  OK
 ────────────────────────────────────────────────────────────────────────
-WORKSPACES (9)      CHATS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE
-1. quantum-dsp-wor  14c  65,811     ~29.2M     679k    4.75M   42.1%
-2. cloud-gitops-st  19c  45,032     ~17.2M     400k    2.80M   24.8%
-3. neural-mesh-anm   7c  20,107     ~16.5M     384k    2.69M   23.8%
-4. chronos-tasks     8c   5,991      ~2.2M      52k     362k    3.2%
-5. mobile-sync-eng   4c   5,092      ~2.0M      46k     322k    2.9%
-6. telemetry-pipel   3c   2,878      ~897k      21k     146k    1.3%
-7. auth-gateway      2c   2,691      ~1.0M      23k     164k    1.5%
-8. docs-portal       1c   1,126      ~294k     6.8k      48k    0.4%
-9. sdk-client-py     1c      21      ~4.5k      104      727    0.0%
+WORKSPACES (11)     CHATS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE
+1. nexus-mesh-telem  10c  75,084     ~29.2M     621k    4.35M   36.0%
+2. automation-gitop  19c  57,456     ~18.7M     398k    2.79M   27.6%
+3. chronos-board      5c  40,110     ~16.5M     351k    2.46M   19.2%
+4. quantum-dsp-work  11c  10,298      ~3.7M      78k     548k    4.9%
+5. unassigned         7c   6,839      ~2.8M      59k     412k    3.3%
+6. rf-signal-lab      1c   5,701      ~2.0M      42k     294k    2.7%
+7. agy-nexus-config   1c   4,518      ~1.9M      40k     281k    2.2%
+8. container-gitops   7c   3,346      ~1.0M      22k     152k    1.6%
+9. edge-sensor-node   2c   2,691      ~1.0M      21k     150k    1.3%
+10. mail-taxonomy-a   1c   1,327      ~344k     7.3k      51k    0.6%
+11. orbital-optics    1c   1,126      ~294k     6.3k      44k    0.5%
 ────────────────────────────────────────────────────────────────────────
 SUBAGENTS (8)        RUNS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE
-1. flash-surgeon    116r  21,704      ~8.9M     207k    1.45M   58.2%
-2. flash-auditor     78r   8,170      ~2.7M      63k     441k   17.7%
-3. argon-sentinel     3r   3,142      ~1.3M      30k     209k    8.4%
-4. flash-scout       20r   2,801      ~1.1M      25k     173k    6.9%
-5. argon-surgeon      2r   2,287      ~920k      21k     150k    6.0%
-6. research           5r     862      ~333k     7.7k      54k    2.2%
-7. argon-architect    2r     132     ~64.2k     1.5k      10k    0.4%
-8. claude-specialis   1r      31     ~16.3k      380     2.7k    0.1%
+1. flash-surgeon    116r  21,746      ~8.9M     190k    1.33M   51.0%
+2. flash-auditor     78r   9,112      ~3.0M      64k     450k   21.4%
+3. argon-sentinel     3r   4,537      ~1.9M      41k     285k   10.6%
+4. argon-surgeon      2r   3,170      ~1.3M      28k     196k    7.4%
+5. flash-scout       20r   3,012      ~1.1M      24k     170k    7.1%
+6. research           5r     862      ~333k     7.1k      50k    2.0%
+7. argon-architect    2r     132     ~64.2k     1.4k     9.6k    0.3%
+8. claude-specialis   1r      31     ~16.3k      347     2.4k    0.1%
 ════════════════════════════════════════════════════════════════════════
 ```
 
@@ -222,41 +288,41 @@ SUBAGENTS (8)        RUNS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE
 AGY-NEXUS // 90d (Nov 07 ◄── Aug 10)
 ════════════════════════════════════════
 G-20x: 100% [████████┼█] OK | 0x 429s
-P-1x : 100% [░┼░░░░░░░░] OK | 71% WkLft
-Steps:187.9k | Tools:93.2k | Act:43d
-Burns:~69.3M | 1.61M/d | 11.3M/wk
+P-1x : 100% [░┼░░░░░░░░] OK | 14% WkLft
+Steps:208.5k | Tools:104.0k | Act:47d
+Burns:~77.4M | 1.65M/d | 11.5M/wk
 ────────────────────────────────────────
 HEATMAP (NOW ──► 13w Ago)  │ PEAK & VOL
 Mo ▒█░▒▓▒·······           │ Pk: 10/31
-Tu ░▓▒▒▒░░······           │ 11,118 stp
-We ·▓░░▒▓░······           │ Avg:4,369/d
-Th ·█░▒▓█░······           │ Chats: 54c
-Fr ·▓█▓▒▓▓······           │ Subs : 227r
-Sa ·██░▒██······           │ Tok/d:1.61M
-Su ·██▓▓█▒······           │ Tok/w:11.3M
+Tu ▒▓▒▒▒░░······           │ 10,964 stp
+We ▓█░░▒▓░······           │ Avg:4,436/d
+Th ░▓░▒▓█░······           │ Chats: 65c
+Fr ▓▓█▒░██······           │ Subs : 227r
+Sa ▓██░▒██······           │ Tok/d:1.65M
+Su ·▓█▓▓█▒······           │ Tok/w:11.5M
 ────────────────────────────────────────
-8H PACE & STACK (NOW──►OLD) Pk:3.2k
-3.2k╷  ▄   █▄▄                       
-1.6k┤  █ █ ███             ▄▄   █▄   
-1.4k┼─▄███▄███─▄──▄───█▄▄─███▄─▄██───
-   0╵ ▒▒▓████▒▄▒▒▒██▓▓███████▓▄▓▓▓▓  
+8H PACE & STACK (NOW──►OLD) Pk:3.7k
+3.7k╷█        █                      
+1.8k┤█   ▄▄ ▄ █     ▄ ▄       ▄  █   
+1.5k┼███▄██─█─█▄────█─██─▄─██▄█──█───
+   0╵░▓░▓█▓████▒▄ ▒▄█▄██▄█ ███▓▓▓▓▄▄ 
 ────────────────────────────────────────
 MODEL QUOTA (┼=Target)  PCT   TOK   DLT
-Argon 4 [██████┼▓░░]  70% 18.0M   +5%
-Flash38 [██┼▓░░░░░░]  30%  Fast   +5%
-Claude5 [░┼░░░░░░░░]   0%     0   -8%
+Argon 4 [██████┼█▓░]  83% 21.3M  +18%
+Flash38 [██┼░░░░░░░]  17%  3.7M   -8%
+Claude5 [░┼░░░░░░░░]   0%  4.1k   -8%
 GPT-120 [▏░░░░░░░░░]   0%     0   -2%
 ────────────────────────────────────────
 WORKSPACES & SUBS  TOK   TOK/D   TOK/WK
-quantum-dsp-work 29.2M   679k   4.75M
-cloud-gitops-sta 17.2M   400k   2.80M
-neural-mesh-anms 16.5M   384k   2.69M
-chronos-tasks     2.2M    52k    362k
-mobile-sync-engi  2.0M    46k    322k
-telemetry-pipeli  897k    21k    146k
-*flash-surgeon    8.9M   207k   1.45M
-*flash-auditor    2.7M    63k    441k
-*argon-sentinel   1.3M    30k    209k
+nexus-mesh-telem 29.2M   621k   4.35M
+automation-gitop 18.7M   398k   2.79M
+chronos-board    16.5M   351k   2.46M
+quantum-dsp-work  3.7M    78k    548k
+unassigned        2.8M    59k    412k
+rf-signal-lab     2.0M    42k    294k
+*flash-surgeon    8.9M   190k   1.33M
+*flash-auditor    3.0M    64k    450k
+*argon-sentinel   1.9M    41k    285k
 ════════════════════════════════════════
 ```
 
@@ -268,64 +334,66 @@ telemetry-pipeli  897k    21k    146k
 ║ █▀█ █▄█ ░█░ ░░ █░▀█ ██▄ █░█ █▄█ ▄█   WINDOW: 90d (Nov 07 ◄── Aug 10)     ║
 ╠════════════════════════════════════╦═════════════════════════════════════╣
 ║ QUOTA POOLS & 429 COOLDOWNS        │ STEP & TOOL VELOCITY                ║
-║ G-20x: 100.0% [████████┼█] OK      │ Total : 187,877 steps | 93,195 tool ║
-║ P-1x : 100.0% [░┼░░░░░░░░] OK      │ Active: 4,369 s/act-d (43d active)  ║
-║ 429s : 0 events | 71.4% Wk Left    │ Calend: 2,020 s/cal-d (54c, 227r)   ║
+║ G-20x: 100.0% [████████┼█] OK      │ Total : 208,496 steps | 103,976 too ║
+║ P-1x : 100.0% [░┼░░░░░░░░] OK      │ Active: 4,436 s/act-d (47d active)  ║
+║ 429s : 0 events | 14.3% Wk Left    │ Calend: 2,316 s/cal-d (65c, 227r)   ║
 ╠════════════════════════════════════╬═════════════════════════════════════╣
 ║ TOKEN BURN & ROLLING AVERAGES      │ MCP WIRE & CLIENT SURFACES          ║
-║ Total : ~69.3M (~63.0M direct)     │ Wire  : 100% <20KB (avg 3.0/17.5KB) ║
-║ Daily : 1.61M tok/act-d            │ Calls : 77 MCP reqs (62.5k tok)     ║
-║ Weekly: 11.3M tok/wk               │ Client: Gemini Web (100% / 0 Mob)   ║
+║ Total : ~77.4M (~70.4M direct)     │ Wire  : 96% <20KB (avg 9.3/33.7KB)  ║
+║ Daily : 1.65M tok/act-d            │ Calls : 200 MCP reqs (514k tok)     ║
+║ Weekly: 11.5M tok/wk               │ Client: Gemini Web (100% / 0 Mob)   ║
 ╠════════════════════════════════════╩═════════════════════════════════════╣
 ║ DAILY ACTIVITY MATRIX (NOW: W01 ──► W13)     [·· 0  ░░ <1k  ▒▒ <4k  ██]  ║
 ║ Wk   W01 W02 W03 W04 W05 W06 W07 W08 W09 W10 W11 W12 W13  ┌─ PEAK DAY ─┐ ║
 ║ Mon  ▒▒▒ ███ ░░░ ▒▒▒ ▓▓▓ ▒▒▒ ··· ··· ··· ··· ··· ··· ···  │ Oct 31     │ ║
-║ Tue  ░░░ ▓▓▓ ▒▒▒ ▒▒▒ ▒▒▒ ░░░ ░░░ ··· ··· ··· ··· ··· ···  │ 11,118 stp │ ║
-║ Wed  ··· ▓▓▓ ░░░ ░░░ ▒▒▒ ▓▓▓ ░░░ ··· ··· ··· ··· ··· ···  ├────────────┤ ║
-║ Thu  ··· ███ ░░░ ▒▒▒ ▓▓▓ ███ ░░░ ··· ··· ··· ··· ··· ···  │ Act: 43d   │ ║
-║ Fri  ··· ▓▓▓ ███ ▓▓▓ ▒▒▒ ▓▓▓ ▓▓▓ ··· ··· ··· ··· ··· ···  │ Avg:  4.4k │ ║
-║ Sat  ··· ███ ███ ░░░ ▒▒▒ ███ ███ ··· ··· ··· ··· ··· ···  │ Sub: 227r  │ ║
-║ Sun  ··· ███ ███ ▓▓▓ ▓▓▓ ███ ▒▒▒ ··· ··· ··· ··· ··· ···  └────────────┘ ║
-║ Vol  ▁▁▁ ███ ▅▅▅ ▃▃▃ ▄▄▄ ▅▅▅ ▃▃▃ ─── ─── ─── ─── ─── ───  PeakWk:46.8k   ║
-║ Steps  3k 47k 35k 20k 27k 36k 19k  ·   ·   ·   ·   ·   ·                 ║
+║ Tue  ▒▒▒ ▓▓▓ ▒▒▒ ▒▒▒ ▒▒▒ ░░░ ░░░ ··· ··· ··· ··· ··· ···  │ 10,964 stp │ ║
+║ Wed  ▓▓▓ ███ ░░░ ░░░ ▒▒▒ ▓▓▓ ░░░ ··· ··· ··· ··· ··· ···  ├────────────┤ ║
+║ Thu  ░░░ ▓▓▓ ░░░ ▒▒▒ ▓▓▓ ███ ░░░ ··· ··· ··· ··· ··· ···  │ Act: 47d   │ ║
+║ Fri  ▓▓▓ ▓▓▓ ███ ▒▒▒ ░░░ ███ ███ ··· ··· ··· ··· ··· ···  │ Avg:  4.4k │ ║
+║ Sat  ▓▓▓ ███ ███ ░░░ ▒▒▒ ███ ███ ··· ··· ··· ··· ··· ···  │ Sub: 227r  │ ║
+║ Sun  ··· ▓▓▓ ███ ▓▓▓ ▓▓▓ ███ ▒▒▒ ··· ··· ··· ··· ··· ···  └────────────┘ ║
+║ Vol  ▄▄▄ ███ ▆▆▆ ▃▃▃ ▄▄▄ ▆▆▆ ▃▃▃ ─── ─── ─── ─── ─── ───  PeakWk:45.0k   ║
+║ Steps 24k 45k 36k 20k 26k 38k 20k  ·   ·   ·   ·   ·   ·                 ║
 ╠══════════════════════════════════════════════════════════════════════════╣
-║ 8H SUB-DAILY HORIZON CURVE & PROJECT STACK (NOW ──► SEP 25)              ║
-║ 3.7k ╷     █       ▄ ▄                                                   ║
-║ 2.9k ┤    ▄█       █▄█▄                               █                  ║
-║ 2.0k ┤   ▄██  ▄▄  █████                     ▄    ██▄ ▄█      ▄▄          ║
-║ 1.5k ┼───████─██▄██████▄─────────▄──────█───█────██████▄█────███──────   ║
-║  662 ┤  ████████████████▄ █▄ ██ ▄█▄ ▄▄▄███ ▄█ █▄█████████ ▄█▄███         ║
-║    0 ╵ ▄▒█▒▒▓▓█████▒█▒▒▒▒▒▒▒▄▒▒▒██▓▄█▓████▄████████████▓▓▄▓▓▓▓▓▓▓▓▓▄     ║
+║ 8H SUB-DAILY HORIZON CURVE & PROJECT STACK (NOW ──► SEP 21)              ║
+║ 3.8k ╷█        █   ▄   ▄ █                         ▄                     ║
+║ 3.0k ┤█        █   █   █ █                         █   ▄      █          ║
+║ 2.1k ┤█▄      ▄██  █   █ █       █  ▄         ▄    █  ██ ▄    ██         ║
+║ 1.4k ┼███─█───███──█───█─█───────█──█─────█───█────█─▄██▄█──▄─██──────   ║
+║  685 ┤███ ███ ███▄▄█▄ ▄████ █   ▄█  █  █▄ ██  ██▄  █▄█████ ▄█▄██▄        ║
+║    0 ╵░▓▓▄░▓▓▄█▓▓▓██▓▄█▒█▒▒ ▒▄▄▒▒█▒██▄▄█▓▄██ ▄███ ▄████▓█▓▄▓▓▓▓▓▓▄▄▄▄    ║
 ║      └─▲───────────▲───────────▲───────────▲───────────▲───────────▲───  ║
-║       Nov 07      Oct 30      Oct 21      Oct 12      Oct 03      Sep 25 ║
-║       Stack: [█]quantum-dsp-(42%)  [▓]cloud-gitops(25%)  [▒]neural-mesh- ║
+║       Nov 07      Oct 28      Oct 19      Oct 09      Sep 29      Sep 21 ║
+║       Stack: [█]nexus-mesh-t(36%)  [▓]automation-g(28%)  [▒]chronos-boar ║
 ╠══════════════════════════════════════════════════════════════════════════╣
 ║ MODEL QUOTA vs TARGET (┼ = Target Pin)       CALLS   EST TOK  DELTA STAT ║
-║ Argon 4 Pro [█████████████┼█▓░░░░░]  70.4%  77,856    ~18.0M  +5.4%  OK  ║
-║ Flash 3.8   [█████┼▓░░░░░░░░░░░░░░]  29.6%  32,675  FastTier  +4.6%  OK  ║
-║ Claude 5.5  [░░┼░░░░░░░░░░░░░░░░░░]   0.0%      31         0  -8.0%  OK  ║
+║ Argon 4 Pro [█████████████┼███▓░░░]  83.3%  83,381    ~21.3M +18.3%  WRN ║
+║ Flash 3.8   [████░┼░░░░░░░░░░░░░░░]  16.7%  16,707     ~3.7M  -8.3%  OK  ║
+║ Claude 5.5  [░░┼░░░░░░░░░░░░░░░░░░]   0.0%      12     ~4.1k  -8.0%  OK  ║
 ║ GPT-OSS 120 [▏░░░░░░░░░░░░░░░░░░░░]   0.0%       0         0  -2.0%  OK  ║
 ╠══════════════════════════════════════════════════════════════════════════╣
-║ WORKSPACES (9)     CHATS   STEPS  TOTAL TOK  TOK/DAY  TOK/WK SHARE GAUGE ║
-║ 1. quantum-dsp-wo  14c  65,811     ~29.2M     679k   4.75M ██▍░░░ 42.1%  ║
-║ 2. cloud-gitops-s  19c  45,032     ~17.2M     400k   2.80M █▍░░░░ 24.8%  ║
-║ 3. neural-mesh-an   7c  20,107     ~16.5M     384k   2.69M █▍░░░░ 23.8%  ║
-║ 4. chronos-tasks    8c   5,991      ~2.2M      52k    362k ░░░░░░  3.2%  ║
-║ 5. mobile-sync-en   4c   5,092      ~2.0M      46k    322k ░░░░░░  2.9%  ║
-║ 6. telemetry-pipe   3c   2,878      ~897k      21k    146k ░░░░░░  1.3%  ║
-║ 7. auth-gateway     2c   2,691      ~1.0M      23k    164k ░░░░░░  1.5%  ║
-║ 8. docs-portal      1c   1,126      ~294k     6.8k     48k ░░░░░░  0.4%  ║
-║ 9. sdk-client-py    1c      21      ~4.5k      104     727 ░░░░░░  0.0%  ║
+║ WORKSPACES (11)    CHATS   STEPS  TOTAL TOK  TOK/DAY  TOK/WK SHARE GAUGE ║
+║ 1. nexus-mesh-tel  10c  75,084     ~29.2M     621k   4.35M ██░░░░ 36.0%  ║
+║ 2. automation-git  19c  57,456     ~18.7M     398k   2.79M █▍░░░░ 27.6%  ║
+║ 3. chronos-board    5c  40,110     ~16.5M     351k   2.46M █░░░░░ 19.2%  ║
+║ 4. quantum-dsp-wo  11c  10,298      ~3.7M      78k    548k ▍░░░░░  4.9%  ║
+║ 5. unassigned       7c   6,839      ~2.8M      59k    412k ░░░░░░  3.3%  ║
+║ 6. rf-signal-lab    1c   5,701      ~2.0M      42k    294k ░░░░░░  2.7%  ║
+║ 7. agy-nexus-conf   1c   4,518      ~1.9M      40k    281k ░░░░░░  2.2%  ║
+║ 8. container-gito   7c   3,346      ~1.0M      22k    152k ░░░░░░  1.6%  ║
+║ 9. edge-sensor-no   2c   2,691      ~1.0M      21k    150k ░░░░░░  1.3%  ║
+║ 10. mail-taxonomy   1c   1,327      ~344k     7.3k     51k ░░░░░░  0.6%  ║
+║ 11. orbital-optic   1c   1,126      ~294k     6.3k     44k ░░░░░░  0.5%  ║
 ╟──────────────────────────────────────────────────────────────────────────╢
 ║ SUBAGENTS (8)       RUNS   STEPS  TOTAL TOK  TOK/DAY  TOK/WK SHARE GAUGE ║
-║ 1. flash-surgeon  116r  21,704      ~8.9M     207k   1.45M ███▍░░ 58.2%  ║
-║ 2. flash-auditor   78r   8,170      ~2.7M      63k    441k █░░░░░ 17.7%  ║
-║ 3. argon-sentinel   3r   3,142      ~1.3M      30k    209k ▍░░░░░  8.4%  ║
-║ 4. flash-scout     20r   2,801      ~1.1M      25k    173k ▍░░░░░  6.9%  ║
-║ 5. argon-surgeon    2r   2,287      ~920k      21k    150k ▍░░░░░  6.0%  ║
-║ 6. research         5r     862      ~333k     7.7k     54k ░░░░░░  2.2%  ║
-║ 7. argon-architec   2r     132     ~64.2k     1.5k     10k ░░░░░░  0.4%  ║
-║ 8. claude-special   1r      31     ~16.3k      380    2.7k ░░░░░░  0.1%  ║
+║ 1. flash-surgeon  116r  21,746      ~8.9M     190k   1.33M ███░░░ 51.0%  ║
+║ 2. flash-auditor   78r   9,112      ~3.0M      64k    450k █▍░░░░ 21.4%  ║
+║ 3. argon-sentinel   3r   4,537      ~1.9M      41k    285k ▍░░░░░ 10.6%  ║
+║ 4. argon-surgeon    2r   3,170      ~1.3M      28k    196k ▍░░░░░  7.4%  ║
+║ 5. flash-scout     20r   3,012      ~1.1M      24k    170k ▍░░░░░  7.1%  ║
+║ 6. research         5r     862      ~333k     7.1k     50k ░░░░░░  2.0%  ║
+║ 7. argon-architec   2r     132     ~64.2k     1.4k    9.6k ░░░░░░  0.3%  ║
+║ 8. claude-special   1r      31     ~16.3k      347    2.4k ░░░░░░  0.1%  ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 ```
 

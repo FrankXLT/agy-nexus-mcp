@@ -210,6 +210,14 @@ def build_project_session_tree(
         })
 
     projects_list = list(grouped.values())
+    for pg in projects_list:
+        pg["sessions"].sort(key=lambda s: (not s.get("is_running"), not s.get("is_pinned"), int(s.get("index") or 999)))
+    projects_list.sort(
+        key=lambda p: (
+            -(int(p.get("running_count") or 0) * 10 + int(p.get("pinned_count") or 0)),
+            -sum(int(s.get("step_count") or 0) for s in p.get("sessions", [])),
+        )
+    )
     for idx_p, pg in enumerate(projects_list, 1):
         pg["project_index"] = idx_p
 

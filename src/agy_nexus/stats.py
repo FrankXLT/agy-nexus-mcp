@@ -162,14 +162,17 @@ def build_nexus_stats_bundle(
                     sub_slots.setdefault(agent_role, {})[sl_k] = sub_slots.get(agent_role, {}).get(sl_k, 0) + sl_cnt
         for ds, tcnt in (cdata.get("day_tools") or {}).items():
             daily_tools[ds] = daily_tools.get(ds, 0) + tcnt
+        sub_mk = classify_model_key("", agent_role) if is_sub else ""
         for ds, dm_map in (cdata.get("day_models") or {}).items():
             if s_iso <= ds <= e_iso and isinstance(dm_map, dict):
                 for mk, mval in dm_map.items():
-                    model_totals[mk] = model_totals.get(mk, 0) + int(mval)
+                    eff_mk = sub_mk if (is_sub and mk == "argon_pro") else mk
+                    model_totals[eff_mk] = model_totals.get(eff_mk, 0) + int(mval)
         for ds, dtk_map in (cdata.get("day_model_tokens") or {}).items():
             if s_iso <= ds <= e_iso and isinstance(dtk_map, dict):
                 for mk, mtok in dtk_map.items():
-                    model_tokens[mk] = model_tokens.get(mk, 0) + int(mtok)
+                    eff_mk = sub_mk if (is_sub and mk == "argon_pro") else mk
+                    model_tokens[eff_mk] = model_tokens.get(eff_mk, 0) + int(mtok)
         if win_steps > 0:
             we = ws_map.setdefault(ws_name, {"workspace": ws_name, "sessions": 0, "steps": 0, "tokens": 0})
             if not is_sub:
