@@ -110,4 +110,38 @@ svg.line-plot { width: 100%; height: 100%; overflow: visible; }
 .table-clean { width: 100%; border-collapse: collapse; font-size: 12px; }
 .table-clean th { text-align: left; font-size: 10px; text-transform: uppercase; color: var(--text-dim); padding: var(--cell-pad); border-bottom: 1px solid var(--border-grid); }
 .table-clean td { padding: var(--cell-pad); border-bottom: 1px solid var(--border-hairline); }
+/* Project, Chat & Session Hierarchy Panel (v2.4.0) */
+.card-tag.tag-ok { color: var(--accent-focal); border-color: var(--accent-focal); background: var(--accent-focal-dim); font-weight: 600; }
+.card-tag.tag-warn { color: var(--status-warn); border-color: var(--status-warn); background: var(--status-warn-bg); font-weight: 600; }
+.hier-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.hier-empty { padding: 12px; color: var(--text-secondary); font-size: 11px; border: 1px dashed var(--border-grid); border-radius: 8px; text-align: center; }
+.hier-proj-card { background: var(--bg-elevated); border: 1px solid var(--border-grid); border-radius: 8px; overflow: hidden; }
+.hier-proj-hdr { padding: 8px 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; list-style: none; user-select: none; border-bottom: 1px solid var(--border-hairline); }
+.hier-proj-hdr::-webkit-details-marker { display: none; }
+.hier-proj-left { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; }
+.hier-proj-idx { color: var(--accent-focal); font-weight: 700; font-size: 11px; }
+.hier-proj-id { color: var(--text-dim); font-size: 11px; }
+.hier-proj-right { color: var(--text-secondary); font-size: 11px; }
+.hier-proj-body { display: flex; flex-direction: column; background: var(--bg-card); }
+.hier-session-row { padding: 8px 12px; border-bottom: 1px solid var(--border-hairline); display: flex; flex-direction: column; gap: 5px; }
+.hier-session-row:last-child { border-bottom: none; }
+.hier-session-row.is-pinned { border-left: 3px solid var(--accent-focal); background: var(--accent-focal-dim); }
+.hier-sess-top { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }
+.hier-sess-title-group { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; }
+.hier-idx { color: var(--text-secondary); font-size: 11px; font-weight: 600; }
+.hier-status-pill, .hier-badge { font-size: 10px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-grid); font-weight: 600; }
+.hier-status-pill.ok, .hier-badge.ok, .hier-badge.focal { color: var(--accent-focal); border-color: var(--accent-focal); background: var(--accent-focal-dim); }
+.hier-status-pill.warn, .hier-badge.warn { color: var(--status-warn); border-color: var(--status-warn); background: var(--status-warn-bg); }
+.hier-status-pill.muted, .hier-badge.mode { color: var(--text-secondary); background: var(--bg-elevated); }
+.hier-sess-meta { color: var(--text-dim); font-size: 11px; display: flex; align-items: center; gap: 5px; }
+.hier-sess-ids { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 11px; color: var(--text-secondary); }
+.hier-kv { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.hier-k { color: var(--text-dim); }
+.hier-v { color: var(--text-main); background: var(--bg-elevated); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--border-hairline); word-break: break-all; }
+.copy-pill { background: var(--bg-elevated); color: var(--text-secondary); border: 1px solid var(--border-grid); border-radius: 4px; padding: 1px 6px; font-size: 10px; cursor: pointer; transition: all 0.12s ease; }
+.copy-pill:hover, .copy-pill.copied { color: var(--accent-focal); border-color: var(--accent-focal); }
+.ws-badge-group { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; vertical-align: middle; }
+.ws-live-pill { font-size: 9px; padding: 1px 5px; border-radius: 4px; border: 1px solid var(--border-grid); font-weight: 600; }
+.ws-live-pill.running, .ws-live-pill.pinned { color: var(--accent-focal); border-color: var(--accent-focal); background: var(--accent-focal-dim); }
+.ws-live-pill.shared { color: var(--status-warn); border-color: var(--status-warn); background: var(--status-warn-bg); }
 .hidden { display: none !important; }

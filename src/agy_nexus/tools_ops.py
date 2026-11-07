@@ -47,6 +47,7 @@ from agy_nexus.inventory import (
     resolve_customization_file,
 )
 from agy_nexus.search import _get_configured_mcp_servers
+from agy_nexus.session_tree import build_project_session_tree
 from agy_nexus.sessions import _list_saved_sessions_internal, _load_projects_map
 from agy_nexus.stats import (
     build_nexus_stats_bundle,
@@ -55,6 +56,28 @@ from agy_nexus.stats import (
     get_wire_telemetry_summary,
 )
 from agy_nexus.workflows import export_notebook_bundle
+
+@mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
+def get_session_tree(
+    active_only: bool = False,
+    project_filter: str = "",
+    limit: int = 25,
+    spoken_passphrase: str = "",
+) -> str:
+    """Return a copy-ready 76-column ASCII Project -> Chat -> Session ID hierarchy tree (with untruncated UUIDs and workspace paths), parallel context slot telemetry, and 3-2-1 backup status."""
+    if not is_unlocked(spoken_passphrase):
+        return LOCKED_RESPONSE
+    tree_bundle = build_project_session_tree(active_only=active_only, project_filter=project_filter, limit=limit, bg_dir=AGY_BG_DIR)
+    return _compact_json({
+        "ok": True,
+        "action": "get_session_tree",
+        "assistant_guidance": (
+            "STOP AND REPLY TO USER NOW (CRITICAL GEMINI WEB PLATFORM RULE: Do NOT call a second MCP tool in this turn). "
+            "Render ascii_tree verbatim inside a fenced ```text block so the user can copy untruncated session_id and workspace values."
+        ),
+        **tree_bundle,
+    })
+
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def manage_background_run(
     action: str = "status",
@@ -66,59 +89,36 @@ def manage_background_run(
     client_tokens_reported: int = 0,
     spoken_passphrase: str = "",
 ) -> str:
-    """Monitor background jobs, inspect live transcript progress, review session status, export session plans/walkthroughs for Gemini Notebook (action='export_notebook'), or retrieve live Dual-Pool Quota Pacing, Activity Heatmaps, and Wire Telemetry (action='stats' or action='telemetry', period='last_90d'|'current_month'|'last_month'|'last_year', style='default'|'quick'|'rich'). Optionally pass client_product ('Gemini Mobile', 'Gemini Web', 'Antigravity IDE') and client_tokens_reported to log client telemetry."""
+    """Monitor background jobs, inspect live transcript progress, render the 76-col Project -> Chat -> Session ID hierarchy tree (action='sessions' or action='session_status'), export session plans/walkthroughs for Gemini Notebook (action='export_notebook'), or retrieve live Dual-Pool Quota Pacing, Activity Heatmaps, and Wire Telemetry (action='stats' or action='telemetry', period='last_90d'|'current_month'|'last_month'|'last_year', style='default'|'quick'|'rich')."""
     action_clean = action.strip().lower()
     is_stats_action = action_clean in ("stats", "dashboard", "quota", "heatmap", "telemetry", "wire", "logs")
     if not is_unlocked(spoken_passphrase):
         if not (ALLOW_LOCKED_STATS and is_stats_action):
             return LOCKED_RESPONSE
+    if action_clean in ("sessions", "session_status", "session_tree", "tree"):
+        tree_bundle = build_project_session_tree(active_only=(style.strip().lower() == "active"), project_filter=job_id.strip() if job_id.strip().lower() != "latest" else "", limit=max(5, min(tail_lines, 40)), bg_dir=AGY_BG_DIR)
+        return _compact_json({
+            "ok": True, "action": action_clean,
+            "assistant_guidance": (
+                "STOP AND REPLY TO USER NOW: Display ascii_tree verbatim inside a fenced ```text code block first "
+                "so the user can copy untruncated session_id and workspace values."
+            ),
+            **tree_bundle,
+        })
     if action_clean in ("export_notebook", "notebook", "sync_notebook"):
-        export_res = export_notebook_bundle(
-            brain_dir=AGY_BRAIN_DIR,
-            db_file=AGY_DB_FILE,
-            bg_dir=AGY_BG_DIR,
-            projects_map=_load_projects_map(),
-        )
+        export_res = export_notebook_bundle(brain_dir=AGY_BRAIN_DIR, db_file=AGY_DB_FILE, bg_dir=AGY_BG_DIR, projects_map=_load_projects_map())
         return _compact_json({
             "ok": True, "action": "export_notebook",
-            "assistant_guidance": (
-                "STOP AND REPLY TO USER NOW: Session walkthrough.md and implementation_plan.md artifacts have been exported "
-                "with SHA-256 deduplication so unchanged files never trigger duplicate syncs."
-            ),
+            "assistant_guidance": "STOP AND REPLY TO USER NOW: Session walkthrough.md and implementation_plan.md artifacts have been exported with SHA-256 deduplication.",
             **export_res,
         })
     if action_clean in ("stats", "dashboard", "quota", "heatmap"):
-        bundle = build_nexus_stats_bundle(
-            data_dir=AGY_DATA_DIR,
-            brain_dir=AGY_BRAIN_DIR,
-            db_file=AGY_DB_FILE,
-            config_dir=AGY_CONFIG_DIR,
-            bg_dir=AGY_BG_DIR,
-            period=period,
-            style=style,
-        )
-        compact_bundle = {
-            k: v
-            for k, v in bundle.items()
-            if k
-            not in (
-                "heatmap_series",
-                "velocity_series",
-                "workspace_series",
-                "subagent_series",
-                "ascii_mobile_dashboard",
-                "ascii_report_default",
-                "ascii_report_quick",
-                "ascii_report_rich",
-                "summary",
-            )
-        }
+        bundle = build_nexus_stats_bundle(data_dir=AGY_DATA_DIR, brain_dir=AGY_BRAIN_DIR, db_file=AGY_DB_FILE, config_dir=AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR, period=period, style=style)
+        drop_keys = {"heatmap_series", "velocity_series", "workspace_series", "subagent_series", "ascii_mobile_dashboard", "ascii_report_default", "ascii_report_quick", "ascii_report_rich", "summary", "project_session_tree"}
+        compact_bundle = {k: v for k, v in bundle.items() if k not in drop_keys}
         return _compact_json({
             "ok": True, "action": "stats",
-            "assistant_guidance": (
-                "STOP AND REPLY TO USER NOW: Display ascii_mobile_report inside a fenced ```text code block first "
-                "followed by a concise 3-bullet summary of Google 20x Pool share, Partner Weekly Pacing vs Target, and Top Projects."
-            ),
+            "assistant_guidance": "STOP AND REPLY TO USER NOW: Display ascii_mobile_report inside a fenced ```text code block first followed by a concise 3-bullet summary of Google 20x Pool share, Partner Weekly Pacing vs Target, and Top Projects.",
             **compact_bundle,
         })
     if action_clean in ("telemetry", "wire", "logs"):
@@ -141,43 +141,31 @@ def manage_background_run(
                 conv_id = str(job_data.get("conversation_id") or conv_id)
             except Exception:
                 pass
-    # If no specific job_file found, locate latest job for conv_id (or newest global job)
     if not job_file and AGY_BG_DIR.is_dir():
         try:
-            job_files = sorted(AGY_BG_DIR.glob("job-*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-            for jf in job_files:
+            for jf in sorted(AGY_BG_DIR.glob("job-*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
                 jdata = json.loads(jf.read_text(encoding="utf-8"))
                 if not conv_id or jdata.get("conversation_id") == conv_id:
-                    job_file = jf
-                    job_data = jdata
+                    job_file, job_data = jf, jdata
                     safe_job_id = str(jdata.get("job_id") or jf.stem)
                     conv_id = str(jdata.get("conversation_id") or conv_id)
                     break
         except Exception:
             pass
-    # If still no conv_id, default to most recent session in SQLite
     if not conv_id:
         sessions = _list_saved_sessions_internal(limit=1, status_filter="ALL")
         if sessions and sessions[0].get("conversation_id"):
             conv_id = str(sessions[0]["conversation_id"])
     if not conv_id:
         return json.dumps({"ok": False, "error": "No session selected and no valid job_id provided."}, indent=2)
-    # Read live status from DB
     db_info: dict[str, Any] = {}
     if AGY_DB_FILE.is_file():
         try:
             con = sqlite3.connect(f"file:{AGY_DB_FILE}?mode=ro", uri=True)
-            row = con.execute(
-                "SELECT title, status, step_count, last_modified_time, not_fully_idle, killed FROM conversation_summaries WHERE conversation_id = ?",
-                (conv_id,)
-            ).fetchone()
+            row = con.execute("SELECT title, status, step_count, last_modified_time, not_fully_idle, killed FROM conversation_summaries WHERE conversation_id = ?", (conv_id,)).fetchone()
             con.close()
             if row:
-                db_info = {
-                    "title": row[0], "status": row[1],
-                    "step_count": row[2], "last_modified": row[3],
-                    "not_fully_idle": bool(row[4]), "killed": bool(row[5]),
-                }
+                db_info = {"title": row[0], "status": row[1], "step_count": row[2], "last_modified": row[3], "not_fully_idle": bool(row[4]), "killed": bool(row[5])}
         except Exception:
             pass
     transcript_file = AGY_BRAIN_DIR / conv_id / ".system_generated" / "logs" / "transcript.jsonl"
@@ -192,45 +180,30 @@ def manage_background_run(
     pending_app = extract_pending_approval(transcript_file)
     if action_clean == "tail":
         return json.dumps({
-            "ok": True, "conversation_id": conv_id,
-            "job_id": safe_job_id,
+            "ok": True, "conversation_id": conv_id, "job_id": safe_job_id,
             "assistant_guidance": "STOP AND REPLY TO USER NOW with the transcript tail below.",
-            "pending_approval": pending_app, "tail_lines_count": len(parsed_tail),
-            "transcript_tail": parsed_tail,
+            "pending_approval": pending_app, "tail_lines_count": len(parsed_tail), "transcript_tail": parsed_tail,
         }, indent=2)
     if action_clean == "stop":
         if job_file and job_file.is_file():
             job_data["stopped_at"] = datetime.now(timezone.utc).isoformat()
             job_file.write_text(json.dumps(job_data, indent=2) + "\n", encoding="utf-8")
         return json.dumps({
-            "ok": True, "action": "stop",
-            "conversation_id": conv_id, "job_id": safe_job_id,
-            "assistant_guidance": "STOP AND REPLY TO USER NOW.",
-            "message": "Job status marked as stopped.",
+            "ok": True, "action": "stop", "conversation_id": conv_id, "job_id": safe_job_id,
+            "assistant_guidance": "STOP AND REPLY TO USER NOW.", "message": "Job status marked as stopped.",
         }, indent=2)
-    # Default action: status (also attach ascii_mobile_report & quota_and_pools so stats queries never need a 2nd tool call)
-    stats_fallback = build_nexus_stats_bundle(
-        data_dir=AGY_DATA_DIR,
-        brain_dir=AGY_BRAIN_DIR,
-        db_file=AGY_DB_FILE,
-        config_dir=AGY_CONFIG_DIR,
-        bg_dir=AGY_BG_DIR,
-        period=period or "last_90d",
-    )
+    stats_fallback = build_nexus_stats_bundle(data_dir=AGY_DATA_DIR, brain_dir=AGY_BRAIN_DIR, db_file=AGY_DB_FILE, config_dir=AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR, period=period or "last_90d")
     return _compact_json({
-        "ok": True, "action": "status",
-        "conversation_id": conv_id, "job_id": safe_job_id,
+        "ok": True, "action": "status", "conversation_id": conv_id, "job_id": safe_job_id,
         "assistant_guidance": (
             "STOP AND REPLY TO USER NOW: Do NOT chain another tool call in this turn. "
             "If the user asked for stats, display ascii_mobile_report inside a ```text block now; otherwise report the job/session status."
         ),
         "ascii_mobile_report": stats_fallback.get("ascii_mobile_report", ""),
         "quota_and_pools": stats_fallback.get("quota_and_pools", {}),
-        "job_metadata": job_data, "db_info": db_info,
-        "pending_approval": pending_app,
+        "job_metadata": job_data, "db_info": db_info, "pending_approval": pending_app,
         "has_gui_lock": (AGY_PRESENCE_DIR / f"{conv_id}.lock").is_file(),
-        "recent_events_count": len(parsed_tail),
-        "recent_sample": parsed_tail[-4:] if parsed_tail else [],
+        "recent_events_count": len(parsed_tail), "recent_sample": parsed_tail[-4:] if parsed_tail else [],
     })
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def list_models_and_agents(

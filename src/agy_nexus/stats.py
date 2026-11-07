@@ -118,31 +118,16 @@ def build_nexus_stats_bundle(
         try:
             conn = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True, timeout=3.0)
             conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT conversation_id, title, step_count, last_modified_time, workspace_uris, status, parent_conversation_id, agent_name FROM conversation_summaries"
-            ).fetchall()
+            rows = conn.execute("SELECT conversation_id, title, step_count, last_modified_time, workspace_uris, status, parent_conversation_id, agent_name FROM conversation_summaries").fetchall()
             conn.close()
             for r in rows:
-                cid = str(r["conversation_id"])
-                parent_id = str(r["parent_conversation_id"] or "")
-                agent_name = str(r["agent_name"] or "").strip()
-                uris = (
-                    json.loads(r["workspace_uris"] or "[]")
-                    if isinstance(r["workspace_uris"], str) and r["workspace_uris"].startswith("[")
-                    else []
-                )
+                cid, parent_id, agent_name = str(r["conversation_id"]), str(r["parent_conversation_id"] or ""), str(r["agent_name"] or "").strip()
+                uris = json.loads(r["workspace_uris"] or "[]") if isinstance(r["workspace_uris"], str) and r["workspace_uris"].startswith("[") else []
                 title_str = str(r["title"] or cid[:8])
-                ws = _pick_primary_workspace(uris, title_str)
-                steps, lmt = int(r["step_count"] or 0), str(r["last_modified_time"] or "")
                 db_convs[cid] = {
-                    "title": title_str,
-                    "step_count": steps,
-                    "last_modified": lmt,
-                    "workspace": ws,
-                    "status": str(r["status"] or "IDLE"),
-                    "is_subagent": bool(parent_id),
-                    "parent_id": parent_id,
-                    "agent_name": agent_name or "subagent",
+                    "title": title_str, "step_count": int(r["step_count"] or 0), "last_modified": str(r["last_modified_time"] or ""),
+                    "workspace": _pick_primary_workspace(uris, title_str), "status": str(r["status"] or "IDLE"),
+                    "is_subagent": bool(parent_id), "parent_id": parent_id, "agent_name": agent_name or "subagent",
                 }
             for cid, info in db_convs.items():
                 if info["parent_id"] and info["parent_id"] in db_convs:
@@ -158,8 +143,7 @@ def build_nexus_stats_bundle(
     for cid, cdata in conv_cache.items():
         meta = db_convs.get(cid, {})
         ws_name = normalize_workspace_name(meta.get("workspace") or "") or "unassigned"
-        is_sub = bool(meta.get("is_subagent"))
-        agent_role = str(meta.get("agent_name") or "subagent")
+        is_sub, agent_role = bool(meta.get("is_subagent")), str(meta.get("agent_name") or "subagent")
         win_steps, win_toks = 0, 0
         for ds, cnt in (cdata.get("day_steps") or {}).items():
             daily_steps[ds] = daily_steps.get(ds, 0) + cnt
@@ -235,10 +219,7 @@ def build_nexus_stats_bundle(
 
     if pk == "current_month":
         nxt_m = (today.replace(day=28) + timedelta(days=4)).replace(day=1)
-        heat_end_d = nxt_m - timedelta(days=1)
-        heat_start_d = start_d
-    elif pk == "last_month":
-        heat_start_d, heat_end_d = start_d, end_d
+        heat_start_d, heat_end_d = start_d, nxt_m - timedelta(days=1)
     else:
         heat_start_d, heat_end_d = start_d, end_d
     heat_start_d -= timedelta(days=heat_start_d.weekday())
@@ -288,16 +269,10 @@ def build_nexus_stats_bundle(
     vel_points = [sum(slot_totals.get(s, 0) for s in all_4h_slots[i : i + slot_group]) for i in range(0, len(all_4h_slots), slot_group)]
     ws_layers: dict[str, list[int]] = {}
     for k in ws_keys:
-        if k == "other-projects":
-            ws_layers[k] = [sum(sum(ws_slots.get(ok, {}).get(s, 0) for ok in other_ws_keys) for s in all_4h_slots[i : i + slot_group]) for i in range(0, len(all_4h_slots), slot_group)]
-        else:
-            ws_layers[k] = [sum(ws_slots.get(k, {}).get(s, 0) for s in all_4h_slots[i : i + slot_group]) for i in range(0, len(all_4h_slots), slot_group)]
+        ws_layers[k] = [sum(sum(ws_slots.get(ok, {}).get(s, 0) for ok in other_ws_keys) for s in all_4h_slots[i : i + slot_group]) for i in range(0, len(all_4h_slots), slot_group)] if k == "other-projects" else [sum(ws_slots.get(k, {}).get(s, 0) for s in all_4h_slots[i : i + slot_group]) for i in range(0, len(all_4h_slots), slot_group)]
     sub_layers: dict[str, list[int]] = {}
     for k in sub_keys:
-        if k == "other-subagents":
-            sub_layers[k] = [sum(sum(sub_slots.get(ok, {}).get(s, 0) for ok in other_sub_keys) for s in all_4h_slots[i : i + slot_group]) for i in range(0, len(all_4h_slots), slot_group)]
-        else:
-            sub_layers[k] = [sum(sub_slots.get(k, {}).get(s, 0) for s in all_4h_slots[i : i + slot_group]) for i in range(0, len(all_4h_slots), slot_group)]
+        sub_layers[k] = [sum(sum(sub_slots.get(ok, {}).get(s, 0) for ok in other_sub_keys) for s in all_4h_slots[i : i + slot_group]) for i in range(0, len(all_4h_slots), slot_group)] if k == "other-subagents" else [sum(sub_slots.get(k, {}).get(s, 0) for s in all_4h_slots[i : i + slot_group]) for i in range(0, len(all_4h_slots), slot_group)]
 
     quota_info = get_live_quota_and_pool_status(agy_config_dir)
     targets, tot_calls = quota_info["target_model_allocation"], max(1, sum(model_totals.values()))
@@ -308,6 +283,8 @@ def build_nexus_stats_bundle(
         dp = round(ap - tp, 1)
         model_comp.append({"model_key": mk, "label": tm["label"], "pool": tm["pool"], "actual_calls": ac, "est_tokens": model_tokens.get(mk, 0), "actual_pct": ap, "target_pct": tp, "delta_pct": dp, "status": "ON_TARGET" if abs(dp) <= 12.0 else ("OVER_TARGET" if dp > 12.0 else "UNDER_TARGET")})
 
+    from agy_nexus.session_tree import build_project_session_tree
+    tree_bundle = build_project_session_tree(active_only=False, limit=30, bg_dir=bg_dir)
     parent_cnt = active_parent_convs or sum(1 for v in db_convs.values() if not v.get("is_subagent"))
     kpis_obj = {"total_conversations": parent_cnt, "total_subagents_spawned": sum(v["runs"] for v in subagent_roles.values()), "window_steps": win_steps_sum, "period_steps": win_steps_sum, "window_tool_calls": win_tools_sum, "period_tool_calls": win_tools_sum, "window_tokens": win_tokens_sum, "active_days": active_days, "avg_daily_steps": round(win_steps_sum / act_d, 1), "tok_per_day": round(win_tokens_sum / act_d), "tok_per_week": round(win_tokens_sum / act_w), "peak_day": peak}
     bundle = {
@@ -319,9 +296,12 @@ def build_nexus_stats_bundle(
         "workspace_series": {"keys": ws_keys, "dates": chart_labels, "layers": ws_layers, "resolution": resolution_label},
         "subagent_series": {"keys": sub_keys, "dates": chart_labels, "layers": sub_layers, "resolution": resolution_label},
         "heatmap_series": heatmap_series, "wire_telemetry": get_wire_telemetry_summary(bg_dir, limit=15),
+        "project_session_tree": tree_bundle, "routing_telemetry": tree_bundle.get("routing_telemetry", {}), "backup_321": tree_bundle.get("backup_321", {}),
     }
     bundle["ascii_report_default"], bundle["ascii_report_quick"], bundle["ascii_report_rich"] = render_ascii_default(bundle), render_ascii_quick(bundle), render_ascii_rich(bundle)
     selected_ascii = render_ascii_stats(bundle, style=style)
     bundle["ascii_mobile_dashboard"] = selected_ascii
     bundle["ascii_mobile_report"] = selected_ascii
     return bundle
+
+get_quota_and_stats_bundle = build_nexus_stats_bundle

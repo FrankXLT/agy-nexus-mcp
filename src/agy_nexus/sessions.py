@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 import sqlite3
+import time
 from typing import Any
 from agy_nexus.config import (
     AGY_BG_DIR,
@@ -234,23 +235,33 @@ def _list_saved_sessions_internal(
                 break
     return results
 
-def _get_selected_session_quick_status() -> dict[str, Any]:
-    """Return a compact status summary of the currently selected session and its latest background job."""
-    conv_id = SESSION_STATE.get("selected_session", "")
+def _get_selected_session_quick_status(target_conv_id: str = "") -> dict[str, Any]:
+    """Return a compact status summary of target_conv_id (or selected_session), its mode, and any concurrent writers on the same workspace."""
+    conv_id = (target_conv_id or SESSION_STATE.get("selected_session") or "").strip()
     if not conv_id:
         return {}
-    info: dict[str, Any] = {"conversation_id": conv_id}
+    ws_path = str(SESSION_STATE.get("session_workspace_map", {}).get(conv_id) or SESSION_STATE.get("selected_workspace") or "")
+    info: dict[str, Any] = {"conversation_id": conv_id, "workspace_path": ws_path}
+    is_running = False
+    other_running: list[dict[str, str]] = []
     if AGY_DB_FILE.is_file():
         try:
             con = sqlite3.connect(f"file:{AGY_DB_FILE}?mode=ro", uri=True)
             row = con.execute(
-                "SELECT status, step_count, last_modified_time, not_fully_idle, killed FROM conversation_summaries WHERE conversation_id = ?",
+                "SELECT status, step_count, last_modified_time, not_fully_idle, killed, workspace_uris FROM conversation_summaries WHERE conversation_id = ?",
                 (conv_id,),
             ).fetchone()
-            con.close()
             if row:
                 raw_status = str(row[0] or "")
                 is_running = "RUNNING" in raw_status or bool(row[3])
+                if not ws_path and row[5]:
+                    try:
+                        uris = json.loads(row[5])
+                        if uris and isinstance(uris, list):
+                            ws_path = re.sub(r"^file://", "", str(uris[0])).rstrip("/")
+                            info["workspace_path"] = ws_path
+                    except Exception:
+                        pass
                 info["db_status"] = raw_status
                 info["step_count"] = int(row[1] or 0)
                 info["last_modified"] = str(row[2] or "")
@@ -260,8 +271,22 @@ def _get_selected_session_quick_status() -> dict[str, Any]:
                     if is_running
                     else "COMPLETED_AND_IDLE (Antigravity finished; do NOT call manage_background_run)"
                 )
+            if ws_path:
+                run_rows = con.execute(
+                    "SELECT conversation_id, title, workspace_uris FROM conversation_summaries WHERE (status = 'CASCADE_RUN_STATUS_RUNNING' OR not_fully_idle = 1) AND (parent_conversation_id IS NULL OR parent_conversation_id = '') LIMIT 20"
+                ).fetchall()
+                for r_cid, r_title, r_uris in run_rows:
+                    if str(r_cid) != conv_id and ws_path in str(r_uris or ""):
+                        other_running.append({"conversation_id": str(r_cid), "title": str(r_title or "")})
+            con.close()
         except Exception:
             pass
+    if other_running:
+        info["other_running_sessions"] = other_running
+    info["mode"] = (
+        "WORKTREE" if "/worktrees/" in ws_path
+        else ("MAIN WRITER" if is_running else ("SHARED (READ-ONLY)" if other_running else "MAIN TREE"))
+    )
     if AGY_BG_DIR.is_dir():
         try:
             job_files = sorted(AGY_BG_DIR.glob("job-*.json"), key=lambda p: p.stat().st_mtime, reverse=True)

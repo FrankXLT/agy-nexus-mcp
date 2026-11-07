@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [2.4.0] — 2026-11-07
+
+### Added
+- **Parallel Session Isolation & Atomic Keyed Context Slots (`src/agy_nexus/config.py`, `src/agy_nexus/tools_session.py`, `src/agy_nexus/tools_workspace.py`)**:
+  - Upgraded `session_state.json` persistence with `fcntl.flock` file locking and atomic temp-file `os.replace()`, storing per-conversation context slots (`active_contexts[conv_id]`) and routing telemetry counters (`pinned_calls`, `auto_resolved_calls`).
+  - Added stateless per-call context pinning (`session_identifier`, `workspace`) to `ask_workspace_readonly` and `inspect_git_diff` so two or more Gemini Web / Gemini Mobile tabs can operate concurrently on different sessions and repositories without overwriting each other's active workspace.
+- **3-Tier Smart Path Resolver (`src/agy_nexus/workspace.py`)**:
+  - Upgraded `_resolve_and_read_files()` with 3-tier path resolution: Tier 1 (Explicit Pin + multi-root `extra_workspace_uris`), Tier 2 (Repo-Prefix Match under `AGY_GITLAB_DIR` when `file_subpath` begins with `<repo_name>/...`), and Tier 3 (Unique Subpath Auto-Discovery across top-level repositories in `AGY_GITLAB_DIR`, returning `auto_resolved_workspace`).
+- **Same-Repo Concurrent Writer Guard (`src/agy_nexus/sessions.py`, `src/agy_nexus/handoff.py`)**:
+  - Extended `_get_selected_session_quick_status()` and `send_handoff_and_resume()` to detect when another session is `RUNNING` against the same `workspace_path`, computing session `mode` (`MAIN WRITER`, `WORKTREE`, `SHARED (READ-ONLY)`, `MAIN TREE`) and surfacing a `concurrent_writer_warning` recommending `use_worktree=True`.
+- **76-Column ASCII Project, Chat & Session Hierarchy (`src/agy_nexus/session_tree.py`, `src/agy_nexus/tools_ops.py`)**:
+  - Added first-class `@mcp.tool def get_session_tree(...)` and `manage_background_run(action="sessions" | "session_status")`, rendering a copy-ready 76-column ASCII hierarchy (`Project -> Chat -> Session ID -> Workspace -> Status`) alongside 3-2-1 backup sync status (`read_backup_321_manifest()`).
+- **Unified `/web` Project, Chat & Session Hierarchy Panel (`web/hierarchy.js`, `web/index.html`, `web/app.js`, `web/styles.css`)**:
+  - Added the full-width `col-12` **Project, Chat & Session Hierarchy** card to `/web` with live `3-2-1 SYNC: <short_sha> ✓` badge, `SLOTS / PINNED / AUTO-RESOLVED` telemetry badge, `[Pinned / Active | All Sessions]` toggle, `Copy ASCII Tree` button, collapsible project cards with `SHARED REPO` badge, 1-click `📋` copy buttons on `project_id`, `session_id`, chat title, and `workspace`, and live running/pinned badges in `#workspaceTableBody`.
+
+---
+
 ## [2.3.4] — 2026-11-05
 
 ### Fixed

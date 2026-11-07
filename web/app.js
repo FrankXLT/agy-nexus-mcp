@@ -226,15 +226,17 @@ function renderDashboard(b) {
       wsList.forEach((ws, idx) => {
         const share = ((ws.steps / totWsSteps) * 100).toFixed(1) + "%";
         const dotColor = idx < 5 ? SERIES_COLORS[idx % SERIES_COLORS.length] : SERIES_COLORS[5];
+        const liveBadges = typeof getWorkspaceSessionBadgesHtml === "function" ? getWorkspaceSessionBadgesHtml(ws.workspace, b.project_session_tree) : "";
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td><span class="swatch-dot" style="background:${dotColor};margin-right:6px;"></span><strong>${ws.workspace}</strong></td>
+          <td><span class="swatch-dot" style="background:${dotColor};margin-right:6px;"></span><strong>${ws.workspace}</strong>${liveBadges}</td>
           <td class="mono">${ws.sessions}</td>
           <td class="mono">${Number(ws.steps).toLocaleString()}</td>
           <td class="mono">~${formatCompactTokens(ws.tokens)}</td>
           <td class="mono">${share}</td>
         `;
         tbody.appendChild(tr); });
+      if (typeof renderHierarchyPanel === "function") renderHierarchyPanel(b);
     }
     applyThemeAndDensity(state.surface, state.density);
     document.querySelectorAll(".tab-btn").forEach((btn) => {

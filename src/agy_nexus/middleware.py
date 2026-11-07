@@ -33,6 +33,7 @@ class BridgeCompatMiddleware:
         self.pwa_assets = {
             "styles.css": b"text/css; charset=utf-8",
             "charts.js": b"application/javascript; charset=utf-8",
+            "hierarchy.js": b"application/javascript; charset=utf-8",
             "app.js": b"application/javascript; charset=utf-8",
             "manifest.webmanifest": b"application/manifest+json; charset=utf-8",
             "sw.js": b"application/javascript; charset=utf-8",

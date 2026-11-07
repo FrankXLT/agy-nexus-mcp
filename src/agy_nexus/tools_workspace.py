@@ -14,49 +14,73 @@ from agy_nexus.config import (
     READONLY_ANNOTATIONS,
     SESSION_STATE,
     _compact_json,
+    _save_session_state,
     is_unlocked,
     mcp,
+    pin_session_context,
 )
 from agy_nexus.hygiene import MAX_DIFF_CHARS, MAX_FILE_CHARS, MAX_TOTAL_FILE_CHARS, slice_git_diff
+from agy_nexus.routing import _resolve_session_identifier
 from agy_nexus.search import _get_configured_mcp_servers, _search_workspaces_and_history
 from agy_nexus.sessions import _get_selected_session_quick_status
 from agy_nexus.workflows import inspect_multi_repo_drift
 from agy_nexus.workspace import _host_git_inspect, _resolve_and_read_files, _resolve_workspace_str
 
-@mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
+def _resolve_pinned_context(session_identifier: str = "", workspace: str = "", tool_name: str = "ask_workspace_readonly") -> tuple[str, Path, list[str]]:
+    """Resolve isolated (conv_id, ws_path, extra_uris) for a tool call without clobbering global default pointers."""
+    conv_id = SESSION_STATE.get("selected_session", "")
+    extra_uris = list(SESSION_STATE.get("selected_workspace_uris") or [])
+    ws_str = ""
+    is_pinned_call = bool(session_identifier.strip() or workspace.strip())
+    if session_identifier.strip():
+        resolved_cid = _resolve_session_identifier(session_identifier.strip())
+        if resolved_cid:
+            conv_id = resolved_cid
+            slot = (SESSION_STATE.get("active_contexts") or {}).get(conv_id, {})
+            ws_str = str(slot.get("workspace") or SESSION_STATE["session_workspace_map"].get(conv_id) or "")
+            extra_uris = list(slot.get("workspace_uris") or SESSION_STATE["session_workspace_uris_map"].get(conv_id) or [])
+    if workspace.strip():
+        ws_str = _resolve_workspace_str(workspace.strip())
+    if not ws_str:
+        ws_str = SESSION_STATE.get("selected_workspace") or str(AGY_GITLAB_DIR)
+    ws = Path(ws_str)
+    if not ws.is_dir() and not (AGY_DATA_DIR / "worktrees" / ws.name).is_dir():
+        ws = AGY_GITLAB_DIR
+    if is_pinned_call:
+        SESSION_STATE["pinned_calls"] = int(SESSION_STATE.get("pinned_calls") or 0) + 1
+        if conv_id:
+            pin_session_context(conv_id, workspace=str(ws), workspace_uris=extra_uris, mode="PINNED (READ-ONLY)", last_tool=tool_name, set_default=not bool(SESSION_STATE.get("selected_session")))
+        else:
+            _save_session_state()
+    elif conv_id:
+        pin_session_context(conv_id, workspace=str(ws), workspace_uris=extra_uris, last_tool=tool_name, set_default=False)
+    return conv_id, ws, extra_uris
 
+@mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def ask_workspace_readonly(
     question: str,
     search_query: str = "",
     file_subpath: str = "",
     start_line: int = 0,
     end_line: int = 0,
+    session_identifier: str = "",
+    workspace: str = "",
     spoken_passphrase: str = "",
 ) -> str:
-    """Read-only codebase explorer querying one or up to 12 comma-separated files (up to 14 KB per file / 16.5 KB total per call to stay within the <20 KB wire ceiling; supports line ranges via start_line/end_line or inline 'path/file.py:100-350' / 'path/file.py:420' syntax, plus 'skill:<name>' / 'agent:<name>' / 'rule:<name>'), git grep across local repositories, and SQLite FTS5 conversation history."""
+    """Read-only codebase explorer querying 1..12 comma-separated files (supports line ranges via start_line/end_line or inline 'path/file.py:100-350' syntax, plus 'skill:<name>' / 'agent:<name>' / 'rule:<name>'), git grep across local repositories, and SQLite FTS5 conversation history. Pass session_identifier or workspace to pin this call in parallel chats without mutating other chats' context."""
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
-    ws_str = SESSION_STATE.get("selected_workspace") or str(AGY_GITLAB_DIR)
-    ws = Path(ws_str)
-    if not ws.is_dir() and not (AGY_DATA_DIR / "worktrees" / ws.name).is_dir():
-        ws = AGY_GITLAB_DIR
-    conv_id = SESSION_STATE.get("selected_session", "")
+    conv_id, ws, extra_uris = _resolve_pinned_context(session_identifier, workspace, tool_name="ask_workspace_readonly")
     session_dir = (AGY_BRAIN_DIR / conv_id) if conv_id else None
     effective_query = search_query.strip()
     if not effective_query and not file_subpath.strip() and question.strip():
-        # Extract meaningful keywords only when no explicit file_subpath was requested
         words = [w for w in re.findall(r"[A-Za-z0-9_-]{4,}", question) if w.lower() not in {"find", "existing", "project", "current", "what", "where", "with", "from", "that", "this", "read", "check", "audit"}]
         if words:
             effective_query = words[0]
     search_bundle = (
         _search_workspaces_and_history(effective_query, primary_ws=ws if ws.is_dir() else None)
         if effective_query
-        else {
-            "configured_mcp_servers": _get_configured_mcp_servers(),
-            "available_repositories": [],
-            "code_search_matches": [],
-            "historical_session_matches": [],
-        }
+        else {"configured_mcp_servers": _get_configured_mcp_servers(), "available_repositories": [], "code_search_matches": [], "historical_session_matches": []}
     )
     effective_subpath = file_subpath.strip()
     if not effective_subpath and search_bundle["code_search_matches"]:
@@ -81,21 +105,28 @@ def ask_workspace_readonly(
         max_total_chars=MAX_TOTAL_FILE_CHARS,
         start_line=start_line,
         end_line=end_line,
+        extra_workspace_uris=extra_uris,
     )
+    auto_ws = ""
+    if isinstance(file_result, dict):
+        auto_ws = str(file_result.get("auto_resolved_workspace") or "")
     out_ws: dict[str, Any] = {
         "ok": True,
         "question": question,
-        "workspace": str(ws),
+        "conversation_id": conv_id,
+        "workspace": auto_ws or str(ws),
         "assistant_guidance": (
             "STOP AND REPLY TO USER NOW (CRITICAL GEMINI WEB PLATFORM RULE: Google Gemini Web freezes on 'Trying to connect...' "
             "if you invoke two MCP tools in the same turn. NEVER call a second MCP tool in this turn—selected_session_status, "
             "file_details, and code_search_matches are ALL included below)."
         ),
-        "selected_session_status": _get_selected_session_quick_status(),
+        "selected_session_status": _get_selected_session_quick_status(conv_id),
         "file_details": file_result,
         "code_search_matches": search_bundle["code_search_matches"],
         "historical_session_matches": search_bundle["historical_session_matches"],
     }
+    if auto_ws:
+        out_ws["auto_resolved_workspace"] = auto_ws
     if not file_subpath.strip():
         out_ws["configured_mcp_servers"] = search_bundle["configured_mcp_servers"]
         out_ws["available_repositories"] = search_bundle["available_repositories"]
@@ -119,7 +150,6 @@ def ask_workspace_readonly(
     return out_json
 
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
-
 def inspect_git_diff(
     target_branch: str = "HEAD",
     include_untracked: bool = True,
@@ -128,9 +158,10 @@ def inspect_git_diff(
     offset_chars: int = 0,
     start_line: int = 0,
     end_line: int = 0,
+    session_identifier: str = "",
     spoken_passphrase: str = "",
 ) -> str:
-    """Inspect active git status, untracked files, and branch diffs across the target repository (or pass workspace_override='ALL' / comma-separated repo names for a 1-turn multi-repo drift audit). Supports filtering to a specific file_path (e.g. 'src/worker.ts') and paging through large diffs via offset_chars or start_line/end_line."""
+    """Inspect active git status, untracked files, and branch diffs across the target repository (or pass workspace_override='ALL' / comma-separated repo names for a 1-turn multi-repo drift audit, or session_identifier to pin a specific session's repo). Supports filtering to a specific file_path and paging through large diffs."""
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
     raw_override = workspace_override.strip()
@@ -149,7 +180,8 @@ def inspect_git_diff(
             "selected_session_status": _get_selected_session_quick_status(),
             **drift_bundle,
         })
-    ws_str = _resolve_workspace_str(raw_override)
+    pinned_cid, pinned_ws, _ = _resolve_pinned_context(session_identifier, raw_override, tool_name="inspect_git_diff")
+    ws_str = str(pinned_ws) if (session_identifier.strip() or raw_override) else _resolve_workspace_str(raw_override)
     ws = Path(ws_str)
     if ws == AGY_GITLAB_DIR or ws_str == str(AGY_GITLAB_DIR):
         ws = (AGY_GITLAB_DIR / "antigravity-config").resolve()

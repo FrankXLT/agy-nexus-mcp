@@ -20,6 +20,7 @@ from agy_nexus.config import (
     AGY_GITLAB_DIR,
     AGY_HOST_BRIDGE_URL,
     SESSION_STATE,
+    _save_session_state,
 )
 from agy_nexus.hygiene import (
     MAX_FILE_CHARS,
@@ -36,13 +37,9 @@ def _resolve_workspace_str(ws_input: str) -> str:
     raw = re.sub(r"^file://", "", (ws_input or "").strip()).rstrip("/")
     if not raw:
         raw = SESSION_STATE.get("selected_workspace") or str(AGY_GITLAB_DIR / "antigravity-config")
-
-    # 1. If it's an existing directory on disk (and not the bare AGY_GITLAB_DIR parent when a repo is needed)
     p = Path(raw)
     if p.is_absolute() and p.is_dir():
         return str(p.resolve())
-
-    # 2. Check case-insensitive match under AGY_GITLAB_DIR
     target_name = p.name if p.is_absolute() else raw.strip("/")
     if AGY_GITLAB_DIR.is_dir() and target_name:
         exact_gitlab = AGY_GITLAB_DIR / target_name
@@ -51,18 +48,13 @@ def _resolve_workspace_str(ws_input: str) -> str:
         for entry in AGY_GITLAB_DIR.iterdir():
             if entry.is_dir() and entry.name.lower() == target_name.lower():
                 return str(entry.resolve())
-
-    # 3. Check project map by project name or project_id
     projects_map = _load_projects_map()
     q_lower = target_name.lower()
     for pid, pinfo in projects_map.items():
         pname = str(pinfo.get("name") or "").lower()
         p_paths = pinfo.get("workspace_paths") or []
-        if q_lower and (q_lower == pid.lower() or q_lower == pname or q_lower in pname):
-            if p_paths:
-                return str(p_paths[0])
-
-    # 4. Check worktrees under AGY_DATA_DIR / "worktrees"
+        if q_lower and (q_lower == pid.lower() or q_lower == pname or q_lower in pname) and p_paths:
+            return str(p_paths[0])
     wt_root = AGY_DATA_DIR / "worktrees"
     if wt_root.is_dir() and target_name:
         for proj_wt in wt_root.iterdir():
@@ -70,7 +62,6 @@ def _resolve_workspace_str(ws_input: str) -> str:
                 sub_wts = sorted([d for d in proj_wt.iterdir() if d.is_dir()], key=lambda x: x.stat().st_mtime, reverse=True)
                 if sub_wts:
                     return str(sub_wts[0].resolve())
-
     return raw
 
 def _resolve_and_read_files(
@@ -81,12 +72,12 @@ def _resolve_and_read_files(
     max_total_chars: int = MAX_TOTAL_FILE_CHARS,
     start_line: int = 0,
     end_line: int = 0,
+    extra_workspace_uris: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Read one or more comma/semicolon-separated file subpaths across workspace, worktrees, brain session directory, or GitLab root, supporting line ranges and centered target lines."""
+    """Read 1..12 comma/semicolon-separated file subpaths using the 3-Tier Smart Path Resolver (Explicit Pin -> Repo-Prefix -> Unique Subpath Auto-Discovery)."""
     raw_items = [p.strip() for p in re.split(r"[,;\n]+", file_subpath_csv or "") if p.strip()]
     if not raw_items:
         return {}
-
     search_roots: list[Path] = []
     if ws.is_dir():
         search_roots.append(ws.resolve())
@@ -95,21 +86,21 @@ def _resolve_and_read_files(
         sub_wts = sorted([d for d in proj_wt.iterdir() if d.is_dir()], key=lambda x: x.stat().st_mtime, reverse=True)
         if sub_wts:
             search_roots.append(sub_wts[0].resolve())
-
-    for extra_uri in SESSION_STATE.get("selected_workspace_uris", []):
+    uris_source = extra_workspace_uris if extra_workspace_uris is not None else SESSION_STATE.get("selected_workspace_uris", [])
+    for extra_uri in uris_source:
         clean_u = re.sub(r"^file://", "", str(extra_uri)).rstrip("/")
         if clean_u:
             ep = Path(clean_u)
             if ep.is_dir() and ep.resolve() not in search_roots:
                 search_roots.append(ep.resolve())
-
     if not search_roots:
         search_roots.append(AGY_GITLAB_DIR.resolve())
 
+    gitlab_root_res = AGY_GITLAB_DIR.resolve()
     allowed = tuple(
         set(search_roots)
         | {
-            AGY_GITLAB_DIR.resolve(),
+            gitlab_root_res,
             AGY_DATA_DIR.resolve(),
             AGY_BRAIN_DIR.resolve(),
             (AGY_DATA_DIR / "worktrees").resolve(),
@@ -120,6 +111,7 @@ def _resolve_and_read_files(
     items_slice = raw_items[:MAX_FILES_PER_CALL]
     remaining_total_chars = max_total_chars
     files_list: list[dict[str, Any]] = []
+    top_auto_ws = ""
 
     for raw_sub in items_slice:
         per_file_cap = min(max_chars_per_file, max(4000, remaining_total_chars))
@@ -154,6 +146,7 @@ def _resolve_and_read_files(
                 candidates.append((session_dir / norm_sub).resolve())
                 candidates.append((session_dir / "scratch" / Path(norm_sub).name).resolve())
                 candidates.append((session_dir / Path(norm_sub).name).resolve())
+            # Tier 2: Repo-Prefix Match under AGY_GITLAB_DIR (e.g. agy-nexus-mcp/src/... or oaworkbench-workspace/...)
             candidates.append((AGY_GITLAB_DIR / norm_sub).resolve())
             candidates.append((AGY_CONFIG_DIR / norm_sub).resolve())
 
@@ -165,6 +158,35 @@ def _resolve_and_read_files(
                     break
             except Exception:
                 continue
+
+        # Tier 3: Unique Subpath Auto-Discovery across top-level repositories in AGY_GITLAB_DIR
+        auto_resolved_ws = ""
+        if not target_path.is_file() and cleaned_no_line and not cleaned_no_line.startswith("/") and AGY_GITLAB_DIR.is_dir():
+            norm_rel = os.path.normpath(cleaned_no_line).lstrip("/")
+            if not norm_rel.startswith(".."):
+                repo_hits: list[tuple[Path, Path]] = []
+                for rdir in sorted(AGY_GITLAB_DIR.iterdir()):
+                    if rdir.is_dir() and not rdir.name.startswith(".") and not rdir.is_symlink():
+                        for probe_rel in (norm_rel, f"packages/{norm_rel}"):
+                            p_cand = (rdir / probe_rel).resolve()
+                            if p_cand.is_file():
+                                repo_hits.append((rdir.resolve(), p_cand))
+                                break
+                if len(repo_hits) == 1:
+                    auto_resolved_ws, target_path = str(repo_hits[0][0]), repo_hits[0][1]
+                    SESSION_STATE["auto_resolved_calls"] = int(SESSION_STATE.get("auto_resolved_calls") or 0) + 1
+                    _save_session_state()
+        elif target_path.is_file() and target_path.is_relative_to(gitlab_root_res):
+            rel_parts = target_path.relative_to(gitlab_root_res).parts
+            if rel_parts:
+                cand_repo = (gitlab_root_res / rel_parts[0]).resolve()
+                if cand_repo not in search_roots and cand_repo.is_dir():
+                    auto_resolved_ws = str(cand_repo)
+                    SESSION_STATE["auto_resolved_calls"] = int(SESSION_STATE.get("auto_resolved_calls") or 0) + 1
+                    _save_session_state()
+
+        if auto_resolved_ws and not top_auto_ws:
+            top_auto_ws = auto_resolved_ws
 
         is_sensitive_cfg = target_path.name.startswith(("config.json", "mcp_config.json", "secrets.env"))
         is_safe = (not is_sensitive_cfg) and any(target_path.is_relative_to(a) for a in allowed)
@@ -190,6 +212,8 @@ def _resolve_and_read_files(
                     "bytes": target_path.stat().st_size,
                     **slice_meta,
                 }
+                if auto_resolved_ws:
+                    entry_obj["auto_resolved_workspace"] = auto_resolved_ws
                 files_list.append(entry_obj)
             except Exception as e:
                 files_list.append({"requested": raw_sub, "error": f"Error reading file: {e}"})
@@ -216,30 +240,18 @@ def _resolve_and_read_files(
 
     if len(files_list) == 1:
         return files_list[0]
-    return {"count": len(files_list), "files": files_list}
+    out_bundle: dict[str, Any] = {"count": len(files_list), "files": files_list}
+    if top_auto_ws:
+        out_bundle["auto_resolved_workspace"] = top_auto_ws
+    return out_bundle
 
 def _host_git_inspect(
-    ws_path: str,
-    target_branch: str = "HEAD",
-    include_untracked: bool = True,
-    summary_only: bool = False,
-    file_path: str = "",
+    ws_path: str, target_branch: str = "HEAD", include_untracked: bool = True, summary_only: bool = False, file_path: str = ""
 ) -> dict[str, Any]:
     """Fallback to agy-incident-bridge host git-inspect when a workspace or worktree parent .git lives on the host."""
     try:
-        req = urllib.request.Request(
-            AGY_HOST_BRIDGE_URL,
-            data=json.dumps({
-                "action": "git-inspect",
-                "workspace_path": ws_path,
-                "target_branch": target_branch,
-                "include_untracked": include_untracked,
-                "summary_only": summary_only,
-                "file_path": file_path,
-            }).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
+        payload = {"action": "git-inspect", "workspace_path": ws_path, "target_branch": target_branch, "include_untracked": include_untracked, "summary_only": summary_only, "file_path": file_path}
+        req = urllib.request.Request(AGY_HOST_BRIDGE_URL, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
         with urllib.request.urlopen(req, timeout=8) as resp:
             data = json.loads(resp.read().decode("utf-8", errors="replace"))
             if isinstance(data, dict) and data.get("ok"):
@@ -250,37 +262,22 @@ def _host_git_inspect(
 
 def _collect_git_summary(ws: Path | str) -> dict[str, Any]:
     """Return branch, short status, diff stat, and untracked files list for a workspace (with host-bridge fallback)."""
-    ws_str = str(ws)
-    ws_path = Path(ws_str)
+    ws_str, ws_path = str(ws), Path(str(ws))
     if ws_path.is_dir() and ws_path.resolve() != AGY_GITLAB_DIR.resolve():
         try:
-            branch_proc = subprocess.run(
-                ["git", "-c", "safe.directory=*", "rev-parse", "--abbrev-ref", "HEAD"],
-                cwd=str(ws_path), capture_output=True, text=True, timeout=4, check=False,
-            )
+            branch_proc = subprocess.run(["git", "-c", "safe.directory=*", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(ws_path), capture_output=True, text=True, timeout=4, check=False)
             if branch_proc.returncode == 0:
-                status_proc = subprocess.run(
-                    ["git", "-c", "safe.directory=*", "status", "--short"],
-                    cwd=str(ws_path), capture_output=True, text=True, timeout=4, check=False,
-                )
-                stat_proc = subprocess.run(
-                    ["git", "-c", "safe.directory=*", "diff", "--stat", "HEAD", "--"],
-                    cwd=str(ws_path), capture_output=True, text=True, timeout=4, check=False,
-                )
-                untracked_proc = subprocess.run(
-                    ["git", "-c", "safe.directory=*", "ls-files", "--others", "--exclude-standard"],
-                    cwd=str(ws_path), capture_output=True, text=True, timeout=4, check=False,
-                )
-                untracked = [l.strip() for l in untracked_proc.stdout.splitlines() if l.strip()][:80]
+                status_proc = subprocess.run(["git", "-c", "safe.directory=*", "status", "--short"], cwd=str(ws_path), capture_output=True, text=True, timeout=4, check=False)
+                stat_proc = subprocess.run(["git", "-c", "safe.directory=*", "diff", "--stat", "HEAD", "--"], cwd=str(ws_path), capture_output=True, text=True, timeout=4, check=False)
+                untracked_proc = subprocess.run(["git", "-c", "safe.directory=*", "ls-files", "--others", "--exclude-standard"], cwd=str(ws_path), capture_output=True, text=True, timeout=4, check=False)
                 return {
                     "current_branch": branch_proc.stdout.strip(),
                     "status_short": status_proc.stdout.strip(),
                     "diff_stat": stat_proc.stdout.strip(),
-                    "untracked_files": untracked,
+                    "untracked_files": [l.strip() for l in untracked_proc.stdout.splitlines() if l.strip()][:80],
                 }
         except Exception:
             pass
-
     if ws_str and Path(ws_str) != AGY_GITLAB_DIR:
         host_res = _host_git_inspect(ws_str, target_branch="HEAD", include_untracked=True, summary_only=True)
         if host_res:

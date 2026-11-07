@@ -13,7 +13,7 @@
   <link rel="icon" type="image/svg+xml" href="/web/icon.svg" />
   <link rel="apple-touch-icon" href="/web/icon-192.png" />
   <title>AGY-NEXUS-MCP — Usage, Quota &amp; Project Activity Dashboard</title>
-  <link rel="stylesheet" href="/web/styles.css?v=2.3.4" />
+  <link rel="stylesheet" href="/web/styles.css?v=2.4.0" />
 </head>
 <body>
   <!-- Top Navigation Bar -->
@@ -334,8 +334,23 @@
             </tr></thead>
           <tbody id="workspaceTableBody"></tbody></table>
       </div></section>
+    <!-- Row 6: Project, Chat & Session Hierarchy (col-12) -->
+    <section class="card col-12" id="hierarchySectionCard">
+      <div class="card-hdr" style="flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span class="card-label">Project, Chat &amp; Session Hierarchy</span>
+          <span class="card-tag mono" id="hierarchyBackupBadge">3-2-1 SYNC: ✓</span>
+          <span class="card-tag mono" id="hierarchySlotsBadge">SLOTS: 0 · PINNED: 0 · AUTO-RESOLVED: 0</span></div>
+        <div class="controls">
+          <button type="button" class="tab-btn" id="hierarchyFilterActiveBtn" title="Show only pinned or active/running sessions">Pinned / Active</button>
+          <button type="button" class="tab-btn active" id="hierarchyFilterAllBtn" title="Show all indexed sessions grouped by project">All Sessions</button>
+          <button type="button" class="btn mono" id="copyAsciiTreeBtn" title="Copy 76-column ASCII Project-Chat-Session tree">Copy ASCII Tree</button></div>
+      </div>
+      <div id="hierarchyProjectList" class="hier-list"></div>
+    </section>
   </main>
-  <script src="/web/charts.js?v=2.3.4"></script>
-  <script src="/web/app.js?v=2.3.4"></script>
+  <script src="/web/charts.js?v=2.4.0"></script>
+  <script src="/web/hierarchy.js?v=2.4.0"></script>
+  <script src="/web/app.js?v=2.4.0"></script>
 </body>
 </html>

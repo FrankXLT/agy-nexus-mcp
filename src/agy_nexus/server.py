@@ -42,17 +42,19 @@ from agy_nexus.media import (
 )
 from agy_nexus.middleware import BridgeCompatMiddleware
 from agy_nexus.search import _search_workspaces_and_history
+from agy_nexus.session_tree import build_project_session_tree
 from agy_nexus.sessions import _list_saved_sessions_internal, _load_projects_map
 from agy_nexus.stats import build_nexus_stats_bundle
 import agy_nexus.tools_ops  # noqa: F401
 import agy_nexus.tools_session  # noqa: F401
 import agy_nexus.tools_workspace  # noqa: F401
 from agy_nexus.workflows import export_notebook_bundle, inspect_multi_repo_drift
+from agy_nexus.workspace import _resolve_and_read_files
 
 
 def run_self_test() -> int:
     """Run automated verification of deadbolt, normalization, session listing, stats engine, and FastMCP app routes."""
-    print("[*] Running agy-nexus-mcp v2.3 automated self-test...")
+    print("[*] Running agy-nexus-mcp v2.4.0 automated self-test...")
 
     # 1. Normalization & Passphrase Verification
     test_phrase = "Example Bridge 2026!"
@@ -91,7 +93,7 @@ def run_self_test() -> int:
         bg_dir=AGY_BG_DIR,
         period="current_month",
     )
-    assert "ascii_mobile_report" in stats_bundle and "quota_and_pools" in stats_bundle
+    assert "ascii_mobile_report" in stats_bundle and "project_session_tree" in stats_bundle
     print(f"  [+] Telemetry & Activity Heatmap engine ({stats_bundle['summary']['period_steps']} steps indexed): PASS")
 
     # 5. FastMCP Stateless JSON Route Generation, /web HTML & JS Syntax Check
@@ -106,7 +108,7 @@ def run_self_test() -> int:
     app = BridgeCompatMiddleware(raw_app)
     assert app is not None and app.web_html_path.is_file(), "Failed generating Starlette HTTP app or missing web/index.html"
     node_bin = shutil.which("node")
-    for js_name in ("charts.js", "app.js", "sw.js"):
+    for js_name in ("charts.js", "hierarchy.js", "app.js", "sw.js"):
         js_path = app.web_dir / js_name
         assert js_path.is_file(), f"Missing web/{js_name}"
         js_text = js_path.read_text(encoding="utf-8")
@@ -141,7 +143,18 @@ def run_self_test() -> int:
     cfg.PASS_HASH = orig_hash
     print(f"  [+] Visual Artifact HMAC /web/media/ signing, sandbox & discovery ({len(artifacts)} artifacts): PASS")
 
-    print("[✓] All agy-nexus-mcp v2.3 self-tests completed successfully!")
+    # 8. Parallel Session Isolation, 3-Tier Smart Path Resolver & 76-Col ASCII Session Tree
+    tier2_res = _resolve_and_read_files(
+        "antigravity-config/sidecars/ag-bridge-mcp/src/agy_nexus/session_tree.py",
+        max_chars_per_file=500,
+        ws=AGY_GITLAB_DIR,
+    )
+    assert isinstance(tier2_res, dict) and tier2_res.get("error") is None and tier2_res.get("auto_resolved_workspace"), f"3-tier path resolver failed: {tier2_res}"
+    tree_bundle = build_project_session_tree(active_only=False, limit=10)
+    assert "PROJECT -> CHAT -> SESSION ID HIERARCHY" in tree_bundle.get("ascii_tree", ""), "Missing ASCII tree header"
+    print(f"  [+] Parallel Session Isolation, 3-Tier Path Resolver & 76-col Session Tree ({tree_bundle['projects_count']} projects): PASS")
+
+    print("[✓] All agy-nexus-mcp v2.4.0 self-tests completed successfully!")
     return 0
 
 
@@ -154,7 +167,7 @@ def main() -> None:
     if len(PASS_HASH) != 64:
         sys.exit("FATAL: PASS_HASH must be a 64-character SHA-256 hex string. Run init_secrets.py to configure.")
 
-    print(f"[*] Starting agy-nexus-mcp v2.3 on {BIND_HOST}:{BIND_PORT} (stateless_http=True, json_response=True)", flush=True)
+    print(f"[*] Starting agy-nexus-mcp v2.4.0 on {BIND_HOST}:{BIND_PORT} (stateless_http=True, json_response=True)", flush=True)
     print(f"[*] MCP Route: /{PATH_SECRET[:6]}...{PATH_SECRET[-4:]}/mcp | Web Overwatch: /{PATH_SECRET[:6]}...{PATH_SECRET[-4:]}/web", flush=True)
     raw_app = mcp.http_app(
         path=f"/{PATH_SECRET}/mcp",

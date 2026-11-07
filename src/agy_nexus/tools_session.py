@@ -23,6 +23,7 @@ from agy_nexus.config import (
     _save_session_state,
     is_unlocked,
     mcp,
+    pin_session_context,
     verify_passphrase,
 )
 from agy_nexus.hygiene import (
@@ -36,40 +37,40 @@ from agy_nexus.hygiene import (
 from agy_nexus.media import discover_visual_artifacts
 from agy_nexus.routing import _resolve_session_identifier
 from agy_nexus.search import _search_workspaces_and_history
-from agy_nexus.sessions import _list_saved_sessions_internal, _load_projects_map
+from agy_nexus.sessions import _get_selected_session_quick_status, _list_saved_sessions_internal, _load_projects_map
 from agy_nexus.stats import build_nexus_stats_bundle, extract_pending_approval
 from agy_nexus.workspace import _collect_git_summary, _resolve_and_read_files
+
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def unlock_sessions(spoken_passphrase: str, search_query: str = "", style: str = "default") -> str:
     """Verify user spoken passphrase against the deadbolt hash, unlock sessions, return active conversations and projects, and optionally search workspaces/history in a single step."""
     if not verify_passphrase(spoken_passphrase):
-        return _compact_json({
-            "ok": False, "locked": True,
-            "error": "Passphrase verification failed. Deadbolt remains locked."
-        })
+        return _compact_json({"ok": False, "locked": True, "error": "Passphrase verification failed. Deadbolt remains locked."})
     now = time.time()
-    was_expired = (now - float(SESSION_STATE.get("unlocked_at") or 0.0)) >= TTL_SECONDS
-    if was_expired:
+    if (now - float(SESSION_STATE.get("unlocked_at") or 0.0)) >= TTL_SECONDS:
         _clear_selected_session_state()
     SESSION_STATE["unlocked_at"] = now
     sessions = _list_saved_sessions_internal(limit=12, status_filter="ALL")
     if sessions and not SESSION_STATE.get("selected_session"):
         top = sessions[0]
         top_id = str(top.get("conversation_id") or "")
-        SESSION_STATE["selected_session"] = top_id
-        SESSION_STATE["selected_workspace"] = str(top.get("workspace_path") or "")
-        SESSION_STATE["selected_workspace_uris"] = SESSION_STATE["session_workspace_uris_map"].get(top_id, [])
-        SESSION_STATE["selected_project"] = str(top.get("project_id") or "")
-    _save_session_state()
+        pin_session_context(
+            top_id,
+            title=str(top.get("title") or ""),
+            project_id=str(top.get("project_id") or ""),
+            project_name=str(top.get("project_name") or ""),
+            workspace=str(top.get("workspace_path") or ""),
+            workspace_uris=SESSION_STATE["session_workspace_uris_map"].get(top_id, []),
+            mode="MAIN TREE",
+            last_tool="unlock_sessions",
+            set_default=True,
+        )
+    else:
+        _save_session_state()
     projects_map = _load_projects_map()
     stats_bundle = build_nexus_stats_bundle(
-        data_dir=AGY_DATA_DIR,
-        brain_dir=AGY_BRAIN_DIR,
-        db_file=AGY_DB_FILE,
-        config_dir=AGY_CONFIG_DIR,
-        bg_dir=AGY_BG_DIR,
-        period="last_90d",
-        style=style,
+        data_dir=AGY_DATA_DIR, brain_dir=AGY_BRAIN_DIR, db_file=AGY_DB_FILE,
+        config_dir=AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR, period="last_90d", style=style,
     )
     sel_id = SESSION_STATE.get("selected_session", "")
     payload: dict[str, Any] = {
@@ -90,51 +91,36 @@ def unlock_sessions(spoken_passphrase: str, search_query: str = "", style: str =
     if search_query.strip():
         payload["search_results"] = _search_workspaces_and_history(search_query.strip())
     return _compact_json(payload)
+
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def lock_bridge() -> str:
     """Manually engage the security deadbolt immediately, clearing active session selections."""
     SESSION_STATE["unlocked_at"] = 0.0
-    SESSION_STATE["selected_session"] = ""
-    SESSION_STATE["selected_workspace"] = ""
-    SESSION_STATE["selected_workspace_uris"] = []
-    SESSION_STATE["selected_project"] = ""
+    _clear_selected_session_state()
     _save_session_state()
-    return _compact_json({
-        "ok": True, "locked": True,
-        "message": "Security Deadbolt engaged. Bridge locked. Passphrase required to re-authenticate."
-    })
+    return _compact_json({"ok": True, "locked": True, "message": "Security Deadbolt engaged. Bridge locked. Passphrase required to re-authenticate."})
+
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def list_saved_sessions(
-    limit: int = 15,
-    status_filter: str = "ALL",
-    include_subagents: bool = False,
-    spoken_passphrase: str = "",
+    limit: int = 15, status_filter: str = "ALL", include_subagents: bool = False, spoken_passphrase: str = ""
 ) -> str:
     """List recent Antigravity conversations with execution status, project, workspace, step count, and task previews. (Tip: To inspect a specific session directly in 1 call, use load_session_into_gemini with session_identifier='1'|'latest'|<keyword> instead of calling list_saved_sessions first.)"""
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
-    sessions = _list_saved_sessions_internal(
-        limit=max(1, min(limit, 30)),
-        status_filter=status_filter,
-        include_subagents=include_subagents,
-    )
+    sessions = _list_saved_sessions_internal(limit=max(1, min(limit, 30)), status_filter=status_filter, include_subagents=include_subagents)
     projects_map = _load_projects_map()
     top_detail: dict[str, Any] = {}
     if sessions:
         top_s = sessions[0]
         top_cid = str(top_s.get("conversation_id") or "")
         if top_cid and not SESSION_STATE.get("selected_session"):
-            SESSION_STATE["selected_session"] = top_cid
-            SESSION_STATE["selected_workspace"] = str(top_s.get("workspace_path") or "")
-            _save_session_state()
+            pin_session_context(top_cid, title=str(top_s.get("title") or ""), workspace=str(top_s.get("workspace_path") or ""), last_tool="list_saved_sessions", set_default=True)
         s_dir = AGY_BRAIN_DIR / top_cid if top_cid else None
         if s_dir and s_dir.is_dir():
             t_md = (s_dir / "task.md").read_text(encoding="utf-8", errors="replace") if (s_dir / "task.md").is_file() else ""
             w_md = (s_dir / "walkthrough.md").read_text(encoding="utf-8", errors="replace") if (s_dir / "walkthrough.md").is_file() else ""
             top_detail = {
-                "conversation_id": top_cid,
-                "title": top_s.get("title", ""),
-                "status": top_s.get("status", ""),
+                "conversation_id": top_cid, "title": top_s.get("title", ""), "status": top_s.get("status", ""),
                 "workspace_path": top_s.get("workspace_path", ""),
                 "task_content": _compact_markdown(t_md, max_chars=2000) if t_md else "",
                 "walkthrough_preview": _compact_markdown(w_md, max_chars=1200) if w_md else "",
@@ -146,20 +132,16 @@ def list_saved_sessions(
             "if you invoke two MCP tools in the same turn. NEVER call load_session_into_gemini or ask_workspace_readonly in this same turn—present the sessions, task previews, and top_session_detail below to the user immediately)."
         ),
         "count": len(sessions), "available_projects": list(projects_map.values()),
-        "top_session_detail": top_detail,
-        "sessions": sessions,
+        "top_session_detail": top_detail, "sessions": sessions,
     }
     out_s = _compact_json(out_obj)
     if len(out_s.encode("utf-8")) > 19000:
         out_obj.pop("top_session_detail", None)
         out_s = _compact_json(out_obj)
     return out_s
+
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
-def load_session_into_gemini(
-    session_identifier: str,
-    spoken_passphrase: str = "",
-    include_files: str = "",
-) -> str:
+def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "", include_files: str = "") -> str:
     """Load complete conversation context in a single call (live execution_status, git_summary, visual_artifacts with 30-min signed /web/media/ links, task.md, implementation_plan.md, walkthrough.md, and recent transcript turns).
     IMPORTANT: Because execution_status and git_summary are already included in this response, DO NOT chain manage_background_run or inspect_git_diff after calling this tool—reply directly to the user!
     """
@@ -170,16 +152,16 @@ def load_session_into_gemini(
     session_dir = AGY_BRAIN_DIR / conv_id if conv_id else AGY_BRAIN_DIR / "__missing__"
     if not conv_id or not session_dir.is_dir():
         return json.dumps({"ok": False, "error": f"Session directory not found for session_identifier '{ident}'."}, indent=2)
-    SESSION_STATE["selected_session"] = conv_id
     workspace = SESSION_STATE["session_workspace_map"].get(conv_id, "")
     workspace_uris: list[str] = []
     project_id = SESSION_STATE["session_project_map"].get(conv_id, "")
-    db_status_info: dict[str, Any] = {}
+    conv_title = SESSION_STATE["session_title_map"].get(conv_id, "")
+    db_status_info: dict[str, Any] = _get_selected_session_quick_status(conv_id)
     if AGY_DB_FILE.is_file():
         try:
             con = sqlite3.connect(f"file:{AGY_DB_FILE}?mode=ro", uri=True)
             row = con.execute(
-                "SELECT workspace_uris, project_id, status, step_count, last_modified_time, not_fully_idle, killed FROM conversation_summaries WHERE conversation_id = ?",
+                "SELECT workspace_uris, project_id, status, step_count, last_modified_time, not_fully_idle, killed, title FROM conversation_summaries WHERE conversation_id = ?",
                 (conv_id,),
             ).fetchone()
             con.close()
@@ -192,17 +174,16 @@ def load_session_into_gemini(
                             workspace = workspace_uris[0]
                 if not project_id and row[1]:
                     project_id = str(row[1])
-                db_status_info = {
+                if not conv_title and row[7]:
+                    conv_title = str(row[7])
+                is_run = bool(row[5]) or str(row[2] or "") == "CASCADE_RUN_STATUS_RUNNING"
+                db_status_info.update({
                     "db_status": str(row[2] or "CASCADE_RUN_STATUS_IDLE"),
                     "step_count": int(row[3] or 0),
                     "last_modified": str(row[4] or ""),
-                    "is_running": bool(row[5]) or str(row[2] or "") == "CASCADE_RUN_STATUS_RUNNING",
-                    "not_fully_idle": bool(row[5]), "killed": bool(row[6]),
-                    "summary": (
-                        "RUNNING" if (bool(row[5]) or str(row[2] or "") == "CASCADE_RUN_STATUS_RUNNING")
-                        else "COMPLETED_AND_IDLE (Antigravity finished; do NOT call manage_background_run)"
-                    ),
-                }
+                    "is_running": is_run, "not_fully_idle": bool(row[5]), "killed": bool(row[6]),
+                    "summary": "RUNNING" if is_run else "COMPLETED_AND_IDLE (Antigravity finished; do NOT call manage_background_run)",
+                })
         except Exception:
             pass
     projects_map = _load_projects_map()
@@ -215,10 +196,13 @@ def load_session_into_gemini(
                 workspace_uris = list(p_paths)
     if not workspace:
         workspace = str(AGY_GITLAB_DIR)
-    SESSION_STATE["selected_workspace"] = workspace
-    SESSION_STATE["selected_workspace_uris"] = workspace_uris
-    SESSION_STATE["selected_project"] = project_id
-    _save_session_state()
+    SESSION_STATE["pinned_calls"] = int(SESSION_STATE.get("pinned_calls") or 0) + 1
+    pin_session_context(
+        conv_id, title=conv_title, project_id=project_id, project_name=project_name,
+        workspace=workspace, workspace_uris=workspace_uris,
+        mode=str(db_status_info.get("mode") or "MAIN TREE"),
+        last_tool="load_session_into_gemini", set_default=True,
+    )
     has_inc = bool(include_files.strip())
     task_cap, plan_cap, walk_cap, resp_cap, turns_cap = (1800, 1200, 1400, 1000, 3) if has_inc else (3200, 2400, 2800, 2000, 5)
     task_file = session_dir / "task.md"

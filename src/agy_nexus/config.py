@@ -5,6 +5,7 @@ agy_nexus.config — Environment, Paths, Deadbolt Authentication & FastMCP Insta
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import hmac
 import json
@@ -32,9 +33,7 @@ def _load_env_file() -> None:
                     if not line or line.startswith("#") or "=" not in line:
                         continue
                     k, v = line.split("=", 1)
-                    k = k.strip()
-                    v = v.strip().strip("'\"")
-                    os.environ.setdefault(k, v)
+                    os.environ.setdefault(k.strip(), v.strip().strip("'\""))
                 break
         except Exception:
             continue
@@ -57,16 +56,15 @@ STATE_FILE = Path(os.getenv("AG_BRIDGE_STATE_FILE", str(AGY_BG_DIR / "session_st
 ALLOW_LOCKED_STATS = os.getenv("AG_BRIDGE_ALLOW_LOCKED_STATS", "false").strip().lower() in ("1", "true", "yes")
 ALLOW_LOCKED_STAGING = os.getenv("AG_BRIDGE_ALLOW_LOCKED_STAGING", "false").strip().lower() in ("1", "true", "yes")
 
-# -----------------------------------------------------------------------------
-# 2. Deadbolt State & Voice Passphrase Normalization
-# -----------------------------------------------------------------------------
-
 SESSION_STATE: dict[str, Any] = {
     "unlocked_at": 0.0,
     "selected_session": "",
     "selected_workspace": "",
     "selected_workspace_uris": [],
     "selected_project": "",
+    "active_contexts": {},             # conv_id -> slot dict for parallel chat isolation
+    "pinned_calls": 0,
+    "auto_resolved_calls": 0,
     "session_index_map": {},           # "1" -> conv_id
     "session_workspace_map": {},       # conv_id -> primary workspace_path
     "session_workspace_uris_map": {},  # conv_id -> list[str] of all workspace paths
@@ -80,32 +78,52 @@ def _clear_selected_session_state() -> None:
     SESSION_STATE["selected_workspace"] = ""
     SESSION_STATE["selected_workspace_uris"] = []
     SESSION_STATE["selected_project"] = ""
+    SESSION_STATE["active_contexts"] = {}
 
 def _save_session_state() -> None:
-    """Persist core session state to disk so active workspace/session survives container restarts."""
+    """Atomically persist core session state and parallel active_contexts with flock + os.replace."""
     try:
-        AGY_BG_DIR.mkdir(parents=True, exist_ok=True)
+        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        lock_path = STATE_FILE.with_suffix(".lock")
+        tmp_path = STATE_FILE.with_suffix(f".tmp.{os.getpid()}")
         persisted = {
             "unlocked_at": SESSION_STATE.get("unlocked_at", 0.0),
             "selected_session": SESSION_STATE.get("selected_session", ""),
             "selected_workspace": SESSION_STATE.get("selected_workspace", ""),
             "selected_workspace_uris": SESSION_STATE.get("selected_workspace_uris", []),
             "selected_project": SESSION_STATE.get("selected_project", ""),
+            "active_contexts": SESSION_STATE.get("active_contexts", {}),
+            "pinned_calls": int(SESSION_STATE.get("pinned_calls") or 0),
+            "auto_resolved_calls": int(SESSION_STATE.get("auto_resolved_calls") or 0),
         }
-        STATE_FILE.write_text(json.dumps(persisted, indent=2) + "\n", encoding="utf-8")
+        with open(lock_path, "a+", encoding="utf-8") as lf:
+            fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+            try:
+                tmp_path.write_text(json.dumps(persisted, indent=2) + "\n", encoding="utf-8")
+                os.replace(tmp_path, STATE_FILE)
+            finally:
+                fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
     except Exception:
         pass
 
 def _load_session_state() -> None:
-    """Load persisted session state from disk on startup if present (clearing stale session if TTL expired)."""
+    """Load persisted session state from disk with shared flock if present."""
     try:
         if STATE_FILE.is_file():
-            data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+            lock_path = STATE_FILE.with_suffix(".lock")
+            with open(lock_path, "a+", encoding="utf-8") as lf:
+                fcntl.flock(lf.fileno(), fcntl.LOCK_SH)
+                try:
+                    data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+                finally:
+                    fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
             if isinstance(data, dict):
                 unlocked_at = float(data.get("unlocked_at") or 0.0)
                 SESSION_STATE["unlocked_at"] = unlocked_at
+                SESSION_STATE["pinned_calls"] = int(data.get("pinned_calls") or 0)
+                SESSION_STATE["auto_resolved_calls"] = int(data.get("auto_resolved_calls") or 0)
                 if (time.time() - unlocked_at) < TTL_SECONDS:
-                    for key in ("selected_session", "selected_workspace", "selected_workspace_uris", "selected_project"):
+                    for key in ("selected_session", "selected_workspace", "selected_workspace_uris", "selected_project", "active_contexts"):
                         if key in data and data[key] is not None:
                             SESSION_STATE[key] = data[key]
                 else:
@@ -114,6 +132,53 @@ def _load_session_state() -> None:
         pass
 
 _load_session_state()
+
+def pin_session_context(
+    conv_id: str,
+    title: str = "",
+    project_id: str = "",
+    project_name: str = "",
+    workspace: str = "",
+    workspace_uris: list[str] | None = None,
+    mode: str = "PINNED",
+    last_tool: str = "",
+    set_default: bool = True,
+) -> dict[str, Any]:
+    """Record or update an isolated context slot in active_contexts for parallel Gemini chats."""
+    if not conv_id:
+        return {}
+    contexts = SESSION_STATE.setdefault("active_contexts", {})
+    existing = contexts.get(conv_id, {}) if isinstance(contexts, dict) else {}
+    eff_title = title or existing.get("title") or SESSION_STATE["session_title_map"].get(conv_id, "")
+    eff_proj_id = project_id or existing.get("project_id") or SESSION_STATE["session_project_map"].get(conv_id, "")
+    eff_ws = workspace or existing.get("workspace") or SESSION_STATE["session_workspace_map"].get(conv_id, "")
+    eff_uris = workspace_uris if workspace_uris is not None else (existing.get("workspace_uris") or SESSION_STATE["session_workspace_uris_map"].get(conv_id, []))
+    slot = {
+        "conversation_id": conv_id,
+        "title": eff_title,
+        "project_id": eff_proj_id,
+        "project_name": project_name or existing.get("project_name") or eff_proj_id,
+        "workspace": eff_ws,
+        "workspace_uris": eff_uris,
+        "mode": mode or existing.get("mode") or "PINNED",
+        "last_tool": last_tool or existing.get("last_tool") or "session",
+        "last_used_at": time.time(),
+    }
+    contexts[conv_id] = slot
+    if len(contexts) > 25:
+        oldest_k = min(contexts.keys(), key=lambda k: float(contexts[k].get("last_used_at") or 0.0))
+        if oldest_k != conv_id:
+            contexts.pop(oldest_k, None)
+    if set_default:
+        SESSION_STATE["selected_session"] = conv_id
+        if eff_ws:
+            SESSION_STATE["selected_workspace"] = eff_ws
+        if eff_uris:
+            SESSION_STATE["selected_workspace_uris"] = list(eff_uris)
+        if eff_proj_id:
+            SESSION_STATE["selected_project"] = eff_proj_id
+    _save_session_state()
+    return slot
 
 def normalize_phrase(phrase: str) -> str:
     """Normalize spoken passphrase (lowercase, strip whitespace and punctuation) and compute SHA-256."""
@@ -127,7 +192,6 @@ def verify_passphrase(spoken_passphrase: str, expected_hash: str = "") -> bool:
         return False
     if hmac.compare_digest(normalize_phrase(spoken_passphrase), target_hash):
         return True
-    # Handle voice/chat wrappers such as "The passphrase is ..." or "passphrase: ..."
     stripped = re.sub(
         r"^(?:my\s+|the\s+)?(?:spoken\s+|voice\s+)?(?:passphrase|password|passcode|code|secret|key)\s*(?:is|:|=)?\s*",
         "",
@@ -140,8 +204,7 @@ def verify_passphrase(spoken_passphrase: str, expected_hash: str = "") -> bool:
     if 1 < len(tokens) <= 10:
         for i in range(len(tokens)):
             for j in range(i + 1, len(tokens) + 1):
-                candidate = "".join(tokens[i:j])
-                if hmac.compare_digest(normalize_phrase(candidate), target_hash):
+                if hmac.compare_digest(normalize_phrase("".join(tokens[i:j])), target_hash):
                     return True
     return False
 

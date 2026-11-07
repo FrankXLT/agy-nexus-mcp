@@ -135,6 +135,29 @@ const SERIES_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899", "#
           total_recorded_calls: 64, avg_kb: 11.4, max_kb: 18.9, total_mcp_tokens: 186400, budget_compliance_pct: 100.0,
           by_product: { "Gemini Mobile": { calls: 42, tokens: 124000 }, "Gemini Web / Cloud MCP": { calls: 22, tokens: 62400 } },
         },
+        routing_telemetry: { pinned_calls: 38, auto_resolved_calls: 6, active_context_slots: 2 },
+        backup_321: { ok: true, head_sha_short: "f430021", shas_match: true, timestamp_utc: new Date().toISOString() },
+        project_session_tree: {
+          ok: true, total_projects: 2, total_sessions: 3, active_context_slots: 2,
+          ascii_tree: "AGY-NEXUS-MCP // PROJECT, CHAT & SESSION HIERARCHY\n[PROJECT 1] core-platform-api (core-platform-api)\n  └─ #1 [● RUNNING] [PINNED] Parallel Session Isolation & Hierarchy (id: demo-conv-001)",
+          projects: [
+            {
+              project_id: "core-platform-api", project_name: "core-platform-api", workspace_path: "~/gitlab/core-platform-api",
+              total_sessions: 2, running_count: 1, pinned_count: 1, active_or_pinned_count: 2, shared_repo: true,
+              sessions: [
+                { index: 1, conversation_id: "demo-conv-001-a8f9", title: "Parallel Session Isolation & Hierarchy", status: "RUNNING", is_pinned: true, mode: "MAIN WRITER", workspace_path: "~/gitlab/core-platform-api", step_count: 412, last_updated: new Date().toISOString(), other_running_sessions: [] },
+                { index: 2, conversation_id: "demo-conv-002-b7c1", title: "Readonly Telemetry Schema Audit", status: "IDLE", is_pinned: false, mode: "SHARED (READ-ONLY)", workspace_path: "~/gitlab/core-platform-api", step_count: 128, last_updated: new Date().toISOString(), other_running_sessions: ["demo-conv-001-a8f9"] },
+              ],
+            },
+            {
+              project_id: "web-dashboard-ui", project_name: "web-dashboard-ui", workspace_path: "~/gitlab/web-dashboard-ui",
+              total_sessions: 1, running_count: 0, pinned_count: 1, active_or_pinned_count: 1, shared_repo: false,
+              sessions: [
+                { index: 3, conversation_id: "demo-conv-003-c4e2", title: "Responsive PWA & Compactness Tuning", status: "COMPLETED", is_pinned: true, mode: "MAIN TREE", workspace_path: "~/gitlab/web-dashboard-ui", step_count: 294, last_updated: new Date().toISOString(), other_running_sessions: [] },
+              ],
+            },
+          ],
+        },
         heatmap_series: series, };
     }
     async function fetchStats(period) {
