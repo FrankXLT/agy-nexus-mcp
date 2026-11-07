@@ -38,7 +38,7 @@ from agy_nexus.config import (  # noqa: E402, F401
 from agy_nexus.handoff import send_handoff_and_resume  # noqa: E402, F401
 from agy_nexus.middleware import BridgeCompatMiddleware  # noqa: E402, F401
 from agy_nexus.server import main, run_self_test  # noqa: E402, F401
-from agy_nexus.tools_ops import list_models_and_agents, manage_background_run  # noqa: E402, F401
+from agy_nexus.tools_ops import get_session_tree, list_models_and_agents, manage_background_run  # noqa: E402, F401
 from agy_nexus.tools_session import (  # noqa: E402, F401
     list_saved_sessions,
     load_session_into_gemini,

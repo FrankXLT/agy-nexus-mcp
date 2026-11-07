@@ -12,7 +12,7 @@ Before submitting a Pull Request, please review [`AGENTS.md`](AGENTS.md) and adh
 
 1. **Keep Modules Focused (`100–300 Lines`, Max `400 Lines`)**:
    - Place backend code inside `src/agy_nexus/` in focused domain modules.
-   - Keep frontend code split cleanly inside `web/` (`index.html`, `styles.css`, `charts.js`, `app.js`).
+   - Keep frontend code split cleanly inside `web/` (`index.html`, `styles.css`, `charts.js`, `hierarchy.js`, `app.js`).
    - Do not add loose Python helper files to the repository root (`ag_bridge.py` is the only root Python file, acting as a thin 51-line compatibility shim).
 2. **Preserve the 3-Layer Security Gate**:
    - Never bypass, weaken, or disable `PATH_SECRET`, `is_unlocked()`, `try_inline_unlock()`, or `.is_relative_to()` path-traversal checks.
@@ -30,7 +30,7 @@ Run the built-in automated self-test suite before submitting changes:
 python3 ag_bridge.py --self-test
 ```
 
-All 6 verification checks (Deadbolt normalization, TTL/inline unlock transitions, SQLite session indexing, telemetry & heatmap scanning, FastMCP `/web` route mounting, and multi-repo drift + Notebook SHA-256 deduplication) must pass.
+All 8 verification checks (Deadbolt normalization, TTL/inline unlock transitions, SQLite session indexing, telemetry & heatmap scanning, FastMCP `/web` route mounting + JS syntax check, multi-repo drift + Notebook SHA-256 deduplication, visual artifact HMAC signing, and 3-tier path resolver + 76-col session tree) must pass.
 
 ---
 

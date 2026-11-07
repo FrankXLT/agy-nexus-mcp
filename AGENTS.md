@@ -14,31 +14,34 @@ All server implementation code lives in `src/agy_nexus/`. The root `ag_bridge.py
 
 | Module | Lines | Responsibility |
 | :--- | :---: | :--- |
-| `src/agy_nexus/config.py` | ~224 | Environment/secrets loading (`secrets.env`), SHA-256 voice passphrase normalization, sliding-TTL Deadbolt gate (`is_unlocked`, `try_inline_unlock`), and `FastMCP` instance initialization |
-| `src/agy_nexus/hygiene.py` | ~234 | Context window pool limits (`MAX_FILE_CHARS=48000`, `MAX_TOTAL_FILE_CHARS=120000`, `MAX_FILES_PER_CALL=12`), line-range file slicing (`slice_file_content`), diff pagination (`paginate_diff`), and modular file-size auditing |
+| `src/agy_nexus/config.py` | ~284 | Environment/secrets loading (`secrets.env`), SHA-256 voice passphrase normalization, sliding-TTL Deadbolt gate, `fcntl.flock` atomic keyed `active_contexts` slots, and `FastMCP` initialization |
+| `src/agy_nexus/hygiene.py` | ~233 | `< 20 KB` progressive wire compaction, line-range file slicing (`slice_file_content`), diff pagination (`paginate_diff`), and modular file-size auditing |
 | `src/agy_nexus/inventory.py` | ~287 | Antigravity IDE config scanner (`agents/`, `skills/`, `plugins/`, `profiles/`), MCP server discovery (`mcp_config.json`), and workspace repo enumeration |
-| `src/agy_nexus/telemetry_scanner.py` | ~272 | Transcript JSONL scanner (`transcript.jsonl`), 35-day activity heatmap aggregator, client surface classifier (`gemini_mobile`, `gemini_web`, `antigravity_ide`, `cli_headless`), and per-model token attribution |
-| `src/agy_nexus/ascii_default.py` | ~288 | `44-col` mobile-first Unicode block (`░▒▓█`) ASCII telemetry renderer (`format_type="default"`) |
-| `src/agy_nexus/ascii_rich.py` | ~160 | `38-col` compact HUD card (`format_type="compact"`) and `78-col` side-by-side desktop matrix (`format_type="desktop"`) |
-| `src/agy_nexus/stats.py` | ~294 | Unified telemetry builder (`build_quota_and_system_stats`) combining host metrics (`psutil`), Dual-Pool quota pacing, Antigravity inventory, and ASCII views |
-| `src/agy_nexus/workflows.py` | ~279 | 5 cross-app workflow implementations (`audit_multi_repo_drift`, `export_notebook_bundle`, `capture_thought_to_workspace`, `triage_recent_failures`, `generate_standup_digest`) |
-| `src/agy_nexus/sessions.py` | ~276 | Read-only SQLite `conversation_summaries.db` indexer, status classifier (`RUNNING`, `STALLED_WAITING_APPROVAL`, `COMPLETED`, `IDLE`), and transcript turn parser |
+| `src/agy_nexus/telemetry_scanner.py` | ~309 | Local-timezone transcript JSONL scanner (`transcript.jsonl`), activity heatmap aggregator, client surface classifier, and per-model token attribution |
+| `src/agy_nexus/ascii_default.py` | ~290 | `72-col` standard (`style="default"`) and `40-col` mobile (`style="quick"`) Unicode block (`░▒▓█`) ASCII telemetry renderers |
+| `src/agy_nexus/ascii_rich.py` | ~167 | `76-col` widescreen box-drawn ASCII telemetry rig (`style="rich"`) |
+| `src/agy_nexus/session_tree.py` | ~289 | 76-column copy-ready ASCII `Project -> Chat -> Session ID` hierarchy builder, parallel slot telemetry, and 3-2-1 backup manifest reader |
+| `src/agy_nexus/stats.py` | ~307 | Unified telemetry builder (`build_nexus_stats_bundle`) combining Dual-Pool quota pacing, locked sub-daily series, session hierarchy, and 3-tier ASCII views |
+| `src/agy_nexus/workflows.py` | ~279 | Cross-app workflow implementations (`inspect_multi_repo_drift`, `export_notebook_bundle`, quarantine handoff staging) |
+| `src/agy_nexus/media.py` | ~177 | Ephemeral 30-minute HMAC-SHA256 `/web/media/` signer, path-traversal sandbox verifier, and visual artifact discovery |
+| `src/agy_nexus/webhook_proxy.py` | ~83 | GitHub $\rightarrow$ GitLab webhook proxy handler |
+| `src/agy_nexus/sessions.py` | ~301 | Read-only SQLite `conversation_summaries.db` indexer, status classifier, same-repo concurrent writer detector, and transcript turn parser |
 | `src/agy_nexus/routing.py` | ~173 | Language Server (`agentapi`) HTTP bridge caller, Dual-Pool quota router (`quota-router.sh`), and model failover selector |
-| `src/agy_nexus/search.py` | ~180 | Multi-file workspace reader (`_resolve_and_read_files`), `git grep` code scanner, and SQLite FTS5 conversation search |
-| `src/agy_nexus/workspace.py` | ~289 | Workspace resolver (`_resolve_workspace_path`), git diff/status helper, and background job monitor (`_manage_background_run_internal`) |
-| `src/agy_nexus/tools_session.py` | ~293 | MCP tools: `unlock_sessions`, `lock_bridge`, `list_saved_sessions`, `load_session_into_gemini` |
-| `src/agy_nexus/tools_workspace.py` | ~232 | MCP tools: `ask_workspace_readonly`, `inspect_git_diff`, `manage_background_run` |
-| `src/agy_nexus/tools_ops.py` | ~320 | MCP tools: `list_models_and_agents`, `get_quota_and_system_stats`, and the 5 cross-app workflow tools |
-| `src/agy_nexus/handoff.py` | ~334 | MCP tool: `send_handoff_and_resume` (writes `scratch/gemini_research_handoff.md`, manages git worktrees, and dispatches headless runs) |
-| `src/agy_nexus/middleware.py` | ~280 | `BridgeCompatMiddleware` (CORS, `/healthz`, `/web` Overwatch PWA static serving, `/web/api/*` endpoints, and client surface headers) |
-| `src/agy_nexus/server.py` | ~139 | Starlette/Uvicorn app builder (`build_http_app`), `--self-test` suite (`run_self_test`), and `main()` CLI entrypoint |
+| `src/agy_nexus/search.py` | ~180 | Multi-file workspace reader, `git grep` code scanner, and SQLite FTS5 conversation search |
+| `src/agy_nexus/workspace.py` | ~290 | 3-Tier Smart Path Resolver (`_resolve_and_read_files`), git diff/status helper, and background job monitor |
+| `src/agy_nexus/tools_session.py` | ~309 | MCP tools: `unlock_sessions`, `lock_bridge`, `list_saved_sessions`, `load_session_into_gemini` |
+| `src/agy_nexus/tools_workspace.py` | ~298 | MCP tools: `ask_workspace_readonly`, `inspect_git_diff`, `get_visual_artifact` |
+| `src/agy_nexus/tools_ops.py` | ~307 | MCP tools: `get_session_tree`, `list_models_and_agents`, `manage_background_run` |
+| `src/agy_nexus/handoff.py` | ~279 | MCP tool: `send_handoff_and_resume` (writes `scratch/gemini_research_handoff.md`, checks same-repo concurrent writers, and dispatches headless runs) |
+| `src/agy_nexus/middleware.py` | ~294 | `BridgeCompatMiddleware` (CORS, `/web` Overwatch PWA static serving, `/web/media/`, `/web/api/stats`, and wire telemetry) |
+| `src/agy_nexus/server.py` | ~184 | Starlette/Uvicorn app builder, 8-suite `--self-test` runner (`run_self_test`), and `main()` CLI entrypoint |
 
 ---
 
 ## 2. File Size & Modular Hygiene Standard
 
 1. **File Size Budget (`100–300 Lines`, Hard Split Ceiling `400 Lines`)**:
-   - Every Python module in `src/agy_nexus/` and frontend file in `web/` (`index.html`, `styles.css`, `charts.js`, `app.js`) must stay under **400 lines** (ideally **100–300 lines**).
+   - Every Python module in `src/agy_nexus/` and frontend file in `web/` (`index.html`, `styles.css`, `charts.js`, `hierarchy.js`, `app.js`) must stay under **400 lines** (ideally **100–300 lines**).
    - This guarantees every file fits 100% inside a single `ask_workspace_readonly` read without truncation and prevents surgical edit drift.
 2. **Root-Directory Hygiene**:
    - Never add new `ag_bridge_*.py` modules or temporary files to the repository root.

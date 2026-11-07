@@ -20,6 +20,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Added first-class `@mcp.tool def get_session_tree(...)` and `manage_background_run(action="sessions" | "session_status")`, rendering a copy-ready 76-column ASCII hierarchy (`Project -> Chat -> Session ID -> Workspace -> Status`) alongside 3-2-1 backup sync status (`read_backup_321_manifest()`).
 - **Unified `/web` Project, Chat & Session Hierarchy Panel (`web/hierarchy.js`, `web/index.html`, `web/app.js`, `web/styles.css`)**:
   - Added the full-width `col-12` **Project, Chat & Session Hierarchy** card to `/web` with live `3-2-1 SYNC: <short_sha> ✓` badge, `SLOTS / PINNED / AUTO-RESOLVED` telemetry badge, `[Pinned / Active | All Sessions]` toggle, `Copy ASCII Tree` button, collapsible project cards with `SHARED REPO` badge, 1-click `📋` copy buttons on `project_id`, `session_id`, chat title, and `workspace`, and live running/pinned badges in `#workspaceTableBody`.
+- **Automated 3-2-1 Git Synchronization & Depersonalized Documentation (`scripts/backup_321_sync.py`, `README.md`, `docs/assets/`)**:
+  - Added `scripts/backup_321_sync.py` to synchronize GitHub (`origin/main`), local GitLab (`gitlab/main`), and a verified offline `git bundle` (`agy-nexus-mcp-latest.bundle` + SHA-256 `backup_manifest.json`).
+  - Added 100% depersonalized 76-column `get_session_tree` and 3-tier ASCII telemetry examples to `README.md` alongside refreshed headless Chrome CDP `/web` screenshots (`docs/assets/dashboard-desktop.png`, `docs/assets/dashboard-mobile.png`).
 
 ---
 

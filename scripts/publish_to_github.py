@@ -190,9 +190,9 @@ def main() -> int:
             return 0
 
         commit_msg = args.message.strip() or (
-            "refactor: modularize into src/agy_nexus, split /web PWA, and add CHANGELOG, AGENTS, SECURITY & CONTRIBUTING"
+            "chore(release): sync agy-nexus-mcp v2.4.0"
             if has_existing_main
-            else "feat: initial public release of agy-nexus-mcp (v2.3)"
+            else "feat: initial public release of agy-nexus-mcp (v2.4.0)"
         )
         subprocess.run(
             ["git", "commit", "-m", commit_msg],

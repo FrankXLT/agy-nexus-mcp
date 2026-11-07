@@ -1,5 +1,6 @@
-// Project, Chat & Session Hierarchy Renderer for /web Overwatch Dashboard (v2.4.0)
+// Project, Chat & Session Hierarchy — Quiet UI Tabular Renderer for /web Overwatch Dashboard (v2.4.0)
 let hierarchyShowAll = localStorage.getItem("nexus_hier_all") !== "0";
+let hierarchyExpandAll = false;
 let lastHierarchyBundle = null;
 
 function escapeHtmlSafe(val) {
@@ -10,18 +11,48 @@ function escapeHtmlSafe(val) {
     .replace(/"/g, "&quot;");
 }
 
-function copyTextWithFeedback(btnEl, textToCopy, origLabel) {
+function copyTextWithFeedback(el, textToCopy, origHtml, durationMs) {
   if (!navigator.clipboard) return;
   navigator.clipboard.writeText(String(textToCopy || "")).catch(() => {});
-  if (btnEl) {
-    const prev = origLabel || btnEl.innerHTML;
-    btnEl.textContent = "Copied!";
-    btnEl.classList.add("copied");
+  if (el) {
+    const prev = origHtml !== undefined ? origHtml : el.innerHTML;
+    el.textContent = "Copied ✓";
+    el.classList.add("copied");
     setTimeout(() => {
-      btnEl.innerHTML = prev;
-      btnEl.classList.remove("copied");
-    }, 1300);
+      el.innerHTML = prev;
+      el.classList.remove("copied");
+    }, durationMs || 900);
   }
+}
+
+function formatShortWorkspace(wsPath) {
+  const raw = String(wsPath || "").trim().replace(/\/+$/, "");
+  if (!raw) return "-";
+  if (raw.includes("/worktrees/") || raw.includes("/.worktrees/")) {
+    const tail = raw.split(/\/(?:\.)?worktrees\//)[1] || raw;
+    return "wt:" + tail;
+  }
+  return raw
+    .replace(/^\/home\/[^/]+\/gitlab\//, "")
+    .replace(/^\/home\/[^/]+\/workspaces\//, "")
+    .replace(/^~\/gitlab\//, "")
+    .replace(/^~\/workspaces\//, "");
+}
+
+function formatShortMode(modeStr) {
+  const m = String(modeStr || "MAIN TREE").toUpperCase();
+  if (m.includes("WRITER")) return { label: "WRITER", cls: "writer" };
+  if (m.includes("SHARED")) return { label: "SHARED", cls: "warn" };
+  if (m.includes("WORKTREE")) return { label: "WORKTREE", cls: "" };
+  if (m.includes("PINNED")) return { label: "PINNED", cls: "" };
+  return { label: "MAIN", cls: "" };
+}
+
+function formatShortUpdated(s) {
+  if (s.relative_age) return String(s.relative_age);
+  const raw = String(s.last_updated || "");
+  if (raw.length >= 16) return raw.slice(5, 16).replace("T", " ");
+  return raw || "-";
 }
 
 function getWorkspaceSessionBadgesHtml(workspaceName, treeBundle) {
@@ -29,27 +60,18 @@ function getWorkspaceSessionBadgesHtml(workspaceName, treeBundle) {
   const wsNorm = String(workspaceName || "").trim().toLowerCase();
   let running = 0;
   let pinned = 0;
-  let shared = false;
   treeBundle.projects.forEach((p) => {
     const pName = String(p.project_name || "").trim().toLowerCase();
     const pId = String(p.project_id || "").trim().toLowerCase();
     if (pName === wsNorm || pId === wsNorm || pId.endsWith("/" + wsNorm)) {
       running += Number(p.running_count || 0);
       pinned += Number(p.pinned_count || 0);
-      if (p.shared_repo) shared = true;
     }
   });
-  const badges = [];
-  if (running > 0) {
-    badges.push(`<span class="ws-live-pill running" title="${running} running session(s)">● ${running} run</span>`);
-  }
-  if (pinned > 0) {
-    badges.push(`<span class="ws-live-pill pinned" title="${pinned} pinned session slot(s)">◉ ${pinned} pin</span>`);
-  }
-  if (shared) {
-    badges.push(`<span class="ws-live-pill shared" title="Multiple active/pinned sessions share this repository">SHARED</span>`);
-  }
-  return badges.length ? `<span class="ws-badge-group mono">${badges.join("")}</span>` : "";
+  const parts = [];
+  if (running > 0) parts.push(`${running} active`);
+  if (pinned > 0 && pinned !== running) parts.push(`${pinned} pin`);
+  return parts.length ? `<span class="ws-quiet-meta mono">· ${parts.join(" · ")}</span>` : "";
 }
 
 function renderHierarchyPanel(bundle) {
@@ -90,6 +112,10 @@ function renderHierarchyPanel(bundle) {
     btnActive.classList.toggle("active", !hierarchyShowAll);
     btnAll.classList.toggle("active", hierarchyShowAll);
   }
+  const expandBtn = document.getElementById("hierarchyExpandAllBtn");
+  if (expandBtn) {
+    expandBtn.textContent = hierarchyExpandAll ? "Collapse Idle" : "Expand All";
+  }
 
   const filteredProjects = [];
   projects.forEach((proj) => {
@@ -98,7 +124,8 @@ function renderHierarchyPanel(bundle) {
       ? sessList
       : sessList.filter((s) => s.is_pinned || s.status === "RUNNING" || s.status === "STALLED_WAITING_APPROVAL");
     if (visibleSessions.length > 0) {
-      filteredProjects.push({ ...proj, visibleSessions, totalSessionsCount: sessList.length });
+      const projSteps = sessList.reduce((acc, s) => acc + Number(s.step_count || 0), 0);
+      filteredProjects.push({ ...proj, visibleSessions, totalSessionsCount: sessList.length, projSteps });
     }
   });
 
@@ -111,92 +138,85 @@ function renderHierarchyPanel(bundle) {
   container.innerHTML = filteredProjects.map((proj, pIdx) => {
     const pName = escapeHtmlSafe(proj.project_name || "Project");
     const pId = escapeHtmlSafe(proj.project_id || "");
-    const wsPath = escapeHtmlSafe(proj.workspace_path || "");
-    const sharedBadge = proj.shared_repo
-      ? `<span class="hier-badge warn mono" title="Multiple active or pinned sessions target this repository">SHARED REPO</span>`
+    const sharedTag = proj.shared_repo
+      ? `<span class="hier-micro-tag mono" title="Multiple sessions share this repository">SHARED</span>`
       : "";
-    const runBadge = proj.running_count > 0
-      ? `<span class="hier-badge ok mono">● ${proj.running_count} RUNNING</span>`
-      : "";
-    const pinBadge = proj.pinned_count > 0
-      ? `<span class="hier-badge focal mono">◉ ${proj.pinned_count} PINNED</span>`
-      : "";
+    const activeCnt = Number(proj.running_count || 0) + Number(proj.pinned_count || 0);
+    const activeHtml = activeCnt > 0 ? `<span class="hier-active-count">${activeCnt} active</span><span>·</span>` : "";
+    const isOpen = hierarchyExpandAll || !hierarchyShowAll || activeCnt > 0 || pIdx < 2;
 
     const rowsHtml = proj.visibleSessions.map((s) => {
       const cid = escapeHtmlSafe(s.conversation_id || "");
       const title = escapeHtmlSafe(s.title || "Untitled Session");
       const wsFull = escapeHtmlSafe(s.workspace_path || proj.workspace_path || "(unscoped)");
+      const wsShort = escapeHtmlSafe(s.workspace_short || formatShortWorkspace(wsFull));
       const status = String(s.status || "IDLE").toUpperCase();
-      const statusCls = status === "RUNNING" ? "ok" : (status === "STALLED_WAITING_APPROVAL" ? "warn" : "muted");
-      const statusDot = status === "RUNNING" ? "●" : (status === "STALLED_WAITING_APPROVAL" ? "◐" : (status === "COMPLETED" ? "✓" : "○"));
-      const modeStr = escapeHtmlSafe(s.mode || "MAIN TREE");
-      const pinnedPill = s.is_pinned ? `<span class="hier-badge focal mono">◉ PINNED</span>` : "";
-      const others = Array.isArray(s.other_running_sessions) ? s.other_running_sessions : [];
-      const conflictPill = others.length > 0
-        ? `<span class="hier-badge warn mono" title="Other running session(s) on same repo: ${escapeHtmlSafe(others.join(", "))}">⚠ ${others.length} CONCURRENT</span>`
-        : "";
-      const updated = escapeHtmlSafe(String(s.last_updated || "").slice(0, 16).replace("T", " "));
+      const isRun = status === "RUNNING" || status === "STALLED_WAITING_APPROVAL";
+      const dotCls = isRun ? "running" : (s.is_pinned ? "pinned" : "idle");
+      const dotChar = isRun ? "●" : (s.is_pinned ? "◉" : "○");
+      const dotTitle = isRun ? status : (s.is_pinned ? `PINNED (${status})` : status);
+      const modeObj = formatShortMode(s.mode);
+      const updated = escapeHtmlSafe(formatShortUpdated(s));
 
       return `
-        <div class="hier-session-row ${s.is_pinned ? "is-pinned" : ""}">
-          <div class="hier-sess-top">
-            <div class="hier-sess-title-group">
+        <tr class="hier-session-row">
+          <td>
+            <div class="sess-cell">
+              <span class="sess-dot ${dotCls}" title="${escapeHtmlSafe(dotTitle)}">${dotChar}</span>
               <span class="hier-idx mono">#${Number(s.index || 0)}</span>
-              <span class="hier-status-pill ${statusCls} mono">${statusDot} ${escapeHtmlSafe(status)}</span>
-              ${pinnedPill}
-              <span class="hier-badge mode mono">${modeStr}</span>
-              ${conflictPill}
-              <strong class="hier-chat-title">${title}</strong>
-              <button type="button" class="copy-pill mono" data-copy="${title}" title="Copy chat title">📋 Title</button>
+              <span class="hier-copy-inline hier-title-txt" data-copy="${title}" title="Click to copy chat title">${title}</span>
             </div>
-            <div class="hier-sess-meta mono">
-              <span>${Number(s.step_count || 0).toLocaleString()} steps</span>
-              <span>·</span>
-              <span>${updated || "-"}</span>
-            </div>
-          </div>
-          <div class="hier-sess-ids mono">
-            <span class="hier-kv">
-              <span class="hier-k">session_id:</span>
-              <code class="hier-v">${cid}</code>
-              <button type="button" class="copy-pill mono" data-copy="${cid}" title="Copy full session_id">📋 ID</button>
-            </span>
-            <span class="hier-kv">
-              <span class="hier-k">workspace:</span>
-              <code class="hier-v">${wsFull}</code>
-              <button type="button" class="copy-pill mono" data-copy="${wsFull}" title="Copy workspace path">📋 Path</button>
-            </span>
-          </div>
-        </div>
+          </td>
+          <td class="mono"><span class="hier-copy-inline hier-uuid" data-copy="${cid}" title="Click to copy full session_id">${cid}</span></td>
+          <td class="mono"><span class="hier-copy-inline hier-ws" data-copy="${wsFull}" title="Click to copy full path: ${wsFull}">${wsShort}</span></td>
+          <td class="mono"><span class="hier-mode-lbl ${modeObj.cls}">${modeObj.label}</span></td>
+          <td class="mono num-col">${Number(s.step_count || 0).toLocaleString()}</td>
+          <td class="mono num-col hier-updated">${updated}</td>
+        </tr>
       `;
     }).join("");
 
     return `
-      <details class="hier-proj-card" open>
+      <details class="hier-proj-card" ${isOpen ? "open" : ""}>
         <summary class="hier-proj-hdr">
           <div class="hier-proj-left">
-            <span class="hier-proj-idx mono">[PROJECT ${pIdx + 1}]</span>
+            <span class="hier-caret mono"></span>
+            <span class="hier-proj-idx mono">[${String(pIdx + 1).padStart(2, "0")}]</span>
             <strong class="hier-proj-name">${pName}</strong>
-            <code class="hier-proj-id mono">(${pId})</code>
-            <button type="button" class="copy-pill mono" data-copy="${pId}" title="Copy project_id">📋 Project</button>
-            ${sharedBadge}
-            ${runBadge}
-            ${pinBadge}
+            <span class="hier-copy-inline hier-proj-id mono" data-copy="${pId}" title="Click to copy project_id">${pId}</span>
+            ${sharedTag}
           </div>
           <div class="hier-proj-right mono">
-            <span>${proj.visibleSessions.length} / ${proj.totalSessionsCount || proj.total_sessions || proj.visibleSessions.length} chats</span>
+            ${activeHtml}
+            <span>${proj.visibleSessions.length} chats</span>
+            <span>·</span>
+            <span>${Number(proj.projSteps || 0).toLocaleString()} steps</span>
           </div>
         </summary>
-        <div class="hier-proj-body">${rowsHtml}</div>
+        <div class="hier-table-wrap">
+          <table class="table-clean hier-table">
+            <thead>
+              <tr>
+                <th class="hier-col-sess">Session</th>
+                <th class="mono hier-col-uuid">Session ID</th>
+                <th class="mono hier-col-ws">Workspace</th>
+                <th class="mono hier-col-mode">Mode</th>
+                <th class="mono num-col hier-col-steps">Steps</th>
+                <th class="mono num-col hier-col-upd">Updated</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
       </details>
     `;
   }).join("");
 
-  container.querySelectorAll(".copy-pill").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
+  container.querySelectorAll(".hier-copy-inline").forEach((el) => {
+    el.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      copyTextWithFeedback(btn, btn.getAttribute("data-copy") || "", btn.innerHTML);
+      copyTextWithFeedback(el, el.getAttribute("data-copy") || "", el.innerHTML, 900);
     });
   });
 }
@@ -204,6 +224,7 @@ function renderHierarchyPanel(bundle) {
 (function initHierarchyControls() {
   const btnActive = document.getElementById("hierarchyFilterActiveBtn");
   const btnAll = document.getElementById("hierarchyFilterAllBtn");
+  const expandBtn = document.getElementById("hierarchyExpandAllBtn");
   const copyTreeBtn = document.getElementById("copyAsciiTreeBtn");
 
   if (btnActive) {
@@ -220,11 +241,17 @@ function renderHierarchyPanel(bundle) {
       if (lastHierarchyBundle) renderHierarchyPanel(lastHierarchyBundle);
     });
   }
+  if (expandBtn) {
+    expandBtn.addEventListener("click", () => {
+      hierarchyExpandAll = !hierarchyExpandAll;
+      if (lastHierarchyBundle) renderHierarchyPanel(lastHierarchyBundle);
+    });
+  }
   if (copyTreeBtn) {
     copyTreeBtn.addEventListener("click", () => {
       const tree = (lastHierarchyBundle && lastHierarchyBundle.project_session_tree) || {};
       const ascii = tree.ascii_tree || "No ASCII session tree available.";
-      copyTextWithFeedback(copyTreeBtn, ascii, "Copy ASCII Tree");
+      copyTextWithFeedback(copyTreeBtn, ascii, "Copy ASCII Tree", 1200);
     });
   }
 })();

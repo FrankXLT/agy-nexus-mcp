@@ -67,7 +67,7 @@ def render_ascii_rich(bundle: dict[str, Any]) -> str:
 
     lines = [
         "╔══════════════════════════════════════════════════════════════════════════╗",
-        _box_full("▄▀█ █▀▀ █▄█ ▄▄ █▄░█ █▀▀ ▀▄▀ █░█ █▀   v3.8 // RICH TELEMETRY RIG"),
+        _box_full("▄▀█ █▀▀ █▄█ ▄▄ █▄░█ █▀▀ ▀▄▀ █░█ █▀   v2.4.0 // RICH TELEMETRY RIG"),
         _box_full(f"█▀█ █▄█ ░█░ ░░ █░▀█ ██▄ █░█ █▄█ ▄█   WINDOW: 90d ({e_dt} ◄── {s_dt})"),
         "╠════════════════════════════════════╦═════════════════════════════════════╣",
         _box_split("QUOTA POOLS & 429 COOLDOWNS", "STEP & TOOL VELOCITY"),

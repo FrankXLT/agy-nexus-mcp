@@ -47,4 +47,4 @@ Every incoming request to AGY-Nexus MCP is protected by three independent securi
 
 If you discover a security vulnerability in **AGY-Nexus MCP**:
 1. **Do not** open a public issue containing exploit details or live credentials.
-2. Open a security advisory on [GitHub (`FrankXLT/agy-nexus-mcp/security`)](https://github.com/FrankXLT/agy-nexus-mcp/security) with reproduction steps and affected module names in `src/agy_nexus/`.
+2. Open a private GitHub Security Advisory on the repository's **Security $\rightarrow$ Advisories** tab with reproduction steps and affected module names in `src/agy_nexus/`.

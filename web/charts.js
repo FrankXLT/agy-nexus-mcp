@@ -56,7 +56,7 @@ const SERIES_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899", "#
         btn.classList.toggle("active", btn.dataset.density === d); });
     }
     function generateDemoBundle(period) {
-      const daysSpan = period === "last_year" ? 364 : (period === "last_90d" ? 90 : 56);
+      const daysSpan = period === "last_year" ? 364 : (period === "last_90d" ? 90 : (period === "last_month" ? 31 : 28));
       const now = new Date();
       const series = [];
       let totalSteps = 0, totalTools = 0, totalTokens = 0, activeDays = 0, peakSteps = 0, peakDate = "";
@@ -82,13 +82,18 @@ const SERIES_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899", "#
         totalSteps += steps; totalTools += tools; totalTokens += tokens;
         series.push({ date: dStr, weekday: dow, steps, tools, tokens, sessions, level, future: false, in_window: true }); }
       const subDailyLabels = [], subDailyVel = [];
-      for (let i = 0; i < 84; i++) {
-        const d = new Date(now.getTime() - (83 - i) * 4 * 3600000);
-        subDailyLabels.push(d.toISOString().slice(0, 13).replace("T", " ") + ":00");
-        subDailyVel.push(Math.round(280 + 220 * Math.sin(i * 0.42) + 140 * Math.cos(i * 0.19))); }
+      const recentDays = series.slice(-18);
+      recentDays.forEach((dObj, dIdx) => {
+        ["00:00", "04:00", "08:00", "12:00", "16:00", "20:00"].forEach((hr, hIdx) => {
+          const ptIdx = dIdx * 6 + hIdx;
+          const wave = 0.55 + 0.45 * Math.sin(ptIdx * 0.35);
+          subDailyLabels.push(`${dObj.date} ${hr}`);
+          subDailyVel.push(Math.round(((dObj.steps || 300) / 6) * wave));
+        });
+      });
       const periodLabels = { "current_month": "This Month — MTD", "last_month": "Last Month", "last_90d": "Rolling 90 Days", "last_year": "Rolling 52 Weeks" };
       return {
-        server: "agy-nexus-mcp", version: "2.3.2",
+        server: "agy-nexus-mcp", version: "2.4.0",
         period: { key: period, label: periodLabels[period] || "Rolling 90 Days", total_days: series.length, active_days: activeDays, resolution: "4h sub-daily" },
         kpis: {
           total_conversations: 54, total_subagents_spawned: 227, window_steps: totalSteps,
@@ -122,38 +127,54 @@ const SERIES_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899", "#
           "claude-specialist": { runs: 1, steps: 31, tokens: 12000 },
         },
         top_workspaces: [
-          { workspace: "core-platform-api", sessions: 12, steps: 64820, tokens: 28400000 },
-          { workspace: "web-dashboard-ui", sessions: 18, steps: 44190, tokens: 16900000 },
-          { workspace: "agent-orchestrator", sessions: 7, steps: 21450, tokens: 9600000 },
-          { workspace: "cloud-infra-gitops", sessions: 8, steps: 6120, tokens: 2350000 },
-          { workspace: "mobile-sync-engine", sessions: 4, steps: 4890, tokens: 1920000 },
-          { workspace: "telemetry-pipeline", sessions: 3, steps: 3410, tokens: 1280000 },
-          { workspace: "auth-gateway", sessions: 2, steps: 2180, tokens: 840000 },
+          { workspace: "quantum-dsp-workbench", sessions: 14, steps: 65811, tokens: 29200000 },
+          { workspace: "cloud-gitops-stack", sessions: 19, steps: 45032, tokens: 17200000 },
+          { workspace: "neural-mesh-anms", sessions: 7, steps: 20107, tokens: 16500000 },
+          { workspace: "chronos-tasks", sessions: 8, steps: 5991, tokens: 2200000 },
+          { workspace: "mobile-sync-engine", sessions: 4, steps: 5092, tokens: 2000000 },
+          { workspace: "telemetry-pipeline", sessions: 3, steps: 2878, tokens: 897000 },
+          { workspace: "auth-gateway", sessions: 2, steps: 2691, tokens: 1000000 },
         ],
         velocity_series: { dates: subDailyLabels, values: subDailyVel, resolution: "4h sub-daily" },
         wire_telemetry: {
-          total_recorded_calls: 64, avg_kb: 11.4, max_kb: 18.9, total_mcp_tokens: 186400, budget_compliance_pct: 100.0,
-          by_product: { "Gemini Mobile": { calls: 42, tokens: 124000 }, "Gemini Web / Cloud MCP": { calls: 22, tokens: 62400 } },
+          total_recorded_calls: 77, avg_kb: 11.4, max_kb: 18.9, total_mcp_tokens: 186400, budget_compliance_pct: 100.0,
+          by_product: { "Gemini Mobile": { calls: 48, tokens: 124000 }, "Gemini Web / Cloud MCP": { calls: 29, tokens: 62400 } },
         },
-        routing_telemetry: { pinned_calls: 38, auto_resolved_calls: 6, active_context_slots: 2 },
-        backup_321: { ok: true, head_sha_short: "f430021", shas_match: true, timestamp_utc: new Date().toISOString() },
+        routing_telemetry: { active_slots: 3, active_context_slots: 3, pinned_calls: 42, auto_resolved_calls: 2, ttl_remaining_min: 118.0 },
+        backup_321: { ok: true, short_sha: "9f4a2c1", head_sha_short: "9f4a2c1", shas_match: true, status_label: "SYNCED ✓", bundle_size_kb: 842.0, age: "12m ago", timestamp_utc: "2026-11-07T18:35:00Z" },
         project_session_tree: {
-          ok: true, total_projects: 2, total_sessions: 3, active_context_slots: 2,
-          ascii_tree: "AGY-NEXUS-MCP // PROJECT, CHAT & SESSION HIERARCHY\n[PROJECT 1] core-platform-api (core-platform-api)\n  └─ #1 [● RUNNING] [PINNED] Parallel Session Isolation & Hierarchy (id: demo-conv-001)",
+          ok: true, projects_count: 4, sessions_count: 7, active_context_slots: 3,
+          ascii_tree: "╔══════════════════════════════════════════════════════════════════════════╗\n║ AGY-NEXUS // PROJECT -> CHAT -> SESSION ID HIERARCHY (COPY-READY)        ║\n╚══════════════════════════════════════════════════════════════════════════╝",
           projects: [
             {
-              project_id: "core-platform-api", project_name: "core-platform-api", workspace_path: "~/gitlab/core-platform-api",
-              total_sessions: 2, running_count: 1, pinned_count: 1, active_or_pinned_count: 2, shared_repo: true,
+              project_id: "quantum-dsp-workbench", project_name: "quantum-dsp-workbench", workspace_path: "/home/dev/workspaces/quantum-dsp-workbench",
+              total_sessions: 3, running_count: 1, pinned_count: 2, shared_repo: true,
               sessions: [
-                { index: 1, conversation_id: "demo-conv-001-a8f9", title: "Parallel Session Isolation & Hierarchy", status: "RUNNING", is_pinned: true, mode: "MAIN WRITER", workspace_path: "~/gitlab/core-platform-api", step_count: 412, last_updated: new Date().toISOString(), other_running_sessions: [] },
-                { index: 2, conversation_id: "demo-conv-002-b7c1", title: "Readonly Telemetry Schema Audit", status: "IDLE", is_pinned: false, mode: "SHARED (READ-ONLY)", workspace_path: "~/gitlab/core-platform-api", step_count: 128, last_updated: new Date().toISOString(), other_running_sessions: ["demo-conv-001-a8f9"] },
+                { index: 1, conversation_id: "7a4e91c2-8b3d-4f10-9a6e-2c5d8f01e3b4", title: "Real-Time FFT Kernel & SIMD Pipeline Optimization", status: "RUNNING", is_pinned: true, mode: "MAIN WRITER", workspace_path: "/home/dev/workspaces/quantum-dsp-workbench", step_count: 486, last_updated: "2026-11-07T18:42:00Z", other_running_sessions: [] },
+                { index: 2, conversation_id: "3f8b12d9-5c4a-4e21-b871-9d0e4a62c1f8", title: "Spectral Waterfall Shader & WebGPU Buffer Audit", status: "IDLE", is_pinned: true, mode: "SHARED (READ-ONLY)", workspace_path: "/home/dev/workspaces/quantum-dsp-workbench", step_count: 214, last_updated: "2026-11-07T18:19:00Z", other_running_sessions: ["7a4e91c2-8b3d-4f10-9a6e-2c5d8f01e3b4"] },
+                { index: 3, conversation_id: "c91d40e6-2a7b-4d83-9c15-6e3f8b20a4d1", title: "Lock-Free Ring Buffer Benchmark Suite", status: "IDLE", is_pinned: false, mode: "WORKTREE", workspace_path: "/home/dev/workspaces/.worktrees/quantum-dsp-c91d40e6", step_count: 158, last_updated: "2026-11-07T16:05:00Z", other_running_sessions: [] },
               ],
             },
             {
-              project_id: "web-dashboard-ui", project_name: "web-dashboard-ui", workspace_path: "~/gitlab/web-dashboard-ui",
-              total_sessions: 1, running_count: 0, pinned_count: 1, active_or_pinned_count: 1, shared_repo: false,
+              project_id: "cloud-gitops-stack", project_name: "cloud-gitops-stack", workspace_path: "/home/dev/workspaces/cloud-gitops-stack",
+              total_sessions: 2, running_count: 1, pinned_count: 1, shared_repo: false,
               sessions: [
-                { index: 3, conversation_id: "demo-conv-003-c4e2", title: "Responsive PWA & Compactness Tuning", status: "COMPLETED", is_pinned: true, mode: "MAIN TREE", workspace_path: "~/gitlab/web-dashboard-ui", step_count: 294, last_updated: new Date().toISOString(), other_running_sessions: [] },
+                { index: 4, conversation_id: "e52a90b4-6d1c-4a72-8f39-1b4c7d92e0a5", title: "Declarative Multi-Node Compose & 3-2-1 Bundle Sync", status: "RUNNING", is_pinned: true, mode: "MAIN WRITER", workspace_path: "/home/dev/workspaces/cloud-gitops-stack", step_count: 342, last_updated: "2026-11-07T18:40:00Z", other_running_sessions: [] },
+                { index: 5, conversation_id: "9b3c61f0-4e8a-4c19-a254-7f1e3d80b6c2", title: "Zero-Downtime Ingress & TLS Certificate Rotation", status: "COMPLETED", is_pinned: false, mode: "MAIN TREE", workspace_path: "/home/dev/workspaces/cloud-gitops-stack", step_count: 275, last_updated: "2026-11-07T14:22:00Z", other_running_sessions: [] },
+              ],
+            },
+            {
+              project_id: "neural-mesh-anms", project_name: "neural-mesh-anms", workspace_path: "/home/dev/workspaces/neural-mesh-anms",
+              total_sessions: 1, running_count: 0, pinned_count: 0, shared_repo: false,
+              sessions: [
+                { index: 6, conversation_id: "4d7e23a1-9f0b-4b68-8c42-5a9d1e73f2b0", title: "Anomaly Detection Graph & Telemetry Ingestion", status: "IDLE", is_pinned: false, mode: "MAIN TREE", workspace_path: "/home/dev/workspaces/neural-mesh-anms", step_count: 194, last_updated: "2026-11-06T22:15:00Z", other_running_sessions: [] },
+              ],
+            },
+            {
+              project_id: "chronos-tasks", project_name: "chronos-tasks", workspace_path: "/home/dev/workspaces/chronos-tasks",
+              total_sessions: 1, running_count: 0, pinned_count: 0, shared_repo: false,
+              sessions: [
+                { index: 7, conversation_id: "1a8f54c7-3b2e-4d91-9e06-8c2b4f19d7e3", title: "Calendar Time-Block Counter-Event Scheduler", status: "COMPLETED", is_pinned: false, mode: "MAIN TREE", workspace_path: "/home/dev/workspaces/chronos-tasks", step_count: 312, last_updated: "2026-11-06T19:48:00Z", other_running_sessions: [] },
               ],
             },
           ],
