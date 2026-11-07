@@ -21,6 +21,7 @@ from agy_nexus.config import (
 )
 from agy_nexus.media import verify_and_resolve_media
 from agy_nexus.stats import build_nexus_stats_bundle, record_wire_telemetry
+from agy_nexus.webhook_proxy import handle_webhook_sync_proxy
 
 class BridgeCompatMiddleware:
     """ASGI wrapper serving /web Overwatch dashboard, HTTP method discovery, and sanitized JSON-RPC telemetry."""
@@ -51,13 +52,13 @@ class BridgeCompatMiddleware:
         raw_qs = (scope.get("query_string") or b"").decode("latin-1", errors="ignore")
         headers = list(scope.get("headers", []))
 
+        if req_path.startswith("/github-webhook-sync"):
+            await handle_webhook_sync_proxy(method, req_path, raw_qs, headers, receive, send)
+            return
+
         # 0. Redirect bare root GET / -> /web
         if method == "GET" and req_path == "":
-            await send({
-                "type": "http.response.start",
-                "status": 302,
-                "headers": [(b"location", b"/web"), (b"content-length", b"0")],
-            })
+            await send({"type": "http.response.start", "status": 302, "headers": [(b"location", b"/web"), (b"content-length", b"0")]})
             await send({"type": "http.response.body", "body": b""})
             return
 
@@ -67,11 +68,7 @@ class BridgeCompatMiddleware:
             await send({
                 "type": "http.response.start",
                 "status": 200,
-                "headers": [
-                    (b"content-type", b"text/html; charset=utf-8"),
-                    (b"content-length", str(len(html_bytes)).encode("ascii")),
-                    (b"cache-control", b"no-cache"),
-                ],
+                "headers": [(b"content-type", b"text/html; charset=utf-8"), (b"content-length", str(len(html_bytes)).encode("ascii")), (b"cache-control", b"no-cache")],
             })
             await send({"type": "http.response.body", "body": html_bytes})
             print(f"[agy-nexus] http=GET rpc=web_ui tool=- status=200 bytes={len(html_bytes)} ms=1", flush=True)
@@ -86,20 +83,12 @@ class BridgeCompatMiddleware:
                     await send({
                         "type": "http.response.start",
                         "status": 200,
-                        "headers": [
-                            (b"content-type", mime_bytes),
-                            (b"content-length", str(len(media_bytes)).encode("ascii")),
-                            (b"cache-control", b"private, max-age=1800"),
-                        ],
+                        "headers": [(b"content-type", mime_bytes), (b"content-length", str(len(media_bytes)).encode("ascii")), (b"cache-control", b"private, max-age=1800")],
                     })
                     await send({"type": "http.response.body", "body": media_bytes})
                     return
                 err_b = json.dumps({"ok": False, "error": msg_text}).encode("utf-8")
-                await send({
-                    "type": "http.response.start",
-                    "status": status_code,
-                    "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(err_b)).encode("ascii"))],
-                })
+                await send({"type": "http.response.start", "status": status_code, "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(err_b)).encode("ascii"))]})
                 await send({"type": "http.response.body", "body": err_b})
                 return
             asset_name = req_path.rsplit("/web/", 1)[-1]
