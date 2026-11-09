@@ -64,10 +64,10 @@ const SERIES_COLORS = ["#059669", "#2563eb", "#d97706", "#7c3aed", "#db2777", "#
     const SAMPLE_CODE_HEALTH = {
       version: {
         installed: "2.5.0",
-        remote: "2.4.0",
-        status: "staged_locally",
-        status_label: "Staged Locally",
-        status_dot: "#38bdf8",
+        remote: "v2.5.0",
+        status: "up_to_date",
+        status_label: "Up to Date (v2.5.0)",
+        status_dot: "#10b981",
         repo: "github.com/FrankXLT/agy-nexus-mcp",
       },
       modular_hygiene: {
