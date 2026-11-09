@@ -190,9 +190,9 @@ def main() -> int:
             return 0
 
         commit_msg = args.message.strip() or (
-            "chore(release): sync agy-nexus-mcp v2.4.0"
+            "chore(release): sync agy-nexus-mcp v2.4.1"
             if has_existing_main
-            else "feat: initial public release of agy-nexus-mcp (v2.4.0)"
+            else "feat: initial public release of agy-nexus-mcp (v2.4.1)"
         )
         subprocess.run(
             ["git", "commit", "-m", commit_msg],

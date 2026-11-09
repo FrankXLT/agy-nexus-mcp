@@ -176,7 +176,7 @@ class BridgeCompatMiddleware:
             return
 
         if method in ("GET", "DELETE"):
-            body = json.dumps({"ok": True, "service": "agy-nexus-mcp", "version": "2.4.0", "transport": "streamable-http", "stateless": True, "web_dashboard": "/web"}).encode("utf-8")
+            body = json.dumps({"ok": True, "service": "agy-nexus-mcp", "version": "2.4.1", "transport": "streamable-http", "stateless": True, "web_dashboard": "/web"}).encode("utf-8")
             await send({
                 "type": "http.response.start",
                 "status": 200,

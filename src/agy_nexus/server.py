@@ -54,7 +54,7 @@ from agy_nexus.workspace import _resolve_and_read_files
 
 def run_self_test() -> int:
     """Run automated verification of deadbolt, normalization, session listing, stats engine, and FastMCP app routes."""
-    print("[*] Running agy-nexus-mcp v2.4.0 automated self-test...")
+    print("[*] Running agy-nexus-mcp v2.4.1 automated self-test...")
 
     # 1. Normalization & Passphrase Verification
     test_phrase = "Example Bridge 2026!"
@@ -154,7 +154,35 @@ def run_self_test() -> int:
     assert "PROJECT -> CHAT -> SESSION ID HIERARCHY" in tree_bundle.get("ascii_tree", ""), "Missing ASCII tree header"
     print(f"  [+] Parallel Session Isolation, 3-Tier Path Resolver & 76-col Session Tree ({tree_bundle['projects_count']} projects): PASS")
 
-    print("[✓] All agy-nexus-mcp v2.4.0 self-tests completed successfully!")
+    # 9. Content-Aware Skill Auto-Router, In-Flight Mutex & Session Health Telemetry
+    from agy_nexus.inventory import _resolve_skill_directives
+    from agy_nexus.session_status import (
+        check_inflight_handoff_mutex,
+        count_session_compactions,
+        generate_session_health_warning,
+    )
+    import json
+    ui_skills = _resolve_skill_directives("antigravity-config", "", "Refactor web/hierarchy.js and table UI components")
+    assert "visual-architecture-system" in ui_skills and "modern-web-guidance" in ui_skills and "agy-nexus-stats" in ui_skills
+    stack_skills = _resolve_skill_directives("my-repo", "", "Deploy docker-compose stack via Portainer")
+    assert "portainer-gitops" in stack_skills
+    auth_skills = _resolve_skill_directives("my-repo", "", "Review security deadbolt before publish_to_github")
+    assert "dual-review" in auth_skills
+    warn = generate_session_health_warning(1600, 12)
+    assert "SESSION HEALTH WARNING" in warn and "1,500" in warn
+    now_test = time.time()
+    test_conv = "test-collision-session-uuid"
+    test_job_file = AGY_BG_DIR / f"job-test-{int(now_test)}.json"
+    AGY_BG_DIR.mkdir(parents=True, exist_ok=True)
+    test_job_file.write_text(json.dumps({"job_id": f"job-test-{int(now_test)}", "conversation_id": test_conv, "started_at": "2026-11-09T00:00:00Z"}), encoding="utf-8")
+    try:
+        mutex_res = check_inflight_handoff_mutex(test_conv, AGY_BG_DIR, {"is_running": True}, max_age_seconds=300)
+        assert mutex_res is not None and mutex_res["status"] == "ALREADY_RUNNING"
+    finally:
+        test_job_file.unlink(missing_ok=True)
+    print("  [+] Content-Aware Skill Auto-Router, In-Flight Mutex & Session Health Warning: PASS")
+
+    print("[✓] All agy-nexus-mcp v2.4.1 self-tests completed successfully!")
     return 0
 
 
@@ -167,7 +195,7 @@ def main() -> None:
     if len(PASS_HASH) != 64:
         sys.exit("FATAL: PASS_HASH must be a 64-character SHA-256 hex string. Run init_secrets.py to configure.")
 
-    print(f"[*] Starting agy-nexus-mcp v2.4.0 on {BIND_HOST}:{BIND_PORT} (stateless_http=True, json_response=True)", flush=True)
+    print(f"[*] Starting agy-nexus-mcp v2.4.1 on {BIND_HOST}:{BIND_PORT} (stateless_http=True, json_response=True)", flush=True)
     print(f"[*] MCP Route: /{PATH_SECRET[:6]}...{PATH_SECRET[-4:]}/mcp | Web Overwatch: /{PATH_SECRET[:6]}...{PATH_SECRET[-4:]}/web", flush=True)
     raw_app = mcp.http_app(
         path=f"/{PATH_SECRET}/mcp",

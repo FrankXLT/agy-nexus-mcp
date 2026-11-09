@@ -1,4 +1,4 @@
-# `agy-nexus-mcp` — Connect Google Gemini to Your Antigravity IDE, Projects & Usage Dashboard (`v2.4.0`)
+# `agy-nexus-mcp` — Connect Google Gemini to Your Antigravity IDE, Projects & Usage Dashboard (`v2.4.1`)
 
 `agy-nexus-mcp` is a self-hosted Model Context Protocol (MCP) server that connects **Google Gemini** (on the web or mobile app) directly to your local **Google Antigravity IDE / CLI** workstation.
 
@@ -23,7 +23,7 @@ From your phone or browser, you can check on running coding sessions, inspect a 
 
 ## Best Features & Advantages
 
-### 1. Control Parallel Coding Sessions Without Cross-Talk (`v2.4.0`)
+### 1. Control Parallel Coding Sessions Without Cross-Talk (`v2.4.1`)
 - **Parallel Session Isolation & Keyed Context Slots**: Multiple Gemini Web and Gemini Mobile tabs can work concurrently on different repositories and conversations without overwriting each other's active workspace (`session_identifier` and `workspace` pinning backed by `fcntl.flock` atomic state slots).
 - **3-Tier Smart Path Resolver**: Pass relative paths, repo-prefixed paths (`quantum-dsp-workbench/src/fft.py`), or unique subpaths across your workspace root—`ask_workspace_readonly` resolves the target repository automatically without requiring redundant session switches.
 - **Same-Repo Concurrent Writer Guard**: Detects when another Antigravity session is actively `RUNNING` on the same repository, labeling sessions as `MAIN WRITER`, `WORKTREE`, `SHARED (READ-ONLY)`, or `MAIN TREE` and recommending `use_worktree=True` before dispatching concurrent edits.
@@ -82,6 +82,43 @@ Once connected, just talk or type naturally in Gemini Web or Gemini Mobile:
 - **Audit uncommitted git changes**: *"Check git diff across all my repositories to see what hasn't been committed yet."*
 - **Send a plan back to Antigravity**: *"Send this implementation plan to my `quantum-dsp-workbench` session and wake it up in plan mode."*
 - **View ASCII stats in chat**: *"Show me my latest usage stats"* (or ask for `quick` mobile view or `rich` desktop view).
+
+---
+
+## Project Manager Mode with Gemini High Task (formerly Spark) & The 3-Mode Workflow (`v2.4.1`)
+
+In `v2.4.1`, `agy-nexus-mcp` turns **Google Gemini High Task Mode** (formerly Gemini Spark) into an autonomous, proactive **Engineering Project Manager** for your Antigravity IDE workstation.
+
+### Why Gemini High Task Mode Changes the Game
+Traditional LLM chat turns often struggle with multi-step MCP orchestration: models may guess unverified code, attempt to write complex diffs from memory, or freeze connections when chaining operations.
+
+With **Gemini High Task Mode**:
+1. **Extended Thinking & Systematic Decomposition**: High Task mode spends deliberate reasoning tokens mapping dependencies and reading codebase contracts before taking action.
+2. **Deterministic Multi-Step PM Sequencing**: Gemini autonomously executes the standard PM pipeline:
+   - **Step 1: Grounding & Scouting**: Reads target files and git status via `ask_workspace_readonly` or `load_session_into_gemini`.
+   - **Step 2: Staging & Preview**: Dispatches research handoffs with `allow_chained_publish=False`, forcing Antigravity to stage changes locally and capture visual/diff artifacts.
+   - **Step 3: Visual & Diff Verification**: Inspects rendered screenshots via signed `/web/media/` links and reviews `git diff`.
+   - **Step 4: Release Approval**: Only approves production deployment (`allow_chained_publish=True`) once all verification gates are satisfied.
+
+### The 3 Interaction Modes (`handoff_mode`)
+When dispatching handoffs via `send_handoff_and_resume()`, Gemini operates in one of three clearly defined modes:
+
+| Mode | Argument | Purpose & Behavior | Antigravity Subagent Execution |
+| :--- | :--- | :--- | :--- |
+| **Iterative Intent Briefs** | `handoff_mode="intent"` *(Default)* | Pass clean user requirements, UX flows, and acceptance criteria from ideation **without** guessing unverified code or CSS from memory. | Antigravity's local `flash-scout` maps the repo, while `flash-surgeon` / `argon-surgeon` and `flash-auditor` write and verify the code. |
+| **Visual & Artifact Critiques** | `handoff_mode="visual_critique"` | Translate uploaded UI screenshots and artifacts into grounded, actionable visual deltas. | Anchors critiques directly to existing component files and `visual-architecture-system` rules. |
+| **Grounded Surgical Audits** | `handoff_mode="surgical_audit"` | Provide exact line-level code or architecture fixes **only after** reading target files with read-only tools. | Antigravity performs surgical refactors (`<= 300 lines/file`) followed by unit/smoke test passes. |
+
+### The Mandatory 4-Step Subagent Execution Lifecycle & Two-Phase Preview Gate
+Every headless handoff automatically injects and enforces Antigravity's **4-Step Subagent Lifecycle**:
+1. **Scout (`flash-scout`)**: Reads attached `SKILL.md` contracts and maps repository conventions before code is touched.
+2. **Implement (`flash-surgeon` / `argon-surgeon`)**: Delegates modular edits (`<= 300 lines/file`, hard ceiling 400 lines) to subagents rather than soloing 10+ file edits in the parent context.
+3. **Audit (`flash-auditor`)**: Runs linters, unit tests, and smoke tests, verifying `git diff` before marking tasks complete (Rule 8.1: *no agent signs off on its own code alone*).
+4. **Visual & Preview Gate (`allow_chained_publish=False`)**: When UI files change, Antigravity executes `verify_visual_contract.py`, captures mobile/desktop screenshots, and halts at local staging so Gemini and the user can inspect before release.
+
+### In-Flight Mutex & Session Compaction Telemetry
+- **In-Flight Mutex (`ALREADY_RUNNING`)**: If a session is already executing a background job started `< 300` seconds ago, `send_handoff_and_resume` returns `status="ALREADY_RUNNING"`, preventing duplicate planner wakeups and collision errors unless `force_interrupt=True` is explicitly passed.
+- **Compaction Ceiling Warning (`>1,500 Steps` / `>10 Compactions`)**: `load_session_into_gemini` and `list_saved_sessions` track `compaction_count` and `avg_step_seconds`, alerting when a conversation exceeds 1,500 steps or 10 compactions and advising rotation via `create_new_session=True` before context amnesia occurs.
 
 ---
 
@@ -216,7 +253,7 @@ When you ask Gemini for your usage stats (`manage_background_run(action="stats",
 | :--- | :---: | :--- | :--- |
 | **`style="default"`** | **72 cols** | Standard Desktop & Tablet Chat | Split summary header, 22-week `Mon–Sun` heatmap, 8-hour activity & project stack (`░▒▓█`), model quota bars (`┼`), and full project & subagent tables. |
 | **`style="quick"`** | **`<= 40` cols** | Phone Screens (Portrait) | Fits strictly within 40 characters per line so it never wraps on mobile. Shows a 13-week heatmap, 8-hour pace curve, model quota bars, and top projects/subagents. |
-| **`style="rich"`** | **76 cols** | Widescreen Desktop Chat | Full box-drawn dashboard (`v2.4.0`) with side-by-side quota and token panels, 13-week 3-character heatmap with a Peak Day card, 6-row 8-hour activity curve, and share gauges. |
+| **`style="rich"`** | **76 cols** | Widescreen Desktop Chat | Full box-drawn dashboard (`v2.4.1`) with side-by-side quota and token panels, 13-week 3-character heatmap with a Peak Day card, 6-row 8-hour activity curve, and share gauges. |
 
 ### 1. `style="default"` (72-Column Standard Layout)
 
@@ -330,7 +367,7 @@ rf-signal-lab     2.0M    42k    294k
 
 ```text
 ╔══════════════════════════════════════════════════════════════════════════╗
-║ ▄▀█ █▀▀ █▄█ ▄▄ █▄░█ █▀▀ ▀▄▀ █░█ █▀   v2.4.0 // RICH TELEMETRY RIG        ║
+║ ▄▀█ █▀▀ █▄█ ▄▄ █▄░█ █▀▀ ▀▄▀ █░█ █▀   v2.4.1 // RICH TELEMETRY RIG        ║
 ║ █▀█ █▄█ ░█░ ░░ █░▀█ ██▄ █░█ █▄█ ▄█   WINDOW: 90d (Nov 07 ◄── Aug 10)     ║
 ╠════════════════════════════════════╦═════════════════════════════════════╣
 ║ QUOTA POOLS & 429 COOLDOWNS        │ STEP & TOOL VELOCITY                ║
@@ -445,7 +482,7 @@ Because `agy-nexus-mcp` requires your interactive passphrase to unlock, a schedu
 
 ## Comparison with Typical Antigravity Bridges
 
-| Feature | Typical Community Bridges (`agy-bridge`, `gemini-antigravity-bridge`, `meridian`, `ag-local-bridge`) | `agy-nexus-mcp` (`v2.4.0`) |
+| Feature | Typical Community Bridges (`agy-bridge`, `gemini-antigravity-bridge`, `meridian`, `ag-local-bridge`) | `agy-nexus-mcp` (`v2.4.1`) |
 | :--- | :--- | :--- |
 | **Connection Type** | Local `stdio` pipe, localhost proxy, or single-chat Telegram/WhatsApp bot | **Streamable HTTP MCP** reachable directly from Google Gemini Web, Mobile & Scheduled Gemini Tasks |
 | **Security** | None or static chat-ID allowlist | **Secret URL Path + Voice/Text Passphrase Lock** with optional split-trust staging |
@@ -477,8 +514,8 @@ As soon as Antigravity runs those subagents, their activity and token usage auto
 ```text
 agy-nexus-mcp/
 ├── src/
-│   └── agy_nexus/                    # Modular Python package (all modules <= 335 lines)
-│       ├── __init__.py               # Package metadata (v2.4.0)
+│   └── agy_nexus/                    # Modular Python package (all modules <= 357 lines)
+│       ├── __init__.py               # Package metadata (v2.4.1)
 │       ├── config.py                 # Secrets loader, SHA-256 deadbolt & atomic keyed context slots
 │       ├── hygiene.py                # <20 KB wire compaction, line-range slicer & diff paginator
 │       ├── inventory.py              # Skills, Agent Roles, Rules & workspace discovery
@@ -486,6 +523,7 @@ agy-nexus-mcp/
 │       ├── ascii_default.py          # Tier 1 (72-col Default) & Tier 2 (40-col Quick) ASCII renderers
 │       ├── ascii_rich.py             # Tier 3 (76-col Rich Widescreen) ASCII renderer
 │       ├── session_tree.py           # 76-col ASCII Project -> Chat -> Session ID tree & 3-2-1 status
+│       ├── session_status.py         # Session health warnings, compaction tracking & in-flight mutex
 │       ├── stats.py                  # Usage stats, Mon–Sun heatmap, locked sub-daily series & ASCII router
 │       ├── workflows.py              # Gemini Notebook export, multi-repo drift audit & quarantine staging
 │       ├── media.py                  # Ephemeral HMAC-SHA256 /web/media/ visual artifact signer & resolver
@@ -508,7 +546,7 @@ agy-nexus-mcp/
 │   ├── hierarchy.js                  # Project, Chat & Session Hierarchy col-12 renderer & copy controls
 │   ├── app.js                        # Dashboard state, live polling & Chromium PWA installer logic
 │   ├── manifest.webmanifest          # Chromium Standalone Web App Manifest
-│   ├── sw.js                         # Root-scoped network-first Service Worker (v2.4.0)
+│   ├── sw.js                         # Root-scoped network-first Service Worker (v2.4.1)
 │   ├── icon.svg                      # Vector radar & heatmap app icon
 │   ├── icon-192.png                  # 192×192 RGBA PWA icon
 │   └── icon-512.png                  # 512×512 RGBA PWA icon
@@ -536,13 +574,13 @@ agy-nexus-mcp/
 ├── tests/
 │   └── run_permutation_suite.py      # End-to-end automated test suite
 ├── AGENTS.md                         # AI coding assistant & multi-agent architecture guide
-├── CHANGELOG.md                      # Release history (v1.0.0 – v2.4.0)
+├── CHANGELOG.md                      # Release history (v1.0.0 – v2.4.1)
 ├── CONTRIBUTING.md                   # Contribution & modular hygiene guidelines
 ├── SECURITY.md                       # 3-Layer Deadbolt architecture & vulnerability reporting policy
 ├── LICENSE                           # GNU Affero General Public License v3.0 (AGPL-3.0-or-later)
 ├── NOTICE                            # AGPLv3 Section 7 Attribution, Brand & Security-Integrity Terms
 ├── docker-compose.yml                # Docker Compose manifest
-├── pyproject.toml                    # Python package metadata (v2.4.0)
+├── pyproject.toml                    # Python package metadata (v2.4.1)
 └── requirements.txt                  # Python dependencies
 ```
 

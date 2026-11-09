@@ -239,6 +239,52 @@ def resolve_customization_file(query: str, config_dir: Path, data_dir: Path, wor
                 return (rfolder / f"{q_slug}.md").resolve()
     return None
 
+def _resolve_skill_directives(
+    workspace_str: str,
+    activate_skills: str,
+    research_markdown: str,
+) -> str:
+    """Resolve and augment skill directives with workspace defaults and content-aware domain triggers."""
+    skills_list: list[str] = [
+        s.strip() for s in re.split(r"[,;\n]+", activate_skills or "") if s.strip()
+    ]
+    ws_lower = (workspace_str or "").lower()
+    md_lower = (research_markdown or "").lower()
+
+    if "antigravity-config" in ws_lower and "agy-nexus-stats" not in skills_list:
+        skills_list.append("agy-nexus-stats")
+    if "oaworkbench" in ws_lower:
+        for s in ("oaw-writing-standards", "oaw-platform-ops"):
+            if s not in skills_list:
+                skills_list.append(s)
+    if ("ha-config" in ws_lower or "homeassistant" in ws_lower) and "surveillance-continuous-refinement" not in skills_list:
+        skills_list.append("surveillance-continuous-refinement")
+    if "mtasker" in ws_lower and "mtasker-schedule-and-tasks" not in skills_list:
+        skills_list.append("mtasker-schedule-and-tasks")
+
+    ui_ext = bool(re.search(r"\.(html|css|js|tsx|vue)\b", research_markdown, re.I))
+    ui_kw = bool(re.search(r"\b(ui|css|layout|table|chart|hierarchy|drawer|modal|screenshot|theme|redesign)\b", md_lower))
+    if ui_ext or ui_kw:
+        for s in ("visual-architecture-system", "modern-web-guidance"):
+            if s not in skills_list:
+                skills_list.append(s)
+
+    if re.search(r"\b(docker-compose|portainer|stackgitredeploy|container)\b", md_lower):
+        if "portainer-gitops" not in skills_list:
+            skills_list.append("portainer-gitops")
+
+    if re.search(r"\b(publish_to_github|release|security|deadbolt|auth)\b", md_lower):
+        if "dual-review" not in skills_list:
+            skills_list.append("dual-review")
+
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for s in skills_list:
+        if s and s not in seen:
+            seen.add(s)
+            deduped.append(s)
+    return ", ".join(deduped)
+
 def build_interjection_directive(
     activate_skills: str,
     target_agent_role: str,
@@ -253,9 +299,10 @@ def build_interjection_directive(
     ws_path = Path(workspace_str).resolve() if workspace_str and Path(workspace_str).exists() else None
     scope_eval = evaluate_session_customization_scope(workspace_str, config_dir, gitlab_dir)
     edit_scope = (customization_edit_scope or "none").strip().lower()
+    eff_skills = _resolve_skill_directives(workspace_str, activate_skills, research_markdown)
     resolved_skills = [
         {"name": s.strip(), "path": str(p) if (p := resolve_customization_file(f"skill:{s.strip()}", config_dir, data_dir, ws_path)) else f"(unresolved: {s.strip()})"}
-        for s in re.split(r"[,;\n]+", activate_skills or "") if s.strip()
+        for s in re.split(r"[,;\n]+", eff_skills or "") if s.strip()
     ]
     ag_clean = target_agent_role.strip()
     ag_path = resolve_customization_file(f"agent:{ag_clean}", config_dir, data_dir, ws_path) if ag_clean else None

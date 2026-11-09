@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [2.4.1] — 2026-11-09
+
+### Added
+- **3-Mode Middleman Protocol & Gemini High Task (Spark) PM Workflow (`src/agy_nexus/handoff.py`, `ag_bridge.py`, `README.md`)**:
+  - Added `handoff_mode: str = "intent"` (`"intent"` | `"visual_critique"` | `"surgical_audit"`), `allow_chained_publish: bool = False`, and `force_interrupt: bool = False` to `send_handoff_and_resume()`.
+  - Enforced the **3-Mode Middleman Protocol**: `intent` for clean requirements/user-flow briefs without guessing unverified implementation mechanics; `visual_critique` for grounded UX/visual delta critiques anchored to `visual-architecture-system`; and `surgical_audit` for verified file fixes only after inspecting code with read-only tools.
+  - Documented Gemini High Task Mode (formerly Spark) Project Manager orchestration: systematic multi-step sequencing (scouting context $\rightarrow$ staging & previewing handoffs $\rightarrow$ inspecting visual/diff gates $\rightarrow$ approving release).
+  - Enforced the **Two-Phase Safety Gate (`allow_chained_publish=False` default)**: blocks premature `git push`, `publish_to_github.py`, and container redeployments in mutation turns, requiring artifact/diff verification first.
+- **Content-Aware Skill Auto-Router & 4-Step Subagent Protocol (`src/agy_nexus/inventory.py`, `src/agy_nexus/handoff.py`)**:
+  - Implemented `_resolve_skill_directives(workspace_str, activate_skills, research_markdown)` automatically scanning handoff markdown for domain triggers:
+    - **UI / Frontend** (`\.(html|css|js|tsx|vue)\b` or keywords `ui|css|layout|table|chart|hierarchy|drawer|modal|screenshot|theme|redesign`): auto-attaches `visual-architecture-system` and `modern-web-guidance`.
+    - **Container / Stack** (`docker-compose|portainer|StackGitRedeploy|container`): auto-attaches `portainer-gitops`.
+    - **Release / Auth / Security** (`publish_to_github|release|security|deadbolt|auth`): auto-attaches `dual-review`.
+  - Enforced the **Mandatory 4-Step Subagent Lifecycle** (`flash-scout` $\rightarrow$ `flash-surgeon` / `argon-surgeon` $\rightarrow$ `flash-auditor` $\rightarrow$ `Visual & Preview Gate`) in both the `agentapi` wakeup prompt and `gemini_research_handoff.md` footer, eliminating headless subagent starvation and enforcing Rule 8.1 (no solo code signoff).
+- **In-Flight Handoff Mutex & Session Compaction Telemetry (`src/agy_nexus/session_status.py`, `src/agy_nexus/tools_session.py`, `src/agy_nexus/sessions.py`)**:
+  - Created `src/agy_nexus/session_status.py` with `check_inflight_handoff_mutex()` returning `status="ALREADY_RUNNING"` with `active_job_id` and `elapsed_seconds` when a background job started `< 300` seconds ago, eliminating duplicate wakeup collisions across multi-turn handoffs.
+  - Added binary transcript compaction scanning (`count_session_compactions`) detecting `# Resuming from a compaction` and active execution step pacing (`calculate_step_pacing`) excluding idle inter-turn gaps.
+  - Integrated `session_health_warning` into `load_session_into_gemini` and `list_saved_sessions`, alerting when `step_count > 1500` or `compaction_count >= 10` and advising clean conversation rotation via `create_new_session=True` before Cortex tool amnesia occurs.
+- **Modular Architecture & File Hygiene**:
+  - Modularized session status logic into `src/agy_nexus/session_status.py` (203 lines), bringing `sessions.py` down to 240 lines and keeping all 27 Python modules strictly `<= 357` lines (hard ceiling `<= 400` lines).
+
+---
+
 ## [2.4.0] — 2026-11-07
 
 ### Added

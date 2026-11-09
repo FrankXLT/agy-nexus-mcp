@@ -1,4 +1,4 @@
-// Project, Chat & Session Hierarchy — Quiet UI Tabular Renderer for /web Overwatch Dashboard (v2.4.0)
+// Project, Chat & Session Hierarchy — Quiet UI Tabular Renderer for /web Overwatch Dashboard (v2.4.1)
 let hierarchyShowAll = localStorage.getItem("nexus_hier_all") !== "0";
 let hierarchyExpandAll = false;
 let lastHierarchyBundle = null;

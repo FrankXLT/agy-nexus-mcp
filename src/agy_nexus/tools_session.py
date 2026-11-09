@@ -34,10 +34,14 @@ from agy_nexus.hygiene import (
     MODULAR_HYGIENE_STANDARDS,
     _compact_markdown,
 )
-from agy_nexus.media import discover_visual_artifacts
 from agy_nexus.routing import _resolve_session_identifier
 from agy_nexus.search import _search_workspaces_and_history
-from agy_nexus.sessions import _get_selected_session_quick_status, _list_saved_sessions_internal, _load_projects_map
+from agy_nexus.session_status import (
+    _get_selected_session_quick_status,
+    generate_session_health_warning,
+    get_session_telemetry,
+)
+from agy_nexus.sessions import _list_saved_sessions_internal, _load_projects_map
 from agy_nexus.stats import build_nexus_stats_bundle, extract_pending_approval
 from agy_nexus.workspace import _collect_git_summary, _resolve_and_read_files
 
@@ -125,6 +129,7 @@ def list_saved_sessions(
                 "task_content": _compact_markdown(t_md, max_chars=2000) if t_md else "",
                 "walkthrough_preview": _compact_markdown(w_md, max_chars=1200) if w_md else "",
             }
+            top_detail.update(get_session_telemetry(top_cid, AGY_BRAIN_DIR, step_count=int(top_s.get("step_count") or 0)))
     out_obj: dict[str, Any] = {
         "ok": True,
         "assistant_guidance": (
@@ -177,13 +182,18 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
                 if not conv_title and row[7]:
                     conv_title = str(row[7])
                 is_run = bool(row[5]) or str(row[2] or "") == "CASCADE_RUN_STATUS_RUNNING"
+                cur_steps = int(row[3] or 0)
+                cur_compactions = int(db_status_info.get("compaction_count") or 0)
+                hw = generate_session_health_warning(cur_steps, cur_compactions)
                 db_status_info.update({
                     "db_status": str(row[2] or "CASCADE_RUN_STATUS_IDLE"),
-                    "step_count": int(row[3] or 0),
+                    "step_count": cur_steps,
                     "last_modified": str(row[4] or ""),
                     "is_running": is_run, "not_fully_idle": bool(row[5]), "killed": bool(row[6]),
                     "summary": "RUNNING" if is_run else "COMPLETED_AND_IDLE (Antigravity finished; do NOT call manage_background_run)",
                 })
+                if hw:
+                    db_status_info["session_health_warning"] = hw
         except Exception:
             pass
     projects_map = _load_projects_map()
@@ -283,6 +293,9 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
             "visual_artifacts, task_content, implementation_plan, walkthrough, and recent_transcript_turns are ALL included below)."
         ),
         "project_hygiene_standards": MODULAR_HYGIENE_STANDARDS, "execution_status": db_status_info,
+        "compaction_count": db_status_info.get("compaction_count", 0),
+        "avg_step_seconds": db_status_info.get("avg_step_seconds", 0.0),
+        "session_health_warning": db_status_info.get("session_health_warning", ""),
         "git_summary": git_summary, "visual_artifacts": visual_artifacts,
         "latest_assistant_response": latest_assistant_response,
         "task_content": task_content, "implementation_plan": plan_content,
