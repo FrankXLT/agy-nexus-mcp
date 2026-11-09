@@ -29,17 +29,22 @@ function renderCodeHealth(ch, installedVer) {
   };
   const statusText = statusMap[status] || (ch.version && ch.version.status_label) || "Staged Locally";
 
+  const rawRemote = (ch.version && ch.version.remote) || "unknown";
+  const remoteTag = rawRemote === "unknown" ? "unknown" : (String(rawRemote).startsWith("v") ? rawRemote : `v${rawRemote}`);
+  const rawInst = (ch.version && ch.version.installed) || installedVer;
+  const instTag = String(rawInst).startsWith("v") ? rawInst : `v${rawInst}`;
+
   const vMeta = document.getElementById("versionCompareMeta");
   if (vMeta) {
     const metaLabel = (ch.version && ch.version.status_label) ? ch.version.status_label : statusText;
-    vMeta.textContent = `Installed: v${(ch.version && ch.version.installed) || installedVer} · Remote: v${(ch.version && ch.version.remote) || 'unknown'} (${metaLabel})`;
+    vMeta.textContent = `Installed: ${instTag} · Remote: ${remoteTag} (${metaLabel})`;
   }
 
   const kpiVComp = document.getElementById("kpiVersionComp");
   if (kpiVComp) kpiVComp.innerHTML = `<span class="status-dot-6px ${dotClass}"></span> ${statusText}`;
 
   const kpiVSub = document.getElementById("kpiVersionSub");
-  if (kpiVSub) kpiVSub.textContent = `v${(ch.version && ch.version.installed) || installedVer} installed · v${(ch.version && ch.version.remote) || 'unknown'} GitHub release`;
+  if (kpiVSub) kpiVSub.textContent = `${instTag} installed · ${remoteTag} GitHub release`;
 
   const kpiMod = document.getElementById("kpiModularBudget");
   if (kpiMod) kpiMod.textContent = `${(ch.modular_hygiene && ch.modular_hygiene.compliant_300) || 0} / ${(ch.modular_hygiene && ch.modular_hygiene.total_modules) || 0} Modules`;
