@@ -13,7 +13,7 @@
   <link rel="icon" type="image/svg+xml" href="/web/icon.svg" />
   <link rel="apple-touch-icon" href="/web/icon-192.png" />
   <title>AGY-NEXUS-MCP — Usage, Quota &amp; Project Activity Dashboard</title>
-  <link rel="stylesheet" href="/web/styles.css?v=2.4.1" />
+  <link rel="stylesheet" href="/web/styles.css?v=2.5.0" />
 </head>
 <body>
   <!-- Top Navigation Bar -->
@@ -21,7 +21,7 @@
     <div class="brand">
       <span class="sq-dot"></span>
       <div>
-        <div class="brand-title mono">AGY-NEXUS-MCP <span style="font-weight:400;color:var(--text-dim)">// DASHBOARD</span></div>
+        <div class="brand-title mono">AGY-NEXUS-MCP <span class="version-tag" id="versionTag" title="Installed version"><span class="status-dot-6px cyan" id="versionDot"></span><span id="versionLabel">v2.5.0</span></span> <span style="font-weight:400;color:var(--text-dim)">// DASHBOARD</span></div>
         <div class="brand-sub" id="subtitleStatus">Usage, Model Quotas, Subagents, Tokens &amp; Project Activity</div></div>
     </div>
     <div class="controls">
@@ -41,45 +41,21 @@
             <line x1="2" y1="9.5" x2="14" y2="9.5" />
           </svg>
           <span class="mono" id="triggerDensityLabel">D2</span>
-          <span style="font-size:9px;opacity:0.7;">▾</span>
+          <span style="font-size:11px;opacity:0.7;">▾</span>
         </button>
         <div class="style-popover hidden" id="stylePopover">
           <div class="pop-sec-label">Color Scheme (4)</div>
           <div class="theme-grid">
-            <button type="button" class="theme-opt active" data-theme="obsidian">
-              <span class="theme-swatch" style="background:#0b0d10;border-color:#10b981;"></span>
-              <span>Obsidian</span>
-            </button>
-            <button type="button" class="theme-opt" data-theme="dark-paper">
-              <span class="theme-swatch" style="background:#21201c;border-color:#ede8df;"></span>
-              <span>Dark Paper</span>
-            </button>
-            <button type="button" class="theme-opt" data-theme="warm-paper">
-              <span class="theme-swatch" style="background:#f6f4f0;border-color:#525a65;"></span>
-              <span>Warm Paper</span>
-            </button>
-            <button type="button" class="theme-opt" data-theme="white">
-              <span class="theme-swatch" style="background:#ffffff;border-color:#0f172a;"></span>
-              <span>Pure White</span>
-            </button></div>
+            <button type="button" class="theme-opt active" data-theme="obsidian"><span class="theme-swatch" style="background:#0b0d10;border-color:#10b981;"></span><span>Obsidian</span></button>
+            <button type="button" class="theme-opt" data-theme="dark-paper"><span class="theme-swatch" style="background:#21201c;border-color:#ede8df;"></span><span>Dark Paper</span></button>
+            <button type="button" class="theme-opt" data-theme="warm-paper"><span class="theme-swatch" style="background:#f6f4f0;border-color:#525a65;"></span><span>Warm Paper</span></button>
+            <button type="button" class="theme-opt" data-theme="white"><span class="theme-swatch" style="background:#ffffff;border-color:#0f172a;"></span><span>Pure White</span></button></div>
           <div class="pop-sec-label">Compactness (4)</div>
           <div class="density-bar">
-            <button type="button" class="density-opt" data-density="D1" title="Spacious (D1)">
-              <svg viewBox="0 0 16 13" fill="none"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="10" x2="14" y2="10"/></svg>
-              <span>Spacious</span>
-            </button>
-            <button type="button" class="density-opt active" data-density="D2" title="Standard (D2)">
-              <svg viewBox="0 0 16 13" fill="none"><line x1="2" y1="2.5" x2="14" y2="2.5"/><line x1="2" y1="6.5" x2="14" y2="6.5"/><line x1="2" y1="10.5" x2="14" y2="10.5"/></svg>
-              <span>Standard</span>
-            </button>
-            <button type="button" class="density-opt" data-density="D3" title="Compact (D3)">
-              <svg viewBox="0 0 16 13" fill="none"><line x1="2" y1="2" x2="14" y2="2"/><line x1="2" y1="5" x2="14" y2="5"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="11" x2="14" y2="11"/></svg>
-              <span>Compact</span>
-            </button>
-            <button type="button" class="density-opt" data-density="D4" title="Ultra-Compact (D4)">
-              <svg viewBox="0 0 16 13" fill="none"><line x1="2" y1="1.5" x2="14" y2="1.5"/><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="6.5" x2="14" y2="6.5"/><line x1="2" y1="9" x2="14" y2="9"/><line x1="2" y1="11.5" x2="14" y2="11.5"/></svg>
-              <span>Dense</span>
-            </button></div>
+            <button type="button" class="density-opt" data-density="D1" title="Spacious (D1)"><svg viewBox="0 0 16 13" fill="none"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="10" x2="14" y2="10"/></svg><span>Spacious</span></button>
+            <button type="button" class="density-opt active" data-density="D2" title="Standard (D2)"><svg viewBox="0 0 16 13" fill="none"><line x1="2" y1="2.5" x2="14" y2="2.5"/><line x1="2" y1="6.5" x2="14" y2="6.5"/><line x1="2" y1="10.5" x2="14" y2="10.5"/></svg><span>Standard</span></button>
+            <button type="button" class="density-opt" data-density="D3" title="Compact (D3)"><svg viewBox="0 0 16 13" fill="none"><line x1="2" y1="2" x2="14" y2="2"/><line x1="2" y1="5" x2="14" y2="5"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="11" x2="14" y2="11"/></svg><span>Compact</span></button>
+            <button type="button" class="density-opt" data-density="D4" title="Ultra-Compact (D4)"><svg viewBox="0 0 16 13" fill="none"><line x1="2" y1="1.5" x2="14" y2="1.5"/><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="6.5" x2="14" y2="6.5"/><line x1="2" y1="9" x2="14" y2="9"/><line x1="2" y1="11.5" x2="14" y2="11.5"/></svg><span>Dense</span></button></div>
         </div></div>
       <!-- Chromium App / PWA Install & Standalone Window Launcher -->
       <div class="style-menu-wrap" id="appModeWrap">
@@ -204,29 +180,14 @@
         <span class="card-tag mono" id="heatmapRangeTag">ROLLING 90 DAYS</span></div>
       <div class="heatmap-scroll">
         <div class="heatmap-matrix-wrap">
-          <div class="heatmap-dow-col mono" aria-hidden="true">
-            <span></span>
-            <span>Mon</span>
-            <span>Tue</span>
-            <span>Wed</span>
-            <span>Thu</span>
-            <span>Fri</span>
-            <span>Sat</span>
-            <span>Sun</span></div>
+          <div class="heatmap-dow-col mono" aria-hidden="true"><span></span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
           <div class="heatmap-main-col">
             <div id="heatmapMonthsRow" class="heatmap-months-row mono"></div>
             <div id="heatmapGrid" class="heatmap-grid"></div></div>
         </div></div>
       <div class="heat-legend">
         <div id="heatInspector" class="mono">Click any day square to inspect steps, tool calls, tokens, and active chats for that date.</div>
-        <div class="legend-scale mono">
-          <span>Less</span>
-          <span class="heat-cell" data-level="0" style="cursor:default" title="0 steps"></span>
-          <span class="heat-cell" data-level="1" style="cursor:default" title="Low activity (Q1)"></span>
-          <span class="heat-cell" data-level="2" style="cursor:default" title="Moderate activity (Q2)"></span>
-          <span class="heat-cell" data-level="3" style="cursor:default" title="High activity (Q3)"></span>
-          <span class="heat-cell" data-level="4" style="cursor:default" title="Peak activity (Q4)"></span>
-          <span>More</span></div>
+        <div class="legend-scale mono"><span>Less</span><span class="heat-cell" data-level="0" style="cursor:default" title="0 steps"></span><span class="heat-cell" data-level="1" style="cursor:default" title="Low activity (Q1)"></span><span class="heat-cell" data-level="2" style="cursor:default" title="Moderate activity (Q2)"></span><span class="heat-cell" data-level="3" style="cursor:default" title="High activity (Q3)"></span><span class="heat-cell" data-level="4" style="cursor:default" title="Peak activity (Q4)"></span><span>More</span></div>
       </div></section>
     <!-- Row 3 Left: Activity Velocity vs Average Pace (Sub-Daily Resolution) -->
     <section class="card col-7">
@@ -349,9 +310,60 @@
       </div>
       <div id="hierarchyProjectList" class="hier-list"></div>
     </section>
+    <!-- Row 7: Code Health, AST Integrity & Modular Hygiene (col-12) -->
+    <section class="card col-12" id="codeHealthCard">
+      <div class="card-hdr" style="flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span class="card-label">Code Health, AST Integrity &amp; Modular Hygiene</span>
+          <span class="card-tag mono" id="codeHealthCeilingBadge">CEILING: 100% PASS (0 &gt;400L)</span>
+          <span class="card-tag mono" id="codeHealthAstBadge">AST: 0 UNDEF</span>
+          <span class="card-tag mono" id="codeHealthSerenaBadge">SERENA LSP: READY</span>
+        </div>
+        <div class="mono" style="font-size:11px;color:var(--text-dim);" id="versionCompareMeta">
+          Installed: v2.5.0 · Remote: v2.4.0 (Staged Locally)
+        </div>
+      </div>
+      <div class="health-kpi-row">
+        <div class="health-kpi-item">
+          <span class="kpi-lbl">Installed vs. GitHub</span>
+          <div class="kpi-val mono" id="kpiVersionComp"><span class="status-dot-6px cyan"></span> Staged Locally</div>
+          <span class="kpi-sub" id="kpiVersionSub">v2.5.0 installed · v2.4.0 GitHub release</span>
+        </div>
+        <div class="health-kpi-item">
+          <span class="kpi-lbl">Modular Budget (&le;300L)</span>
+          <div class="kpi-val mono" id="kpiModularBudget">18 / 25 Modules</div>
+          <span class="kpi-sub" id="kpiModularSub">7 warning (301-400L) · 0 violations (&gt;400L)</span>
+        </div>
+        <div class="health-kpi-item">
+          <span class="kpi-lbl">Python AST Integrity</span>
+          <div class="kpi-val mono" id="kpiAstIntegrity">0 Undefined Names</div>
+          <span class="kpi-sub" id="kpiAstSub">All 25 modules scope-verified</span>
+        </div>
+        <div class="health-kpi-item">
+          <span class="kpi-lbl">Local Subagent LSP</span>
+          <div class="kpi-val mono" id="kpiLspStatus">Serena Ready</div>
+          <span class="kpi-sub" id="kpiLspSub">LSP v2.1.0 · --context=antigravity</span>
+        </div>
+      </div>
+      <div style="overflow-x:auto;margin-top:12px;">
+        <table class="table-clean" id="modulesTable">
+          <thead>
+            <tr>
+              <th>Module</th>
+              <th class="mono">Lines</th>
+              <th>Budget Status (&le;300L)</th>
+              <th>AST Scope Integrity</th>
+              <th class="mono">Ceiling Margin</th>
+            </tr>
+          </thead>
+          <tbody id="modulesTableBody"></tbody>
+        </table>
+      </div>
+    </section>
   </main>
-  <script src="/web/charts.js?v=2.4.1"></script>
-  <script src="/web/hierarchy.js?v=2.4.1"></script>
-  <script src="/web/app.js?v=2.4.1"></script>
+  <script src="/web/charts.js?v=2.5.0"></script>
+  <script src="/web/hierarchy.js?v=2.5.0"></script>
+  <script src="/web/health.js?v=2.5.0"></script>
+  <script src="/web/app.js?v=2.5.0"></script>
 </body>
 </html>

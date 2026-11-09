@@ -19,3 +19,6 @@ Quickly map directories, inspect source files, and extract type signatures, sche
 1. Return ONLY essential findings, symbol definitions, and exact file paths.
 2. Do not attempt to refactor or rewrite files.
 3. Be fast, concise, and structured.
+
+## Symbolic LSP & AST Navigation (`oraios/serena` + `ast_outline`)
+Prefer Serena symbolic LSP tools (`get_symbols_overview`, `find_symbol`, `find_referencing_symbols`) and `ast_outline` over reading entire files when mapping symbols, signatures, and call sites.

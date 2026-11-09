@@ -34,6 +34,7 @@ class BridgeCompatMiddleware:
             "styles.css": b"text/css; charset=utf-8",
             "charts.js": b"application/javascript; charset=utf-8",
             "hierarchy.js": b"application/javascript; charset=utf-8",
+            "health.js": b"application/javascript; charset=utf-8",
             "app.js": b"application/javascript; charset=utf-8",
             "manifest.webmanifest": b"application/manifest+json; charset=utf-8",
             "sw.js": b"application/javascript; charset=utf-8",
@@ -176,7 +177,7 @@ class BridgeCompatMiddleware:
             return
 
         if method in ("GET", "DELETE"):
-            body = json.dumps({"ok": True, "service": "agy-nexus-mcp", "version": "2.4.1", "transport": "streamable-http", "stateless": True, "web_dashboard": "/web"}).encode("utf-8")
+            body = json.dumps({"ok": True, "service": "agy-nexus-mcp", "version": "2.5.0", "transport": "streamable-http", "stateless": True, "web_dashboard": "/web"}).encode("utf-8")
             await send({
                 "type": "http.response.start",
                 "status": 200,

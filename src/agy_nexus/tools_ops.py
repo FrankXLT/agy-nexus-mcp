@@ -72,7 +72,8 @@ def get_session_tree(
         "ok": True,
         "action": "get_session_tree",
         "assistant_guidance": (
-            "STOP AND REPLY TO USER NOW (CRITICAL GEMINI WEB PLATFORM RULE: Do NOT call a second MCP tool in this turn). "
+            "STOP AND REPLY TO USER NOW: Do NOT chain a second MCP tool after a successful response (all data is already included below). "
+            "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'. "
             "Render ascii_tree verbatim inside a fenced ```text block so the user can copy untruncated session_id and workspace values."
         ),
         **tree_bundle,
@@ -89,7 +90,8 @@ def manage_background_run(
     client_tokens_reported: int = 0,
     spoken_passphrase: str = "",
 ) -> str:
-    """Monitor background jobs, inspect live transcript progress, render the 76-col Project -> Chat -> Session ID hierarchy tree (action='sessions' or action='session_status'), export session plans/walkthroughs for Gemini Notebook (action='export_notebook'), or retrieve live Dual-Pool Quota Pacing, Activity Heatmaps, and Wire Telemetry (action='stats' or action='telemetry', period='last_90d'|'current_month'|'last_month'|'last_year', style='default'|'quick'|'rich')."""
+    """Retrieve live Dual-Pool Quota Pacing, Activity Heatmaps, and Wire Telemetry (action='stats' or action='telemetry', period='last_90d'|'current_month'|'last_month'|'last_year', style='default'|'quick'|'rich'), render 76-col Project -> Chat -> Session ID hierarchy tree (action='sessions' or action='session_status'), or export session plans/walkthroughs for Gemini Notebook (action='export_notebook').
+    NOTE: For routine session 'Check-in' or checking active execution status, PREFER calling load_session_into_gemini or ask_workspace_readonly directly to avoid Gemini Mobile verb-permission collisions."""
     action_clean = action.strip().lower()
     is_stats_action = action_clean in ("stats", "dashboard", "quota", "heatmap", "telemetry", "wire", "logs")
     if not is_unlocked(spoken_passphrase):
@@ -101,7 +103,9 @@ def manage_background_run(
             "ok": True, "action": action_clean,
             "assistant_guidance": (
                 "STOP AND REPLY TO USER NOW: Display ascii_tree verbatim inside a fenced ```text code block first "
-                "so the user can copy untruncated session_id and workspace values."
+                "so the user can copy untruncated session_id and workspace values. "
+                "Do NOT chain a second MCP tool after a successful response (all data is already included below). "
+                "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'."
             ),
             **tree_bundle,
         })
@@ -109,7 +113,11 @@ def manage_background_run(
         export_res = export_notebook_bundle(brain_dir=AGY_BRAIN_DIR, db_file=AGY_DB_FILE, bg_dir=AGY_BG_DIR, projects_map=_load_projects_map())
         return _compact_json({
             "ok": True, "action": "export_notebook",
-            "assistant_guidance": "STOP AND REPLY TO USER NOW: Session walkthrough.md and implementation_plan.md artifacts have been exported with SHA-256 deduplication.",
+            "assistant_guidance": (
+                "STOP AND REPLY TO USER NOW: Session walkthrough.md and implementation_plan.md artifacts have been exported with SHA-256 deduplication. "
+                "Do NOT chain a second MCP tool after a successful response (all data is already included below). "
+                "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'."
+            ),
             **export_res,
         })
     if action_clean in ("stats", "dashboard", "quota", "heatmap"):
@@ -118,13 +126,21 @@ def manage_background_run(
         compact_bundle = {k: v for k, v in bundle.items() if k not in drop_keys}
         return _compact_json({
             "ok": True, "action": "stats",
-            "assistant_guidance": "STOP AND REPLY TO USER NOW: Display ascii_mobile_report inside a fenced ```text code block first followed by a concise 3-bullet summary of Google 20x Pool share, Partner Weekly Pacing vs Target, and Top Projects.",
+            "assistant_guidance": (
+                "STOP AND REPLY TO USER NOW: Display ascii_mobile_report inside a fenced ```text code block first followed by a concise 3-bullet summary of Google 20x Pool share, Partner Weekly Pacing vs Target, and Top Projects. "
+                "Do NOT chain a second MCP tool after a successful response (all data is already included below). "
+                "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'."
+            ),
             **compact_bundle,
         })
     if action_clean in ("telemetry", "wire", "logs"):
         return _compact_json({
             "ok": True, "action": "telemetry",
-            "assistant_guidance": "STOP AND REPLY TO USER NOW with the wire telemetry and quota summary below.",
+            "assistant_guidance": (
+                "STOP AND REPLY TO USER NOW with the wire telemetry and quota summary below. "
+                "Do NOT chain a second MCP tool after a successful response (all data is already included below). "
+                "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'."
+            ),
             "wire_telemetry": get_wire_telemetry_summary(AGY_BG_DIR, limit=25),
             "quota_and_pools": get_live_quota_and_pool_status(AGY_DATA_DIR, AGY_CONFIG_DIR),
         })
@@ -181,7 +197,11 @@ def manage_background_run(
     if action_clean == "tail":
         return json.dumps({
             "ok": True, "conversation_id": conv_id, "job_id": safe_job_id,
-            "assistant_guidance": "STOP AND REPLY TO USER NOW with the transcript tail below.",
+            "assistant_guidance": (
+                "STOP AND REPLY TO USER NOW with the transcript tail below. "
+                "Do NOT chain a second MCP tool after a successful response (all data is already included below). "
+                "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'."
+            ),
             "pending_approval": pending_app, "tail_lines_count": len(parsed_tail), "transcript_tail": parsed_tail,
         }, indent=2)
     if action_clean == "stop":
@@ -196,7 +216,8 @@ def manage_background_run(
     return _compact_json({
         "ok": True, "action": "status", "conversation_id": conv_id, "job_id": safe_job_id,
         "assistant_guidance": (
-            "STOP AND REPLY TO USER NOW: Do NOT chain another tool call in this turn. "
+            "STOP AND REPLY TO USER NOW: Do NOT chain a second MCP tool after a successful response (all data is already included below). "
+            "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'. "
             "If the user asked for stats, display ascii_mobile_report inside a ```text block now; otherwise report the job/session status."
         ),
         "ascii_mobile_report": stats_fallback.get("ascii_mobile_report", ""),
@@ -272,9 +293,8 @@ def list_models_and_agents(
     out_payload: dict[str, Any] = {
         "ok": True, "status": "OK",
         "assistant_guidance": (
-            "STOP AND REPLY TO USER NOW (CRITICAL GEMINI WEB PLATFORM RULE: Google Gemini Web freezes on 'Trying to connect...' "
-            "if you invoke two MCP tools in the same turn. NEVER call a second MCP tool in this turn—all agents, skills, "
-            "plugin bundles, rules, quota_and_pools, and hygiene standards are included below)."
+            "STOP AND REPLY TO USER NOW: Do NOT chain a second MCP tool after a successful response (all data is already included below). "
+            "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'."
         ),
         "active_profile": active_profile, "quota_and_pools": quota_status,
         "customization_scope_policy": CUSTOMIZATION_SCOPE_POLICY, "session_customization_scope": session_scope,

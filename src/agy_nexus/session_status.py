@@ -8,6 +8,7 @@ import re
 import sqlite3
 import time
 from typing import Any
+from . import __version__
 from agy_nexus.config import (
     AGY_BG_DIR,
     AGY_BRAIN_DIR,
@@ -141,6 +142,7 @@ def _get_selected_session_quick_status(target_conv_id: str = "") -> dict[str, An
         return {}
     ws_path = str(SESSION_STATE.get("session_workspace_map", {}).get(conv_id) or SESSION_STATE.get("selected_workspace") or "")
     info: dict[str, Any] = {"conversation_id": conv_id, "workspace_path": ws_path}
+    info["installed_version"] = __version__
     is_running = False
     other_running: list[dict[str, str]] = []
     if AGY_DB_FILE.is_file():

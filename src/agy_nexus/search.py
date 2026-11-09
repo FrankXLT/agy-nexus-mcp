@@ -12,6 +12,7 @@ import sqlite3
 import subprocess
 from typing import Any
 
+from agy_nexus.ast_outline import find_symbol_callers
 from agy_nexus.config import AGY_DATA_DIR, AGY_DB_FILE, AGY_GITLAB_DIR
 
 def _run_repo_search(target_repo: Path, patterns: list[str], per_repo_cap: int, fixed_strings: bool = False) -> list[str]:
@@ -172,9 +173,12 @@ def _search_workspaces_and_history(search_query: str, primary_ws: Path | None = 
             except Exception:
                 pass
 
-    return {
+    res: dict[str, Any] = {
         "available_repositories": available_repos,
         "configured_mcp_servers": configured_mcps,
         "code_search_matches": grep_matches[:35],
         "historical_session_matches": fts_matches[:8],
     }
+    if q and re.match(r"^[a-zA-Z_][a-zA-Z0-9_]{2,64}$", q) and primary_ws and primary_ws.is_dir():
+        res["symbol_callers"] = find_symbol_callers(q, primary_ws, max_refs=6)
+    return res

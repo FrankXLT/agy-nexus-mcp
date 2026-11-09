@@ -237,6 +237,7 @@ function renderDashboard(b) {
         `;
         tbody.appendChild(tr); });
       if (typeof renderHierarchyPanel === "function") renderHierarchyPanel(b);
+      renderCodeHealth(b.code_health, b.version || "2.5.0");
     }
     applyThemeAndDensity(state.surface, state.density);
     document.querySelectorAll(".tab-btn").forEach((btn) => {

@@ -29,7 +29,7 @@ MODULAR_HYGIENE_STANDARDS: dict[str, Any] = {
     "core_principles": [
         f"Keep source files between 100 and {TARGET_FILE_LINES} lines (hard split ceiling at {HARD_MAX_FILE_LINES} lines) so every module fits 100% inside a single MCP file read without truncation.",
         "Decompose by cohesive domain capability (e.g., config, models/types, db/repository, services, routes/handlers, utils) with clean public interfaces and zero circular imports—never create micro-file sprawl.",
-        "Maintain strict root-directory hygiene: keep only project manifests (README.md, pyproject.toml/package.json, docker-compose.yml, .env.example, .gitignore) in the repository root; place code in src/ (or package dir), tests in tests/, operational scripts in scripts/, and temporary notes strictly in scratch/.",
+        "Maintain strict root-directory hygiene: keep only project manifests (README.md, pyproject.toml/package.json, docker-compose.yml, .env.example, .gitignore) in the repository root; place code in src/ (or package dir), tests in tests/, and operational scripts in scripts/. Store temporary notes and scratch files strictly in the session brain directory (~/.gemini/antigravity/brain/<conv_id>/scratch/), NEVER in a repo-root scratch/ directory that could shadow handoff files.",
         "When modifying a legacy file that already exceeds 400 lines, extract new features or subsystems into a dedicated helper module rather than expanding the monolith.",
     ],
 }
@@ -40,7 +40,7 @@ When standing up or modifying this project, enforce the following rules automati
 1. **Verified Facts vs. Hypotheses Checklist**: Label any unverified assumption as a hypothesis; verify live state, configs, and schemas before mutating code.
 2. **File Size Budget (`100–{TARGET_FILE_LINES} lines`, Hard Ceiling `{HARD_MAX_FILE_LINES} lines`)**: Keep every source file under `{TARGET_FILE_LINES}` lines (`<= 12 KB`) so each module fits completely in a single MCP read and remains easy for surgical edits.
 3. **Cohesive Domain Decomposition (No Micro-File Sprawl)**: Group code by domain responsibility (`config`, `models`, `repository`, `services`, `routes`, `utils`) with zero circular dependencies.
-4. **Root-Directory Hygiene & Brownfield Rule**: Keep the repo root clean (manifests only; code in `src/`, tests in `tests/`, scripts in `scripts/`, scratch in `scratch/`). If a target file exceeds `{HARD_MAX_FILE_LINES}` lines, extract newly added logic into a companion module.
+4. **Root-Directory Hygiene & Scratch File Isolation**: Keep the repo root clean (manifests only; code in `src/`, tests in `tests/`, scripts in `scripts/`). Store temporary scratch scripts/notes strictly in the session brain directory (`~/.gemini/antigravity/brain/<conv_id>/scratch/`), NEVER in a repo-root `scratch/` directory that could shadow handoff files. If a target file exceeds `{HARD_MAX_FILE_LINES}` lines, extract newly added logic into a companion module.
 """
 
 def parse_inline_line_spec(raw_sub: str) -> tuple[str, int, int, int]:

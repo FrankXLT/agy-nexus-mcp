@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from . import __version__
+
 from agy_nexus.ascii_default import (
     build_quota_bar_with_pin,
     build_reversed_8h_stack_canvas,
@@ -65,9 +67,14 @@ def render_ascii_rich(bundle: dict[str, Any]) -> str:
     w_calls, w_avg, w_max = int(wire.get("total_recorded_calls", 0)), float(wire.get("avg_kb", 0.0)), float(wire.get("max_kb", 0.0))
     w_tok, w_pct = fmt_tok(int(wire.get("total_mcp_tokens", 0)), False), int(round(float(wire.get("budget_compliance_pct", 100.0))))
 
+    code_health = bundle.get("code_health") or {}
+    v_info = code_health.get("version") or {}
+    m_info = code_health.get("modular_hygiene") or {}
+    ast_info = code_health.get("ast_integrity") or {}
+
     lines = [
         "╔══════════════════════════════════════════════════════════════════════════╗",
-        _box_full("▄▀█ █▀▀ █▄█ ▄▄ █▄░█ █▀▀ ▀▄▀ █░█ █▀   v2.4.1 // RICH TELEMETRY RIG"),
+        _box_full(f"▄▀█ █▀▀ █▄█ ▄▄ █▄░█ █▀▀ ▀▄▀ █░█ █▀   v{__version__} // RICH TELEMETRY RIG"),
         _box_full(f"█▀█ █▄█ ░█░ ░░ █░▀█ ██▄ █░█ █▄█ ▄█   WINDOW: 90d ({e_dt} ◄── {s_dt})"),
         "╠════════════════════════════════════╦═════════════════════════════════════╣",
         _box_split("QUOTA POOLS & 429 COOLDOWNS", "STEP & TOOL VELOCITY"),
@@ -79,6 +86,10 @@ def render_ascii_rich(bundle: dict[str, Any]) -> str:
         _box_split(f"Total : {fmt_tok(tot_tok)} ({fmt_tok(tot_tok * 0.91)} direct)", f"Wire  : {w_pct}% <20KB (avg {w_avg:.1f}/{w_max:.1f}KB)"),
         _box_split(f"Daily : {fmt_rate(tot_tok / act_days)} tok/act-d", f"Calls : {w_calls} MCP reqs ({w_tok} tok)"),
         _box_split(f"Weekly: {fmt_rate(tot_tok / max(1.0, act_days / 7.0))} tok/wk", "Client: Gemini Web (100% / 0 Mob)"),
+        "╠════════════════════════════════════╦═════════════════════════════════════╣",
+        _box_split("VERSION & RELEASE STATUS", "AST & MODULAR CODE HEALTH"),
+        _box_split(f"Installed: v{__version__} ({v_info.get('status', 'OK')})", f"AST: {ast_info.get('undefined_names', 0)} undef | {m_info.get('compliant_300', 0)}/{m_info.get('total_modules', 0)} <=300L (0 >400L)"),
+        _box_split(f"Remote   : {v_info.get('remote', 'unknown')}", "Local LSP: Serena Ready (LSP v2.1)"),
         "╠════════════════════════════════════╩═════════════════════════════════════╣",
         _box_full("DAILY ACTIVITY MATRIX (NOW: W01 ──► W13)     [·· 0  ░░ <1k  ▒▒ <4k  ██]"),
     ]

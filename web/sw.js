@@ -1,8 +1,9 @@
-const CACHE_NAME = "agy-nexus-overwatch-v2.4.1";
-const SHELL_ASSETS = ["/web", "/web/styles.css?v=2.4.1",
-  "/web/charts.js?v=2.4.1",
-  "/web/hierarchy.js?v=2.4.1",
-  "/web/app.js?v=2.4.1",
+const CACHE_NAME = "agy-nexus-overwatch-v2.5.0";
+const SHELL_ASSETS = ["/web", "/web/styles.css?v=2.5.0",
+  "/web/charts.js?v=2.5.0",
+  "/web/hierarchy.js?v=2.5.0",
+  "/web/health.js?v=2.5.0",
+  "/web/app.js?v=2.5.0",
   "/web/manifest.webmanifest", "/web/icon.svg", "/web/icon-192.png", "/web/icon-512.png"];
 
 self.addEventListener("install", (event) => {

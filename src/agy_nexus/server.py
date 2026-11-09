@@ -54,7 +54,7 @@ from agy_nexus.workspace import _resolve_and_read_files
 
 def run_self_test() -> int:
     """Run automated verification of deadbolt, normalization, session listing, stats engine, and FastMCP app routes."""
-    print("[*] Running agy-nexus-mcp v2.4.1 automated self-test...")
+    print("[*] Running agy-nexus-mcp v2.5.0 automated self-test...")
 
     # 1. Normalization & Passphrase Verification
     test_phrase = "Example Bridge 2026!"
@@ -182,7 +182,33 @@ def run_self_test() -> int:
         test_job_file.unlink(missing_ok=True)
     print("  [+] Content-Aware Skill Auto-Router, In-Flight Mutex & Session Health Warning: PASS")
 
-    print("[✓] All agy-nexus-mcp v2.4.1 self-tests completed successfully!")
+    # 10. AST Undefined-Name Verifier, 1-Call outline: Reader & End-to-End load_session_into_gemini
+    from agy_nexus.ast_outline import scan_package_undefined_names
+    from agy_nexus.tools_session import load_session_into_gemini
+    from agy_nexus.tools_workspace import ask_workspace_readonly
+    undef_map = scan_package_undefined_names(Path(__file__).resolve().parent)
+    assert not undef_map, f"Undefined Python names detected in agy_nexus: {undef_map}"
+    cfg.PASS_HASH = expected_hash
+    try:
+        if sessions:
+            loaded_raw = load_session_into_gemini("1", spoken_passphrase=test_phrase)
+            loaded_obj = json.loads(loaded_raw)
+            assert loaded_obj.get("ok") is True and "execution_status" in loaded_obj and "visual_artifacts" in loaded_obj and "compaction_count" in loaded_obj, f"load_session_into_gemini failed: {loaded_obj}"
+        outline_raw = ask_workspace_readonly(
+            question="Outline handoff.py",
+            file_subpath="outline:src/agy_nexus/handoff.py",
+            workspace=str(AGY_GITLAB_DIR / "antigravity-config"),
+            spoken_passphrase=test_phrase,
+        )
+        outline_obj = json.loads(outline_raw)
+        fd = outline_obj.get("file_details") or {}
+        files_out = fd.get("files") or ([fd] if "path" in fd or "mode" in fd else [])
+        assert files_out and files_out[0].get("mode") == "ast_outline" and files_out[0].get("ast_outline", {}).get("symbol_count", 0) > 0, f"outline: mode failed: {outline_obj}"
+    finally:
+        cfg.PASS_HASH = orig_hash
+    print("  [+] AST Undefined-Name Verifier (0 errors), 1-Call outline: Reader & load_session_into_gemini: PASS")
+
+    print("[✓] All agy-nexus-mcp v2.5.0 self-tests completed successfully!")
     return 0
 
 
@@ -195,7 +221,7 @@ def main() -> None:
     if len(PASS_HASH) != 64:
         sys.exit("FATAL: PASS_HASH must be a 64-character SHA-256 hex string. Run init_secrets.py to configure.")
 
-    print(f"[*] Starting agy-nexus-mcp v2.4.1 on {BIND_HOST}:{BIND_PORT} (stateless_http=True, json_response=True)", flush=True)
+    print(f"[*] Starting agy-nexus-mcp v2.5.0 on {BIND_HOST}:{BIND_PORT} (stateless_http=True, json_response=True)", flush=True)
     print(f"[*] MCP Route: /{PATH_SECRET[:6]}...{PATH_SECRET[-4:]}/mcp | Web Overwatch: /{PATH_SECRET[:6]}...{PATH_SECRET[-4:]}/web", flush=True)
     raw_app = mcp.http_app(
         path=f"/{PATH_SECRET}/mcp",

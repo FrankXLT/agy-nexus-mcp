@@ -1,6 +1,6 @@
 [project]
 name = "agy-nexus-mcp"
-version = "2.4.1"
+version = "2.5.0"
 description = "AGY-NEXUS-MCP: Antigravity Mission Control, Cross-Session FTS5 Memory, Dual-Pool Quota Overwatch, Activity Heatmap, Three-Tier ASCII Telemetry & Chromium PWA Dashboard"
 readme = "README.md"
 license = { file = "LICENSE" }

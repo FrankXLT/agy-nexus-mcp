@@ -13,21 +13,14 @@ import subprocess
 from typing import Any
 import urllib.request
 
+from agy_nexus.ast_outline import build_file_outline
 from agy_nexus.config import (
-    AGY_BRAIN_DIR,
-    AGY_CONFIG_DIR,
-    AGY_DATA_DIR,
-    AGY_GITLAB_DIR,
-    AGY_HOST_BRIDGE_URL,
-    SESSION_STATE,
-    _save_session_state,
+    AGY_BRAIN_DIR, AGY_CONFIG_DIR, AGY_DATA_DIR, AGY_GITLAB_DIR,
+    AGY_HOST_BRIDGE_URL, SESSION_STATE, _save_session_state,
 )
 from agy_nexus.hygiene import (
-    MAX_FILE_CHARS,
-    MAX_FILES_PER_CALL,
-    MAX_TOTAL_FILE_CHARS,
-    parse_inline_line_spec,
-    slice_file_content,
+    MAX_FILE_CHARS, MAX_FILES_PER_CALL, MAX_TOTAL_FILE_CHARS,
+    parse_inline_line_spec, slice_file_content,
 )
 from agy_nexus.inventory import resolve_customization_file
 from agy_nexus.sessions import _load_projects_map
@@ -116,10 +109,17 @@ def _resolve_and_read_files(
     for raw_sub in items_slice:
         per_file_cap = min(max_chars_per_file, max(4000, remaining_total_chars))
         cleaned = re.sub(r"^file://", "", raw_sub.strip())
+        outline_only = False
+        if cleaned.startswith("outline:"):
+            outline_only = True
+            cleaned = cleaned[8:].strip()
         m_repo_prefix = re.match(r"^\[([^\]]+)\]\s*(.*)", cleaned)
         repo_prefix = m_repo_prefix.group(1).strip() if m_repo_prefix else ""
         if m_repo_prefix:
             cleaned = m_repo_prefix.group(2).strip()
+        if cleaned.startswith("outline:"):
+            outline_only = True
+            cleaned = cleaned[8:].strip()
         cleaned_no_line, in_start, in_end, in_center = parse_inline_line_spec(cleaned)
 
         candidates: list[Path] = []
@@ -140,6 +140,7 @@ def _resolve_and_read_files(
                     candidates.append((sroot / norm_sub[len("packages/"):]).resolve())
                 else:
                     candidates.append((sroot / "packages" / norm_sub).resolve())
+                candidates.append((sroot / "sidecars/ag-bridge-mcp" / norm_sub).resolve())
                 if norm_sub.startswith(f"{sroot.name}/"):
                     candidates.append((sroot / norm_sub[len(sroot.name) + 1:]).resolve())
             if session_dir and session_dir.is_dir():
@@ -195,26 +196,28 @@ def _resolve_and_read_files(
         elif target_path.is_file():
             try:
                 full_text = target_path.read_text(encoding="utf-8", errors="replace")
-                slice_meta = slice_file_content(
-                    full_text=full_text,
-                    clean_path=cleaned_no_line or target_path.name,
-                    per_file_cap=per_file_cap,
-                    explicit_start_line=start_line,
-                    explicit_end_line=end_line,
-                    inline_start_line=in_start,
-                    inline_end_line=in_end,
-                    center_line=in_center,
-                )
-                remaining_total_chars = max(4000, remaining_total_chars - len(slice_meta.get("content", "")))
-                entry_obj: dict[str, Any] = {
-                    "requested": raw_sub,
-                    "path": str(target_path),
-                    "bytes": target_path.stat().st_size,
-                    **slice_meta,
-                }
-                if auto_resolved_ws:
-                    entry_obj["auto_resolved_workspace"] = auto_resolved_ws
-                files_list.append(entry_obj)
+                if outline_only:
+                    ol = build_file_outline(target_path, full_text, ws_root=search_roots[0], max_chars=3800, include_callers=True)
+                    entry_obj = {
+                        "requested": raw_sub, "path": str(target_path), "bytes": target_path.stat().st_size,
+                        "mode": "ast_outline", "total_lines": ol["total_lines"], "truncated": False,
+                        "ast_outline": ol, "content": ol["formatted_outline"],
+                    }
+                    if auto_resolved_ws: entry_obj["auto_resolved_workspace"] = auto_resolved_ws
+                    files_list.append(entry_obj)
+                else:
+                    slice_meta = slice_file_content(
+                        full_text=full_text, clean_path=cleaned_no_line or target_path.name,
+                        per_file_cap=per_file_cap, explicit_start_line=start_line, explicit_end_line=end_line,
+                        inline_start_line=in_start, inline_end_line=in_end, center_line=in_center,
+                    )
+                    remaining_total_chars = max(4000, remaining_total_chars - len(slice_meta.get("content", "")))
+                    entry_obj = {"requested": raw_sub, "path": str(target_path), "bytes": target_path.stat().st_size, **slice_meta}
+                    if slice_meta.get("truncated"):
+                        entry_obj["ast_outline"] = build_file_outline(target_path, full_text, ws_root=search_roots[0], max_chars=1400, include_callers=False)
+                    if auto_resolved_ws:
+                        entry_obj["auto_resolved_workspace"] = auto_resolved_ws
+                    files_list.append(entry_obj)
             except Exception as e:
                 files_list.append({"requested": raw_sub, "error": f"Error reading file: {e}"})
         else:

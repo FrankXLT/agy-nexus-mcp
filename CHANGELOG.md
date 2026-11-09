@@ -4,6 +4,22 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] — 2026-11-09
+
+### Fixed
+- **Gemini Mobile MCP Tool Collisions & Same-Turn Fallback (`tools_session.py`, `tools_ops.py`, `tools_workspace.py`, `config.py`)**:
+  - Designated `load_session_into_gemini` and `ask_workspace_readonly` as the primary tools for routine session "Check-in" and status checks, resolving client-side `permission_denied` policy blocks triggered on Gemini mobile by the `manage_*` verb.
+  - Designated `manage_background_run` specifically for `action='stats'`, `'telemetry'`, `'sessions'`, or `'export_notebook'`.
+  - Refined the strict 1-MCP-tool-per-turn rule across all tool docstrings and `assistant_guidance`: while chaining a second MCP call after a successful response remains prohibited (to prevent UI connection hangs), Gemini is now explicitly permitted to invoke `ask_workspace_readonly` or `load_session_into_gemini` once as an automatic same-turn fallback whenever a call encounters `permission_denied` or an immediate error, eliminating conversational stalls.
+- **`sendMessage` Path Shadowing & Absolute Path Resolution (`src/agy_nexus/handoff.py`)**:
+  - Updated `sendMessage` payload construction in `send_handoff_and_resume` to use the exact absolute `handoff_file` path (`str(handoff_file)`) rather than relative `scratch/gemini_research_handoff.md`, preventing path resolution failures when sessions switch working directories.
+  - Embedded `send_prompt_body` directly in the `sendMessage` payload (up to `2,500` characters), ensuring follow-up task instructions are immediately visible in the active session context.
+- **Session Brain Scratch Isolation & Root Shadow File Elimination (`src/agy_nexus/hygiene.py`)**:
+  - Removed untracked repo-root `scratch/` and `task.md` shadow files from the repository root.
+  - Updated `MODULAR_HYGIENE_STANDARDS` and `MODULAR_HYGIENE_MARKDOWN_BLOCK` to mandate storing temporary scratch scripts and notes strictly inside the session brain directory (`~/.gemini/antigravity/brain/<conv_id>/scratch/`), explicitly forbidding repository-root `scratch/` directories that could shadow handoff files.
+- **Local Service Reload Clarification During Stage & Preview (`src/agy_nexus/handoff.py`)**:
+  - Clarified `stage_gate_block` and `sendMessage` gate directives: while `allow_chained_publish=False` prohibits `git push`, `publish_to_github.py`, and remote production stack redeployments, it explicitly mandates restarting the local `ag-bridge-mcp` service/container on the local host whenever Python or web files change so updates take effect in memory immediately.
+
 ---
 
 ## [2.4.1] — 2026-11-09
@@ -24,8 +40,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Created `src/agy_nexus/session_status.py` with `check_inflight_handoff_mutex()` returning `status="ALREADY_RUNNING"` with `active_job_id` and `elapsed_seconds` when a background job started `< 300` seconds ago, eliminating duplicate wakeup collisions across multi-turn handoffs.
   - Added binary transcript compaction scanning (`count_session_compactions`) detecting `# Resuming from a compaction` and active execution step pacing (`calculate_step_pacing`) excluding idle inter-turn gaps.
   - Integrated `session_health_warning` into `load_session_into_gemini` and `list_saved_sessions`, alerting when `step_count > 1500` or `compaction_count >= 10` and advising clean conversation rotation via `create_new_session=True` before Cortex tool amnesia occurs.
+- **Native AST Symbol Outliner, Caller Reference Counter & Undefined-Name Verifier (`src/agy_nexus/ast_outline.py`, `src/agy_nexus/workspace.py`, `src/agy_nexus/tools_workspace.py`, `src/agy_nexus/search.py`)**:
+  - Created `src/agy_nexus/ast_outline.py` (`<= 240` lines, zero external dependencies, MIT-compatible) keeping `agy-nexus-mcp` at **10 tools total** while embedding 1-call symbol discovery directly inside `ask_workspace_readonly`:
+    - **Python (`ast`)**: Extracts module imports, classes, methods, and `def`/`async def` signatures with exact line spans (`L024-L068 def _resolve_skill_directives(...) -> list[str]`), plus an automatic two-pass lexical scope **undefined-name / broken-import check** (`check_python_undefined_names` / `scan_package_undefined_names`).
+    - **JS / TS / HTML / CSS / YAML**: Extracts exported functions, classes, DOM `#id` containers, CSS selectors, and top-level YAML keys with exact line numbers.
+    - **Caller Reference Counter (`find_symbol_callers`)**: Attaches `git grep -n -w` caller counts and top `file:line` references when outlining files or searching symbol identifiers.
+    - **1-Call `outline:` Prefix & Auto-Truncation Outlines**: Supports `file_subpath="outline:src/agy_nexus/handoff.py"` for full symbol/caller maps and automatically attaches a compact `< 1.5 KB` `ast_outline` whenever a source file read is truncated (`total_lines > shown_end_line`).
+- **Hybrid `oraios/serena` (Local LSP Subagents) + `ast_outline` (Remote Gemini MCP) Architecture (`agents/*.md`, `src/agy_nexus/handoff.py`, `README.md`)**:
+  - Integrated `oraios/serena` (`serena-agent`, `--context=antigravity`) for local Antigravity subagents (`flash-scout`, `flash-surgeon`, `flash-auditor`), pairing Serena's local LSP symbolic navigation/editing (`get_symbols_overview`, `find_symbol`, `find_referencing_symbols`, `replace_symbol_body`) with `ast_outline.py` for remote Gemini Web/Mobile MCP sessions.
+- **Installed vs. Published GitHub Release Telemetry & Code Health Engine (`src/agy_nexus/code_health.py`, `src/agy_nexus/stats.py`, `src/agy_nexus/ascii_default.py`, `src/agy_nexus/ascii_rich.py`, `src/agy_nexus/session_tree.py`, `web/`)**:
+  - Created `src/agy_nexus/code_health.py` (241 lines <= 250) providing non-blocking GitHub latest release/tag comparisons against [`github.com/FrankXLT/agy-nexus-mcp`](https://github.com/FrankXLT/agy-nexus-mcp) with a 3600s disk cache (`github_release_cache.json`), 2.0s socket timeout, and offline fallback.
+  - Distinctly categorizes and renders 3 version states: `Up to Date`, `Update Available`, and `Staged Locally` (`v2.4.1 > v2.4.0`).
+  - Surfaced installed version (`v2.4.1`) in ASCII telemetry across 40-col `quick`, 72-col `default`, 76-col `rich` views, and the 76-col session tree header.
+  - Implemented **Row 7: Code Health, AST Integrity & Modular Hygiene** in the `/web` Quiet UI dashboard, featuring a 6px status dot in the topbar brand title, 4 summary KPI cards, and a clean tabular module breakdown tracking file line budgets (`<=300L`, `301-400L`, `>400L`), live AST undefined-name counts, and local Serena LSP readiness.
 - **Modular Architecture & File Hygiene**:
-  - Modularized session status logic into `src/agy_nexus/session_status.py` (203 lines), bringing `sessions.py` down to 240 lines and keeping all 27 Python modules strictly `<= 357` lines (hard ceiling `<= 400` lines).
+  - Modularized session status logic into `src/agy_nexus/session_status.py` (205 lines), AST symbol outlining into `src/agy_nexus/ast_outline.py` (214 lines), and code health telemetry into `src/agy_nexus/code_health.py` (241 lines), keeping all 25 package modules strictly `<= 357` lines (hard ceiling `<= 400` lines).
+
+### Fixed
+- **Missing `discover_visual_artifacts` Import in `load_session_into_gemini` (`src/agy_nexus/tools_session.py`, `src/agy_nexus/server.py`)**:
+  - Restored `from .media import discover_visual_artifacts` in `tools_session.py`, eliminating the runtime `NameError` when calling `load_session_into_gemini`, and added both an end-to-end `load_session_into_gemini` assertion and a package-wide AST undefined-name scan (`scan_package_undefined_names`) to `ag_bridge.py --self-test`.
+- **Explicit `workspace_path` Pinning on `create_new_session=True` & Stateless Worker Context Restoration (`src/agy_nexus/handoff.py`, `src/agy_nexus/config.py`, `src/agy_nexus/tools_session.py`)**:
+  - Fixed `send_handoff_and_resume(create_new_session=True)` so an explicitly passed or extracted `eff_workspace_path` takes priority over the project's default first repo in `bridge_response.get("workspace_path")`.
+  - Updated `load_session_into_gemini` and `pin_session_context` to restore pinned `workspace`, `project_id`, and `title` from `SESSION_STATE["active_contexts"][conv_id]` across stateless HTTP workers.
 
 ---
 

@@ -22,3 +22,6 @@ Execute specific code edits, refactors, or feature implementations on an explici
 2. Apply precise modifications using `replace_file_content` or `write_to_file`. Preserve all unrelated comments and docstrings.
 3. Validate syntax or run targeted unit tests if applicable.
 4. Report the exact diff summary and file paths back to the Orchestrator.
+
+## Symbolic LSP & AST Navigation (`oraios/serena` + `ast_outline`)
+Prefer Serena symbolic editing (`find_symbol`, `replace_symbol_body`, `insert_after_symbol`, `insert_before_symbol`) and targeted line-range `replace_file_content` edits while keeping modules `<= 300 lines`.

@@ -35,6 +35,12 @@ from agy_nexus.config import (  # noqa: E402, F401
     normalize_phrase,
     verify_passphrase,
 )
+from agy_nexus.ast_outline import (  # noqa: E402, F401
+    build_file_outline,
+    check_python_undefined_names,
+    find_symbol_callers,
+    scan_package_undefined_names,
+)
 from agy_nexus.handoff import _resolve_skill_directives, send_handoff_and_resume  # noqa: E402, F401
 from agy_nexus.middleware import BridgeCompatMiddleware  # noqa: E402, F401
 from agy_nexus.server import main, run_self_test  # noqa: E402, F401

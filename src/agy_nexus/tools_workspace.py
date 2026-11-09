@@ -19,6 +19,7 @@ from agy_nexus.config import (
     mcp,
     pin_session_context,
 )
+from agy_nexus.ast_outline import build_file_outline
 from agy_nexus.hygiene import MAX_DIFF_CHARS, MAX_FILE_CHARS, MAX_TOTAL_FILE_CHARS, slice_git_diff
 from agy_nexus.routing import _resolve_session_identifier
 from agy_nexus.search import _get_configured_mcp_servers, _search_workspaces_and_history
@@ -67,7 +68,8 @@ def ask_workspace_readonly(
     workspace: str = "",
     spoken_passphrase: str = "",
 ) -> str:
-    """Read-only codebase explorer querying 1..12 comma-separated files (supports line ranges via start_line/end_line or inline 'path/file.py:100-350' syntax, plus 'skill:<name>' / 'agent:<name>' / 'rule:<name>'), git grep across local repositories, and SQLite FTS5 conversation history. Pass session_identifier or workspace to pin this call in parallel chats without mutating other chats' context."""
+    """Read-only codebase explorer and secondary 'Check-in' status reader querying 1..12 comma-separated files (supports line ranges via start_line/end_line or inline 'path/file.py:100-350' syntax, plus 'outline:path/to/file.py' for 1-call AST symbol + caller outlines and automatic ast_outline on truncated files, 'skill:<name>' / 'agent:<name>' / 'rule:<name>'), git grep across local repositories, and SQLite FTS5 conversation history. Pass session_identifier or workspace to pin this call in parallel chats without mutating other chats' context.
+    NOTE: This tool returns selected_session_status automatically alongside file details, making it safe for live check-ins and fallback queries."""
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
     conv_id, ws, extra_uris = _resolve_pinned_context(session_identifier, workspace, tool_name="ask_workspace_readonly")
@@ -116,9 +118,10 @@ def ask_workspace_readonly(
         "conversation_id": conv_id,
         "workspace": auto_ws or str(ws),
         "assistant_guidance": (
-            "STOP AND REPLY TO USER NOW (CRITICAL GEMINI WEB PLATFORM RULE: Google Gemini Web freezes on 'Trying to connect...' "
-            "if you invoke two MCP tools in the same turn. NEVER call a second MCP tool in this turn—selected_session_status, "
-            "file_details, and code_search_matches are ALL included below)."
+            "STOP AND REPLY TO USER NOW: Inspection complete. "
+            "Do NOT chain a second MCP tool after a successful response (selected_session_status, file_details, and code_search_matches are ALL included below). "
+            "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'. "
+            "Synthesize your analysis or answer the user's question directly."
         ),
         "selected_session_status": _get_selected_session_quick_status(conv_id),
         "file_details": file_result,
@@ -136,7 +139,7 @@ def ask_workspace_readonly(
         out_ws["code_search_matches"] = out_ws.get("code_search_matches", [])[:5]
         out_json = _compact_json(out_ws)
     if len(out_json.encode("utf-8")) > 19200 and isinstance(out_ws.get("file_details"), dict):
-        files_arr = out_ws["file_details"].get("files") or []
+        files_arr = out_ws["file_details"].get("files") or ([out_ws["file_details"]] if "path" in out_ws["file_details"] else [])
         while len(out_json.encode("utf-8")) > 19200 and files_arr:
             largest = max(files_arr, key=lambda f: len(str(f.get("content", ""))))
             content_str = str(largest.get("content", ""))
@@ -146,6 +149,11 @@ def ask_workspace_readonly(
             new_len = max(800, len(content_str) - max(excess, 1500))
             largest["content"] = content_str[:new_len] + "\n... [compacted for <20KB wire ceiling — use start_line/end_line for remaining lines]"
             largest["truncated"] = True
+            if "ast_outline" not in largest and largest.get("path"):
+                try:
+                    largest["ast_outline"] = build_file_outline(Path(largest["path"]), max_chars=1200, include_callers=False)
+                except Exception:
+                    pass
             out_json = _compact_json(out_ws)
     return out_json
 
@@ -175,7 +183,8 @@ def inspect_git_diff(
         return _compact_json({
             "assistant_guidance": (
                 "STOP AND REPLY TO USER NOW: Multi-repository drift audit completed in a single turn. "
-                "Do NOT chain a second tool call in this turn."
+                "Do NOT chain a second MCP tool after a successful response (all data is already included below). "
+                "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'."
             ),
             "selected_session_status": _get_selected_session_quick_status(),
             **drift_bundle,
@@ -244,9 +253,9 @@ def inspect_git_diff(
                         "ok": True,
                         "workspace": str(ws_res),
                         "assistant_guidance": (
-                            "STOP AND REPLY TO USER NOW (CRITICAL GEMINI WEB PLATFORM RULE: Google Gemini Web freezes on 'Trying to connect...' "
-                            "if you invoke two MCP tools in the same turn. NEVER call a second MCP tool in this turn—status_short, diff_stat, "
-                            "untracked_files, and diff are ALL included below)."
+                            "STOP AND REPLY TO USER NOW: Git diff retrieved. "
+                            "Do NOT chain a second MCP tool after a successful response (status_short, diff_stat, untracked_files, and diff are ALL included below). "
+                            "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'."
                         ),
                         "selected_session_status": _get_selected_session_quick_status(),
                         "configured_mcp_servers": configured_mcps,
@@ -282,8 +291,9 @@ def inspect_git_diff(
             "ok": True,
             "workspace": host_res.get("workspace", ws_str),
             "assistant_guidance": (
-                "STOP AND REPLY TO USER NOW (CRITICAL GEMINI WEB PLATFORM RULE: Google Gemini Web freezes on 'Trying to connect...' "
-                "if you invoke two MCP tools in the same turn. NEVER call a second MCP tool in this turn)."
+                "STOP AND REPLY TO USER NOW: Host git inspection complete. "
+                "Do NOT chain a second MCP tool after a successful response (all data is already included below). "
+                "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'."
             ),
             "selected_session_status": _get_selected_session_quick_status(),
             "configured_mcp_servers": configured_mcps,

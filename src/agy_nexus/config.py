@@ -169,6 +169,14 @@ def pin_session_context(
         oldest_k = min(contexts.keys(), key=lambda k: float(contexts[k].get("last_used_at") or 0.0))
         if oldest_k != conv_id:
             contexts.pop(oldest_k, None)
+    if eff_ws:
+        SESSION_STATE["session_workspace_map"][conv_id] = eff_ws
+    if eff_proj_id:
+        SESSION_STATE["session_project_map"][conv_id] = eff_proj_id
+    if eff_title:
+        SESSION_STATE["session_title_map"][conv_id] = eff_title
+    if eff_uris:
+        SESSION_STATE["session_workspace_uris_map"][conv_id] = list(eff_uris)
     if set_default:
         SESSION_STATE["selected_session"] = conv_id
         if eff_ws:
@@ -265,8 +273,8 @@ mcp = FastMCP(
         "Enables Gemini to authenticate via voice passphrase, discover and inspect active Antigravity conversations, "
         "explore local codebases in read-only mode, audit 4-layer Skills/Agents/Rules, view live Dual-Pool Quota & Activity Heatmaps, and dispatch synthesized research handoffs.\n"
         "CRITICAL GEMINI WEB / MOBILE PLATFORM RULES (MANDATORY):\n"
-        "1. STRICT ONE-TOOL-CALL-PER-TURN RULE (PREVENTS 'TRYING TO CONNECT' UI HANG): Google Gemini Web's Connected Apps UI freezes on 'Trying to connect...' "
-        "whenever a model attempts two back-to-back MCP tool calls in a single user turn. NEVER invoke more than ONE MCP tool per turn—always output your reply to the user immediately after receiving the result of your 1 tool call.\n"
+        "1. STRICT ONE-TOOL-CALL-PER-TURN RULE: Do NOT chain a second MCP tool after a successful response (all data is already included). "
+        "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'.\n"
         "2. ONE-SHOT BUNDLED SUPER-CALLS (GET ALL FILES & CONTEXT IN 1 CALL):\n"
         "- Do NOT call `list_saved_sessions` first when the user asks to inspect or load a session: call `load_session_into_gemini(session_identifier='1'|'latest'|<project_or_title_keyword>|<uuid>, include_files='path1,path2')` directly in 1 shot! It resolves `'1'`, `'latest'`, project names, or title keywords automatically and returns `task.md`, `implementation_plan.md`, `walkthrough.md`, `execution_status`, `git_summary`, `visual_artifacts`, and `included_files`.\n"
         "- When exploring code with `ask_workspace_readonly`, batch all needed files in a single comma-separated `file_subpath='a.py,b.py,skill:name'` (up to 12 files per call). Even if you do not know the filenames yet and only pass `question` / `search_query`, `ask_workspace_readonly` automatically greps the repository AND reads the top matching files in that same single call!\n"

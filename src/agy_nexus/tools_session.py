@@ -34,6 +34,7 @@ from agy_nexus.hygiene import (
     MODULAR_HYGIENE_STANDARDS,
     _compact_markdown,
 )
+from .media import discover_visual_artifacts
 from agy_nexus.routing import _resolve_session_identifier
 from agy_nexus.search import _search_workspaces_and_history
 from agy_nexus.session_status import (
@@ -81,8 +82,9 @@ def unlock_sessions(spoken_passphrase: str, search_query: str = "", style: str =
         "ok": True, "locked": False,
         "message": "Deadbolt unlocked. Session list and live telemetry stats retrieved successfully.",
         "assistant_guidance": (
-            "STOP AND REPLY TO USER NOW (CRITICAL GEMINI WEB PLATFORM RULE: Google Gemini Web freezes on 'Trying to connect...' "
-            "if you invoke two MCP tools in the same turn. NEVER call a second MCP tool in this turn). "
+            "STOP AND REPLY TO USER NOW: Deadbolt unlocked and live telemetry stats retrieved. "
+            "Do NOT chain a second MCP tool after a successful response (all data is already included). "
+            "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'. "
             "If the user asked for stats, display ascii_mobile_report inside a ```text block now; otherwise present the active sessions."
         ),
         "ttl_seconds": TTL_SECONDS, "selected_session": sel_id,
@@ -108,7 +110,7 @@ def lock_bridge() -> str:
 def list_saved_sessions(
     limit: int = 15, status_filter: str = "ALL", include_subagents: bool = False, spoken_passphrase: str = ""
 ) -> str:
-    """List recent Antigravity conversations with execution status, project, workspace, step count, and task previews. (Tip: To inspect a specific session directly in 1 call, use load_session_into_gemini with session_identifier='1'|'latest'|<keyword> instead of calling list_saved_sessions first.)"""
+    """List recent Antigravity conversations with execution status, project, workspace, step count, and task previews. (Tip: For a routine 'Check-in', use load_session_into_gemini with session_identifier='1'|'latest'|<keyword> directly in 1 call instead of calling list_saved_sessions first.)"""
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
     sessions = _list_saved_sessions_internal(limit=max(1, min(limit, 30)), status_filter=status_filter, include_subagents=include_subagents)
@@ -133,8 +135,10 @@ def list_saved_sessions(
     out_obj: dict[str, Any] = {
         "ok": True,
         "assistant_guidance": (
-            "STOP AND REPLY TO USER NOW (CRITICAL GEMINI WEB PLATFORM RULE: Google Gemini Web freezes on 'Trying to connect...' "
-            "if you invoke two MCP tools in the same turn. NEVER call load_session_into_gemini or ask_workspace_readonly in this same turn—present the sessions, task previews, and top_session_detail below to the user immediately)."
+            "STOP AND REPLY TO USER NOW: Sessions listed above. "
+            "Do NOT chain a second MCP tool after a successful response (task previews and top_session_detail are already included below). "
+            "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'. "
+            "Present the conversations and ask the user which session to inspect or resume."
         ),
         "count": len(sessions), "available_projects": list(projects_map.values()),
         "top_session_detail": top_detail, "sessions": sessions,
@@ -147,8 +151,8 @@ def list_saved_sessions(
 
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "", include_files: str = "") -> str:
-    """Load complete conversation context in a single call (live execution_status, git_summary, visual_artifacts with 30-min signed /web/media/ links, task.md, implementation_plan.md, walkthrough.md, and recent transcript turns).
-    IMPORTANT: Because execution_status and git_summary are already included in this response, DO NOT chain manage_background_run or inspect_git_diff after calling this tool—reply directly to the user!
+    """Primary tool for session 'Check-in' and full context loading in a single call (live execution_status, git_summary, visual_artifacts with 30-min signed /web/media/ links, task.md, implementation_plan.md, walkthrough.md, and recent transcript turns).
+    IMPORTANT: This is the designated tool for checking in on running or completed Antigravity sessions. Because execution_status and git_summary are already included in this response, do NOT chain another tool after a successful response. However, if a call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly once as a same-turn fallback.
     """
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
@@ -157,10 +161,11 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
     session_dir = AGY_BRAIN_DIR / conv_id if conv_id else AGY_BRAIN_DIR / "__missing__"
     if not conv_id or not session_dir.is_dir():
         return json.dumps({"ok": False, "error": f"Session directory not found for session_identifier '{ident}'."}, indent=2)
-    workspace = SESSION_STATE["session_workspace_map"].get(conv_id, "")
-    workspace_uris: list[str] = []
-    project_id = SESSION_STATE["session_project_map"].get(conv_id, "")
-    conv_title = SESSION_STATE["session_title_map"].get(conv_id, "")
+    active_ctx = (SESSION_STATE.get("active_contexts") or {}).get(conv_id, {})
+    workspace = str(active_ctx.get("workspace") or SESSION_STATE["session_workspace_map"].get(conv_id, ""))
+    workspace_uris: list[str] = list(active_ctx.get("workspace_uris") or [])
+    project_id = str(active_ctx.get("project_id") or SESSION_STATE["session_project_map"].get(conv_id, ""))
+    conv_title = str(active_ctx.get("title") or SESSION_STATE["session_title_map"].get(conv_id, ""))
     db_status_info: dict[str, Any] = _get_selected_session_quick_status(conv_id)
     if AGY_DB_FILE.is_file():
         try:
@@ -288,9 +293,10 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
         "conversation_id": conv_id, "project_id": project_id,
         "project_name": project_name, "workspace_path": workspace,
         "assistant_guidance": (
-            "STOP AND REPLY TO USER NOW (CRITICAL GEMINI WEB PLATFORM RULE: Google Gemini Web freezes on 'Trying to connect...' "
-            "if you invoke two MCP tools in the same turn. NEVER call a second MCP tool in this turn—execution_status, git_summary, "
-            "visual_artifacts, task_content, implementation_plan, walkthrough, and recent_transcript_turns are ALL included below)."
+            "STOP AND REPLY TO USER NOW: Session context loaded successfully. "
+            "Do NOT chain a second MCP tool after a successful response (execution_status, git_summary, visual_artifacts, task_content, implementation_plan, walkthrough, and recent_transcript_turns are ALL included below). "
+            "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly once as a same-turn fallback without asking the user to reply 'Go'. "
+            "Answer the user's question directly or explain what Antigravity did in this session."
         ),
         "project_hygiene_standards": MODULAR_HYGIENE_STANDARDS, "execution_status": db_status_info,
         "compaction_count": db_status_info.get("compaction_count", 0),

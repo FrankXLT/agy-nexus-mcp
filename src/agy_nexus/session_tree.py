@@ -12,6 +12,7 @@ from pathlib import Path
 import time
 from typing import Any
 
+from agy_nexus import __version__
 from agy_nexus.config import AGY_BG_DIR, AGY_GITLAB_DIR, SESSION_STATE
 from agy_nexus.hygiene import TTL_SECONDS
 from agy_nexus.sessions import _list_saved_sessions_internal, _load_projects_map
@@ -261,7 +262,7 @@ def render_ascii_session_tree(
 
     lines = [
         top_border,
-        _box_line("AGY-NEXUS // PROJECT -> CHAT -> SESSION ID HIERARCHY (COPY-READY)"),
+        _box_line(f"AGY-NEXUS v{__version__} // PROJECT -> CHAT -> SESSION ID HIERARCHY (COPY-READY)"),
         mid_border,
         _box_line(f"ACTIVE SLOTS: {slots_n} | PINNED: {pinned_n} | AUTO-PATH: {auto_n} | TTL: {ttl_m}m"),
         _box_line(f"3-2-1 BACKUP: {b_sha} ({b_lbl} · {backup_info.get('bundle_size_kb', 0)} KB · {backup_info.get('age', '')})"),

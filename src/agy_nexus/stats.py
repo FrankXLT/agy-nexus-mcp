@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-agy-nexus-mcp — Usage, Quota, Sub-Daily Stacked Series, Token Metering & Three-Tier ASCII Engine (v2.4.1)
+agy-nexus-mcp — Usage, Quota, Sub-Daily Stacked Series, Token Metering & Three-Tier ASCII Engine (v2.5.0)
 """
 
 from __future__ import annotations
@@ -14,6 +14,8 @@ from typing import Any
 
 from agy_nexus.ascii_default import render_ascii_default, render_ascii_quick
 from agy_nexus.ascii_rich import render_ascii_rich
+from . import __version__
+from .code_health import get_code_health_summary
 from agy_nexus.telemetry_scanner import (
     CACHE_VERSION,
     DISPLAY_TZ,
@@ -291,7 +293,7 @@ def build_nexus_stats_bundle(
     parent_cnt = active_parent_convs or sum(1 for v in db_convs.values() if not v.get("is_subagent"))
     kpis_obj = {"total_conversations": parent_cnt, "total_subagents_spawned": sum(v["runs"] for v in subagent_roles.values()), "window_steps": win_steps_sum, "period_steps": win_steps_sum, "window_tool_calls": win_tools_sum, "period_tool_calls": win_tools_sum, "window_tokens": win_tokens_sum, "active_days": active_days, "avg_daily_steps": round(win_steps_sum / act_d, 1), "tok_per_day": round(win_tokens_sum / act_d), "tok_per_week": round(win_tokens_sum / act_w), "peak_day": peak}
     bundle = {
-        "server": "agy-nexus-mcp", "version": "2.4.1", "generated_at": now_loc.isoformat(), "style": (style or "default").strip().lower(),
+        "server": "agy-nexus-mcp", "version": __version__, "generated_at": now_loc.isoformat(), "style": (style or "default").strip().lower(),
         "period": {"key": pk, "label": p_label, "start_date": s_iso, "end_date": e_iso, "total_days": len([x for x in heatmap_series if x.get("in_window")]), "active_days": active_days, "resolution": resolution_label},
         "kpis": kpis_obj, "summary": kpis_obj, "quota_and_pools": quota_info, "model_usage_vs_target": model_comp, "subagent_role_breakdown": subagent_roles,
         "subagent_list": subagent_list, "all_workspaces": all_ws_list, "top_workspaces": all_ws_list[:10],
@@ -300,6 +302,7 @@ def build_nexus_stats_bundle(
         "subagent_series": {"keys": sub_keys, "dates": chart_labels, "layers": sub_layers, "resolution": resolution_label},
         "heatmap_series": heatmap_series, "wire_telemetry": get_wire_telemetry_summary(bg_dir, limit=15),
         "project_session_tree": tree_bundle, "routing_telemetry": tree_bundle.get("routing_telemetry", {}), "backup_321": tree_bundle.get("backup_321", {}),
+        "code_health": get_code_health_summary(),
     }
     bundle["ascii_report_default"], bundle["ascii_report_quick"], bundle["ascii_report_rich"] = render_ascii_default(bundle), render_ascii_quick(bundle), render_ascii_rich(bundle)
     selected_ascii = render_ascii_stats(bundle, style=style)
