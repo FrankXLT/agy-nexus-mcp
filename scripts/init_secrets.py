@@ -68,6 +68,7 @@ def main() -> None:
 
     subdomain_hash = ""
     path_secret = ""
+    host_bridge_token = ""
 
     if args.keep_existing_urls and env_path.is_file():
         try:
@@ -77,13 +78,17 @@ def main() -> None:
                     subdomain_hash = line.split("=", 1)[1].strip().strip("'\"")
                 elif line.startswith("PATH_SECRET="):
                     path_secret = line.split("=", 1)[1].strip().strip("'\"")
+                elif line.startswith("HOST_BRIDGE_TOKEN="):
+                    host_bridge_token = line.split("=", 1)[1].strip().strip("'\"")
         except Exception:
             pass
 
     if not subdomain_hash:
-        subdomain_hash = secrets.token_hex(6)  # 12 hex characters
+        subdomain_hash = secrets.token_hex(6)       # 12 hex characters
     if not path_secret:
-        path_secret = secrets.token_hex(24)    # 48 hex characters
+        path_secret = secrets.token_hex(24)         # 48 hex characters (192 bits)
+    if not host_bridge_token:
+        host_bridge_token = secrets.token_hex(32)   # 64 hex characters (256 bits)
 
     env_path.parent.mkdir(parents=True, exist_ok=True)
     full_url = f"https://ag-{subdomain_hash}.{args.domain}/{path_secret}/mcp"
@@ -97,9 +102,12 @@ def main() -> None:
         f"SUBDOMAIN_HASH={subdomain_hash}\n"
         f"PATH_SECRET={path_secret}\n"
         f"PASS_HASH={pass_hash}\n"
+        f"HOST_BRIDGE_TOKEN={host_bridge_token}\n"
         f"TTL_SECONDS={args.ttl}\n"
         f"BIND_HOST=0.0.0.0\n"
-        f"BIND_PORT=8765\n\n"
+        f"BIND_PORT=8765\n"
+        f"HOST_BRIDGE_BIND_HOST=127.0.0.1\n"
+        f"HOST_BRIDGE_BIND_PORT=8098\n\n"
         f"# --- Context Window & Pagination Budgets ---\n"
         f"MAX_FILE_CHARS={args.max_file_chars}\n"
         f"MAX_TOTAL_FILE_CHARS=24000\n"

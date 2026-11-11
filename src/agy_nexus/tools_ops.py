@@ -8,6 +8,7 @@ import re
 import sqlite3
 from typing import Any
 import urllib.request
+import agy_nexus.config as cfg
 from agy_nexus.config import (
     AGY_BG_DIR,
     AGY_BRAIN_DIR,
@@ -15,7 +16,6 @@ from agy_nexus.config import (
     AGY_DATA_DIR,
     AGY_DB_FILE,
     AGY_GITLAB_DIR,
-    AGY_HOST_BRIDGE_URL,
     AGY_PRESENCE_DIR,
     ALLOW_LOCKED_STATS,
     LOCKED_RESPONSE,
@@ -273,9 +273,9 @@ def list_models_and_agents(
     ls_discovery: dict[str, Any] = {}
     try:
         req = urllib.request.Request(
-            AGY_HOST_BRIDGE_URL,
+            cfg.AGY_HOST_BRIDGE_URL,
             data=json.dumps({"action": "discover"}).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers=cfg.get_host_bridge_headers(),
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=5) as resp:

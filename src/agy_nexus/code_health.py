@@ -29,7 +29,7 @@ _CACHE_TTL: float = 30.0
 
 
 def _parse_semver(ver: str | None) -> tuple[int, ...]:
-    """Parse semantic version string into integer tuple (e.g. 'v2.5.0' -> (2, 5, 0))."""
+    """Parse semantic version string into integer tuple (e.g. 'v2.6.0' -> (2, 6, 0))."""
     if not ver:
         return ()
     cleaned = str(ver).strip().lstrip("vV")

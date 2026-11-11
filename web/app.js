@@ -6,20 +6,23 @@ function renderDashboard(b) {
       const kpis = b.kpis || b.summary || {};
       const w = b.wire_telemetry || {};
       const periodObj = typeof b.period === "object" ? b.period : { key: b.period || "last_90d", active_days: kpis.active_days || 0 };
-      let argonPct = 70.3, flashPct = 29.6, claudePct = 0.1, gptPct = 0.0;
+      let carbonPct = 0.0, argonPct = 70.3, flashPct = 29.6, claudePct = 0.1, gptPct = 0.0;
       if (Array.isArray(b.model_usage_vs_target)) {
         b.model_usage_vs_target.forEach((row) => {
+          if (row.model_key === "carbon") carbonPct = Number(row.actual_pct || 0);
           if (row.model_key === "argon_pro") argonPct = Number(row.actual_pct || 0);
           if (row.model_key === "flash") flashPct = Number(row.actual_pct || 0);
           if (row.model_key === "claude_partner") claudePct = Number(row.actual_pct || 0);
           if (row.model_key === "gpt_oss") gptPct = Number(row.actual_pct || 0); });
       }
-      const googleTot = Math.min(100, Number((argonPct + flashPct).toFixed(1)));
+      const googleTot = Math.min(100, Number((carbonPct + argonPct + flashPct).toFixed(1)));
       const partnerTot = Math.max(0, Number((claudePct + gptPct).toFixed(1)));
       document.getElementById("kpiProfileTag").textContent = String(q.active_tier_profile || q.active_profile || "ultra-20x").toUpperCase();
       document.getElementById("kpiGoogleShare").textContent = googleTot.toFixed(1) + "%";
       document.getElementById("kpiGoogleStatus").textContent = gPool.status || "HEALTHY";
       document.getElementById("kpiGoogleBar").style.width = googleTot + "%";
+      const elCarbonKpi = document.getElementById("kpiCarbonPct");
+      if (elCarbonKpi) elCarbonKpi.textContent = carbonPct.toFixed(1) + "%";
       document.getElementById("kpiArgonPct").textContent = argonPct.toFixed(1) + "%";
       document.getElementById("kpiFlashPct").textContent = flashPct.toFixed(1) + "%";
       const ceilPct = pPace.recommended_cumulative_ceiling_pct ?? 28.6;
@@ -56,8 +59,10 @@ function renderDashboard(b) {
       document.getElementById("kpiRpcCount").textContent = w.total_recorded_calls ?? 0;
       document.getElementById("kpiTopClient").textContent = topProdEntry ? topProdEntry[0] : "Gemini Mobile";
       const setModelRow = (idTxt, idBar, val) => {
-        document.getElementById(idTxt).textContent = val.toFixed(1) + "%";
-        document.getElementById(idBar).style.width = Math.min(100, val) + "%"; };
+        const elT = document.getElementById(idTxt), elB = document.getElementById(idBar);
+        if (elT) elT.textContent = val.toFixed(1) + "%";
+        if (elB) elB.style.width = Math.min(100, val) + "%"; };
+      setModelRow("rowCarbonActual", "barCarbonActual", carbonPct);
       setModelRow("rowArgonActual", "barArgonActual", argonPct);
       setModelRow("rowFlashActual", "barFlashActual", flashPct);
       setModelRow("rowClaudeActual", "barClaudeActual", claudePct);
@@ -237,7 +242,7 @@ function renderDashboard(b) {
         `;
         tbody.appendChild(tr); });
       if (typeof renderHierarchyPanel === "function") renderHierarchyPanel(b);
-      renderCodeHealth(b.code_health, b.version || "2.5.0");
+      renderCodeHealth(b.code_health, b.version || "2.6.0");
     }
     applyThemeAndDensity(state.surface, state.density);
     document.querySelectorAll(".tab-btn").forEach((btn) => {

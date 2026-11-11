@@ -81,17 +81,77 @@ def generate_session_health_warning(step_count: int, compaction_count: int) -> s
         )
     return ""
 
+def check_context_exceeded(conv_id: str, brain_dir: Path = AGY_BRAIN_DIR) -> bool:
+    """Check if the session encountered a genuine runtime 'Context window exceeded' error in recent transcript turns.
+
+    Ignores user prompts, subagent tool arguments, git diffs, and conversational mentions.
+    """
+    if not conv_id:
+        return False
+    tpath = brain_dir / conv_id / ".system_generated" / "logs" / "transcript.jsonl"
+    if not tpath.is_file():
+        return False
+    try:
+        # Read the tail of the transcript file
+        with open(tpath, "r", encoding="utf-8", errors="ignore") as f:
+            lines = f.readlines()
+        for line in reversed(lines[-60:]):
+            if "Context window exceeded" not in line and "context_length_exceeded" not in line:
+                continue
+            try:
+                entry = json.loads(line)
+            except Exception:
+                continue
+            # Ignore user input and prompts
+            if entry.get("type") in ("USER_INPUT", "user") or entry.get("source") in ("USER_EXPLICIT", "user"):
+                continue
+            status = str(entry.get("status") or "").upper()
+            content = str(entry.get("content") or "")
+            # Ignore diffs and tool output blocks
+            if "[diff_block" in content or "diff --git" in content or "replace_file_content" in content:
+                continue
+            # Check explicit ERROR status or tool call execution failure
+            if status == "ERROR":
+                err_text = str(entry.get("error") or content)
+                if "Context window exceeded" in err_text or "context_length_exceeded" in err_text:
+                    return True
+            # Real runtime tool failure emitted by model/planner
+            if content.strip().startswith("An error occurred while calling the tool") and "Context window exceeded" in content:
+                return True
+            for k in ("error", "stateDetail", "failureMessage", "error_message"):
+                v = str(entry.get(k) or "")
+                if ("Context window exceeded" in v or "context_length_exceeded" in v) and "[diff_block" not in v:
+                    return True
+        return False
+    except Exception:
+        return False
+
+def get_session_context_budget(step_count: int, context_exceeded: bool = False) -> str:
+    """Classify session context budget into GREEN, AMBER, or ROLLOVER_RECOMMENDED."""
+    if step_count > 350 or context_exceeded:
+        return "ROLLOVER_RECOMMENDED (>350 steps or context exceeded)"
+    if step_count >= 250:
+        return "AMBER (250-350 steps)"
+    return "GREEN (<250 steps)"
+
 def get_session_telemetry(conv_id: str, brain_dir: Path = AGY_BRAIN_DIR, step_count: int = 0) -> dict[str, Any]:
     """Retrieve compaction count, active step pacing, and health warning for a conversation."""
     if not conv_id:
-        return {"compaction_count": 0, "avg_step_seconds": 0.0, "session_health_warning": ""}
+        return {
+            "compaction_count": 0, "avg_step_seconds": 0.0, "session_health_warning": "",
+            "context_budget": "GREEN (<250 steps)", "context_exceeded": False,
+        }
     tpath = brain_dir / conv_id / ".system_generated" / "logs" / "transcript.jsonl"
     avg_s, _, compactions = calculate_step_pacing(tpath)
     warning = generate_session_health_warning(step_count, compactions)
+    ctx_exceeded = check_context_exceeded(conv_id, brain_dir)
+    budget = get_session_context_budget(step_count, ctx_exceeded)
     return {
         "compaction_count": compactions,
         "avg_step_seconds": avg_s,
         "session_health_warning": warning,
+        "context_budget": budget,
+        "context_exceeded": ctx_exceeded,
     }
 
 def check_inflight_handoff_mutex(
@@ -203,3 +263,83 @@ def _get_selected_session_quick_status(target_conv_id: str = "") -> dict[str, An
     telem = get_session_telemetry(conv_id, AGY_BRAIN_DIR, step_count=info.get("step_count", 0))
     info.update(telem)
     return info
+
+def extract_prior_session_baton(
+    prev_conv_id: str, brain_dir: Path = AGY_BRAIN_DIR, ws_path: str = ""
+) -> str:
+    """Extract a compact Prior Session Baton from a previous session's brain folder and git status."""
+    if not prev_conv_id:
+        return ""
+    p_dir = brain_dir / prev_conv_id
+    if not p_dir.is_dir():
+        return ""
+
+    parts: list[str] = [
+        f"## Prior Session Baton ({prev_conv_id})",
+        f"- **Previous Session ID**: `{prev_conv_id}`",
+    ]
+
+    t_file = p_dir / "task.md"
+    if t_file.is_file():
+        try:
+            t_text = t_file.read_text(encoding="utf-8", errors="replace")
+            t_lines = [l.strip() for l in t_text.splitlines() if l.strip() and l.strip().startswith(("#", "- [x]", "- [/]", "- [ ]"))]
+            t_summary = "\n".join(t_lines[:16]) if t_lines else t_text[:500]
+            parts.append(f"- **Prior Task State**:\n{t_summary}")
+        except Exception:
+            pass
+
+    w_file = p_dir / "walkthrough.md"
+    if w_file.is_file():
+        try:
+            w_text = w_file.read_text(encoding="utf-8", errors="replace")
+            w_lines = [l.strip() for l in w_text.splitlines() if l.strip() and l.strip().startswith(("#", "### "))]
+            w_summary = "\n".join(w_lines[:8]) if w_lines else w_text[:400]
+            parts.append(f"- **Prior Walkthrough Highlights**:\n{w_summary}")
+        except Exception:
+            pass
+
+    git_st = ""
+    if ws_path and Path(ws_path).is_dir():
+        try:
+            import subprocess
+            proc = subprocess.run(
+                ["git", "-c", "safe.directory=*", "status", "--short"],
+                cwd=ws_path, capture_output=True, text=True, timeout=3, check=False,
+            )
+            git_st = proc.stdout.strip()
+        except Exception:
+            pass
+    if git_st:
+        st_lines = git_st.splitlines()
+        if len(st_lines) > 20:
+            git_st = "\n".join(st_lines[:20]) + f"\n... [{len(st_lines) - 20} more files]"
+        parts.append(f"- **Current Git Working Tree Status**:\n```text\n{git_st}\n```")
+
+    return "\n\n".join(parts) + "\n\n"
+
+def find_latest_session_for_workspace(ws_path: str, db_file: Path = AGY_DB_FILE) -> str:
+    """Find the most recent conversation_id for a given workspace path."""
+    if not ws_path or not db_file.is_file():
+        return ""
+    try:
+        con = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True)
+        rows = con.execute(
+            "SELECT conversation_id, workspace_uris FROM conversation_summaries WHERE parent_conversation_id IS NULL OR parent_conversation_id = '' ORDER BY last_modified_time DESC LIMIT 40"
+        ).fetchall()
+        con.close()
+        for cid, uris_raw in rows:
+            if uris_raw:
+                try:
+                    uris = json.loads(uris_raw)
+                    for u in uris:
+                        clean_u = re.sub(r"^file://", "", str(u)).rstrip("/")
+                        if clean_u == ws_path or clean_u in ws_path or ws_path in clean_u:
+                            return str(cid)
+                except Exception:
+                    if ws_path in str(uris_raw):
+                        return str(cid)
+    except Exception:
+        pass
+    return ""
+

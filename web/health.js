@@ -1,6 +1,6 @@
-// Code Health, Modular Hygiene & AST Integrity UI Renderer for /web Overwatch Dashboard (v2.5.0)
+// Code Health, Modular Hygiene & AST Integrity UI Renderer for /web Overwatch Dashboard (v2.6.0)
 function renderCodeHealth(ch, installedVer) {
-  installedVer = installedVer || "2.5.0";
+  installedVer = installedVer || "2.6.0";
   let dotClass = "cyan";
   const status = (ch && ch.version && ch.version.status) || "staged_locally";
   if (status === "up_to_date") dotClass = "green";

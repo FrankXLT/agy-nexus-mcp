@@ -13,7 +13,7 @@
   <link rel="icon" type="image/svg+xml" href="/web/icon.svg" />
   <link rel="apple-touch-icon" href="/web/icon-192.png" />
   <title>AGY-NEXUS-MCP — Usage, Quota &amp; Project Activity Dashboard</title>
-  <link rel="stylesheet" href="/web/styles.css?v=2.5.0" />
+  <link rel="stylesheet" href="/web/styles.css?v=2.6.0b" />
 </head>
 <body>
   <!-- Top Navigation Bar -->
@@ -21,7 +21,7 @@
     <div class="brand">
       <span class="sq-dot"></span>
       <div>
-        <div class="brand-title mono">AGY-NEXUS-MCP <span class="version-tag" id="versionTag" title="Installed version"><span class="status-dot-6px cyan" id="versionDot"></span><span id="versionLabel">v2.5.0</span></span> <span style="font-weight:400;color:var(--text-dim)">// DASHBOARD</span></div>
+        <div class="brand-title mono">AGY-NEXUS-MCP <span class="version-tag" id="versionTag" title="Installed version"><span class="status-dot-6px cyan" id="versionDot"></span><span id="versionLabel">v2.6.0</span></span> <span style="font-weight:400;color:var(--text-dim)">// DASHBOARD</span></div>
         <div class="brand-sub" id="subtitleStatus">Usage, Model Quotas, Subagents, Tokens &amp; Project Activity</div></div>
     </div>
     <div class="controls">
@@ -117,7 +117,7 @@
           <div class="bar-marker" style="left:90%" title="Target: >=90% on Google Pool"></div></div>
       </div>
       <div class="card-ftr mono">
-        <div class="ftr-item"><span>TARGET</span>&gt;= 90.0%</div>
+        <div class="ftr-item"><span>CARBON 4</span><strong id="kpiCarbonPct">0.0%</strong></div>
         <div class="ftr-item"><span>ARGON 4</span><strong id="kpiArgonPct">63.8%</strong></div>
         <div class="ftr-item"><span>FLASH 3.8</span><strong id="kpiFlashPct">30.4%</strong></div></div>
     </article>
@@ -208,37 +208,21 @@
         <span class="card-tag mono">90% GOOGLE / 10% PARTNER</span></div>
       <div id="modelAllocationList" style="margin: 4px 0 8px;">
         <div class="model-row">
-          <div class="model-top">
-            <span><strong>Gemini 4 Argon</strong> (Pro)</span>
-            <span class="mono"><strong id="rowArgonActual">63.8%</strong> <span style="color:var(--text-dim)">/ Target 65%</span></span></div>
-          <div class="bar-track" style="margin:4px 0">
-            <div class="bar-fill focal" id="barArgonActual" style="width:63.8%"></div>
-            <div class="bar-marker" style="left:65%"></div></div>
-        </div>
+          <div class="model-top"><span><strong>Gemini 4 Carbon</strong> (Main / Apex)</span><span class="mono"><strong id="rowCarbonActual">0.0%</strong> <span style="color:var(--text-dim)">/ Target 25%</span></span></div>
+          <div class="bar-track" style="margin:4px 0"><div class="bar-fill focal" id="barCarbonActual" style="width:0%"></div><div class="bar-marker" style="left:25%"></div></div></div>
         <div class="model-row">
-          <div class="model-top">
-            <span><strong>Gemini 3.8 Flash</strong> (Fast Tasks)</span>
-            <span class="mono"><strong id="rowFlashActual">30.4%</strong> <span style="color:var(--text-dim)">/ Target 25%</span></span></div>
-          <div class="bar-track" style="margin:4px 0">
-            <div class="bar-fill" id="barFlashActual" style="width:30.4%"></div>
-            <div class="bar-marker" style="left:25%"></div></div>
-        </div>
+          <div class="model-top"><span><strong>Gemini 4 Argon</strong> (Pro)</span><span class="mono"><strong id="rowArgonActual">63.8%</strong> <span style="color:var(--text-dim)">/ Target 40%</span></span></div>
+          <div class="bar-track" style="margin:4px 0"><div class="bar-fill focal" id="barArgonActual" style="width:63.8%"></div><div class="bar-marker" style="left:40%"></div></div></div>
         <div class="model-row">
-          <div class="model-top">
-            <span><strong>Claude Sonnet / Opus 5.5</strong> (Partner)</span>
-            <span class="mono"><strong id="rowClaudeActual">5.1%</strong> <span style="color:var(--text-dim)">/ Target &lt;=8%</span></span></div>
-          <div class="bar-track" style="margin:4px 0">
-            <div class="bar-fill" id="barClaudeActual" style="width:5.1%"></div>
-            <div class="bar-marker" style="left:8%"></div></div>
-        </div>
+          <div class="model-top"><span><strong>Gemini 3.8 Flash</strong> (Fast Tasks)</span><span class="mono"><strong id="rowFlashActual">30.4%</strong> <span style="color:var(--text-dim)">/ Target 25%</span></span></div>
+          <div class="bar-track" style="margin:4px 0"><div class="bar-fill" id="barFlashActual" style="width:30.4%"></div><div class="bar-marker" style="left:25%"></div></div></div>
         <div class="model-row">
-          <div class="model-top">
-            <span><strong>GPT-OSS 120B</strong> (Backup)</span>
-            <span class="mono"><strong id="rowGptActual">0.7%</strong> <span style="color:var(--text-dim)">/ Target &lt;=2%</span></span></div>
-          <div class="bar-track" style="margin:4px 0">
-            <div class="bar-fill" id="barGptActual" style="width:0.7%"></div>
-            <div class="bar-marker" style="left:2%"></div></div>
-        </div></div>
+          <div class="model-top"><span><strong>Claude Sonnet / Opus 5.5</strong> (Partner)</span><span class="mono"><strong id="rowClaudeActual">5.1%</strong> <span style="color:var(--text-dim)">/ Target &lt;=8%</span></span></div>
+          <div class="bar-track" style="margin:4px 0"><div class="bar-fill" id="barClaudeActual" style="width:5.1%"></div><div class="bar-marker" style="left:8%"></div></div></div>
+        <div class="model-row">
+          <div class="model-top"><span><strong>GPT-OSS 120B</strong> (Backup)</span><span class="mono"><strong id="rowGptActual">0.7%</strong> <span style="color:var(--text-dim)">/ Target &lt;=2%</span></span></div>
+          <div class="bar-track" style="margin:4px 0"><div class="bar-fill" id="barGptActual" style="width:0.7%"></div><div class="bar-marker" style="left:2%"></div></div></div>
+      </div>
       <div class="card-ftr mono">
         <div class="ftr-item"><span>GOOGLE POOL</span><strong id="ftrGoogleTot">94.2%</strong></div>
         <div class="ftr-item"><span>PARTNER POOL</span><strong id="ftrPartnerTot">5.8%</strong></div>
@@ -320,30 +304,14 @@
           <span class="card-tag mono" id="codeHealthSerenaBadge">SERENA LSP: READY</span>
         </div>
         <div class="mono" style="font-size:11px;color:var(--text-dim);" id="versionCompareMeta">
-          Installed: v2.5.0 · Remote: v2.4.0 (Staged Locally)
+          Installed: v2.6.0 · Remote: v2.5.0 (Staged Locally)
         </div>
       </div>
       <div class="health-kpi-row">
-        <div class="health-kpi-item">
-          <span class="kpi-lbl">Installed vs. GitHub</span>
-          <div class="kpi-val mono" id="kpiVersionComp"><span class="status-dot-6px cyan"></span> Staged Locally</div>
-          <span class="kpi-sub" id="kpiVersionSub">v2.5.0 installed · v2.4.0 GitHub release</span>
-        </div>
-        <div class="health-kpi-item">
-          <span class="kpi-lbl">Modular Budget (&le;300L)</span>
-          <div class="kpi-val mono" id="kpiModularBudget">18 / 25 Modules</div>
-          <span class="kpi-sub" id="kpiModularSub">7 warning (301-400L) · 0 violations (&gt;400L)</span>
-        </div>
-        <div class="health-kpi-item">
-          <span class="kpi-lbl">Python AST Integrity</span>
-          <div class="kpi-val mono" id="kpiAstIntegrity">0 Undefined Names</div>
-          <span class="kpi-sub" id="kpiAstSub">All 25 modules scope-verified</span>
-        </div>
-        <div class="health-kpi-item">
-          <span class="kpi-lbl">Local Subagent LSP</span>
-          <div class="kpi-val mono" id="kpiLspStatus">Serena Ready</div>
-          <span class="kpi-sub" id="kpiLspSub">LSP v2.1.0 · --context=antigravity</span>
-        </div>
+        <div class="health-kpi-item"><span class="kpi-lbl">Installed vs. GitHub</span><div class="kpi-val mono" id="kpiVersionComp"><span class="status-dot-6px cyan"></span> Staged Locally</div><span class="kpi-sub" id="kpiVersionSub">v2.6.0 installed · v2.5.0 GitHub release</span></div>
+        <div class="health-kpi-item"><span class="kpi-lbl">Modular Budget (&le;300L)</span><div class="kpi-val mono" id="kpiModularBudget">18 / 25 Modules</div><span class="kpi-sub" id="kpiModularSub">7 warning (301-400L) · 0 violations (&gt;400L)</span></div>
+        <div class="health-kpi-item"><span class="kpi-lbl">Python AST Integrity</span><div class="kpi-val mono" id="kpiAstIntegrity">0 Undefined Names</div><span class="kpi-sub" id="kpiAstSub">All 25 modules scope-verified</span></div>
+        <div class="health-kpi-item"><span class="kpi-lbl">Local Subagent LSP</span><div class="kpi-val mono" id="kpiLspStatus">Serena Ready</div><span class="kpi-sub" id="kpiLspSub">LSP v2.1.0 · --context=antigravity</span></div>
       </div>
       <div style="overflow-x:auto;margin-top:12px;">
         <table class="table-clean" id="modulesTable">
@@ -361,9 +329,65 @@
       </div>
     </section>
   </main>
-  <script src="/web/charts.js?v=2.5.0"></script>
-  <script src="/web/hierarchy.js?v=2.5.0"></script>
-  <script src="/web/health.js?v=2.5.0"></script>
-  <script src="/web/app.js?v=2.5.0"></script>
+
+  <!-- Scratch Batch Upload Modal -->
+  <dialog id="uploadDialog" closedby="any" aria-labelledby="uploadDialogTitle">
+    <div class="upload-modal-hdr">
+      <div>
+        <h3 id="uploadDialogTitle" class="upload-modal-heading">Session Scratch Upload</h3>
+        <div class="upload-modal-sub mono" id="uploadDialogSessionMeta">Select files to upload into session scratch directory</div>
+      </div>
+      <button type="button" class="btn-icon" id="uploadDialogCloseBtn" aria-label="Close dialog">&times;</button>
+    </div>
+    <div class="upload-modal-body">
+      <div class="upload-dropzone" id="uploadDropzone" tabindex="0">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="upload-icon">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        <div class="upload-dropzone-txt">Drag and drop files here, paste (Ctrl+V), or <span class="upload-browse-link">browse</span></div>
+        <div class="upload-dropzone-hint mono">Images, logs, text, JSON, YAML, PDF, ZIP (max 100 files, 200 MB)</div>
+        <input type="file" id="uploadFileInput" multiple style="display:none;" />
+      </div>
+      <div class="upload-opt-row">
+        <label for="uploadBatchLabel" class="upload-lbl mono">Batch Label (Optional):</label>
+        <input type="text" id="uploadBatchLabel" class="input-text mono" placeholder="e.g. repro, ui_assets" maxlength="32" pattern="[a-z0-9_-]{1,32}" />
+      </div>
+      <div id="uploadFileList" class="upload-file-list hidden">
+        <div class="upload-file-list-hdr">
+          <span id="uploadFileCount" class="mono">0 files selected</span>
+          <span id="uploadTotalSize" class="mono">0 B</span>
+        </div>
+        <div id="uploadFileItems" class="upload-file-items"></div>
+      </div>
+      <div id="uploadProgressWrap" class="upload-progress-wrap hidden">
+        <div class="bar-track">
+          <div id="uploadProgressBar" class="bar-fill focal" style="width: 0%;"></div>
+        </div>
+        <div class="upload-progress-status mono" id="uploadProgressStatus">Uploading... 0%</div>
+      </div>
+      <div id="uploadSuccessWrap" class="upload-success-wrap hidden">
+        <div class="upload-success-badge mono">Upload Complete ✓</div>
+        <div class="upload-summary-path mono" id="uploadSummaryPath"></div>
+        <div class="upload-prompt-box">
+          <div class="upload-prompt-hdr mono">Antigravity Evaluator Prompt:</div>
+          <div class="upload-prompt-text mono" id="uploadPromptText"></div>
+          <button type="button" class="btn btn-focal" id="copyUploadPromptBtn" style="margin-top:6px;align-self:flex-start;">Copy App Prompt</button>
+        </div>
+      </div>
+      <div id="uploadErrorMsg" class="upload-error-msg hidden mono"></div>
+    </div>
+    <div class="upload-modal-ftr">
+      <button type="button" class="btn" id="uploadCancelBtn">Cancel</button>
+      <button type="button" class="btn btn-focal" id="uploadSubmitBtn" disabled>Upload Batch</button>
+    </div>
+  </dialog>
+
+  <script src="/web/charts.js?v=2.6.0b"></script>
+  <script src="/web/hierarchy.js?v=2.6.0b"></script>
+  <script src="/web/uploads.js?v=2.6.0b"></script>
+  <script src="/web/health.js?v=2.6.0b"></script>
+  <script src="/web/app.js?v=2.6.0b"></script>
 </body>
 </html>

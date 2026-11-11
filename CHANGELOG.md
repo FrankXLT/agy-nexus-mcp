@@ -4,6 +4,33 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] — 2026-11-11
+
+### Security
+- **Host Companion Bridge Zero-Trust Authentication & Loopback Hardening (`CWE-306`, `CWE-88` — `host_bridge/bridge_security.py`, `host_bridge/agy_host_bridge.py`, `systemd/agy-host-bridge.service`, `src/agy_nexus/config.py`)**:
+  - Changed default `HOST_BRIDGE_BIND_HOST` from `0.0.0.0` to `127.0.0.1` across `agy_host_bridge.py`, `systemd/agy-host-bridge.service`, `.env.example`, and setup wizards (`init_secrets.py`, `setup.sh`, `setup.ps1`), eliminating unintended LAN exposure on port `8098`.
+  - Enforced mandatory constant-time `X-Bridge-Token` authentication (`hmac.compare_digest` against 256-bit `HOST_BRIDGE_TOKEN` or domain-separated `HMAC-SHA256(PATH_SECRET, "agy-host-bridge-agentapi-v1")`) on every `POST /agentapi` call, failing closed (`503` / startup exit) if unconfigured and returning `401` on missing/invalid credentials.
+  - Added defense-in-depth peer CIDR filtering (`HOST_BRIDGE_ALLOWED_CIDRS=127.0.0.0/8,::1/128,172.16.0.0/12`), browser `Origin` rejection (`403`), `OPTIONS` rejection (`405`), strict `Content-Type: application/json` validation (`415`), and a `1 MB` `Content-Length` ceiling (`413`).
+  - Removed `Path.home()` (`$HOME`) and `/` from `resolve_allowed_git_roots()` across both `git-inspect` and `new-conversation` (restricting strictly to `AGY_GITLAB_DIR` and `AGY_DATA_DIR/worktrees`), serialized `app_storage.json` updates under an atomic lock, and added `sanitize_git_ref`, `sanitize_conv_id`, and `guard_cli_positional` to prevent `git` and `agentapi` CLI option injection (`CWE-88`). Thanks to Shiqiang Chen (Independent Researcher) for responsible disclosure.
+
+### Added
+- **Two-Step Headless Confirmation Gate & `/web` Session Scratch Batch Uploads (`src/agy_nexus/handoff.py`, `src/agy_nexus/uploads.py`, `web/uploads.js`, `src/agy_nexus/middleware.py`)**:
+  - Defaulted `send_handoff_and_resume(..., resume_headless=False)` to write-only staging (`status="STAGED_ONLY"`) with zero-reupload `RESUME_STAGED` override support.
+  - Added multi-file, drag-and-drop, and clipboard-paste session scratch batch uploads (`POST /web/api/sessions/<conv_id>/upload`) generating timestamped `scratch/uploads_YYYYMMDD_HHMMSS/` directories with `INDEX.md` manifests and HMAC-signed `/web/media/` image links.
+- **Universal Polyglot Structural Outliner (`src/agy_nexus/polyglot_outline.py`, `src/agy_nexus/ast_outline.py`, `src/agy_nexus/workspace.py`)**:
+  - Implemented standalone companion outliner module (`polyglot_outline.py`, 248 lines, zero external dependencies) providing exact `L<start>-L<end>` line-span outlines across non-Python formats.
+  - **Markdown (`.md`, `.mdx`)**: Extracts heading tree (`#` through `######`) with calculated section line spans up to equal/higher level headings or EOF, plus fenced code block summaries (`[code:<lang> L<start>-L<end>]`).
+  - **JSON / JSONC (`.json`, `.jsonc`)**: Parses top-level and 2nd-level keys, reporting value types (`str`, `int`, `float`, `bool`, `dict[N keys]`, `list[N items]`) and sampling array-of-object keys (`list[N items] of {k1, k2, ...}`) while stripping JSONC comments gracefully.
+  - **YAML (`.yaml`, `.yml`)**: Pure-stdlib indentation/sequence parser safe against Home Assistant custom tags (`!include`, `!secret`, `!env_var`), mapping top-level keys and 2nd-level entries/named items (`- alias: ...`, `- id: ...`, `- name: ...`) with line spans.
+  - **JavaScript / TypeScript / CSS / HTML (`.js`, `.mjs`, `.ts`, `.tsx`, `.jsx`, `.css`, `.html`)**: Extracts imports, brace-depth tracked declarations (`function`, `async function`, `class`, methods, `const/let <name> = (...) =>`, `export`), CSS rule blocks (`@media`, `@keyframes`, `:root`), and major semantic HTML tags.
+  - Unified `build_file_outline` in `ast_outline.py` to seamlessly dispatch non-Python files to `polyglot_outline.py`, powering both explicit `outline:<path>` queries in `ask_workspace_readonly` and automatic outline attachment on truncated file reads.
+- **Automated Session "Baton-Pass" & Context Rollover (`src/agy_nexus/handoff.py`, `src/agy_nexus/session_status.py`, `src/agy_nexus/tools_session.py`)**:
+  - Added `context_budget` telemetry to `execution_status` (`"GREEN (<250 steps)"`, `"AMBER (250-350 steps)"`, `"ROLLOVER_RECOMMENDED (>350 steps or context exceeded)"`), backed by `check_context_exceeded` scanning transcript turns for `"Context window exceeded"`.
+  - Implemented automatic **Prior Session Baton** extraction (`extract_prior_session_baton`) from the previous session's brain directory (`task.md` completed tasks, `walkthrough.md` highlights, and `git status --short`), prepending a `## Prior Session Baton (<prev_id>)` block to the new session's `gemini_research_handoff.md` and inline wakeup prompt.
+  - Implemented automated session promotion from `create_new_session=False` to `create_new_session=True` (`auto_rollover_from: <prev_id>`) when targeting sessions with `>= 380` steps or `"Context window exceeded"`, eliminating dead-end mega-session crashes.
+
+---
+
 ## [2.5.0] — 2026-11-09
 
 ### Fixed

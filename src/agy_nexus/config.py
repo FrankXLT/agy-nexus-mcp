@@ -52,6 +52,7 @@ BIND_HOST = os.getenv("BIND_HOST", "0.0.0.0")
 BIND_PORT = int(os.getenv("BIND_PORT", "8765"))
 PATH_SECRET = os.getenv("PATH_SECRET", "").strip()
 PASS_HASH = os.getenv("PASS_HASH", "").strip().lower()
+HOST_BRIDGE_TOKEN = os.getenv("HOST_BRIDGE_TOKEN", "").strip()
 STATE_FILE = Path(os.getenv("AG_BRIDGE_STATE_FILE", str(AGY_BG_DIR / "session_state.json"))).expanduser()
 ALLOW_LOCKED_STATS = os.getenv("AG_BRIDGE_ALLOW_LOCKED_STATS", "false").strip().lower() in ("1", "true", "yes")
 ALLOW_LOCKED_STAGING = os.getenv("AG_BRIDGE_ALLOW_LOCKED_STAGING", "false").strip().lower() in ("1", "true", "yes")
@@ -286,6 +287,17 @@ mcp = FastMCP(
 # -----------------------------------------------------------------------------
 # 4. Internal Helper Routines
 # -----------------------------------------------------------------------------
+
+def get_host_bridge_token() -> str:
+    """Return explicit HOST_BRIDGE_TOKEN or domain-separated HMAC-SHA256 derived from PATH_SECRET."""
+    if len(HOST_BRIDGE_TOKEN) >= 32:
+        return HOST_BRIDGE_TOKEN
+    return hmac.new(PATH_SECRET.encode("utf-8"), b"agy-host-bridge-agentapi-v1", hashlib.sha256).hexdigest() if len(PATH_SECRET) >= 32 else ""
+
+def get_host_bridge_headers() -> dict[str, str]:
+    """Build JSON + X-Bridge-Token headers for authenticated /agentapi requests."""
+    tok = get_host_bridge_token()
+    return {"Content-Type": "application/json", **({"X-Bridge-Token": tok} if tok else {})}
 
 def _compact_json(data: Any) -> str:
     """Serialize tool output with compact separators so large inventories/bundles stay well under Gemini's cloud proxy byte ceiling."""

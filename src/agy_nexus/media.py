@@ -134,7 +134,17 @@ def discover_visual_artifacts(conv_id: str, workspace_path: str = "", limit: int
     def _scan_dir(base_dir: Path, scope: str, subdirs: tuple[str, ...]) -> None:
         if not base_dir.is_dir():
             return
-        search_dirs = [base_dir] + [base_dir / sd for sd in subdirs if (base_dir / sd).is_dir()]
+        extra_dirs: list[Path] = []
+        for sd in subdirs:
+            parent_sd = base_dir / sd
+            if parent_sd.is_dir():
+                try:
+                    for child in parent_sd.iterdir():
+                        if child.is_dir() and child.name.startswith("uploads_"):
+                            extra_dirs.append(child)
+                except Exception:
+                    pass
+        search_dirs = [base_dir] + [base_dir / sd for sd in subdirs if (base_dir / sd).is_dir()] + extra_dirs
         for sdir in search_dirs:
             try:
                 for entry in sdir.iterdir():

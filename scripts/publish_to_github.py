@@ -79,8 +79,32 @@ def _github_api(method: str, path: str, token: str, payload: dict | None = None)
         return e.code, err_json
 
 
+import re
+
+
+def _read_package_version(src_root: Path) -> str:
+    pyproject = src_root / "pyproject.toml"
+    if pyproject.is_file():
+        m = re.search(r'^version\s*=\s*"([^"]+)"', pyproject.read_text(encoding="utf-8"), re.M)
+        if m:
+            return m.group(1).strip()
+    return "2.6.0"
+
+
+def _extract_changelog_section(src_root: Path, version: str) -> str:
+    changelog = src_root / "CHANGELOG.md"
+    if not changelog.is_file():
+        return f"## AGY Nexus v{version}"
+    text = changelog.read_text(encoding="utf-8")
+    pattern = rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^---\s*$|^## \[|\Z)"
+    m = re.search(pattern, text, re.M | re.S)
+    if m and m.group(1).strip():
+        return f"## AGY Nexus v{version}\n\n{m.group(1).strip()}\n"
+    return f"## AGY Nexus v{version}"
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Create a GitHub repo and push a clean single-commit export.")
+    parser = argparse.ArgumentParser(description="Create/sync GitHub repo and publish matching GitHub Release.")
     parser.add_argument("--repo", default="agy-nexus-mcp", help="Target GitHub repository name (default: agy-nexus-mcp)")
     parser.add_argument(
         "--description",
@@ -91,6 +115,8 @@ def main() -> int:
     parser.add_argument("--author-name", default="", help="Override Git author name (defaults to GitHub login)")
     parser.add_argument("--author-email", default="", help="Override Git author email (defaults to <login>@users.noreply.github.com)")
     parser.add_argument("--message", default="", help="Custom Git commit message")
+    parser.add_argument("--release-title", default="", help="Custom GitHub Release title")
+    parser.add_argument("--no-release", action="store_true", help="Skip creating/updating the GitHub Release tag")
     args = parser.parse_args()
 
     token = _load_token_from_env_files()
@@ -102,7 +128,6 @@ def main() -> int:
         )
         return 1
 
-    # 1. Verify authenticated GitHub user
     status_user, user_data = _github_api("GET", "/user", token)
     if status_user != 200 or not user_data.get("login"):
         print(f"ERROR: GitHub authentication failed (HTTP {status_user}): {user_data.get('message')}", file=sys.stderr)
@@ -112,7 +137,6 @@ def main() -> int:
     gh_id = user_data.get("id", "")
     print(f"[*] Authenticated to GitHub as: {gh_login}")
 
-    # 2. Check or create repository
     repo_name = args.repo.strip()
     status_repo, repo_data = _github_api("GET", f"/repos/{gh_login}/{repo_name}", token)
     if status_repo == 404:
@@ -140,8 +164,9 @@ def main() -> int:
         print(f"ERROR: Unexpected response checking repo (HTTP {status_repo}): {repo_data.get('message')}", file=sys.stderr)
         return 1
 
-    # 3. Export clean working tree into a temporary Git repo (incremental fast-forward if main exists)
     src_root = Path(__file__).resolve().parent.parent
+    pkg_version = _read_package_version(src_root)
+    tag_name = f"v{pkg_version.lstrip('vV')}"
     author_name = args.author_name.strip() or gh_login
     author_email = args.author_email.strip() or (
         f"{gh_id}+{gh_login}@users.noreply.github.com" if gh_id else f"{gh_login}@users.noreply.github.com"
@@ -183,44 +208,63 @@ def main() -> int:
             check=True,
         )
         subprocess.run(["git", "add", "-A"], cwd=str(tmp_path), check=True)
-        diff_proc = subprocess.run(["git", " status", "--porcelain"], cwd=str(tmp_path), capture_output=True, text=True, check=False)
         status_proc = subprocess.run(["git", "status", "--porcelain"], cwd=str(tmp_path), capture_output=True, text=True, check=True)
-        if not status_proc.stdout.strip():
-            print(f"[✓] GitHub repository https://github.com/{gh_login}/{repo_name} is already up to date.")
-            return 0
+        if status_proc.stdout.strip():
+            commit_msg = args.message.strip() or (
+                f"chore(release): sync agy-nexus-mcp {tag_name}"
+                if has_existing_main
+                else f"feat: initial public release of agy-nexus-mcp ({tag_name})"
+            )
+            subprocess.run(["git", "commit", "-m", commit_msg], cwd=str(tmp_path), check=True, capture_output=True)
+            push_proc = subprocess.run(
+                ["git", "-c", auth_header, "push", remote_url, "main:main"],
+                cwd=str(tmp_path),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if push_proc.returncode != 0:
+                print(f"ERROR: git push failed:\n{push_proc.stderr}", file=sys.stderr)
+                return 1
+            print(f"[✓] Pushed main branch to https://github.com/{gh_login}/{repo_name}")
+        else:
+            print(f"[✓] Branch main on https://github.com/{gh_login}/{repo_name} is already up to date.")
 
-        commit_msg = args.message.strip() or (
-            "chore(release): sync agy-nexus-mcp v2.5.0"
-            if has_existing_main
-            else "feat: initial public release of agy-nexus-mcp (v2.5.0)"
-        )
-        subprocess.run(
-            ["git", "commit", "-m", commit_msg],
-            cwd=str(tmp_path),
-            check=True,
-            capture_output=True,
-        )
+    if not args.no_release:
+        rel_title = args.release_title.strip() or f"{tag_name} — Zero-Trust Host Bridge Security, Scratch Batch Uploads & Polyglot Outliner"
+        rel_body = _extract_changelog_section(src_root, pkg_version)
+        st_existing, existing_rel = _github_api("GET", f"/repos/{gh_login}/{repo_name}/releases/tags/{tag_name}", token)
+        if st_existing == 200 and existing_rel.get("id"):
+            rel_id = existing_rel["id"]
+            st_upd, upd_data = _github_api(
+                "PATCH",
+                f"/repos/{gh_login}/{repo_name}/releases/{rel_id}",
+                token,
+                {"name": rel_title, "body": rel_body, "draft": False, "prerelease": False},
+            )
+            if st_upd not in (200, 201):
+                print(f"ERROR: Failed updating GitHub release {tag_name} (HTTP {st_upd}): {upd_data.get('message')}", file=sys.stderr)
+                return 1
+            print(f"[✓] Updated GitHub Release: {upd_data.get('html_url')}")
+        else:
+            st_rel, rel_data = _github_api(
+                "POST",
+                f"/repos/{gh_login}/{repo_name}/releases",
+                token,
+                {
+                    "tag_name": tag_name,
+                    "target_commitish": "main",
+                    "name": rel_title,
+                    "body": rel_body,
+                    "draft": False,
+                    "prerelease": False,
+                },
+            )
+            if st_rel not in (200, 201):
+                print(f"ERROR: Failed creating GitHub release {tag_name} (HTTP {st_rel}): {rel_data.get('message')}", file=sys.stderr)
+                return 1
+            print(f"[✓] Published GitHub Release: {rel_data.get('html_url')}")
 
-        # Push using transient HTTP header so the token is never written to .git/config or process argv URL
-        push_proc = subprocess.run(
-            [
-                "git",
-                "-c",
-                auth_header,
-                "push",
-                remote_url,
-                "main:main",
-            ],
-            cwd=str(tmp_path),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if push_proc.returncode != 0:
-            print(f"ERROR: git push failed:\n{push_proc.stderr}", file=sys.stderr)
-            return 1
-
-    print(f"[✓] Successfully published to https://github.com/{gh_login}/{repo_name}")
     return 0
 
 

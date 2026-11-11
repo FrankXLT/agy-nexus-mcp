@@ -14,9 +14,10 @@ from typing import Any
 import urllib.request
 
 from agy_nexus.ast_outline import build_file_outline
+import agy_nexus.config as cfg
 from agy_nexus.config import (
     AGY_BRAIN_DIR, AGY_CONFIG_DIR, AGY_DATA_DIR, AGY_GITLAB_DIR,
-    AGY_HOST_BRIDGE_URL, SESSION_STATE, _save_session_state,
+    SESSION_STATE, _save_session_state,
 )
 from agy_nexus.hygiene import (
     MAX_FILE_CHARS, MAX_FILES_PER_CALL, MAX_TOTAL_FILE_CHARS,
@@ -201,7 +202,7 @@ def _resolve_and_read_files(
                     entry_obj = {
                         "requested": raw_sub, "path": str(target_path), "bytes": target_path.stat().st_size,
                         "mode": "ast_outline", "total_lines": ol["total_lines"], "truncated": False,
-                        "ast_outline": ol, "content": ol["formatted_outline"],
+                        "outline": ol, "ast_outline": ol, "content": ol["formatted_outline"],
                     }
                     if auto_resolved_ws: entry_obj["auto_resolved_workspace"] = auto_resolved_ws
                     files_list.append(entry_obj)
@@ -214,7 +215,9 @@ def _resolve_and_read_files(
                     remaining_total_chars = max(4000, remaining_total_chars - len(slice_meta.get("content", "")))
                     entry_obj = {"requested": raw_sub, "path": str(target_path), "bytes": target_path.stat().st_size, **slice_meta}
                     if slice_meta.get("truncated"):
-                        entry_obj["ast_outline"] = build_file_outline(target_path, full_text, ws_root=search_roots[0], max_chars=1400, include_callers=False)
+                        ol_trunc = build_file_outline(target_path, full_text, ws_root=search_roots[0], max_chars=1400, include_callers=False)
+                        entry_obj["ast_outline"] = ol_trunc
+                        entry_obj["outline"] = ol_trunc
                     if auto_resolved_ws:
                         entry_obj["auto_resolved_workspace"] = auto_resolved_ws
                     files_list.append(entry_obj)
@@ -254,7 +257,7 @@ def _host_git_inspect(
     """Fallback to agy-incident-bridge host git-inspect when a workspace or worktree parent .git lives on the host."""
     try:
         payload = {"action": "git-inspect", "workspace_path": ws_path, "target_branch": target_branch, "include_untracked": include_untracked, "summary_only": summary_only, "file_path": file_path}
-        req = urllib.request.Request(AGY_HOST_BRIDGE_URL, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
+        req = urllib.request.Request(cfg.AGY_HOST_BRIDGE_URL, data=json.dumps(payload).encode("utf-8"), headers=cfg.get_host_bridge_headers(), method="POST")
         with urllib.request.urlopen(req, timeout=8) as resp:
             data = json.loads(resp.read().decode("utf-8", errors="replace"))
             if isinstance(data, dict) and data.get("ok"):

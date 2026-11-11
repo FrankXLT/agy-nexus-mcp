@@ -1,22 +1,49 @@
 #!/usr/bin/env python3
 """
-agy_host_bridge.py — Host Companion Daemon for ag-bridge-mcp
-Listens on 0.0.0.0:8098 (configurable via BIND_HOST / BIND_PORT) using ThreadingHTTPServer
-and provides two endpoints for the containerized ag-bridge-mcp server:
-1. GET  /health   — Liveness probe
-2. POST /agentapi — Executes Antigravity CLI actions (`discover`, `send-message`,
-                    `new-conversation`, `get-conversation-metadata`) against the active
-                    Antigravity Language Server on the host, plus `git-inspect` for
-                    host-backed repositories and detached git worktrees.
+agy_host_bridge.py — Authenticated Host Companion Daemon for ag-bridge-mcp
+Listens on 127.0.0.1:8098 by default (configurable via HOST_BRIDGE_BIND_HOST / HOST_BRIDGE_BIND_PORT)
+using ThreadingHTTPServer and provides two endpoints for ag-bridge-mcp:
+1. GET  /health   — Minimal liveness probe (no sensitive paths or tokens)
+2. POST /agentapi — Requires constant-time `X-Bridge-Token` authentication and peer CIDR verification
+                    before executing Antigravity CLI actions (`discover`, `send-message`,
+                    `new-conversation`, `get-conversation-metadata`) or sandboxed `git-inspect`.
 """
 from __future__ import annotations
 import json
 import os
 import re
 import subprocess
+import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-BIND_HOST = os.getenv("HOST_BRIDGE_BIND_HOST", "0.0.0.0")
+
+try:
+    from host_bridge.bridge_security import (
+        DEFAULT_BIND_HOST,
+        derive_bridge_token,
+        guard_cli_positional,
+        load_bridge_env_file,
+        resolve_allowed_git_roots,
+        sanitize_conv_id,
+        sanitize_git_ref,
+        validate_agentapi_request,
+    )
+except ImportError:
+    from bridge_security import (  # type: ignore[no-redef]
+        DEFAULT_BIND_HOST,
+        derive_bridge_token,
+        guard_cli_positional,
+        load_bridge_env_file,
+        resolve_allowed_git_roots,
+        sanitize_conv_id,
+        sanitize_git_ref,
+        validate_agentapi_request,
+    )
+
+load_bridge_env_file()
+
+BIND_HOST = os.getenv("HOST_BRIDGE_BIND_HOST", DEFAULT_BIND_HOST)
 BIND_PORT = int(os.getenv("HOST_BRIDGE_BIND_PORT", "8098"))
 AGY_DATA_DIR = Path(os.getenv("AGY_DATA_DIR", str(Path.home() / ".gemini/antigravity"))).expanduser()
 AGY_CONFIG_DIR = Path(os.getenv("AGY_CONFIG_DIR", str(Path.home() / ".gemini/config"))).expanduser()
@@ -24,6 +51,15 @@ AGY_GITLAB_DIR = Path(os.getenv("AGY_GITLAB_DIR", str(Path.home() / "gitlab"))).
 AGENTAPI_BIN = os.getenv("AGENTAPI_BIN", str(AGY_DATA_DIR / "bin/agentapi"))
 PROJECTS_DIR = AGY_CONFIG_DIR / "projects"
 APP_STORAGE_PATH = Path(os.getenv("AGY_APP_STORAGE", str(Path.home() / ".config/Antigravity/app_storage.json"))).expanduser()
+BRIDGE_TOKEN_OVERRIDE: str = ""
+_STORAGE_LOCK = threading.Lock()
+
+
+def get_expected_bridge_token() -> str:
+    """Resolve active expected X-Bridge-Token for /agentapi requests."""
+    if BRIDGE_TOKEN_OVERRIDE:
+        return BRIDGE_TOKEN_OVERRIDE
+    return derive_bridge_token()
 def discover_antigravity_env() -> dict[str, str]:
     """Discover the running Antigravity Language Server port and CSRF token on the host."""
     env = os.environ.copy()
@@ -100,9 +136,11 @@ def resolve_project_workspace(project_name: str = "", workspace_path: str = "", 
         cand = Path(workspace_path).expanduser()
         if not cand.is_absolute():
             cand = AGY_GITLAB_DIR / workspace_path
-        if cand.is_dir():
-            target_dir = str(cand.resolve())
-            display_name = cand.name
+        resolved_cand = cand.resolve()
+        allowed_roots = resolve_allowed_git_roots(AGY_GITLAB_DIR, AGY_DATA_DIR)
+        if cand.is_dir() and any(resolved_cand == r or resolved_cand.is_relative_to(r) for r in allowed_roots):
+            target_dir = str(resolved_cand)
+            display_name = resolved_cand.name
             for p in projects:
                 if target_dir in (p.get("paths") or []):
                     resolved_id = p.get("id")
@@ -120,42 +158,62 @@ def resolve_project_workspace(project_name: str = "", workspace_path: str = "", 
                         display_name = p.get("name") or display_name
                         break
                 break
+    if target_dir:
+        res_td = Path(target_dir).expanduser().resolve()
+        allowed_roots = resolve_allowed_git_roots(AGY_GITLAB_DIR, AGY_DATA_DIR)
+        if not any(res_td == r or res_td.is_relative_to(r) for r in allowed_roots):
+            target_dir = str(AGY_GITLAB_DIR)
     return resolved_id, target_dir, display_name
 def set_active_project_in_storage(project_id: str | None) -> bool:
     """Update lastActiveProjectId in ~/.config/Antigravity/app_storage.json when spawning a new session."""
     if not project_id or not APP_STORAGE_PATH.is_file():
         return False
     try:
-        raw = json.loads(APP_STORAGE_PATH.read_text(encoding="utf-8"))
-        state_str = raw.get("antigravityUnifiedStateSync.projectManager")
-        if not isinstance(state_str, str):
-            return False
-        pm_state = json.loads(state_str)
-        if pm_state.get("lastActiveProjectId") == project_id:
-            return True
-        pm_state["lastActiveProjectId"] = project_id
-        raw["antigravityUnifiedStateSync.projectManager"] = json.dumps(pm_state, separators=(",", ":"))
-        tmp_path = APP_STORAGE_PATH.with_suffix(".json.tmp")
-        tmp_path.write_text(json.dumps(raw, indent=2), encoding="utf-8")
-        tmp_path.replace(APP_STORAGE_PATH)
+        with _STORAGE_LOCK:
+            raw = json.loads(APP_STORAGE_PATH.read_text(encoding="utf-8"))
+            state_str = raw.get("antigravityUnifiedStateSync.projectManager")
+            if not isinstance(state_str, str):
+                return False
+            pm_state = json.loads(state_str)
+            if pm_state.get("lastActiveProjectId") == project_id:
+                return True
+            pm_state["lastActiveProjectId"] = project_id
+            raw["antigravityUnifiedStateSync.projectManager"] = json.dumps(pm_state, separators=(",", ":"))
+            tmp_path = APP_STORAGE_PATH.with_suffix(f".json.tmp.{os.getpid()}_{threading.get_ident()}")
+            tmp_path.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+            tmp_path.replace(APP_STORAGE_PATH)
         return True
     except Exception:
         return False
+MOCK_ACTION_HANDLER = None
+
+
 def handle_agentapi_request(payload: dict) -> dict:
-    """Handle /agentapi requests from ag-bridge-mcp."""
+    """Handle authenticated /agentapi requests from ag-bridge-mcp."""
+    if callable(MOCK_ACTION_HANDLER):
+        return MOCK_ACTION_HANDLER(payload)
     action = str(payload.get("action") or "discover").strip().lower()
+    if action == "ping":
+        return {"ok": True, "service": "agy-host-bridge"}
+    if action == "new-conversation":
+        raw_ws_chk = str(payload.get("workspace_path") or "").strip()
+        if raw_ws_chk:
+            cand_ws = Path(raw_ws_chk).expanduser()
+            if not cand_ws.is_absolute():
+                cand_ws = AGY_GITLAB_DIR / raw_ws_chk
+            res_ws = cand_ws.resolve()
+            allowed_ws_roots = resolve_allowed_git_roots(AGY_GITLAB_DIR, AGY_DATA_DIR)
+            if not any(res_ws == r or res_ws.is_relative_to(r) for r in allowed_ws_roots):
+                return {"ok": False, "error": f"Path '{res_ws}' is outside allowed roots."}
     if action == "git-inspect":
         ws_raw = str(payload.get("workspace_path") or "").strip()
-        target_branch = re.sub(r"[^a-zA-Z0-9_./~^-]", "", str(payload.get("target_branch") or "HEAD")) or "HEAD"
+        target_branch = sanitize_git_ref(str(payload.get("target_branch") or "HEAD"))
         include_untracked = bool(payload.get("include_untracked", True))
+        summary_only = bool(payload.get("summary_only", False))
         if not ws_raw:
             return {"ok": False, "error": "workspace_path is required"}
         ws_path = Path(ws_raw).expanduser().resolve()
-        allowed_roots = [
-            AGY_GITLAB_DIR.resolve(),
-            (AGY_DATA_DIR / "worktrees").resolve(),
-            Path.home().resolve(),
-        ]
+        allowed_roots = resolve_allowed_git_roots(AGY_GITLAB_DIR, AGY_DATA_DIR)
         if not any(ws_path == r or ws_path.is_relative_to(r) for r in allowed_roots):
             return {"ok": False, "error": f"Path '{ws_path}' is outside allowed roots."}
         if not ws_path.is_dir():
@@ -163,11 +221,7 @@ def handle_agentapi_request(payload: dict) -> dict:
         def _git(args: list[str], timeout: int = 8) -> subprocess.CompletedProcess:
             return subprocess.run(
                 ["git", "-c", "safe.directory=*"] + args,
-                cwd=str(ws_path),
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False,
+                cwd=str(ws_path), capture_output=True, text=True, timeout=timeout, check=False,
             )
         b_proc = _git(["rev-parse", "--abbrev-ref", "HEAD"])
         if b_proc.returncode != 0:
@@ -175,16 +229,21 @@ def handle_agentapi_request(payload: dict) -> dict:
         branch = b_proc.stdout.strip()
         status_short = _git(["status", "--short"]).stdout.strip()
         diff_stat = _git(["diff", "--stat", target_branch, "--"]).stdout.strip()
+        if not diff_stat and target_branch != "HEAD":
+            st_check = _git(["rev-parse", "--verify", target_branch])
+            if st_check.returncode != 0:
+                target_branch = "HEAD"
+                diff_stat = _git(["diff", "--stat", "HEAD", "--"]).stdout.strip()
         req_fp = str(payload.get("file_path") or "").strip()
         safe_fp = ""
         if req_fp:
             norm_fp = os.path.normpath(req_fp).lstrip("/")
             if not norm_fp.startswith(".."):
                 safe_fp = norm_fp
-        diff_args = ["diff", target_branch, "--"] + ([safe_fp] if safe_fp else [])
-        diff_proc = _git(diff_args, timeout=12)
-        if diff_proc.returncode != 0 and target_branch != "HEAD":
-            diff_proc = _git(["diff", "HEAD", "--"] + ([safe_fp] if safe_fp else []), timeout=12)
+        diff_out = ""
+        if not summary_only:
+            diff_proc = _git(["diff", target_branch, "--"] + ([safe_fp] if safe_fp else []), timeout=12)
+            diff_out = diff_proc.stdout
         untracked: list[str] = []
         if include_untracked:
             u_proc = _git(["ls-files", "--others", "--exclude-standard"])
@@ -194,8 +253,8 @@ def handle_agentapi_request(payload: dict) -> dict:
             "ok": True, "workspace": str(ws_path),
             "branch": branch, "current_branch": branch,
             "status_short": status_short, "diff_stat": diff_stat,
-            "diff": diff_proc.stdout[:60000],
-            "diff_truncated": len(diff_proc.stdout) > 60000,
+            "diff": diff_out[:60000],
+            "diff_truncated": len(diff_out) > 60000,
             "untracked_files": untracked,
         }
     env = discover_antigravity_env()
@@ -208,10 +267,10 @@ def handle_agentapi_request(payload: dict) -> dict:
             "app_data_dir": env.get("ANTIGRAVITY_APP_DATA_DIR", ""),
         }
     if action == "send-message":
-        conv_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(payload.get("conversation_id") or ""))
-        prompt = str(payload.get("prompt") or "").strip()
+        conv_id = sanitize_conv_id(str(payload.get("conversation_id") or ""))
+        prompt = guard_cli_positional(str(payload.get("prompt") or ""))
         title = str(payload.get("title") or "").strip()
-        if not conv_id or not prompt:
+        if not conv_id or not prompt.strip():
             return {"ok": False, "error": "conversation_id and prompt are required"}
         cmd = [AGENTAPI_BIN, "send-message"]
         if title:
@@ -224,20 +283,17 @@ def handle_agentapi_request(payload: dict) -> dict:
             "stdout": proc.stdout.strip(), "stderr": proc.stderr.strip(),
         }
     if action == "new-conversation":
-        prompt = str(payload.get("prompt") or "").strip()
-        if not prompt:
+        prompt = guard_cli_positional(str(payload.get("prompt") or ""))
+        if not prompt.strip():
             return {"ok": False, "error": "prompt is required"}
         model = str(payload.get("model") or "pro").strip()
         if model not in ("flash_lite", "flash", "pro"):
             model = "pro"
         title = str(payload.get("title") or "").strip()
-        req_project_name = str(payload.get("project_name") or "").strip()
-        req_workspace_path = str(payload.get("workspace_path") or "").strip()
-        req_project_id = str(payload.get("project_id") or "").strip()
         resolved_proj_id, resolved_dir, resolved_name = resolve_project_workspace(
-            project_name=req_project_name,
-            workspace_path=req_workspace_path,
-            project_id=req_project_id,
+            project_name=str(payload.get("project_name") or "").strip(),
+            workspace_path=str(payload.get("workspace_path") or "").strip(),
+            project_id=str(payload.get("project_id") or "").strip(),
         )
         if resolved_proj_id:
             set_active_project_in_storage(resolved_proj_id)
@@ -258,7 +314,7 @@ def handle_agentapi_request(payload: dict) -> dict:
             "stderr": proc.stderr.strip(),
         }
     if action == "get-conversation-metadata":
-        conv_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(payload.get("conversation_id") or ""))
+        conv_id = sanitize_conv_id(str(payload.get("conversation_id") or ""))
         if not conv_id:
             return {"ok": False, "error": "conversation_id is required"}
         cmd = [AGENTAPI_BIN, "get-conversation-metadata", conv_id]
@@ -269,35 +325,73 @@ def handle_agentapi_request(payload: dict) -> dict:
             "stdout": proc.stdout.strip(), "stderr": proc.stderr.strip(),
         }
     return {"ok": False, "error": f"Unknown action: {action}"}
+
+
 class HostBridgeHandler(BaseHTTPRequestHandler):
-    def _send_json(self, status: int, data: dict):
+    quiet_logs: bool = False
+
+    def log_message(self, format: str, *args) -> None:  # noqa: A002
+        if not self.quiet_logs:
+            super().log_message(format, *args)
+
+    def _send_json(self, status: int, data: dict) -> None:
         body = json.dumps(data, indent=2).encode("utf-8")
         self.send_response(status)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
-    def do_GET(self):
+
+    def do_OPTIONS(self) -> None:
+        self._send_json(405, {"ok": False, "error": "Method not allowed"})
+
+    def do_GET(self) -> None:
         if self.path.startswith("/health"):
             self._send_json(200, {"status": "ok", "service": "agy-host-bridge"})
             return
         self._send_json(404, {"error": "Not found"})
-    def do_POST(self):
-        length = int(self.headers.get("Content-Length", "0"))
-        raw = self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
+
+    def do_POST(self) -> None:
+        client_ip = self.client_address[0] if self.client_address else ""
+        status, err_msg, length = validate_agentapi_request(
+            client_ip=client_ip,
+            headers=self.headers,
+            expected_token=get_expected_bridge_token(),
+        )
+        if status != 200:
+            self._send_json(status, {"ok": False, "error": err_msg})
+            return
+        if not self.path.startswith("/agentapi"):
+            self._send_json(404, {"ok": False, "error": "Not found"})
+            return
+        raw = self.rfile.read(length).decode("utf-8", errors="replace") if length > 0 else "{}"
         try:
             payload = json.loads(raw) if raw.strip() else {}
         except Exception:
-            payload = {}
-        if self.path.startswith("/agentapi"):
-            try:
-                res = handle_agentapi_request(payload)
-                self._send_json(200, res)
-            except Exception as e:
-                self._send_json(500, {"ok": False, "error": str(e)})
+            self._send_json(400, {"ok": False, "error": "Invalid JSON payload."})
             return
-        self._send_json(404, {"error": "Not found"})
-if __name__ == "__main__":
-    print(f"Starting agy-host-bridge on {BIND_HOST}:{BIND_PORT} (threaded)...", flush=True)
+        if not isinstance(payload, dict):
+            self._send_json(400, {"ok": False, "error": "JSON payload must be an object."})
+            return
+        try:
+            res = handle_agentapi_request(payload)
+            self._send_json(200, res)
+        except Exception as e:
+            self._send_json(500, {"ok": False, "error": str(e)})
+
+
+def main() -> None:
+    expected = get_expected_bridge_token()
+    if len(expected) < 32:
+        sys.exit(
+            "FATAL: agy-host-bridge requires HOST_BRIDGE_TOKEN or PATH_SECRET (>=32 chars) "
+            "in ~/.config/ag-bridge-mcp/secrets.env (fail-closed)."
+        )
+    print(f"Starting agy-host-bridge on {BIND_HOST}:{BIND_PORT} (authenticated, threaded)...", flush=True)
     server = ThreadingHTTPServer((BIND_HOST, BIND_PORT), HostBridgeHandler)
     server.serve_forever()
+
+
+if __name__ == "__main__":
+    main()

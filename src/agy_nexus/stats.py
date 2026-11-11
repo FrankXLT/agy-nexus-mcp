@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-agy-nexus-mcp — Usage, Quota, Sub-Daily Stacked Series, Token Metering & Three-Tier ASCII Engine (v2.5.0)
+agy-nexus-mcp — Usage, Quota, Sub-Daily Stacked Series, Token Metering & Three-Tier ASCII Engine (v2.6.0)
 """
 
 from __future__ import annotations
@@ -114,8 +114,8 @@ def build_nexus_stats_bundle(
     conv_cache = scan_transcript_stats(brain_dir, bg_dir)
     db_convs: dict[str, dict[str, Any]] = {}
     subagent_roles: dict[str, dict[str, Any]] = {}
-    model_totals = {"argon_pro": 0, "flash": 0, "claude_partner": 0, "gpt_oss": 0}
-    model_tokens = {"argon_pro": 0, "flash": 0, "claude_partner": 0, "gpt_oss": 0}
+    model_totals = {"carbon": 0, "argon_pro": 0, "flash": 0, "claude_partner": 0, "gpt_oss": 0}
+    model_tokens = {"carbon": 0, "argon_pro": 0, "flash": 0, "claude_partner": 0, "gpt_oss": 0}
     if db_file.exists():
         try:
             conn = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True, timeout=3.0)
@@ -126,16 +126,10 @@ def build_nexus_stats_bundle(
                 cid, parent_id, agent_name = str(r["conversation_id"]), str(r["parent_conversation_id"] or ""), str(r["agent_name"] or "").strip()
                 uris = json.loads(r["workspace_uris"] or "[]") if isinstance(r["workspace_uris"], str) and r["workspace_uris"].startswith("[") else []
                 title_str = str(r["title"] or cid[:8])
-                db_convs[cid] = {
-                    "title": title_str, "step_count": int(r["step_count"] or 0), "last_modified": str(r["last_modified_time"] or ""),
-                    "workspace": _pick_primary_workspace(uris, title_str), "status": str(r["status"] or "IDLE"),
-                    "is_subagent": bool(parent_id), "parent_id": parent_id, "agent_name": agent_name or "subagent",
-                }
+                db_convs[cid] = {"title": title_str, "step_count": int(r["step_count"] or 0), "last_modified": str(r["last_modified_time"] or ""), "workspace": _pick_primary_workspace(uris, title_str), "status": str(r["status"] or "IDLE"), "is_subagent": bool(parent_id), "parent_id": parent_id, "agent_name": agent_name or "subagent"}
             for cid, info in db_convs.items():
-                if info["parent_id"] and info["parent_id"] in db_convs:
-                    parent_ws = db_convs[info["parent_id"]].get("workspace", "")
-                    if parent_ws:
-                        info["workspace"] = parent_ws
+                if info["parent_id"] and info["parent_id"] in db_convs and db_convs[info["parent_id"]].get("workspace"):
+                    info["workspace"] = db_convs[info["parent_id"]]["workspace"]
         except Exception:
             pass
 
@@ -168,25 +162,21 @@ def build_nexus_stats_bundle(
         for ds, dm_map in (cdata.get("day_models") or {}).items():
             if s_iso <= ds <= e_iso and isinstance(dm_map, dict):
                 for mk, mval in dm_map.items():
-                    eff_mk = sub_mk if (is_sub and mk == "argon_pro") else mk
+                    eff_mk = sub_mk if (is_sub and mk == "argon_pro" and sub_mk) else mk
                     model_totals[eff_mk] = model_totals.get(eff_mk, 0) + int(mval)
         for ds, dtk_map in (cdata.get("day_model_tokens") or {}).items():
             if s_iso <= ds <= e_iso and isinstance(dtk_map, dict):
                 for mk, mtok in dtk_map.items():
-                    eff_mk = sub_mk if (is_sub and mk == "argon_pro") else mk
+                    eff_mk = sub_mk if (is_sub and mk == "argon_pro" and sub_mk) else mk
                     model_tokens[eff_mk] = model_tokens.get(eff_mk, 0) + int(mtok)
         if win_steps > 0:
             we = ws_map.setdefault(ws_name, {"workspace": ws_name, "sessions": 0, "steps": 0, "tokens": 0})
             if not is_sub:
-                we["sessions"] += 1
-                active_parent_convs += 1
+                we["sessions"], active_parent_convs = we["sessions"] + 1, active_parent_convs + 1
             else:
                 rec = subagent_roles.setdefault(agent_role, {"runs": 0, "steps": 0, "tokens": 0})
-                rec["runs"] += 1
-                rec["steps"] += win_steps
-                rec["tokens"] += win_toks
-            we["steps"] += win_steps
-            we["tokens"] += win_toks
+                rec["runs"], rec["steps"], rec["tokens"] = rec["runs"] + 1, rec["steps"] + win_steps, rec["tokens"] + win_toks
+            we["steps"], we["tokens"] = we["steps"] + win_steps, we["tokens"] + win_toks
 
     for cid, meta in db_convs.items():
         if meta.get("is_subagent") and cid not in conv_cache and int(meta.get("step_count") or 0) > 0:
@@ -194,22 +184,16 @@ def build_nexus_stats_bundle(
             if len(d_str) == 10 and s_iso <= d_str <= e_iso:
                 role, st_c = str(meta.get("agent_name") or "subagent"), int(meta["step_count"])
                 tok_est = st_c * 380
-                daily_steps[d_str] = daily_steps.get(d_str, 0) + st_c
-                daily_tokens[d_str] = daily_tokens.get(d_str, 0) + tok_est
-                slot_totals[sl_str] = slot_totals.get(sl_str, 0) + st_c
+                daily_steps[d_str], daily_tokens[d_str], slot_totals[sl_str] = daily_steps.get(d_str, 0) + st_c, daily_tokens.get(d_str, 0) + tok_est, slot_totals.get(sl_str, 0) + st_c
                 rec = subagent_roles.setdefault(role, {"runs": 0, "steps": 0, "tokens": 0})
-                rec["runs"] += 1
-                rec["steps"] += st_c
-                rec["tokens"] += tok_est
+                rec["runs"], rec["steps"], rec["tokens"] = rec["runs"] + 1, rec["steps"] + st_c, rec["tokens"] + tok_est
                 sub_slots.setdefault(role, {})[sl_str] = sub_slots.get(role, {}).get(sl_str, 0) + st_c
                 ws_n = normalize_workspace_name(meta.get("workspace") or "") or "unassigned"
                 ws_slots.setdefault(ws_n, {})[sl_str] = ws_slots.get(ws_n, {}).get(sl_str, 0) + st_c
                 we = ws_map.setdefault(ws_n, {"workspace": ws_n, "sessions": 0, "steps": 0, "tokens": 0})
-                we["steps"] += st_c
-                we["tokens"] += tok_est
+                we["steps"], we["tokens"] = we["steps"] + st_c, we["tokens"] + tok_est
                 mk = classify_model_key("", role)
-                model_totals[mk] = model_totals.get(mk, 0) + st_c
-                model_tokens[mk] = model_tokens.get(mk, 0) + tok_est
+                model_totals[mk], model_tokens[mk] = model_totals.get(mk, 0) + st_c, model_tokens.get(mk, 0) + tok_est
 
     cur, win_steps_sum, win_tools_sum, win_tokens_sum, active_days, peak = start_d, 0, 0, 0, 0, {"date": "", "steps": 0}
     while cur <= end_d:
@@ -233,8 +217,7 @@ def build_nexus_stats_bundle(
     q1, q2, q3 = (global_nz[max(0, int(len(global_nz) * 0.25) - 1)], global_nz[max(0, int(len(global_nz) * 0.50) - 1)], global_nz[max(0, int(len(global_nz) * 0.75) - 1)]) if global_nz else (25, 100, 300)
     heatmap_series, h_cur = [], heat_start_d
     while h_cur <= heat_end_d:
-        ds = h_cur.strftime("%Y-%m-%d")
-        is_fut = h_cur > today
+        ds, is_fut = h_cur.strftime("%Y-%m-%d"), h_cur > today
         st_c = 0 if is_fut else daily_steps.get(ds, 0)
         lvl = -1 if is_fut else (0 if st_c == 0 else (1 if st_c <= q1 else (2 if st_c <= q2 else (3 if st_c <= q3 else 4))))
         heatmap_series.append({"date": ds, "weekday": h_cur.weekday(), "steps": st_c, "tools": 0 if is_fut else daily_tools.get(ds, 0), "tokens": 0 if is_fut else daily_tokens.get(ds, 0), "sessions": 0 if is_fut else len(daily_sessions.get(ds, set())), "level": lvl, "future": is_fut, "in_window": start_d <= h_cur <= end_d})
@@ -254,14 +237,10 @@ def build_nexus_stats_bundle(
         rv["tok_per_day"], rv["tok_per_week"], rv["share_pct"] = round(tk / act_d), round(tk / act_w), round((st_s / sa_step_sum) * 100.0, 1)
         subagent_list.append({"role": rk, **rv})
 
-    ws_keys = [w["workspace"] for w in all_ws_list[:5]]
+    ws_keys = [w["workspace"] for w in all_ws_list[:5]] + (["other-projects"] if len(all_ws_list) > 5 else [])
     other_ws_keys = [w["workspace"] for w in all_ws_list[5:]]
-    if other_ws_keys:
-        ws_keys.append("other-projects")
-    sub_keys = [s["role"] for s in subagent_list[:5]]
+    sub_keys = [s["role"] for s in subagent_list[:5]] + (["other-subagents"] if len(subagent_list) > 5 else [])
     other_sub_keys = [s["role"] for s in subagent_list[5:]]
-    if other_sub_keys:
-        sub_keys.append("other-subagents")
 
     chart_days = [x for x in heatmap_series if not x.get("future") and s_iso <= x["date"] <= e_iso]
     first_act_idx = next((idx for idx, x in enumerate(chart_days) if x["steps"] > 0), 0)
@@ -279,10 +258,10 @@ def build_nexus_stats_bundle(
     for k in sub_keys:
         sub_layers[k] = [sum(sum(sub_slots.get(ok, {}).get(s, 0) for ok in other_sub_keys) for s in all_4h_slots[i : i + slot_group]) for i in range(0, len(all_4h_slots), slot_group)] if k == "other-subagents" else [sum(sub_slots.get(k, {}).get(s, 0) for s in all_4h_slots[i : i + slot_group]) for i in range(0, len(all_4h_slots), slot_group)]
 
-    quota_info = get_live_quota_and_pool_status(agy_config_dir)
+    quota_info = get_live_quota_and_pool_status(base_data, agy_config_dir)
     targets, tot_calls = quota_info["target_model_allocation"], max(1, sum(model_totals.values()))
     model_comp = []
-    for mk in ("argon_pro", "flash", "claude_partner", "gpt_oss"):
+    for mk in ("carbon", "argon_pro", "flash", "claude_partner", "gpt_oss"):
         tm, ac = targets.get(mk, {"label": mk, "pool": "Unknown", "target_pct": 0.0}), model_totals.get(mk, 0)
         ap, tp = round((ac / tot_calls) * 100.0, 1), float(tm["target_pct"])
         dp = round(ap - tp, 1)
@@ -306,8 +285,7 @@ def build_nexus_stats_bundle(
     }
     bundle["ascii_report_default"], bundle["ascii_report_quick"], bundle["ascii_report_rich"] = render_ascii_default(bundle), render_ascii_quick(bundle), render_ascii_rich(bundle)
     selected_ascii = render_ascii_stats(bundle, style=style)
-    bundle["ascii_mobile_dashboard"] = selected_ascii
-    bundle["ascii_mobile_report"] = selected_ascii
+    bundle["ascii_mobile_dashboard"] = bundle["ascii_mobile_report"] = selected_ascii
     return bundle
 
 get_quota_and_stats_bundle = build_nexus_stats_bundle

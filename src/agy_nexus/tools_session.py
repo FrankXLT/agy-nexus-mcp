@@ -44,6 +44,7 @@ from agy_nexus.session_status import (
 )
 from agy_nexus.sessions import _list_saved_sessions_internal, _load_projects_map
 from agy_nexus.stats import build_nexus_stats_bundle, extract_pending_approval
+from agy_nexus.uploads import list_scratch_upload_batches
 from agy_nexus.workspace import _collect_git_summary, _resolve_and_read_files
 
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
@@ -188,8 +189,8 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
                     conv_title = str(row[7])
                 is_run = bool(row[5]) or str(row[2] or "") == "CASCADE_RUN_STATUS_RUNNING"
                 cur_steps = int(row[3] or 0)
-                cur_compactions = int(db_status_info.get("compaction_count") or 0)
-                hw = generate_session_health_warning(cur_steps, cur_compactions)
+                telem = get_session_telemetry(conv_id, AGY_BRAIN_DIR, step_count=cur_steps)
+                db_status_info.update(telem)
                 db_status_info.update({
                     "db_status": str(row[2] or "CASCADE_RUN_STATUS_IDLE"),
                     "step_count": cur_steps,
@@ -197,8 +198,6 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
                     "is_running": is_run, "not_fully_idle": bool(row[5]), "killed": bool(row[6]),
                     "summary": "RUNNING" if is_run else "COMPLETED_AND_IDLE (Antigravity finished; do NOT call manage_background_run)",
                 })
-                if hw:
-                    db_status_info["session_health_warning"] = hw
         except Exception:
             pass
     projects_map = _load_projects_map()
@@ -288,6 +287,7 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
         else {}
     )
     visual_artifacts = discover_visual_artifacts(conv_id, workspace, limit=6)
+    scratch_batches = list_scratch_upload_batches(conv_id, AGY_BRAIN_DIR)
     payload: dict[str, Any] = {
         "ok": True, "status": "LOADED",
         "conversation_id": conv_id, "project_id": project_id,
@@ -303,6 +303,7 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
         "avg_step_seconds": db_status_info.get("avg_step_seconds", 0.0),
         "session_health_warning": db_status_info.get("session_health_warning", ""),
         "git_summary": git_summary, "visual_artifacts": visual_artifacts,
+        "scratch_upload_batches": scratch_batches,
         "latest_assistant_response": latest_assistant_response,
         "task_content": task_content, "implementation_plan": plan_content,
         "walkthrough": walk_content, "scratch_files": scratch_files,

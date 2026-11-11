@@ -64,14 +64,17 @@ function New-RandomHex([int]$ByteCount) {
 
 $SubdomainHash = ""
 $PathSecret = ""
+$HostBridgeToken = ""
 if ($KeepExistingUrls -and (Test-Path $EnvFile)) {
     foreach ($line in Get-Content $EnvFile) {
         if ($line -match '^SUBDOMAIN_HASH=(.+)$') { $SubdomainHash = $Matches[1].Trim("'"" ") }
         if ($line -match '^PATH_SECRET=(.+)$') { $PathSecret = $Matches[1].Trim("'"" ") }
+        if ($line -match '^HOST_BRIDGE_TOKEN=(.+)$') { $HostBridgeToken = $Matches[1].Trim("'"" ") }
     }
 }
 if ([string]::IsNullOrEmpty($SubdomainHash)) { $SubdomainHash = New-RandomHex 6 }
 if ([string]::IsNullOrEmpty($PathSecret)) { $PathSecret = New-RandomHex 24 }
+if ([string]::IsNullOrEmpty($HostBridgeToken)) { $HostBridgeToken = New-RandomHex 32 }
 
 $parentDir = Split-Path -Parent $EnvFile
 if (-not (Test-Path $parentDir)) { New-Item -ItemType Directory -Path $parentDir -Force | Out-Null }
@@ -89,9 +92,12 @@ $Content = @"
 SUBDOMAIN_HASH=$SubdomainHash
 PATH_SECRET=$PathSecret
 PASS_HASH=$PassHash
+HOST_BRIDGE_TOKEN=$HostBridgeToken
 TTL_SECONDS=$TtlSeconds
 BIND_HOST=0.0.0.0
 BIND_PORT=8765
+HOST_BRIDGE_BIND_HOST=127.0.0.1
+HOST_BRIDGE_BIND_PORT=8098
 
 # --- Context Window & Pagination Budgets ---
 MAX_FILE_CHARS=$MaxFileChars

@@ -54,7 +54,7 @@ from agy_nexus.workspace import _resolve_and_read_files
 
 def run_self_test() -> int:
     """Run automated verification of deadbolt, normalization, session listing, stats engine, and FastMCP app routes."""
-    print("[*] Running agy-nexus-mcp v2.5.0 automated self-test...")
+    print("[*] Running agy-nexus-mcp v2.6.0 automated self-test...")
 
     # 1. Normalization & Passphrase Verification
     test_phrase = "Example Bridge 2026!"
@@ -108,7 +108,7 @@ def run_self_test() -> int:
     app = BridgeCompatMiddleware(raw_app)
     assert app is not None and app.web_html_path.is_file(), "Failed generating Starlette HTTP app or missing web/index.html"
     node_bin = shutil.which("node")
-    for js_name in ("charts.js", "hierarchy.js", "app.js", "sw.js"):
+    for js_name in ("charts.js", "hierarchy.js", "uploads.js", "health.js", "app.js", "sw.js"):
         js_path = app.web_dir / js_name
         assert js_path.is_file(), f"Missing web/{js_name}"
         js_text = js_path.read_text(encoding="utf-8")
@@ -194,21 +194,177 @@ def run_self_test() -> int:
             loaded_raw = load_session_into_gemini("1", spoken_passphrase=test_phrase)
             loaded_obj = json.loads(loaded_raw)
             assert loaded_obj.get("ok") is True and "execution_status" in loaded_obj and "visual_artifacts" in loaded_obj and "compaction_count" in loaded_obj, f"load_session_into_gemini failed: {loaded_obj}"
-        outline_raw = ask_workspace_readonly(
-            question="Outline handoff.py",
-            file_subpath="outline:src/agy_nexus/handoff.py",
-            workspace=str(AGY_GITLAB_DIR / "antigravity-config"),
-            spoken_passphrase=test_phrase,
-        )
-        outline_obj = json.loads(outline_raw)
-        fd = outline_obj.get("file_details") or {}
-        files_out = fd.get("files") or ([fd] if "path" in fd or "mode" in fd else [])
-        assert files_out and files_out[0].get("mode") == "ast_outline" and files_out[0].get("ast_outline", {}).get("symbol_count", 0) > 0, f"outline: mode failed: {outline_obj}"
+            assert "context_budget" in loaded_obj["execution_status"], f"Missing context_budget: {loaded_obj['execution_status']}"
+            from agy_nexus.session_status import extract_prior_session_baton
+            top_cid = str(sessions[0].get("conversation_id") or "")
+            baton_res = extract_prior_session_baton(top_cid, AGY_BRAIN_DIR, ws_path=str(AGY_GITLAB_DIR / "antigravity-config"))
+            assert "## Prior Session Baton" in baton_res, f"Baton extraction failed for {top_cid}: {baton_res}"
+        poly_targets = [
+            ("src/agy_nexus/handoff.py", "python"),
+            ("README.md", "markdown"),
+            ("mcp_config.template.json", "json"),
+            ("sidecars/ag-bridge-mcp/docker-compose.yml", "yaml"),
+            ("sidecars/ag-bridge-mcp/web/app.js", "javascript"),
+        ]
+        for subpath, expected_lang in poly_targets:
+            outline_raw = ask_workspace_readonly(
+                question=f"Outline {subpath}",
+                file_subpath=f"outline:{subpath}",
+                workspace=str(AGY_GITLAB_DIR / "antigravity-config"),
+                spoken_passphrase=test_phrase,
+            )
+            outline_obj = json.loads(outline_raw)
+            fd = outline_obj.get("file_details") or {}
+            files_out = fd.get("files") or ([fd] if "path" in fd or "mode" in fd else [])
+            assert files_out and files_out[0].get("mode") == "ast_outline", f"outline: mode failed for {subpath}: {outline_obj}"
+            ast_ol = files_out[0].get("ast_outline", {})
+            assert ast_ol.get("symbol_count", 0) > 0, f"Expected symbols in {subpath}: {ast_ol}"
+            assert ast_ol.get("language") == expected_lang, f"Language mismatch for {subpath}: expected {expected_lang}, got {ast_ol.get('language')}"
     finally:
         cfg.PASS_HASH = orig_hash
-    print("  [+] AST Undefined-Name Verifier (0 errors), 1-Call outline: Reader & load_session_into_gemini: PASS")
+    print("  [+] AST Undefined-Name Verifier (0 errors), Universal Polyglot outline: Reader & load_session_into_gemini: PASS")
 
-    print("[✓] All agy-nexus-mcp v2.5.0 self-tests completed successfully!")
+    # 11. Context Exceeded Immunity, Timestamped Upload Batches & Two-Step Headless Staging
+    from agy_nexus.session_status import check_context_exceeded
+    from agy_nexus.uploads import validate_conv_id, sanitize_filename, save_scratch_upload_batch, list_scratch_upload_batches
+    from agy_nexus.handoff import send_handoff_and_resume
+
+    assert check_context_exceeded("c4ee22ce-6f46-4c3f-8869-79718c464196") is False, "False positive on active session"
+    assert check_context_exceeded("52b90635-5178-4462-a5cf-0f117626c5a6") is True, "Expected True on historic error session"
+    assert validate_conv_id("../../etc") is False and validate_conv_id("c4ee22ce-6f46-4c3f-8869-79718c464196") is True
+    assert sanitize_filename("../bad/name.txt") == "name.txt"
+
+    uploads_js_src = (app.web_dir / "uploads.js").read_text(encoding="utf-8")
+    assert "/web/api/sessions/" in uploads_js_src and "nexus_passphrase" in uploads_js_src, "uploads.js missing /web/ route or nexus_passphrase key"
+
+    dummy_cid = "00000000-0000-0000-0000-000000000000"
+    dummy_dir = AGY_BRAIN_DIR / dummy_cid
+    dummy_dir.mkdir(parents=True, exist_ok=True)
+    cfg.PASS_HASH = expected_hash
+    try:
+        files = [("test_a.txt", b"hello world", "text/plain"), ("test_b.json", b'{"k": 1}', "application/json")]
+        res_upload = save_scratch_upload_batch(dummy_cid, files, label="selftest", brain_dir=AGY_BRAIN_DIR)
+        assert res_upload.get("ok") is True and res_upload.get("file_count") == 2
+        batch_folder = Path(res_upload["batch_folder"])
+        assert (batch_folder / "INDEX.md").is_file() and (batch_folder / "01_test_a.txt").is_file()
+
+        import asyncio
+        mp_bound = "----NexusSelfTestBoundary99"
+        mp_body = (
+            f"--{mp_bound}\r\nContent-Disposition: form-data; name=\"label\"\r\n\r\nasgi_e2e\r\n"
+            f"--{mp_bound}\r\nContent-Disposition: form-data; name=\"files\"; filename=\"shot_01.png\"\r\nContent-Type: image/png\r\n\r\nPNGDATA\r\n"
+            f"--{mp_bound}--\r\n"
+        ).encode("utf-8")
+        asgi_out: list[dict] = []
+        sent_body = False
+        async def _recv() -> dict:
+            nonlocal sent_body
+            if not sent_body:
+                sent_body = True
+                return {"type": "http.request", "body": mp_body, "more_body": False}
+            return {"type": "http.request", "body": b"", "more_body": False}
+        async def _send(msg: dict) -> None:
+            asgi_out.append(msg)
+        asyncio.run(app({
+            "type": "http", "method": "POST", "path": f"/web/api/sessions/{dummy_cid}/upload", "query_string": b"",
+            "headers": [(b"content-type", f"multipart/form-data; boundary={mp_bound}".encode()), (b"x-nexus-passphrase", test_phrase.encode())],
+        }, _recv, _send))
+        assert asgi_out and asgi_out[0].get("status") == 200, f"ASGI /web/api/sessions upload failed: {asgi_out}"
+        batches = list_scratch_upload_batches(dummy_cid, brain_dir=AGY_BRAIN_DIR)
+        assert len(batches) == 2, f"Expected 2 distinct collision-free batches, got {len(batches)}"
+
+        staged_raw = send_handoff_and_resume(
+            research_markdown="# Self Test Staging\nStaged markdown body.",
+            session_identifier=dummy_cid,
+            spoken_passphrase=test_phrase,
+            resume_headless=False,
+        )
+        staged_obj = json.loads(staged_raw)
+        assert staged_obj.get("ok") is True and staged_obj.get("status") == "STAGED_ONLY" and staged_obj.get("resumed") is False
+        assert "Do you understand the risk" in staged_obj.get("assistant_guidance", "")
+        staged_file = dummy_dir / "scratch" / "gemini_research_handoff.md"
+        assert staged_file.is_file() and "Staged markdown body." in staged_file.read_text(encoding="utf-8")
+
+        repo_root = Path(__file__).resolve().parents[2]
+        if str(repo_root) not in sys.path:
+            sys.path.insert(0, str(repo_root))
+        from http.server import ThreadingHTTPServer
+        import threading
+        import urllib.error
+        import urllib.request
+        import host_bridge.agy_host_bridge as hb_mod
+        from host_bridge.bridge_security import (
+            DEFAULT_BIND_HOST,
+            derive_bridge_token,
+            guard_cli_positional,
+            is_client_ip_allowed,
+            resolve_allowed_git_roots,
+            sanitize_conv_id,
+            sanitize_git_ref,
+        )
+
+        assert DEFAULT_BIND_HOST == "127.0.0.1", f"Expected 127.0.0.1 default bind, got {DEFAULT_BIND_HOST}"
+        assert is_client_ip_allowed("127.0.0.1") and is_client_ip_allowed("172.18.0.5")
+        assert not is_client_ip_allowed("192.168.1.99") and not is_client_ip_allowed("192.168.31.143")
+        assert Path.home().resolve() not in resolve_allowed_git_roots(AGY_GITLAB_DIR, AGY_DATA_DIR)
+        assert sanitize_git_ref("--output=/tmp/pwn") == "output/tmp/pwn"
+        assert sanitize_conv_id("--csrf_token") == "csrf_token" and guard_cli_positional("--help").startswith("\n")
+
+        orig_bridge_url, orig_path_sec, orig_hb_tok = cfg.AGY_HOST_BRIDGE_URL, cfg.PATH_SECRET, cfg.HOST_BRIDGE_TOKEN
+        cfg.PATH_SECRET, cfg.HOST_BRIDGE_TOKEN = test_secret, ""
+        expected_bridge_tok = derive_bridge_token(path_secret=test_secret, explicit_token="")
+        hb_mod.BRIDGE_TOKEN_OVERRIDE = expected_bridge_tok
+        hb_mod.HostBridgeHandler.quiet_logs = True
+        hb_srv = ThreadingHTTPServer(("127.0.0.1", 0), hb_mod.HostBridgeHandler)
+        hb_thread = threading.Thread(target=hb_srv.serve_forever, daemon=True)
+        hb_thread.start()
+        hb_url = f"http://127.0.0.1:{hb_srv.server_port}/agentapi"
+        cfg.AGY_HOST_BRIDGE_URL = hb_url
+        try:
+            def _hb_call(body_obj: dict, hdrs: dict[str, str]) -> tuple[int, dict]:
+                req_hb = urllib.request.Request(hb_url, data=json.dumps(body_obj).encode("utf-8"), headers=hdrs, method="POST")
+                try:
+                    with urllib.request.urlopen(req_hb, timeout=5) as r_hb:
+                        return r_hb.status, json.loads(r_hb.read().decode("utf-8"))
+                except urllib.error.HTTPError as e_hb:
+                    return e_hb.code, json.loads(e_hb.read().decode("utf-8"))
+
+            assert _hb_call({"action": "discover"}, {"Content-Type": "application/json"})[0] == 401, "Expected 401 without X-Bridge-Token"
+            assert _hb_call({"action": "discover"}, {"Content-Type": "application/json", "X-Bridge-Token": "wrong_token_" + "0" * 40})[0] == 401
+            assert _hb_call({"action": "discover"}, {"Content-Type": "application/json", "X-Bridge-Token": expected_bridge_tok, "Origin": "https://evil.example"})[0] == 403
+            st_home, body_home = _hb_call({"action": "git-inspect", "workspace_path": str(Path.home())}, cfg.get_host_bridge_headers())
+            assert st_home == 200 and body_home.get("ok") is False and "outside allowed roots" in str(body_home.get("error", ""))
+            st_nc, body_nc = _hb_call({"action": "new-conversation", "prompt": "hi", "workspace_path": str(Path.home())}, cfg.get_host_bridge_headers())
+            assert st_nc == 200 and body_nc.get("ok") is False and "outside allowed roots" in str(body_nc.get("error", ""))
+            st_git, body_git = _hb_call({"action": "git-inspect", "workspace_path": str(AGY_GITLAB_DIR / "antigravity-config"), "summary_only": True}, cfg.get_host_bridge_headers())
+            assert st_git == 200 and body_git.get("ok") is True, f"Authenticated git-inspect failed: {body_git}"
+
+            hb_mod.MOCK_ACTION_HANDLER = lambda p: {"ok": True, "returncode": 0, "conversation_id": p.get("conversation_id", dummy_cid)}
+            res_override_raw = send_handoff_and_resume(
+                research_markdown="RESUME_STAGED",
+                session_identifier=dummy_cid,
+                spoken_passphrase=test_phrase,
+                resume_headless=True,
+                force_interrupt=True,
+            )
+            res_override = json.loads(res_override_raw)
+            assert "Staged markdown body." in staged_file.read_text(encoding="utf-8")
+            assert res_override.get("ok") is True and res_override.get("write_mode") == "read_staged"
+        finally:
+            hb_mod.MOCK_ACTION_HANDLER = None
+            hb_mod.BRIDGE_TOKEN_OVERRIDE = ""
+            hb_srv.shutdown()
+            hb_srv.server_close()
+            cfg.AGY_HOST_BRIDGE_URL, cfg.PATH_SECRET, cfg.HOST_BRIDGE_TOKEN = orig_bridge_url, orig_path_sec, orig_hb_tok
+    finally:
+        cfg.PASS_HASH = orig_hash
+        shutil.rmtree(dummy_dir, ignore_errors=True)
+        for job_p in AGY_BG_DIR.glob(f"*{dummy_cid}*"):
+            job_p.unlink(missing_ok=True)
+    print("  [+] Context Exceeded Immunity, Timestamped Upload Batches & Two-Step Headless Override Gate: PASS")
+    print("  [+] Host Bridge CWE-306 & CWE-88 Zero-Trust Auth, Loopback Default, CIDR & Root Sandbox: PASS")
+
+    print("[✓] All agy-nexus-mcp v2.6.0 self-tests completed successfully!")
     return 0
 
 
@@ -221,7 +377,7 @@ def main() -> None:
     if len(PASS_HASH) != 64:
         sys.exit("FATAL: PASS_HASH must be a 64-character SHA-256 hex string. Run init_secrets.py to configure.")
 
-    print(f"[*] Starting agy-nexus-mcp v2.5.0 on {BIND_HOST}:{BIND_PORT} (stateless_http=True, json_response=True)", flush=True)
+    print(f"[*] Starting agy-nexus-mcp v2.6.0 on {BIND_HOST}:{BIND_PORT} (stateless_http=True, json_response=True)", flush=True)
     print(f"[*] MCP Route: /{PATH_SECRET[:6]}...{PATH_SECRET[-4:]}/mcp | Web Overwatch: /{PATH_SECRET[:6]}...{PATH_SECRET[-4:]}/web", flush=True)
     raw_app = mcp.http_app(
         path=f"/{PATH_SECRET}/mcp",

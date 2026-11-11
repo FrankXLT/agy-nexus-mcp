@@ -11,13 +11,13 @@ import re
 import time
 from typing import Any
 import urllib.request
+import agy_nexus.config as cfg
 from agy_nexus.config import (
     AGY_BG_DIR,
     AGY_BRAIN_DIR,
     AGY_CONFIG_DIR,
     AGY_DATA_DIR,
     AGY_GITLAB_DIR,
-    AGY_HOST_BRIDGE_URL,
     ALLOW_LOCKED_STAGING,
     HANDOFF_ANNOTATIONS,
     LOCKED_RESPONSE,
@@ -33,21 +33,29 @@ from agy_nexus.inventory import (
     build_interjection_directive,
     evaluate_session_customization_scope,
 )
-from agy_nexus.routing import _resolve_target_session_for_handoff, _session_matches_repo_hint
+from agy_nexus.routing import (
+    _resolve_session_identifier,
+    _resolve_target_session_for_handoff,
+    _session_matches_repo_hint,
+)
 from agy_nexus.session_status import (
     _get_selected_session_quick_status,
+    check_context_exceeded,
     check_inflight_handoff_mutex,
+    extract_prior_session_baton,
+    find_latest_session_for_workspace,
 )
 from agy_nexus.workflows import stage_quarantine_handoff
 from agy_nexus.workspace import _resolve_workspace_str
+from agy_nexus.telemetry_scanner import get_active_mainchat_model
 
 def _post_bridge(payload: dict[str, Any]) -> dict[str, Any]:
     try:
-        req = urllib.request.Request(AGY_HOST_BRIDGE_URL, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
+        req = urllib.request.Request(cfg.AGY_HOST_BRIDGE_URL, data=json.dumps(payload).encode("utf-8"), headers=cfg.get_host_bridge_headers(), method="POST")
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read().decode("utf-8", errors="replace"))
     except Exception as e:
-        return {"ok": False, "error": f"Failed reaching agy-incident-bridge at {AGY_HOST_BRIDGE_URL}: {e}"}
+        return {"ok": False, "error": f"Failed reaching agy-incident-bridge at {cfg.AGY_HOST_BRIDGE_URL}: {e}"}
 
 @mcp.tool(annotations=HANDOFF_ANNOTATIONS, output_schema=None)
 def send_handoff_and_resume(
@@ -87,6 +95,15 @@ def send_handoff_and_resume(
       4. Approve release only after all verification gates pass (allow_chained_publish=True).
 
     Pass session_identifier ('1', conversation_id, title, or repo name) to target a specific session directly. Keep research_markdown <= 4,500 chars per call.
+
+    Two-Step Headless Confirmation & Override Protocol:
+      1. Default Write-Only Staging (resume_headless=False):
+         Stages research notes to scratch/gemini_research_handoff.md (status="STAGED_ONLY", resumed=False) without calling agy RPCs.
+         Gemini MUST inform the user that changes are staged, advise them to send/trigger it in the Antigravity app, and end with the exact prompt:
+         "Do you understand the risk and would you like me to override and resume it headlessly anyway?"
+      2. Zero-Reupload Override (RESUME_STAGED):
+         If the user answers "Yes", call send_handoff_and_resume(..., resume_headless=True, research_markdown="RESUME_STAGED").
+         This reads the already-staged file without overwriting it and fires the headless wakeup RPC immediately.
     """
     if not is_unlocked(spoken_passphrase):
         if ALLOW_LOCKED_STAGING and not resume_headless and not create_new_session:
@@ -103,12 +120,22 @@ def send_handoff_and_resume(
     if eff_handoff_mode not in ("intent", "visual_critique", "surgical_audit"):
         eff_handoff_mode = "intent"
     resolved_conv_id, routing_reason = ("", "create_new_session")
+    auto_rollover_from = ""
     if not create_new_session:
         resolved_conv_id, routing_reason = _resolve_target_session_for_handoff(
             session_identifier=session_identifier, workspace_path=workspace_path,
             project_name=project_name, session_title=session_title,
             activate_skills=activate_skills, research_markdown=research_markdown,
         )
+        if resolved_conv_id:
+            tgt_st = _get_selected_session_quick_status(resolved_conv_id)
+            tgt_steps = int(tgt_st.get("step_count") or 0)
+            tgt_exceeded = bool(tgt_st.get("context_exceeded") or check_context_exceeded(resolved_conv_id, AGY_BRAIN_DIR))
+            if tgt_steps >= 380 or tgt_exceeded:
+                auto_rollover_from = resolved_conv_id
+                create_new_session = True
+                routing_reason = f"auto_promoted_rollover_from_{resolved_conv_id[:8]} (steps={tgt_steps}, exceeded={tgt_exceeded})"
+                resolved_conv_id = ""
     active_ws = workspace_path.strip() or SESSION_STATE.get("selected_workspace") or str(AGY_GITLAB_DIR / "antigravity-config")
     edit_scope_clean = (customization_edit_scope or "none").strip().lower()
     if edit_scope_clean == "global":
@@ -130,122 +157,91 @@ def send_handoff_and_resume(
                 active_ws = workspace_path
                 if not project_name.strip():
                     project_name = "antigravity-config"
-    interjection_block, cust_scope_info = build_interjection_directive(
-        activate_skills=activate_skills, target_agent_role=target_agent_role,
-        customization_edit_scope=edit_scope_clean, research_markdown=research_markdown,
-        workspace_str=active_ws, config_dir=AGY_CONFIG_DIR, data_dir=AGY_DATA_DIR, gitlab_dir=AGY_GITLAB_DIR,
-    )
-    header = (
-        f"<!-- Handshake Gemini Research Handoff -->\n"
-        f"<!-- Generated: {ts_now} -->\n"
-        f"<!-- Execution Mode: {execution_mode} | Handoff Mode: {eff_handoff_mode} | Chained Publish: {allow_chained_publish} | Model: {model} | Effort: {effort} | Modular Hygiene: {apply_hygiene} -->\n\n"
-    )
+    baton_block = ""
+    if create_new_session:
+        prev_id = auto_rollover_from or (_resolve_session_identifier(session_identifier.strip()) if session_identifier.strip() else find_latest_session_for_workspace(active_ws))
+        if prev_id:
+            baton_block = extract_prior_session_baton(prev_id, AGY_BRAIN_DIR, ws_path=active_ws)
+    elif resolved_conv_id:
+        tgt_st = _get_selected_session_quick_status(resolved_conv_id)
+        if int(tgt_st.get("step_count") or 0) >= 350 or bool(tgt_st.get("context_exceeded") or check_context_exceeded(resolved_conv_id, AGY_BRAIN_DIR)):
+            baton_block = extract_prior_session_baton(resolved_conv_id, AGY_BRAIN_DIR, ws_path=active_ws)
+    interjection_block, cust_scope_info = build_interjection_directive(activate_skills=activate_skills, target_agent_role=target_agent_role, customization_edit_scope=edit_scope_clean, research_markdown=research_markdown, workspace_str=active_ws, config_dir=AGY_CONFIG_DIR, data_dir=AGY_DATA_DIR, gitlab_dir=AGY_GITLAB_DIR)
+    main_model_info = get_active_mainchat_model(AGY_DATA_DIR)
+    header = f"<!-- Handshake Gemini Research Handoff -->\n<!-- Generated: {ts_now} -->\n<!-- Execution Mode: {execution_mode} | Handoff Mode: {eff_handoff_mode} | Chained Publish: {allow_chained_publish} | Model: {model} | MainChat: {main_model_info.get('model_label', 'Gemini 4 Carbon')} | Effort: {effort} | Modular Hygiene: {apply_hygiene} -->\n\n"
     stage_gate_block = (
-        "> [!IMPORTANT]\n"
-        "> **STAGE & PREVIEW ONLY (`allow_chained_publish=False`)**: Do NOT run `git push`, `publish_to_github.py`, or remote production stack redeployments in this turn.\n"
+        "> [!IMPORTANT]\n> **STAGE & PREVIEW ONLY (`allow_chained_publish=False`)**: Do NOT run `git push`, `publish_to_github.py`, or remote production stack redeployments in this turn.\n"
         "> Stage all changes locally, capture verification screenshots and diffs, and halt execution so Gemini and the user can inspect via `inspect_artifact_image` / `inspect_git_diff`. **You MUST still restart the local `ag-bridge-mcp` service/container** whenever Python/web files change so fixes take effect in memory immediately.\n\n"
-        if not allow_chained_publish
-        else ""
+        if not allow_chained_publish else ""
     )
     subagent_footer = (
         "\n---\n\n"
-        "## Mandatory 4-Step Subagent Execution Lifecycle & Verification Gate\n\n"
-        "1. **Scout (`flash-scout`)**: Read all attached `SKILL.md` contracts first; use `flash-scout` with Serena's symbolic LSP tools (`get_symbols_overview`, `find_symbol`, `find_referencing_symbols`) and AST outlining rather than blind full-file reads.\n"
-        "2. **Implement (`flash-surgeon` / `argon-surgeon`)**: Delegate modular edits (`<= 300 lines/file`, hard ceiling 400 lines) using Serena symbolic editing (`replace_symbol_body`, `insert_after_symbol`) and targeted edits to subagents rather than blind rewrites.\n"
-        "3. **Audit (`flash-auditor`)**: Invoke `flash-auditor` (`model='flash'`) to run syntax/unit/smoke checks and verify `git diff` before marking `task.md` complete (Rule 8.1: the agent that wrote code never signs it off alone).\n"
+        "## Mandatory 4-Step Execution Lifecycle & Verification Gate (Carbon 4 Main-Chat + Subagent Hybrid)\n\n"
+        "1. **Scout (Direct LSP or `flash-scout`)**: Read all attached `SKILL.md` contracts first. For 1–2 file scope, use Serena's symbolic LSP tools (`get_symbols_overview`, `find_symbol`, `find_referencing_symbols`) or `polyglot_outline` directly; for multi-file or repo-wide discovery, dispatch `flash-scout` (`model='flash'`).\n"
+        "2. **Implement (Main-Chat `Gemini 4 Carbon` / `argon-surgeon` / `flash-surgeon`)**: Execute 1–2 file surgical symbolic edits (`replace_symbol_body`, `insert_after_symbol`) or complex state-machine logic directly in Main Chat (on **Gemini 4 Carbon**) or via `argon-surgeon` (`model='pro'`); fan out 3+ file or mechanical refactors (`<= 300 lines/file`, hard ceiling 400 lines) to `flash-surgeon` (`model='flash'`).\n"
+        "3. **Audit (`flash-auditor` & Intra-Google Dual-Review)**: Invoke `flash-auditor` (`model='flash'`) to run syntax/unit/smoke checks and verify `git diff` (or pit `argon-sentinel` `model='pro'` against Main-Chat **Gemini 4 Carbon** for architectural/security review) before marking `task.md` complete (Rule 8.1: the agent that wrote code never signs it off alone).\n"
         "4. **Visual & Preview Gate**: If any `.html`, `.css`, or frontend `.js` files were modified, run `~/.gemini/config/skills/visual-architecture-system/scripts/verify_visual_contract.py` against the local page and save desktop + mobile screenshots to the session artifact directory. When `allow_chained_publish=False`, halt at local staging + preview without pushing or redeploying (restarting the local `ag-bridge-mcp` service/container whenever Python/web files change so fixes take effect in memory immediately).\n"
     )
     body_clean = research_markdown.strip()
+    is_resume_staged = bool(resume_headless and (body_clean == "RESUME_STAGED" or not body_clean))
     hygiene_suffix = f"\n{MODULAR_HYGIENE_MARKDOWN_BLOCK.strip()}\n" if (apply_hygiene and "Mandatory Modular Architecture" not in body_clean) else ""
-    full_content = header + stage_gate_block + body_clean + interjection_block + hygiene_suffix + subagent_footer + "\n"
+    full_content = header + stage_gate_block + baton_block + body_clean + interjection_block + hygiene_suffix + subagent_footer + "\n"
     size_warning = f"research_markdown was {len(body_clean)} chars (recommended <= 4,500 chars per call). Consider using append_to_existing=True for multi-part handoffs." if len(body_clean) > 4500 else ""
 
     def _write_or_append(target: Path) -> str:
+        if is_resume_staged:
+            return "read_staged"
         if append_to_existing and target.is_file():
             existing = target.read_text(encoding="utf-8", errors="replace").rstrip()
-            target.write_text(f"{existing}\n\n---\n<!-- Appended: {ts_now} -->\n\n{body_clean}{interjection_block}\n", encoding="utf-8")
+            target.write_text(f"{existing}\n\n---\n<!-- Appended: {ts_now} -->\n\n{baton_block}{body_clean}{interjection_block}\n", encoding="utf-8")
             return "appended"
         target.write_text(full_content, encoding="utf-8")
         return "written"
 
     conv_id = "" if create_new_session else resolved_conv_id
-    if not conv_id and (create_new_session or resume_headless):
-        title_clean = session_title.strip() or "Gemini Handshake Project"
-        eff_project_name = project_name.strip()
+    if is_resume_staged:
+        target_check = (AGY_BRAIN_DIR / conv_id / "scratch" / "gemini_research_handoff.md") if conv_id else (AGY_BG_DIR / "latest_gemini_handoff.md")
+        if not target_check.is_file() and (AGY_BG_DIR / "latest_gemini_handoff.md").is_file():
+            target_check = AGY_BG_DIR / "latest_gemini_handoff.md"
+        if target_check.is_file():
+            body_clean = target_check.read_text(encoding="utf-8", errors="replace").strip()
+        else:
+            return json.dumps({"ok": False, "status": "ERROR", "error": f"No staged handoff found to resume at {target_check}. Please provide research_markdown."}, indent=2)
+
+    if not conv_id and resume_headless:
+        title_clean, eff_project_name, eff_project_id = session_title.strip() or "Gemini Handshake Project", project_name.strip(), ""
         eff_workspace_path = _resolve_workspace_str(workspace_path.strip()) if workspace_path.strip() else ""
-        eff_project_id = ""
         if not eff_workspace_path:
             gitlab_prefix_re = re.escape(str(AGY_GITLAB_DIR))
-            m_target = re.search(rf"(?:Target\s+Workspace|Workspace|Repository|Directory)[^\n`/]*({gitlab_prefix_re}/[a-zA-Z0-9._-]+)", research_markdown, re.I) or re.search(rf"({gitlab_prefix_re}/[a-zA-Z0-9._-]+)", research_markdown)
+            m_target = re.search(rf"(?:Target\s+Workspace|Workspace|Repository|Directory)[^\n`/]*({gitlab_prefix_re}/[a-zA-Z0-9._-]+)", body_clean, re.I) or re.search(rf"({gitlab_prefix_re}/[a-zA-Z0-9._-]+)", body_clean)
             if m_target:
                 eff_workspace_path = _resolve_workspace_str(m_target.group(1).rstrip("/"))
-                if not eff_project_name:
-                    eff_project_name = Path(eff_workspace_path).name
+                eff_project_name = eff_project_name or Path(eff_workspace_path).name
         if not eff_project_name and not eff_workspace_path:
-            eff_project_id = SESSION_STATE.get("selected_project", "")
-            eff_workspace_path = SESSION_STATE.get("selected_workspace", "")
+            eff_project_id, eff_workspace_path = SESSION_STATE.get("selected_project", ""), SESSION_STATE.get("selected_workspace", "")
         prompt_body = body_clean if len(body_clean) <= 4200 else f"{body_clean[:4200]}\n\n... [Full {len(body_clean)}-char specification written to session brain `scratch/gemini_research_handoff.md` — read that file first]"
-        spawn_prompt = (
-            f"# {title_clean}\n\nThe user initiated this project from Google Gemini via `ag-bridge-mcp` (Handoff Mode: {eff_handoff_mode}).\n\n"
-            f"{stage_gate_block}{prompt_body}{interjection_block}{hygiene_suffix}{subagent_footer}\n\n"
-            f"Please review session brain `scratch/gemini_research_handoff.md` and modular hygiene requirements above, create `task.md`, and begin in `{execution_mode}` mode."
-        )
-        bridge_payload = {
-            "action": "new-conversation", "model": model if model in ("flash_lite", "flash", "pro") else "pro",
-            "title": title_clean, "prompt": spawn_prompt, "project_id": eff_project_id,
-            "project_name": eff_project_name, "workspace_path": eff_workspace_path,
-        }
-        bridge_response = _post_bridge(bridge_payload)
+        spawn_prompt = f"# {title_clean}\n\nThe user initiated this project from Google Gemini via `ag-bridge-mcp` (Handoff Mode: {eff_handoff_mode}).\n\n{stage_gate_block}{baton_block}{prompt_body}{interjection_block}{hygiene_suffix}{subagent_footer}\n\nPlease review session brain `scratch/gemini_research_handoff.md` and modular hygiene requirements above, create `task.md`, and begin in `{execution_mode}` mode."
+        bridge_response = _post_bridge({"action": "new-conversation", "model": model if model in ("flash_lite", "flash", "pro") else "pro", "title": title_clean, "prompt": spawn_prompt, "project_id": eff_project_id, "project_name": eff_project_name, "workspace_path": eff_workspace_path})
         new_conv_id = str(bridge_response.get("conversation_id") or "").strip()
         pinned_ws = eff_workspace_path or str(bridge_response.get("workspace_path") or "")
         if new_conv_id:
             conv_id = new_conv_id
-            pin_session_context(
-                conv_id, title=title_clean,
-                project_id=str(bridge_response.get("project_id") or eff_project_id),
-                project_name=str(bridge_response.get("project_name") or eff_project_name),
-                workspace=pinned_ws,
-                mode="WORKTREE" if use_worktree else "MAIN WRITER",
-                last_tool="send_handoff_and_resume", set_default=True,
-            )
+            pin_session_context(conv_id, title=title_clean, project_id=str(bridge_response.get("project_id") or eff_project_id), project_name=str(bridge_response.get("project_name") or eff_project_name), workspace=pinned_ws, mode="WORKTREE" if use_worktree else "MAIN WRITER", last_tool="send_handoff_and_resume", set_default=True)
             scratch_dir = AGY_BRAIN_DIR / conv_id / "scratch"
             scratch_dir.mkdir(parents=True, exist_ok=True)
             handoff_file = scratch_dir / "gemini_research_handoff.md"
-            write_mode = _write_or_append(handoff_file)
         else:
             AGY_BG_DIR.mkdir(parents=True, exist_ok=True)
             handoff_file = AGY_BG_DIR / "latest_gemini_handoff.md"
-            write_mode = _write_or_append(handoff_file)
+        write_mode = _write_or_append(handoff_file)
         job_id = f"job-{hashlib.sha256(f'{conv_id or title_clean}-{time.time()}'.encode()).hexdigest()[:8]}"
-        job_metadata = {
-            "job_id": job_id, "conversation_id": conv_id,
-            "project_id": bridge_response.get("project_id", eff_project_id),
-            "project_name": bridge_response.get("project_name", eff_project_name),
-            "workspace_path": pinned_ws,
-            "started_at": ts_now, "execution_mode": execution_mode,
-            "handoff_mode": eff_handoff_mode, "allow_chained_publish": allow_chained_publish,
-            "model": model, "effort": effort, "created_new_session": True,
-            "modular_hygiene_enforced": apply_hygiene, "customization_scope_info": cust_scope_info,
-            "bridge_response": bridge_response,
-        }
+        job_metadata: dict[str, Any] = {"job_id": job_id, "conversation_id": conv_id, "project_id": bridge_response.get("project_id", eff_project_id), "project_name": bridge_response.get("project_name", eff_project_name), "workspace_path": pinned_ws, "started_at": ts_now, "execution_mode": execution_mode, "handoff_mode": eff_handoff_mode, "allow_chained_publish": allow_chained_publish, "model": model, "active_mainchat_model": main_model_info, "effort": effort, "created_new_session": True, "modular_hygiene_enforced": apply_hygiene, "customization_scope_info": cust_scope_info, "bridge_response": bridge_response}
+        if auto_rollover_from:
+            job_metadata["auto_rollover_from"] = auto_rollover_from
         (AGY_BG_DIR / f"{job_id}.json").write_text(json.dumps(job_metadata, indent=2) + "\n", encoding="utf-8")
-        out_new: dict[str, Any] = {
-            "ok": bridge_response.get("ok", False), "status": "RESUMED", "created_new_session": True,
-            "resumed": True, "write_mode": write_mode, "chars_written": len(body_clean),
-            "modular_hygiene_enforced": apply_hygiene, "customization_scope_info": cust_scope_info,
-            "job_id": job_id, "conversation_id": conv_id,
-            "handoff_mode": eff_handoff_mode, "allow_chained_publish": allow_chained_publish,
-            "project_id": bridge_response.get("project_id", eff_project_id),
-            "project_name": bridge_response.get("project_name", eff_project_name),
-            "workspace_path": pinned_ws,
-            "handoff_file": str(handoff_file),
-            "assistant_guidance": (
-                "STOP AND REPLY TO USER NOW: Handoff delivered and Antigravity session resumed in the background. "
-                "Do NOT chain a second MCP tool after a successful response. "
-                "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback."
-            ),
-            "bridge_response": bridge_response,
-        }
+        out_new: dict[str, Any] = {"ok": bridge_response.get("ok", False), "status": "RESUMED", "created_new_session": True, "resumed": True, "write_mode": write_mode, "chars_written": len(body_clean), "modular_hygiene_enforced": apply_hygiene, "customization_scope_info": cust_scope_info, "active_mainchat_model": main_model_info, "job_id": job_id, "conversation_id": conv_id, "handoff_mode": eff_handoff_mode, "allow_chained_publish": allow_chained_publish, "workspace_path": pinned_ws, "project_id": bridge_response.get("project_id", eff_project_id), "project_name": bridge_response.get("project_name", eff_project_name), "handoff_file": str(handoff_file), "assistant_guidance": "STOP AND REPLY TO USER NOW: Handoff delivered and session resumed in background. Do NOT chain a second MCP tool after a successful response.", "bridge_response": bridge_response}
+        if auto_rollover_from:
+            out_new["auto_rollover_from"], out_new["auto_promoted_rollover"] = auto_rollover_from, True
         if size_warning:
             out_new["size_warning"] = size_warning
         return json.dumps(out_new, indent=2)
@@ -255,10 +251,22 @@ def send_handoff_and_resume(
         handoff_file = AGY_BG_DIR / "latest_gemini_handoff.md"
         write_mode = _write_or_append(handoff_file)
         out_staged: dict[str, Any] = {
-            "ok": True, "status": "STAGED", "resumed": False, "write_mode": write_mode,
-            "chars_written": len(body_clean), "modular_hygiene_enforced": apply_hygiene,
-            "customization_scope_info": cust_scope_info, "conversation_id": "", "handoff_file": str(handoff_file),
-            "message": "Research handoff staged to sidecar_data/ag-bridge-bg/latest_gemini_handoff.md. Pass create_new_session=True or resume_headless=True to spawn a live Antigravity session.",
+            "ok": True,
+            "status": "STAGED_ONLY",
+            "resumed": False,
+            "write_mode": write_mode,
+            "chars_written": len(body_clean),
+            "modular_hygiene_enforced": apply_hygiene,
+            "customization_scope_info": cust_scope_info,
+            "active_mainchat_model": main_model_info,
+            "conversation_id": "",
+            "handoff_file": str(handoff_file),
+            "assistant_guidance": (
+                f"STOP AND REPLY TO USER NOW: Handoff is staged to Antigravity at {handoff_file}. "
+                "Advise the user that changes are staged and they can send/trigger it in the Antigravity app. "
+                "You MUST end your response with this exact prompt: 'Do you understand the risk and would you like me to override and resume it headlessly anyway?'"
+            ),
+            "message": f"Research handoff staged to {handoff_file} without headless wakeup.",
         }
         if size_warning:
             out_staged["size_warning"] = size_warning
@@ -273,24 +281,7 @@ def send_handoff_and_resume(
     if resume_headless and not force_interrupt:
         mutex_check = check_inflight_handoff_mutex(conv_id, AGY_BG_DIR, quick_st, max_age_seconds=300)
         if mutex_check:
-            out_collision: dict[str, Any] = {
-                "ok": False,
-                "status": "ALREADY_RUNNING",
-                "conversation_id": conv_id,
-                "conversation_title": conv_title,
-                "active_job_id": mutex_check["active_job_id"],
-                "elapsed_seconds": mutex_check["elapsed_seconds"],
-                "started_at": mutex_check["started_at"],
-                "handoff_mode": eff_handoff_mode,
-                "allow_chained_publish": allow_chained_publish,
-                "assistant_guidance": (
-                    "STOP AND REPLY TO USER NOW: Target session is currently RUNNING with an active background job (< 300s). "
-                    "Do NOT call send_handoff_and_resume again immediately. "
-                    "Call manage_background_run(action='status') to monitor progress, or pass force_interrupt=True to override."
-                ),
-                "message": mutex_check["message"],
-            }
-            return json.dumps(out_collision, indent=2)
+            return json.dumps({"ok": False, "status": "ALREADY_RUNNING", "conversation_id": conv_id, "conversation_title": conv_title, "active_job_id": mutex_check["active_job_id"], "elapsed_seconds": mutex_check["elapsed_seconds"], "started_at": mutex_check["started_at"], "handoff_mode": eff_handoff_mode, "allow_chained_publish": allow_chained_publish, "assistant_guidance": "STOP AND REPLY TO USER NOW: Target session is currently RUNNING with an active background job (< 300s). Call manage_background_run(action='status') to monitor progress, or pass force_interrupt=True to override.", "message": mutex_check["message"]}, indent=2)
 
     handoff_file = scratch_dir / "gemini_research_handoff.md"
     write_mode = _write_or_append(handoff_file)
@@ -298,15 +289,28 @@ def send_handoff_and_resume(
     pin_session_context(conv_id, title=conv_title, workspace=str(quick_st.get("workspace_path") or active_ws), mode=sess_mode, last_tool="send_handoff_and_resume", set_default=True)
     if not resume_headless:
         out_local: dict[str, Any] = {
-            "ok": True, "status": "STAGED", "resumed": False, "write_mode": write_mode,
-            "chars_written": len(body_clean), "modular_hygiene_enforced": apply_hygiene,
-            "handoff_mode": eff_handoff_mode, "allow_chained_publish": allow_chained_publish,
-            "customization_scope_info": cust_scope_info, "conversation_id": conv_id,
-            "conversation_title": conv_title, "routing_reason": routing_reason,
-            "mode": sess_mode, "other_running_sessions": other_writers,
+            "ok": True,
+            "status": "STAGED_ONLY",
+            "resumed": False,
+            "write_mode": write_mode,
+            "chars_written": len(body_clean),
+            "modular_hygiene_enforced": apply_hygiene,
+            "handoff_mode": eff_handoff_mode,
+            "allow_chained_publish": allow_chained_publish,
+            "customization_scope_info": cust_scope_info,
+            "active_mainchat_model": main_model_info,
+            "conversation_id": conv_id,
+            "conversation_title": conv_title,
+            "routing_reason": routing_reason,
+            "mode": sess_mode,
+            "other_running_sessions": other_writers,
             "handoff_file": str(handoff_file),
-            "assistant_guidance": f"STOP AND REPLY TO USER NOW: Research handoff written to {handoff_file}.",
-            "message": f"Research handoff successfully {write_mode} to {handoff_file} ({len(body_clean)} chars).",
+            "assistant_guidance": (
+                f"STOP AND REPLY TO USER NOW: Handoff is staged to Antigravity at {handoff_file}. "
+                "Advise the user that changes are staged and they can send/trigger it in the Antigravity app. "
+                "You MUST end your response with this exact prompt: 'Do you understand the risk and would you like me to override and resume it headlessly anyway?'"
+            ),
+            "message": f"Research handoff successfully {write_mode} to {handoff_file} ({len(body_clean)} chars) without headless wakeup.",
         }
         if size_warning:
             out_local["size_warning"] = size_warning
@@ -314,61 +318,27 @@ def send_handoff_and_resume(
 
     AGY_BG_DIR.mkdir(parents=True, exist_ok=True)
     job_id = f"job-{hashlib.sha256(f'{conv_id}-{time.time()}'.encode()).hexdigest()[:8]}"
-    gate_directive = (
-        "STAGE & PREVIEW ONLY (allow_chained_publish=False): Stage changes locally, run visual checks/diffs, and do NOT push to GitHub or redeploy remote production stacks in this turn. You MUST still restart the local ag-bridge-mcp service/container whenever Python/web files change so fixes take effect in memory immediately. "
-        if not allow_chained_publish
-        else "CHAINED PUBLISH PERMITTED (allow_chained_publish=True): Ensure all verification and audit checks pass before publishing. "
-    )
+    gate_directive = "STAGE & PREVIEW ONLY (allow_chained_publish=False): Stage changes locally, run visual checks/diffs, and do NOT push to GitHub or redeploy remote production stacks in this turn. You MUST still restart the local ag-bridge-mcp service/container whenever Python/web files change so fixes take effect in memory immediately. " if not allow_chained_publish else "CHAINED PUBLISH PERMITTED (allow_chained_publish=True): Ensure all verification and audit checks pass before publishing. "
     send_prompt_body = body_clean if len(body_clean) <= 2500 else f"{body_clean[:2500]}\n\n... [Full {len(body_clean)}-char specification written to `{handoff_file}` — read that file first]"
     bridge_payload = {
         "action": "send-message", "conversation_id": conv_id,
         "project_id": SESSION_STATE.get("session_project_map", {}).get(conv_id) or SESSION_STATE.get("selected_project", ""),
         "title": session_title.strip() or "Gemini Research Handoff",
         "prompt": (
-            (
-                f"> [!IMPORTANT]\n"
-                f"> **STAGE & PREVIEW ONLY (`allow_chained_publish=False`)**: Do NOT run `git push`, `publish_to_github.py`, or remote production stack redeployments in this turn.\n"
-                f"> Stage all changes locally, capture verification screenshots and diffs, and halt execution so Gemini and the user can inspect via `inspect_artifact_image` / `inspect_git_diff`. **You MUST still restart the local `ag-bridge-mcp` service/container** whenever Python/web files change so fixes take effect in memory immediately.\n\n"
-                if not allow_chained_publish else ""
-            )
-            + f"# Gemini Follow-Up Handoff ({eff_handoff_mode.upper()} Mode)\n\n"
+            f"{stage_gate_block}# Gemini Follow-Up Handoff ({eff_handoff_mode.upper()} Mode)\n\n"
             f"The user provided a new follow-up request via Google Gemini (`ag-bridge-mcp`).\n\n"
-            f"{send_prompt_body}\n\n"
-            f"---\n"
-            f"{interjection_block}\n"
-            "Follow the 4-Step Subagent Execution Lifecycle:\n"
-            "1. Scout: Read attached SKILL.md contracts; use flash-scout with Serena LSP tools (get_symbols_overview, find_symbol) & AST outlining instead of blind full-file reads.\n"
-            "2. Implement: Delegate modular edits (<= 300 lines/file) using Serena symbolic editing (replace_symbol_body) & targeted edits to flash-surgeon / argon-surgeon.\n"
-            "3. Audit: Invoke flash-auditor (model='flash') to verify git diff and run unit/smoke tests before marking task.md complete (Rule 8.1: no solo signoff).\n"
-            f"4. Gate: {gate_directive}\n\n"
-            f"Please review `{handoff_file}`, update `task.md`, and execute the next phase."
+            f"{baton_block}{send_prompt_body}\n\n---\n{interjection_block}\n"
+            "Follow the 4-Step Execution Lifecycle (Carbon 4 Main-Chat + Subagent Hybrid):\n"
+            "1. Scout: Read attached SKILL.md contracts; use Serena LSP tools (get_symbols_overview, find_symbol) / polyglot_outline directly for 1-2 files, or flash-scout (model='flash') for multi-file discovery.\n"
+            "2. Implement: Execute 1-2 file surgical symbolic edits (replace_symbol_body) or complex logic directly in Main Chat (Gemini 4 Carbon) or via argon-surgeon (model='pro'); fan out 3+ file / mechanical refactors (<= 300 lines/file) to flash-surgeon (model='flash').\n"
+            "3. Audit: Invoke flash-auditor (model='flash') or Intra-Google Dual-Review (argon-sentinel model='pro' vs Carbon 4) to verify git diff and run unit/smoke tests before marking task.md complete (Rule 8.1: no solo signoff).\n"
+            f"4. Gate: {gate_directive}\n\nPlease review `{handoff_file}`, update `task.md`, and execute the next phase."
         ),
     }
     bridge_response = _post_bridge(bridge_payload)
-    job_metadata = {
-        "job_id": job_id, "conversation_id": conv_id, "conversation_title": conv_title,
-        "routing_reason": routing_reason, "started_at": ts_now, "execution_mode": execution_mode,
-        "handoff_mode": eff_handoff_mode, "allow_chained_publish": allow_chained_publish,
-        "model": model, "effort": effort, "use_worktree": use_worktree, "mode": sess_mode,
-        "other_running_sessions": other_writers, "modular_hygiene_enforced": apply_hygiene,
-        "customization_scope_info": cust_scope_info, "bridge_response": bridge_response,
-    }
+    job_metadata = {"job_id": job_id, "conversation_id": conv_id, "conversation_title": conv_title, "routing_reason": routing_reason, "started_at": ts_now, "execution_mode": execution_mode, "handoff_mode": eff_handoff_mode, "allow_chained_publish": allow_chained_publish, "model": model, "active_mainchat_model": main_model_info, "effort": effort, "use_worktree": use_worktree, "mode": sess_mode, "other_running_sessions": other_writers, "modular_hygiene_enforced": apply_hygiene, "customization_scope_info": cust_scope_info, "bridge_response": bridge_response}
     (AGY_BG_DIR / f"{job_id}.json").write_text(json.dumps(job_metadata, indent=2) + "\n", encoding="utf-8")
-    out_resumed: dict[str, Any] = {
-        "ok": bridge_response.get("ok", False), "status": "RESUMED", "resumed": True,
-        "write_mode": write_mode, "chars_written": len(body_clean),
-        "modular_hygiene_enforced": apply_hygiene, "customization_scope_info": cust_scope_info,
-        "job_id": job_id, "conversation_id": conv_id, "conversation_title": conv_title,
-        "routing_reason": routing_reason, "mode": sess_mode, "other_running_sessions": other_writers,
-        "handoff_mode": eff_handoff_mode, "allow_chained_publish": allow_chained_publish,
-        "handoff_file": str(handoff_file),
-        "assistant_guidance": (
-            "STOP AND REPLY TO USER NOW: Handoff delivered and Antigravity session resumed in the background. "
-            "Do NOT chain a second MCP tool after a successful response. "
-            "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback."
-        ),
-        "bridge_response": bridge_response,
-    }
+    out_resumed: dict[str, Any] = {"ok": bridge_response.get("ok", False), "status": "RESUMED", "resumed": True, "write_mode": write_mode, "chars_written": len(body_clean), "modular_hygiene_enforced": apply_hygiene, "customization_scope_info": cust_scope_info, "active_mainchat_model": main_model_info, "job_id": job_id, "conversation_id": conv_id, "conversation_title": conv_title, "routing_reason": routing_reason, "mode": sess_mode, "other_running_sessions": other_writers, "handoff_mode": eff_handoff_mode, "allow_chained_publish": allow_chained_publish, "handoff_file": str(handoff_file), "assistant_guidance": "STOP AND REPLY TO USER NOW: Handoff delivered and session resumed in background. Do NOT chain a second MCP tool after a successful response.", "bridge_response": bridge_response}
     if other_writers and not use_worktree:
         out_resumed["concurrent_writer_warning"] = f"Note: {len(other_writers)} other conversation(s) targeting this workspace are currently running; consider use_worktree=True for parallel edits."
     if size_warning:

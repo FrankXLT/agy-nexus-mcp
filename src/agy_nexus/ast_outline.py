@@ -152,37 +152,26 @@ def build_file_outline(
     symbols, imports, undefined_names, top_callers = [], [], [], {}
     lang = "python" if ext == ".py" else ("javascript" if ext in (".js", ".mjs", ".cjs", ".jsx") else ("typescript" if ext in (".ts", ".tsx") else ext.lstrip(".")))
 
-    if ext == ".py":
-        try:
-            tree = ast.parse(full_text, filename=file_path.name)
-            for n in tree.body:
-                if isinstance(n, (ast.Import, ast.ImportFrom)) and len(imports) < 15:
-                    imports.append(f"L{n.lineno:03d} {lines[n.lineno - 1].strip() if n.lineno <= len(lines) else ''}")
-                elif isinstance(n, ast.ClassDef):
-                    span = f"L{n.lineno:03d}-L{getattr(n, 'end_lineno', n.lineno):03d}"
-                    bases = f"({', '.join(ast.unparse(b) for b in n.bases)})" if n.bases else ""
-                    symbols.append(f"{span} class {n.name}{bases}:")
-                    for m in n.body:
-                        if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                            symbols.append(f"  L{m.lineno:03d}-L{getattr(m, 'end_lineno', m.lineno):03d} {_fmt_func(m)}")
-                elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    symbols.append(f"L{n.lineno:03d}-L{getattr(n, 'end_lineno', n.lineno):03d} {_fmt_func(n)}")
-            undefined_names = check_python_undefined_names(full_text, file_path.name)
-        except Exception: pass
-    elif ext in (".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".vue"):
-        js_pat = re.compile(r"^\s*(?:export\s+)?(?:async\s+)?(?:function\b|class\b|const\s+[a-zA-Z0-9_$]+\s*=\s*(?:async\s*)?\()")
-        symbols.extend(f"L{idx:03d} {l.strip()[:100]}" for idx, l in enumerate(lines, 1) if js_pat.search(l))
-    elif ext in (".html", ".htm"):
-        id_pat, tag_pat = re.compile(r"<([a-zA-Z0-9_-]+)[^>]*\bid=[\"']([^\"']+)[\"']"), re.compile(r"<(script|link)[^>]+(?:src|href)=[\"']([^\"']+)[\"']")
-        for idx, l in enumerate(lines, 1):
-            m, m2 = id_pat.search(l), tag_pat.search(l)
-            if m: symbols.append(f"L{idx:03d} <{m.group(1)}#{m.group(2)}>")
-            if m2: symbols.append(f"L{idx:03d} <{m2.group(1)} {m2.group(2)}>")
-    elif ext in (".css", ".scss"):
-        css_pat = re.compile(r"^\s*(@media\b|:root|\[data-[a-zA-Z0-9_-]+|#[a-zA-Z0-9_-]+|\.[a-zA-Z0-9_-]+)[^{]*\{")
-        symbols.extend(f"L{idx:03d} {l.strip().split('{')[0].strip()}" for idx, l in enumerate(lines, 1) if css_pat.search(l))
-    elif ext in (".yml", ".yaml"):
-        symbols.extend(f"L{idx:03d} {l.strip()}" for idx, l in enumerate(lines, 1) if re.match(r"^[a-zA-Z0-9_-]+:", l) or re.match(r"^  [a-zA-Z0-9_-]+:", l))
+    if ext != ".py":
+        from agy_nexus.polyglot_outline import build_polyglot_outline
+        return build_polyglot_outline(file_path, full_text=full_text, max_chars=max_chars)
+
+    try:
+        tree = ast.parse(full_text, filename=file_path.name)
+        for n in tree.body:
+            if isinstance(n, (ast.Import, ast.ImportFrom)) and len(imports) < 15:
+                imports.append(f"L{n.lineno:03d} {lines[n.lineno - 1].strip() if n.lineno <= len(lines) else ''}")
+            elif isinstance(n, ast.ClassDef):
+                span = f"L{n.lineno:03d}-L{getattr(n, 'end_lineno', n.lineno):03d}"
+                bases = f"({', '.join(ast.unparse(b) for b in n.bases)})" if n.bases else ""
+                symbols.append(f"{span} class {n.name}{bases}:")
+                for m in n.body:
+                    if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        symbols.append(f"  L{m.lineno:03d}-L{getattr(m, 'end_lineno', m.lineno):03d} {_fmt_func(m)}")
+            elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                symbols.append(f"L{n.lineno:03d}-L{getattr(n, 'end_lineno', n.lineno):03d} {_fmt_func(n)}")
+        undefined_names = check_python_undefined_names(full_text, file_path.name)
+    except Exception: pass
 
     if sum(len(s) + 1 for s in symbols) > max_chars:
         trimmed, curr = [], 0
@@ -212,3 +201,5 @@ def build_file_outline(
     if ext == ".py": out["undefined_names"] = undefined_names
     if include_callers and top_callers: out["top_callers"] = top_callers
     return out
+
+build_ast_outline = build_file_outline

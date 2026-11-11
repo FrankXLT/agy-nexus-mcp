@@ -102,13 +102,16 @@ gen_hex() {
 
 SUBDOMAIN_HASH=""
 PATH_SECRET=""
+HOST_BRIDGE_TOKEN=""
 if [[ "${KEEP_URLS}" == "true" && -f "${ENV_FILE}" ]]; then
   SUBDOMAIN_HASH="$(grep -E '^SUBDOMAIN_HASH=' "${ENV_FILE}" | head -n1 | cut -d= -f2- | tr -d "'\" " || true)"
   PATH_SECRET="$(grep -E '^PATH_SECRET=' "${ENV_FILE}" | head -n1 | cut -d= -f2- | tr -d "'\" " || true)"
+  HOST_BRIDGE_TOKEN="$(grep -E '^HOST_BRIDGE_TOKEN=' "${ENV_FILE}" | head -n1 | cut -d= -f2- | tr -d "'\" " || true)"
 fi
 
 [[ -z "${SUBDOMAIN_HASH}" ]] && SUBDOMAIN_HASH="$(gen_hex 6)"
 [[ -z "${PATH_SECRET}" ]] && PATH_SECRET="$(gen_hex 24)"
+[[ -z "${HOST_BRIDGE_TOKEN}" ]] && HOST_BRIDGE_TOKEN="$(gen_hex 32)"
 
 mkdir -p "$(dirname "${ENV_FILE}")"
 FULL_URL="https://ag-${SUBDOMAIN_HASH}.${DOMAIN}/${PATH_SECRET}/mcp"
@@ -123,9 +126,12 @@ cat > "${ENV_FILE}" << EOF
 SUBDOMAIN_HASH=${SUBDOMAIN_HASH}
 PATH_SECRET=${PATH_SECRET}
 PASS_HASH=${PASS_HASH}
+HOST_BRIDGE_TOKEN=${HOST_BRIDGE_TOKEN}
 TTL_SECONDS=${TTL_SECONDS}
 BIND_HOST=0.0.0.0
 BIND_PORT=8765
+HOST_BRIDGE_BIND_HOST=127.0.0.1
+HOST_BRIDGE_BIND_PORT=8098
 
 # --- Context Window & Pagination Budgets ---
 MAX_FILE_CHARS=${MAX_FILE_CHARS}

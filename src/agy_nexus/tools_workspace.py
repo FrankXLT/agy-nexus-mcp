@@ -68,7 +68,7 @@ def ask_workspace_readonly(
     workspace: str = "",
     spoken_passphrase: str = "",
 ) -> str:
-    """Read-only codebase explorer and secondary 'Check-in' status reader querying 1..12 comma-separated files (supports line ranges via start_line/end_line or inline 'path/file.py:100-350' syntax, plus 'outline:path/to/file.py' for 1-call AST symbol + caller outlines and automatic ast_outline on truncated files, 'skill:<name>' / 'agent:<name>' / 'rule:<name>'), git grep across local repositories, and SQLite FTS5 conversation history. Pass session_identifier or workspace to pin this call in parallel chats without mutating other chats' context.
+    """Read-only codebase explorer and secondary 'Check-in' status reader querying 1..12 comma-separated files (supports line ranges via start_line/end_line or inline 'path/file.py:100-350' syntax, plus 'outline:path/to/file' for 1-call Universal Polyglot structural line-span outlines across Python (.py), Markdown (.md), JSON/JSONC (.json), YAML (.yaml/.yml), and JS/TS/CSS/HTML (.js/.ts/.css/.html) with automatic outlines on truncated file reads, 'skill:<name>' / 'agent:<name>' / 'rule:<name>'), git grep across local repositories, and SQLite FTS5 conversation history. Pass session_identifier or workspace to pin this call in parallel chats without mutating other chats' context.
     NOTE: This tool returns selected_session_status automatically alongside file details, making it safe for live check-ins and fallback queries."""
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
@@ -237,72 +237,35 @@ def inspect_git_diff(
                     diff_cmd = ["git", "-c", "safe.directory=*", "diff", safe_branch, "--"]
                     if safe_file_path:
                         diff_cmd.append(safe_file_path)
-                    diff_proc = subprocess.run(
-                        diff_cmd,
-                        cwd=str(ws_res), capture_output=True, text=True, timeout=10, check=False
-                    )
+                    diff_proc = subprocess.run(diff_cmd, cwd=str(ws_res), capture_output=True, text=True, timeout=10, check=False)
                     diff_meta = slice_git_diff(
-                        diff_out=diff_proc.stdout,
-                        offset_chars=offset_chars,
-                        max_diff_chars=MAX_DIFF_CHARS,
-                        file_path=safe_file_path,
-                        start_line=start_line,
-                        end_line=end_line,
+                        diff_out=diff_proc.stdout, offset_chars=offset_chars, max_diff_chars=MAX_DIFF_CHARS,
+                        file_path=safe_file_path, start_line=start_line, end_line=end_line,
                     )
                     return _compact_json({
-                        "ok": True,
-                        "workspace": str(ws_res),
-                        "assistant_guidance": (
-                            "STOP AND REPLY TO USER NOW: Git diff retrieved. "
-                            "Do NOT chain a second MCP tool after a successful response (status_short, diff_stat, untracked_files, and diff are ALL included below). "
-                            "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'."
-                        ),
+                        "ok": True, "workspace": str(ws_res),
+                        "assistant_guidance": "STOP AND REPLY TO USER NOW: Git diff retrieved. Do NOT chain a second MCP tool after a successful response.",
                         "selected_session_status": _get_selected_session_quick_status(),
-                        "configured_mcp_servers": configured_mcps,
-                        "branch": current_branch,
-                        "current_branch": current_branch,
-                        "status_short": status_proc.stdout.strip(),
-                        "diff_stat": stat_proc.stdout.strip(),
-                        "untracked_files": untracked_files,
-                        "target_branch": safe_branch,
-                        **diff_meta,
+                        "configured_mcp_servers": configured_mcps, "branch": current_branch,
+                        "current_branch": current_branch, "status_short": status_proc.stdout.strip(),
+                        "diff_stat": stat_proc.stdout.strip(), "untracked_files": untracked_files,
+                        "target_branch": safe_branch, **diff_meta,
                     })
             except Exception:
                 pass
-    # Fallback to host git-inspect for host-backed repositories/worktrees
-    host_res = _host_git_inspect(
-        ws_str,
-        target_branch=safe_branch,
-        include_untracked=include_untracked,
-        summary_only=False,
-        file_path=safe_file_path,
-    )
+    host_res = _host_git_inspect(ws_str, target_branch=safe_branch, include_untracked=include_untracked, summary_only=False, file_path=safe_file_path)
     if host_res:
         br = host_res.get("branch") or host_res.get("current_branch", "")
         diff_meta = slice_git_diff(
-            diff_out=str(host_res.get("diff", "")),
-            offset_chars=offset_chars,
-            max_diff_chars=MAX_DIFF_CHARS,
-            file_path=safe_file_path,
-            start_line=start_line,
-            end_line=end_line,
+            diff_out=str(host_res.get("diff", "")), offset_chars=offset_chars, max_diff_chars=MAX_DIFF_CHARS,
+            file_path=safe_file_path, start_line=start_line, end_line=end_line,
         )
         return _compact_json({
-            "ok": True,
-            "workspace": host_res.get("workspace", ws_str),
-            "assistant_guidance": (
-                "STOP AND REPLY TO USER NOW: Host git inspection complete. "
-                "Do NOT chain a second MCP tool after a successful response (all data is already included below). "
-                "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'."
-            ),
+            "ok": True, "workspace": host_res.get("workspace", ws_str),
+            "assistant_guidance": "STOP AND REPLY TO USER NOW: Host git inspection complete. Do NOT chain a second MCP tool after a successful response.",
             "selected_session_status": _get_selected_session_quick_status(),
-            "configured_mcp_servers": configured_mcps,
-            "branch": br,
-            "current_branch": br,
-            "status_short": host_res.get("status_short", ""),
-            "diff_stat": host_res.get("diff_stat", ""),
-            "untracked_files": host_res.get("untracked_files", []),
-            "target_branch": safe_branch,
-            **diff_meta,
+            "configured_mcp_servers": configured_mcps, "branch": br, "current_branch": br,
+            "status_short": host_res.get("status_short", ""), "diff_stat": host_res.get("diff_stat", ""),
+            "untracked_files": host_res.get("untracked_files", []), "target_branch": safe_branch, **diff_meta,
         })
     return _compact_json({"ok": False, "error": f"Unable to inspect git repository for workspace '{ws_str}'."})

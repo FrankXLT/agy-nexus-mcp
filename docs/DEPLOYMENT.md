@@ -18,11 +18,12 @@ You'll be prompted for a passphrase. The script writes `~/.config/ag-bridge-mcp/
 - `SUBDOMAIN_HASH`: 12-character random subdomain (used as `ag-{SUBDOMAIN_HASH}`)
 - `PATH_SECRET`: 48-character random URL path
 - `PASS_HASH`: SHA-256 hash of your normalized passphrase
+- `HOST_BRIDGE_TOKEN`: 64-character shared secret authenticating local `agy-host-bridge` `/agentapi` RPCs
 - `TTL_SECONDS`: `7200` (2-hour inactivity lock timer)
-- `BIND_HOST`: `0.0.0.0`
-- `BIND_PORT`: `8765`
+- `BIND_HOST`: `0.0.0.0` (MCP server port `8765`)
+- `HOST_BRIDGE_BIND_HOST`: `127.0.0.1` (loopback-only host companion port `8098`; set to `172.17.0.1` on Linux if running `ag-bridge-mcp` inside Docker bridge networking)
 
-To change your passphrase later without changing your MCP URL:
+To change your passphrase later without changing your MCP URL or host bridge token:
 ```bash
 python3 scripts/init_secrets.py --keep-existing-urls
 ```
@@ -31,7 +32,7 @@ python3 scripts/init_secrets.py --keep-existing-urls
 
 ## 2. Start the Host Companion Service (`agy-host-bridge.service`)
 
-`agy-nexus-mcp` reads your chats and git repositories directly, and uses a lightweight local service on port `8098` whenever it needs to wake up an Antigravity session (`agentapi send-message` / `new-conversation`) or inspect worktree git state on the host.
+`agy-nexus-mcp` reads your chats and git repositories directly, and uses an authenticated loopback companion service on `127.0.0.1:8098` whenever it needs to wake up an Antigravity session (`agentapi send-message` / `new-conversation`) or inspect worktree git state on the host. Every `POST /agentapi` call requires `X-Bridge-Token` from `~/.config/ag-bridge-mcp/secrets.env`.
 
 Install and start the user service:
 ```bash
@@ -40,10 +41,15 @@ systemctl --user daemon-reload
 systemctl --user enable --now agy-host-bridge.service
 ```
 
-Verify that it responds:
+Verify liveness and authenticated `discover` access (unauthenticated requests return `401`):
 ```bash
+curl -s http://127.0.0.1:8098/health
+
+# Authenticated /agentapi check using HOST_BRIDGE_TOKEN from secrets.env:
+ BRIDGE_TOK=$(grep '^HOST_BRIDGE_TOKEN=' ~/.config/ag-bridge-mcp/secrets.env | cut -d= -f2)
 curl -s -X POST http://127.0.0.1:8098/agentapi \
   -H "Content-Type: application/json" \
+  -H "X-Bridge-Token: ${BRIDGE_TOK}" \
   -d '{"action": "discover"}'
 ```
 Expected output:

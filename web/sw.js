@@ -1,9 +1,10 @@
-const CACHE_NAME = "agy-nexus-overwatch-v2.5.0";
-const SHELL_ASSETS = ["/web", "/web/styles.css?v=2.5.0",
-  "/web/charts.js?v=2.5.0",
-  "/web/hierarchy.js?v=2.5.0",
-  "/web/health.js?v=2.5.0",
-  "/web/app.js?v=2.5.0",
+const CACHE_NAME = "agy-nexus-overwatch-v2.6.0b";
+const SHELL_ASSETS = ["/web", "/web/styles.css?v=2.6.0b",
+  "/web/charts.js?v=2.6.0b",
+  "/web/hierarchy.js?v=2.6.0b",
+  "/web/uploads.js?v=2.6.0b",
+  "/web/health.js?v=2.6.0b",
+  "/web/app.js?v=2.6.0b",
   "/web/manifest.webmanifest", "/web/icon.svg", "/web/icon-192.png", "/web/icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -25,7 +26,7 @@ self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
   const url = new URL(req.url);
-  if (url.pathname.endsWith("/web/api/stats")) {
+  if (url.pathname.includes("/web/api/") || url.pathname.includes("/api/")) {
     return;
   }
   event.respondWith(

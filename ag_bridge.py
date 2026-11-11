@@ -36,12 +36,15 @@ from agy_nexus.config import (  # noqa: E402, F401
     verify_passphrase,
 )
 from agy_nexus.ast_outline import (  # noqa: E402, F401
+    build_ast_outline,
     build_file_outline,
     check_python_undefined_names,
     find_symbol_callers,
     scan_package_undefined_names,
 )
+from agy_nexus.polyglot_outline import build_polyglot_outline  # noqa: E402, F401
 from agy_nexus.handoff import _resolve_skill_directives, send_handoff_and_resume  # noqa: E402, F401
+from agy_nexus.uploads import handle_session_upload_request, list_scratch_upload_batches, save_scratch_upload_batch  # noqa: E402, F401
 from agy_nexus.middleware import BridgeCompatMiddleware  # noqa: E402, F401
 from agy_nexus.server import main, run_self_test  # noqa: E402, F401
 from agy_nexus.session_status import check_inflight_handoff_mutex, get_session_telemetry  # noqa: E402, F401

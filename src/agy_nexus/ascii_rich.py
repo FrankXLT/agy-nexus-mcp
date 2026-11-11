@@ -58,7 +58,7 @@ def render_ascii_rich(bundle: dict[str, Any]) -> str:
     tot_chats, tot_subs = int(kpis.get("total_conversations", 0)), int(kpis.get("total_subagents_spawned", 0))
     tot_tok = int(kpis.get("window_tokens", 0))
 
-    g_pct = sum(float(m.get("actual_pct", 0.0)) for m in models if m.get("model_key") in ("argon_pro", "flash"))
+    g_pct = sum(float(m.get("actual_pct", 0.0)) for m in models if m.get("model_key") in ("carbon", "argon_pro", "flash"))
     p_used = max(0.0, 100.0 - g_pct)
     p_rem = max(0.0, 100.0 - p_used)
     g_bar, p_bar = build_quota_bar_with_pin(g_pct, 90.0, 10), build_quota_bar_with_pin(p_used, 10.0, 10)
@@ -146,7 +146,7 @@ def render_ascii_rich(bundle: dict[str, Any]) -> str:
         "╠══════════════════════════════════════════════════════════════════════════╣",
         _box_full("MODEL QUOTA vs TARGET (┼ = Target Pin)       CALLS   EST TOK  DELTA STAT"),
     ])
-    sm = {"argon_pro": "Argon 4 Pro", "flash": "Flash 3.8  ", "claude_partner": "Claude 5.5 ", "gpt_oss": "GPT-OSS 120"}
+    sm = {"carbon": "Carbon 4   ", "argon_pro": "Argon 4 Pro", "flash": "Flash 3.8  ", "claude_partner": "Claude 5.5 ", "gpt_oss": "GPT-OSS 120"}
     for m in models:
         mk = str(m.get("model_key", ""))
         ml = sm.get(mk, str(m.get("label", ""))[:11]).ljust(11)

@@ -5,10 +5,13 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+EnvironmentFile=%h/.config/ag-bridge-mcp/secrets.env
+Environment=PYTHONUNBUFFERED=1
+Environment=HOST_BRIDGE_BIND_HOST=127.0.0.1
+Environment=HOST_BRIDGE_BIND_PORT=8098
 ExecStart=/usr/bin/python3 %h/gitlab/ag-bridge-mcp/host_bridge/agy_host_bridge.py
 Restart=always
 RestartSec=5
-Environment=PYTHONUNBUFFERED=1
 WorkingDirectory=%h/gitlab/ag-bridge-mcp
 
 [Install]

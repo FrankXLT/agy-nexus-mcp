@@ -1,4 +1,4 @@
-// Project, Chat & Session Hierarchy — Quiet UI Tabular Renderer for /web Overwatch Dashboard (v2.5.0)
+// Project, Chat & Session Hierarchy — Quiet UI Tabular Renderer for /web Overwatch Dashboard (v2.6.0)
 let hierarchyShowAll = localStorage.getItem("nexus_hier_all") !== "0";
 let hierarchyExpandAll = false;
 let lastHierarchyBundle = null;
@@ -172,6 +172,9 @@ function renderHierarchyPanel(bundle) {
           <td class="mono"><span class="hier-mode-lbl ${modeObj.cls}">${modeObj.label}</span></td>
           <td class="mono num-col">${Number(s.step_count || 0).toLocaleString()}</td>
           <td class="mono num-col hier-updated">${updated}</td>
+          <td class="hier-act-cell">
+            <button type="button" class="hier-upload-btn btn" data-cid="${cid}" data-title="${title}" title="Upload files to this session scratch directory">Upload</button>
+          </td>
         </tr>
       `;
     }).join("");
@@ -203,6 +206,7 @@ function renderHierarchyPanel(bundle) {
                 <th class="mono hier-col-mode">Mode</th>
                 <th class="mono num-col hier-col-steps">Steps</th>
                 <th class="mono num-col hier-col-upd">Updated</th>
+                <th class="mono hier-col-act">Upload</th>
               </tr>
             </thead>
             <tbody>${rowsHtml}</tbody>
@@ -217,6 +221,18 @@ function renderHierarchyPanel(bundle) {
       e.preventDefault();
       e.stopPropagation();
       copyTextWithFeedback(el, el.getAttribute("data-copy") || "", el.innerHTML, 900);
+    });
+  });
+
+  container.querySelectorAll(".hier-upload-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const cid = btn.getAttribute("data-cid") || "";
+      const t = btn.getAttribute("data-title") || "";
+      if (typeof window.openUploadModal === "function") {
+        window.openUploadModal(cid, t);
+      }
     });
   });
 }

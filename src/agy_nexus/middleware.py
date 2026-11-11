@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import re
 import time
 from typing import Any
 
@@ -36,6 +37,7 @@ class BridgeCompatMiddleware:
             "hierarchy.js": b"application/javascript; charset=utf-8",
             "health.js": b"application/javascript; charset=utf-8",
             "app.js": b"application/javascript; charset=utf-8",
+            "uploads.js": b"application/javascript; charset=utf-8",
             "manifest.webmanifest": b"application/manifest+json; charset=utf-8",
             "sw.js": b"application/javascript; charset=utf-8",
             "icon.svg": b"image/svg+xml",
@@ -153,6 +155,17 @@ class BridgeCompatMiddleware:
             print(f"[agy-nexus] http=GET rpc=web_stats tool={period_val} status=200 bytes={len(ok_b)} ms={elapsed_ms}", flush=True)
             return
 
+        # 2b. Serve POST [/web]/api/sessions/{conv_id}/upload (works under /web, /{PATH_SECRET}/web, and LAN)
+        if method == "POST" and ("/api/sessions/" in req_path and req_path.endswith("/upload")):
+            m_conv = re.search(r"/api/sessions/([^/]+)/upload$", req_path)
+            if m_conv:
+                conv_id_req = m_conv.group(1).strip()
+                from agy_nexus.uploads import handle_session_upload_request
+                await handle_session_upload_request(scope, receive, send, conv_id_req, headers)
+                elapsed_ms = int((time.time() - t0) * 1000)
+                print(f"[agy-nexus] http=POST rpc=session_upload conv={conv_id_req} ms={elapsed_ms}", flush=True)
+                return
+
         if method == "HEAD":
             await send({
                 "type": "http.response.start",
@@ -177,7 +190,7 @@ class BridgeCompatMiddleware:
             return
 
         if method in ("GET", "DELETE"):
-            body = json.dumps({"ok": True, "service": "agy-nexus-mcp", "version": "2.5.0", "transport": "streamable-http", "stateless": True, "web_dashboard": "/web"}).encode("utf-8")
+            body = json.dumps({"ok": True, "service": "agy-nexus-mcp", "version": "2.6.0", "transport": "streamable-http", "stateless": True, "web_dashboard": "/web"}).encode("utf-8")
             await send({
                 "type": "http.response.start",
                 "status": 200,

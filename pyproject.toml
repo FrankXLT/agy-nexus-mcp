@@ -1,6 +1,6 @@
 [project]
 name = "agy-nexus-mcp"
-version = "2.5.0"
+version = "2.6.0"
 description = "AGY-NEXUS-MCP: Antigravity Mission Control, Cross-Session FTS5 Memory, Dual-Pool Quota Overwatch, Activity Heatmap, Three-Tier ASCII Telemetry & Chromium PWA Dashboard"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -17,6 +17,7 @@ dependencies = [
     "starlette>=0.38.0",
     "pydantic>=2.8.0",
     "psutil>=5.9.0",
+    "python-multipart>=0.0.12",
 ]
 
 [project.scripts]

@@ -135,22 +135,19 @@ def render_ascii_default(bundle: dict[str, Any]) -> str:
     tot_chats, tot_subs = int(kpis.get("total_conversations", 0)), int(kpis.get("total_subagents_spawned", 0))
     tot_tok = int(kpis.get("window_tokens", 0))
 
-    g_pct = sum(float(m.get("actual_pct", 0.0)) for m in models if m.get("model_key") in ("argon_pro", "flash"))
+    g_pct = sum(float(m.get("actual_pct", 0.0)) for m in models if m.get("model_key") in ("carbon", "argon_pro", "flash"))
     p_used = max(0.0, 100.0 - g_pct)
     p_rem = max(0.0, 100.0 - p_used)
     g_bar, p_bar = build_quota_bar_with_pin(g_pct, 90.0, 10), build_quota_bar_with_pin(p_used, 10.0, 10)
     g_pool = (quota.get("pools") or {}).get("google") or {}
-    g_429 = int(g_pool.get("total_429_count", 0))
-    g_stat = "HEALTHY" if g_pool.get("status", "HEALTHY") == "HEALTHY" else "COOLDWN"
+    g_429, g_stat = int(g_pool.get("total_429_count", 0)), ("HEALTHY" if g_pool.get("status", "HEALTHY") == "HEALTHY" else "COOLDWN")
     wk_left = round(max(0.0, 100.0 - float((quota.get("partner_weekly_pacing") or {}).get("recommended_cumulative_ceiling_pct", 14.3))), 1)
     w_calls, w_avg, w_max = int(wire.get("total_recorded_calls", 0)), float(wire.get("avg_kb", 0.0)), float(wire.get("max_kb", 0.0))
     w_tok, w_pct = fmt_tok(int(wire.get("total_mcp_tokens", 0)), False), int(round(float(wire.get("budget_compliance_pct", 100.0))))
 
     code_health = bundle.get("code_health") or {}
-    v_info = code_health.get("version") or {}
+    v_info, m_info, ast_info = code_health.get("version") or {}, code_health.get("modular_hygiene") or {}, code_health.get("ast_integrity") or {}
     rel_label = v_info.get("status_label", f"v{__version__}")
-    m_info = code_health.get("modular_hygiene") or {}
-    ast_info = code_health.get("ast_integrity") or {}
 
     def _sr(l40: str, r31: str) -> str:
         return f"{l40[:40].ljust(40)}┆{r31[:31].ljust(31)}"
@@ -202,7 +199,7 @@ def render_ascii_default(bundle: dict[str, Any]) -> str:
         "────────────────────────────────────────────────────────────────────────",
         "MODEL QUOTA vs TARGET (┼ = Target Pin)      CALLS   EST TOK  DELTA  STAT",
     ])
-    sm = {"argon_pro": "Argon 4 Pro", "flash": "Flash 3.8  ", "claude_partner": "Claude 5.5 ", "gpt_oss": "GPT-OSS 120"}
+    sm = {"carbon": "Carbon 4   ", "argon_pro": "Argon 4 Pro", "flash": "Flash 3.8  ", "claude_partner": "Claude 5.5 ", "gpt_oss": "GPT-OSS 120"}
     for m in models:
         mk = str(m.get("model_key", ""))
         ml = sm.get(mk, str(m.get("label", ""))[:11]).ljust(11)
@@ -211,19 +208,13 @@ def render_ascii_default(bundle: dict[str, Any]) -> str:
         tks = "FastTier" if mk == "flash" and int(m.get("est_tokens", 0)) == 0 else fmt_tok(int(m.get("est_tokens", 0)))
         lines.append(f"{ml} [{b20}] {ap:>5.1f}%  {int(m.get('actual_calls', 0)):>7,}  {tks:>8} {dp:>+5.1f}%  {'OK' if abs(dp) <= 12.0 else 'WARN'}"[:72])
 
-    lines.extend([
-        "────────────────────────────────────────────────────────────────────────",
-        f"{f'WORKSPACES ({len(workspaces)})':<20}CHATS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE"[:72],
-    ])
+    lines.extend(["────────────────────────────────────────────────────────────────────────", f"{f'WORKSPACES ({len(workspaces)})':<20}CHATS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE"[:72]])
     for idx, w in enumerate(workspaces, start=1):
         wn = f"{idx}. {str(w.get('workspace', 'root'))}"[:19].ljust(19)
         lines.append(f"{wn} {int(w.get('sessions', 0)):>3}c {int(w.get('steps', 0)):>7,}  {fmt_tok(w.get('tokens', 0)):>9}  {fmt_rate(w.get('tok_per_day', 0)):>7}  {fmt_rate(w.get('tok_per_week', 0)):>7}  {float(w.get('share_pct', 0.0)):>5.1f}%"[:72])
 
     if subagents:
-        lines.extend([
-            "────────────────────────────────────────────────────────────────────────",
-            f"{f'SUBAGENTS ({len(subagents)})':<20} RUNS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE"[:72],
-        ])
+        lines.extend(["────────────────────────────────────────────────────────────────────────", f"{f'SUBAGENTS ({len(subagents)})':<20} RUNS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE"[:72]])
         for idx, sa in enumerate(subagents, start=1):
             sn = f"{idx}. {str(sa.get('role', 'subagent'))}"[:19].ljust(19)
             lines.append(f"{sn} {int(sa.get('runs', 0)):>3}r {int(sa.get('steps', 0)):>7,}  {fmt_tok(sa.get('tokens', 0)):>9}  {fmt_rate(sa.get('tok_per_day', 0)):>7}  {fmt_rate(sa.get('tok_per_week', 0)):>7}  {float(sa.get('share_pct', 0.0)):>5.1f}%"[:72])
@@ -240,7 +231,7 @@ def render_ascii_quick(bundle: dict[str, Any]) -> str:
     s_dt, e_dt = fmt_short_date(str(period.get("start_date") or "")), fmt_short_date(str(period.get("end_date") or ""))
     act_days = max(1, int(kpis.get("active_days", period.get("active_days", 1)) or 1))
     tot_steps, tot_tools, tot_tok = int(kpis.get("window_steps", 0)), int(kpis.get("window_tool_calls", 0)), int(kpis.get("window_tokens", 0))
-    g_pct = sum(float(m.get("actual_pct", 0.0)) for m in models if m.get("model_key") in ("argon_pro", "flash"))
+    g_pct = sum(float(m.get("actual_pct", 0.0)) for m in models if m.get("model_key") in ("carbon", "argon_pro", "flash"))
     p_rem = max(0.0, 100.0 - max(0.0, 100.0 - g_pct))
     g_bar, p_bar = build_quota_bar_with_pin(g_pct, 90.0, 10), build_quota_bar_with_pin(100.0 - g_pct, 10.0, 10)
     g_429 = int(((quota.get("pools") or {}).get("google") or {}).get("total_429_count", 0))
@@ -286,7 +277,7 @@ def render_ascii_quick(bundle: dict[str, Any]) -> str:
         "────────────────────────────────────────",
         "MODEL QUOTA (┼=Target)  PCT   TOK   DLT",
     ])
-    sm_q = {"argon_pro": "Argon 4", "flash": "Flash38", "claude_partner": "Claude5", "gpt_oss": "GPT-120"}
+    sm_q = {"carbon": "Carbon4", "argon_pro": "Argon 4", "flash": "Flash38", "claude_partner": "Claude5", "gpt_oss": "GPT-120"}
     for m in models:
         mk = str(m.get("model_key", ""))
         b10 = build_quota_bar_with_pin(float(m.get("actual_pct", 0.0)), float(m.get("target_pct", 0.0)), 10)
