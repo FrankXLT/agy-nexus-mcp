@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 import hmac
+import ipaddress
 import os
 from pathlib import Path
 import re
@@ -27,13 +28,76 @@ ALLOWED_MEDIA_EXTENSIONS: dict[str, bytes] = {
 }
 
 MEDIA_TTL_SECONDS = int(os.getenv("AG_BRIDGE_MEDIA_TTL", "1800"))
+_VERIFIED_REQUEST_ORIGIN: str = ""
+_SAFE_HOST_RE = re.compile(r"^[A-Za-z0-9.-]+(?::\d{1,5})?$")
+
+
+def _sanitize_public_origin(raw_url: str) -> str:
+    """Extract scheme://netloc only so capability PATH_SECRET paths are never leaked in media links."""
+    cand = (raw_url or "").strip()
+    if not cand:
+        return ""
+    parsed = urllib.parse.urlparse(cand if "://" in cand else f"https://{cand}")
+    if parsed.scheme not in ("https", "http") or not parsed.netloc or not _SAFE_HOST_RE.match(parsed.netloc):
+        return ""
+    host_low = (parsed.hostname or "").lower()
+    if not host_low or host_low == "example.com" or host_low.endswith(".example.com"):
+        return ""
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def _is_public_hostname(h: str) -> bool:
+    if not h or h in ("localhost", "host.docker.internal") or h.endswith((".lan", ".local", ".internal", ".home.arpa")):
+        return False
+    try:
+        return ipaddress.ip_address(h).is_global
+    except ValueError:
+        return "." in h
+
+
+def record_verified_public_origin(headers: list[tuple[bytes, bytes]], client_ip: str = "") -> None:
+    """Capture public https origin from a request already authenticated by capability PATH_SECRET."""
+    global _VERIFIED_REQUEST_ORIGIN
+    if _VERIFIED_REQUEST_ORIGIN:
+        return
+    xfh, host_hdr, proto_val = "", "", "https"
+    for hk, hv in headers:
+        kl = hk.lower()
+        if kl == b"x-forwarded-host" and not xfh:
+            xfh = hv.decode("latin-1", errors="ignore").split(",", 1)[0].strip()
+        elif kl == b"host" and not host_hdr:
+            host_hdr = hv.decode("latin-1", errors="ignore").strip()
+        elif kl == b"x-forwarded-proto":
+            proto_val = hv.decode("latin-1", errors="ignore").split(",", 1)[0].strip().lower() or "https"
+    trusted_proxy = False
+    if client_ip:
+        try:
+            ip_obj = ipaddress.ip_address(client_ip)
+            trusted_proxy = ip_obj.is_loopback or ip_obj.is_private
+        except ValueError:
+            trusted_proxy = False
+    cand_host = (xfh or host_hdr) if trusted_proxy else host_hdr
+    clean = _sanitize_public_origin(f"{proto_val if proto_val in ('https', 'http') else 'https'}://{cand_host}")
+    if clean and _is_public_hostname((urllib.parse.urlparse(clean).hostname or "").lower()):
+        _VERIFIED_REQUEST_ORIGIN = clean
 
 
 def get_public_base_url() -> str:
-    """Return configured public base URL, falling back to the host bridge hostname + BIND_PORT."""
-    explicit = os.getenv("AG_BRIDGE_PUBLIC_URL", "").strip().rstrip("/")
+    """Return configured or verified public https base origin, falling back to local host + BIND_PORT."""
+    explicit = _sanitize_public_origin(os.getenv("AG_BRIDGE_PUBLIC_URL", ""))
     if explicit:
         return explicit
+    sub_hash = os.getenv("SUBDOMAIN_HASH", "").strip()
+    domain = os.getenv("AG_BRIDGE_DOMAIN", "").strip()
+    if sub_hash and domain and domain.lower() != "example.com":
+        built = _sanitize_public_origin(f"https://ag-{sub_hash}.{domain}")
+        if built:
+            return built
+    derived = _sanitize_public_origin(os.getenv("_DERIVED_SECRETS_PUBLIC_URL", ""))
+    if derived:
+        return derived
+    if _VERIFIED_REQUEST_ORIGIN:
+        return _VERIFIED_REQUEST_ORIGIN
     parsed = urllib.parse.urlparse(cfg.AGY_HOST_BRIDGE_URL)
     host = parsed.hostname or "127.0.0.1"
     return f"http://{host}:{cfg.BIND_PORT}"
@@ -65,18 +129,20 @@ def _resolve_scope_base_dir(scope: str) -> Path | None:
         conv_id = re.sub(r"[^a-zA-Z0-9_-]", "", scope.split(":", 1)[1])
         if not conv_id:
             return None
+        brain_root = cfg.AGY_BRAIN_DIR.resolve()
         cand = (cfg.AGY_BRAIN_DIR / conv_id).resolve()
-        if cand.is_relative_to(cfg.AGY_BRAIN_DIR.resolve()) and cand.is_dir():
+        if cand != brain_root and cand.is_relative_to(brain_root) and cand.is_dir():
             return cand
         return None
     if scope.startswith("repo:"):
         repo_name = re.sub(r"[^a-zA-Z0-9_.-]", "", scope.split(":", 1)[1])
-        if not repo_name:
+        if not repo_name or repo_name in (".", ".."):
             return None
         for root_dir in (cfg.AGY_GITLAB_DIR, cfg.AGY_DATA_DIR / "worktrees"):
             if root_dir.is_dir():
+                root_res = root_dir.resolve()
                 cand = (root_dir / repo_name).resolve()
-                if cand.is_relative_to(root_dir.resolve()) and cand.is_dir():
+                if cand != root_res and cand.is_relative_to(root_res) and cand.is_dir():
                     return cand
         return None
     return None
@@ -113,7 +179,7 @@ def verify_and_resolve_media(req_path: str) -> tuple[Path | None, bytes, int, st
 
     try:
         target = (base_dir / rel_path).resolve()
-        if not target.is_relative_to(base_dir):
+        if target == base_dir or not target.is_relative_to(base_dir):
             return None, b"application/json", 403, "Path escapes scope boundary."
     except Exception:
         return None, b"application/json", 403, "Invalid target path."
@@ -170,17 +236,17 @@ def discover_visual_artifacts(conv_id: str, workspace_path: str = "", limit: int
             except Exception:
                 continue
 
-    if conv_id:
-        brain_dir = (cfg.AGY_BRAIN_DIR / conv_id).resolve()
-        if brain_dir.is_dir():
-            _scan_dir(brain_dir, f"brain:{conv_id}", ("scratch", ".user_uploaded"))
+    safe_cid = re.sub(r"[^a-zA-Z0-9_-]", "", conv_id)
+    if safe_cid:
+        brain_root = cfg.AGY_BRAIN_DIR.resolve()
+        brain_dir = (cfg.AGY_BRAIN_DIR / safe_cid).resolve()
+        if brain_dir != brain_root and brain_dir.is_relative_to(brain_root) and brain_dir.is_dir():
+            _scan_dir(brain_dir, f"brain:{safe_cid}", ("scratch", ".user_uploaded"))
 
     if workspace_path:
         ws_path = Path(workspace_path).resolve()
-        if ws_path.is_dir() and (
-            ws_path.is_relative_to(cfg.AGY_GITLAB_DIR.resolve())
-            or ws_path.is_relative_to((cfg.AGY_DATA_DIR / "worktrees").resolve())
-        ):
+        ws_roots = (cfg.AGY_GITLAB_DIR.resolve(), (cfg.AGY_DATA_DIR / "worktrees").resolve())
+        if ws_path.is_dir() and any(ws_path != r and ws_path.is_relative_to(r) for r in ws_roots):
             _scan_dir(ws_path, f"repo:{ws_path.name}", ("docs/assets", "screenshots", "scratch", "sidecars/ag-bridge-mcp/docs/assets"))
 
     candidates.sort(key=lambda item: item[0], reverse=True)

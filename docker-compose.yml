@@ -22,6 +22,8 @@ services:
       - AGY_GITLAB_DIR=${HOME}/gitlab
       - AGY_BG_DIR=${HOME}/.gemini/antigravity/sidecar_data/ag-bridge-bg
       - AGY_HOST_BRIDGE_URL=${AGY_HOST_BRIDGE_URL:-http://host.docker.internal:8098/agentapi}
+      - AG_BRIDGE_PUBLIC_URL=${AG_BRIDGE_PUBLIC_URL:-}
+      - AG_BRIDGE_DOMAIN=${AG_BRIDGE_DOMAIN:-}
       - BIND_HOST=0.0.0.0
       - BIND_PORT=8765
       - TTL_SECONDS=${TTL_SECONDS:-7200}
@@ -44,8 +46,11 @@ services:
     command:
       - |
         apt-get update && apt-get install -y --no-install-recommends git grep >/dev/null 2>&1 || true
+        REQ_SHA="$(sha256sum /app/requirements.txt | cut -d' ' -f1)"
         if [ ! -x /venv/bin/python ]; then
           python3 -m venv /venv
-          /venv/bin/pip install --no-cache-dir -r /app/requirements.txt
+        fi
+        if [ ! -f /venv/.req.sha256 ] || [ "$(cat /venv/.req.sha256 2>/dev/null)" != "${REQ_SHA}" ]; then
+          /venv/bin/pip install --no-cache-dir -r /app/requirements.txt && printf '%s' "${REQ_SHA}" > /venv/.req.sha256
         fi
         exec /venv/bin/python /app/ag_bridge.py

@@ -76,6 +76,11 @@ if [[ -z "${PASSPHRASE}" ]]; then
   fi
 fi
 
+if [[ ! "${DOMAIN}" =~ ^[A-Za-z0-9.-]+$ ]]; then
+  echo "Error: Invalid domain '${DOMAIN}' (only letters, digits, dots, and hyphens allowed)." >&2
+  exit 1
+fi
+
 # Normalize passphrase: lowercase alphanumeric only -> SHA-256 hex digest
 NORMALIZED="$(printf '%s' "${PASSPHRASE}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')"
 if [[ -z "${NORMALIZED}" ]]; then
@@ -115,15 +120,23 @@ fi
 
 mkdir -p "$(dirname "${ENV_FILE}")"
 FULL_URL="https://ag-${SUBDOMAIN_HASH}.${DOMAIN}/${PATH_SECRET}/mcp"
+PUBLIC_URL=""
+if [[ "${DOMAIN}" != "example.com" ]]; then
+  PUBLIC_URL="https://ag-${SUBDOMAIN_HASH}.${DOMAIN}"
+fi
 TS_UTC="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
-cat > "${ENV_FILE}" << EOF
+(
+  umask 077
+  cat > "${ENV_FILE}" << EOF
 # ag-bridge-mcp runtime configuration & secrets
 # Generated: ${TS_UTC}
 # Gemini Connected Apps URL: ${FULL_URL}
 
 # --- Perimeter & Deadbolt Security ---
 SUBDOMAIN_HASH=${SUBDOMAIN_HASH}
+AG_BRIDGE_DOMAIN=${DOMAIN}
+AG_BRIDGE_PUBLIC_URL=${PUBLIC_URL}
 PATH_SECRET=${PATH_SECRET}
 PASS_HASH=${PASS_HASH}
 HOST_BRIDGE_TOKEN=${HOST_BRIDGE_TOKEN}
@@ -145,6 +158,7 @@ ENFORCE_MODULAR_HYGIENE=${ENFORCE_MODULAR_HYGIENE}
 TARGET_FILE_LINES=${TARGET_FILE_LINES}
 HARD_MAX_FILE_LINES=${HARD_MAX_FILE_LINES}
 EOF
+)
 
 chmod 600 "${ENV_FILE}"
 

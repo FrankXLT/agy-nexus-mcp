@@ -27,18 +27,19 @@ from agy_nexus.inventory import resolve_customization_file
 from agy_nexus.sessions import _load_projects_map
 
 def _resolve_workspace_str(ws_input: str) -> str:
-    """Resolve short repo names, case-insensitive project names, or URIs to a canonical workspace path."""
+    """Resolve short repo names, case-insensitive project names, or URIs to a canonical authorized workspace path."""
+    static_ws_roots = (AGY_GITLAB_DIR.resolve(), (AGY_DATA_DIR / "worktrees").resolve(), AGY_CONFIG_DIR.resolve(), AGY_DATA_DIR.resolve())
     raw = re.sub(r"^file://", "", (ws_input or "").strip()).rstrip("/")
     if not raw:
         raw = SESSION_STATE.get("selected_workspace") or str(AGY_GITLAB_DIR / "antigravity-config")
     p = Path(raw)
-    if p.is_absolute() and p.is_dir():
+    if p.is_absolute() and p.is_dir() and any(p.resolve().is_relative_to(r) for r in static_ws_roots):
         return str(p.resolve())
     target_name = p.name if p.is_absolute() else raw.strip("/")
-    if AGY_GITLAB_DIR.is_dir() and target_name:
-        exact_gitlab = AGY_GITLAB_DIR / target_name
-        if exact_gitlab.is_dir():
-            return str(exact_gitlab.resolve())
+    if AGY_GITLAB_DIR.is_dir() and target_name and ".." not in Path(target_name).parts:
+        exact_gitlab = (AGY_GITLAB_DIR / target_name).resolve()
+        if exact_gitlab.is_dir() and exact_gitlab.is_relative_to(AGY_GITLAB_DIR.resolve()):
+            return str(exact_gitlab)
         for entry in AGY_GITLAB_DIR.iterdir():
             if entry.is_dir() and entry.name.lower() == target_name.lower():
                 return str(entry.resolve())
@@ -48,7 +49,9 @@ def _resolve_workspace_str(ws_input: str) -> str:
         pname = str(pinfo.get("name") or "").lower()
         p_paths = pinfo.get("workspace_paths") or []
         if q_lower and (q_lower == pid.lower() or q_lower == pname or q_lower in pname) and p_paths:
-            return str(p_paths[0])
+            cand_p = Path(str(p_paths[0]))
+            if not cand_p.is_absolute() or (cand_p.is_dir() and any(cand_p.resolve().is_relative_to(r) for r in static_ws_roots)):
+                return str(cand_p.resolve()) if cand_p.is_dir() else str(p_paths[0])
     wt_root = AGY_DATA_DIR / "worktrees"
     if wt_root.is_dir() and target_name:
         for proj_wt in wt_root.iterdir():
@@ -56,7 +59,7 @@ def _resolve_workspace_str(ws_input: str) -> str:
                 sub_wts = sorted([d for d in proj_wt.iterdir() if d.is_dir()], key=lambda x: x.stat().st_mtime, reverse=True)
                 if sub_wts:
                     return str(sub_wts[0].resolve())
-    return raw
+    return str((AGY_GITLAB_DIR / "antigravity-config").resolve()) if p.is_absolute() else raw
 
 def _resolve_and_read_files(
     file_subpath_csv: str,
@@ -91,16 +94,13 @@ def _resolve_and_read_files(
         search_roots.append(AGY_GITLAB_DIR.resolve())
 
     gitlab_root_res = AGY_GITLAB_DIR.resolve()
-    allowed = tuple(
-        set(search_roots)
-        | {
-            gitlab_root_res,
-            AGY_DATA_DIR.resolve(),
-            AGY_BRAIN_DIR.resolve(),
-            (AGY_DATA_DIR / "worktrees").resolve(),
-            AGY_CONFIG_DIR.resolve(),
-            (AGY_DATA_DIR / "builtin").resolve(),
-        }
+    allowed = (
+        gitlab_root_res,
+        AGY_DATA_DIR.resolve(),
+        AGY_BRAIN_DIR.resolve(),
+        (AGY_DATA_DIR / "worktrees").resolve(),
+        AGY_CONFIG_DIR.resolve(),
+        (AGY_DATA_DIR / "builtin").resolve(),
     )
     items_slice = raw_items[:MAX_FILES_PER_CALL]
     remaining_total_chars = max_total_chars
@@ -190,7 +190,8 @@ def _resolve_and_read_files(
         if auto_resolved_ws and not top_auto_ws:
             top_auto_ws = auto_resolved_ws
 
-        is_sensitive_cfg = target_path.name.startswith(("config.json", "mcp_config.json", "secrets.env"))
+        low_name = target_path.name.lower()
+        is_sensitive_cfg = low_name.startswith(("config.json", "mcp_config.json", "secrets.env")) or low_name == ".env" or low_name.endswith((".env", "secrets.env.bak"))
         is_safe = (not is_sensitive_cfg) and any(target_path.is_relative_to(a) for a in allowed)
         if not is_safe:
             files_list.append({"requested": raw_sub, "error": "Access denied: path outside authorized workspace boundaries."})

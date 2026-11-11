@@ -20,7 +20,7 @@ from fastmcp import FastMCP
 from agy_nexus.hygiene import TTL_SECONDS
 
 def _load_env_file() -> None:
-    """Load KEY=VALUE pairs into os.environ if not already present."""
+    """Load KEY=VALUE pairs into os.environ (populating empty placeholders) and derive public origin."""
     env_candidates = [
         Path(os.getenv("AG_BRIDGE_ENV_FILE", "/config/secrets.env")),
         Path.home() / ".config/ag-bridge-mcp/secrets.env",
@@ -28,12 +28,22 @@ def _load_env_file() -> None:
     for candidate in env_candidates:
         try:
             if candidate.is_file():
-                for line in candidate.read_text(encoding="utf-8").splitlines():
-                    line = line.strip()
+                for raw_line in candidate.read_text(encoding="utf-8").splitlines():
+                    line = raw_line.strip()
+                    if line.startswith("# Gemini Connected Apps URL:"):
+                        m_url = re.search(r"(https?://[A-Za-z0-9.-]+(?::\d+)?)", line)
+                        if m_url and not m_url.group(1).endswith(".example.com") and not m_url.group(1).endswith("//example.com"):
+                            if not os.environ.get("_DERIVED_SECRETS_PUBLIC_URL"):
+                                os.environ["_DERIVED_SECRETS_PUBLIC_URL"] = m_url.group(1)
+                        continue
                     if not line or line.startswith("#") or "=" not in line:
                         continue
                     k, v = line.split("=", 1)
-                    os.environ.setdefault(k.strip(), v.strip().strip("'\""))
+                    kc, vc = k.strip(), v.strip().strip("'\"")
+                    if vc and not os.environ.get(kc):
+                        os.environ[kc] = vc
+                    elif kc not in os.environ:
+                        os.environ[kc] = vc
                 break
         except Exception:
             continue

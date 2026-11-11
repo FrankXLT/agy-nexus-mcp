@@ -18,9 +18,10 @@ from agy_nexus.config import (
     AGY_CONFIG_DIR,
     AGY_DATA_DIR,
     AGY_DB_FILE,
+    PATH_SECRET,
     verify_passphrase,
 )
-from agy_nexus.media import verify_and_resolve_media
+from agy_nexus.media import record_verified_public_origin, verify_and_resolve_media
 from agy_nexus.stats import build_nexus_stats_bundle, record_wire_telemetry
 from agy_nexus.webhook_proxy import handle_webhook_sync_proxy
 
@@ -32,17 +33,12 @@ class BridgeCompatMiddleware:
         self.web_dir = Path(__file__).resolve().parent.parent.parent / "web"
         self.web_html_path = self.web_dir / "index.html"
         self.pwa_assets = {
-            "styles.css": b"text/css; charset=utf-8",
-            "charts.js": b"application/javascript; charset=utf-8",
-            "hierarchy.js": b"application/javascript; charset=utf-8",
-            "health.js": b"application/javascript; charset=utf-8",
-            "app.js": b"application/javascript; charset=utf-8",
-            "uploads.js": b"application/javascript; charset=utf-8",
-            "manifest.webmanifest": b"application/manifest+json; charset=utf-8",
-            "sw.js": b"application/javascript; charset=utf-8",
-            "icon.svg": b"image/svg+xml",
-            "icon-192.png": b"image/png",
-            "icon-512.png": b"image/png",
+            "styles.css": b"text/css; charset=utf-8", "palettes.js": b"application/javascript; charset=utf-8",
+            "demo_data.js": b"application/javascript; charset=utf-8", "charts.js": b"application/javascript; charset=utf-8",
+            "hierarchy.js": b"application/javascript; charset=utf-8", "health.js": b"application/javascript; charset=utf-8",
+            "app.js": b"application/javascript; charset=utf-8", "uploads.js": b"application/javascript; charset=utf-8",
+            "manifest.webmanifest": b"application/manifest+json; charset=utf-8", "sw.js": b"application/javascript; charset=utf-8",
+            "icon.svg": b"image/svg+xml", "icon-192.png": b"image/png", "icon-512.png": b"image/png",
         }
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
@@ -55,6 +51,9 @@ class BridgeCompatMiddleware:
         req_path = str(scope.get("path", "") or "").rstrip("/")
         raw_qs = (scope.get("query_string") or b"").decode("latin-1", errors="ignore")
         headers = list(scope.get("headers", []))
+        if PATH_SECRET and req_path.startswith(f"/{PATH_SECRET}/"):
+            client_ip = str((scope.get("client") or ("", 0))[0] or "")
+            record_verified_public_origin(headers, client_ip=client_ip)
 
         if req_path.startswith("/github-webhook-sync"):
             await handle_webhook_sync_proxy(method, req_path, raw_qs, headers, receive, send)
@@ -83,14 +82,23 @@ class BridgeCompatMiddleware:
             if "/web/media/" in req_path:
                 target_file, mime_bytes, status_code, msg_text = verify_and_resolve_media(req_path)
                 if status_code == 200 and target_file is not None:
-                    media_bytes = target_file.read_bytes()
-                    await send({
-                        "type": "http.response.start",
-                        "status": 200,
-                        "headers": [(b"content-type", mime_bytes), (b"content-length", str(len(media_bytes)).encode("ascii")), (b"cache-control", b"private, max-age=1800")],
-                    })
-                    await send({"type": "http.response.body", "body": media_bytes})
-                    return
+                    if target_file.stat().st_size > 45 * 1024 * 1024:
+                        status_code, msg_text = 413, "Media file exceeds 45 MB limit."
+                    else:
+                        media_bytes = target_file.read_bytes()
+                        await send({
+                            "type": "http.response.start",
+                            "status": 200,
+                            "headers": [
+                                (b"content-type", mime_bytes),
+                                (b"content-length", str(len(media_bytes)).encode("ascii")),
+                                (b"cache-control", b"private, max-age=1800"),
+                                (b"x-content-type-options", b"nosniff"),
+                                (b"content-security-policy", b"default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox"),
+                            ],
+                        })
+                        await send({"type": "http.response.body", "body": media_bytes})
+                        return
                 err_b = json.dumps({"ok": False, "error": msg_text}).encode("utf-8")
                 await send({"type": "http.response.start", "status": status_code, "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(err_b)).encode("ascii"))]})
                 await send({"type": "http.response.body", "body": err_b})
@@ -104,12 +112,18 @@ class BridgeCompatMiddleware:
                         (b"content-type", self.pwa_assets[asset_name]),
                         (b"content-length", str(len(asset_bytes)).encode("ascii")),
                         (b"cache-control", b"no-cache"),
+                        (b"x-content-type-options", b"nosniff"),
                     ]
                     if asset_name == "sw.js":
                         resp_hdrs.append((b"service-worker-allowed", b"/"))
                     await send({"type": "http.response.start", "status": 200, "headers": resp_hdrs})
                     await send({"type": "http.response.body", "body": asset_bytes})
                     return
+            if not req_path.endswith("/web/api/stats"):
+                nf_b = b'{"ok":false,"error":"Asset not found"}'
+                await send({"type": "http.response.start", "status": 404, "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(nf_b)).encode("ascii")), (b"x-content-type-options", b"nosniff")]})
+                await send({"type": "http.response.body", "body": nf_b})
+                return
 
         # 2. Serve /web/api/stats JSON (authenticated by X-Nexus-Passphrase header)
         if method in ("GET", "POST") and req_path.endswith("/web/api/stats"):
@@ -127,7 +141,7 @@ class BridgeCompatMiddleware:
                 await send({
                     "type": "http.response.start",
                     "status": 401,
-                    "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(err_b)).encode("ascii"))],
+                    "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(err_b)).encode("ascii")), (b"cache-control", b"no-store")],
                 })
                 await send({"type": "http.response.body", "body": err_b})
                 print("[agy-nexus] http=GET rpc=web_stats_unauthorized tool=- status=401 bytes=0 ms=1", flush=True)
@@ -147,12 +161,14 @@ class BridgeCompatMiddleware:
                 "headers": [
                     (b"content-type", b"application/json"),
                     (b"content-length", str(len(ok_b)).encode("ascii")),
-                    (b"cache-control", b"no-cache"),
+                    (b"cache-control", b"no-store, no-cache, private"),
+                    (b"x-content-type-options", b"nosniff"),
                 ],
             })
             await send({"type": "http.response.body", "body": ok_b})
             elapsed_ms = int((time.time() - t0) * 1000)
-            print(f"[agy-nexus] http=GET rpc=web_stats tool={period_val} status=200 bytes={len(ok_b)} ms={elapsed_ms}", flush=True)
+            safe_period = re.sub(r"[^a-z0-9_-]", "", period_val.lower())[:24] or "current_month"
+            print(f"[agy-nexus] http=GET rpc=web_stats tool={safe_period} status=200 bytes={len(ok_b)} ms={elapsed_ms}", flush=True)
             return
 
         # 2b. Serve POST [/web]/api/sessions/{conv_id}/upload (works under /web, /{PATH_SECRET}/web, and LAN)
@@ -163,7 +179,8 @@ class BridgeCompatMiddleware:
                 from agy_nexus.uploads import handle_session_upload_request
                 await handle_session_upload_request(scope, receive, send, conv_id_req, headers)
                 elapsed_ms = int((time.time() - t0) * 1000)
-                print(f"[agy-nexus] http=POST rpc=session_upload conv={conv_id_req} ms={elapsed_ms}", flush=True)
+                safe_conv = re.sub(r"[^A-Za-z0-9_-]", "", conv_id_req)[:48] or "invalid"
+                print(f"[agy-nexus] http=POST rpc=session_upload conv={safe_conv} ms={elapsed_ms}", flush=True)
                 return
 
         if method == "HEAD":

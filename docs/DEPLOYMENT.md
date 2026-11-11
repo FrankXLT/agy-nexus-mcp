@@ -16,6 +16,7 @@ python3 scripts/init_secrets.py --domain <your-domain>
 ```
 You'll be prompted for a passphrase. The script writes `~/.config/ag-bridge-mcp/secrets.env` with:
 - `SUBDOMAIN_HASH`: 12-character random subdomain (used as `ag-{SUBDOMAIN_HASH}`)
+- `AG_BRIDGE_DOMAIN` & `AG_BRIDGE_PUBLIC_URL`: Public `https://` origin (`https://ag-{SUBDOMAIN_HASH}.<your-domain>`, origin-only without `PATH_SECRET`) used when generating signed `/web/media/` links
 - `PATH_SECRET`: 48-character random URL path
 - `PASS_HASH`: SHA-256 hash of your normalized passphrase
 - `HOST_BRIDGE_TOKEN`: 64-character shared secret authenticating local `agy-host-bridge` `/agentapi` RPCs
@@ -148,6 +149,10 @@ Create an `A` or `CNAME` record for `ag-{SUBDOMAIN_HASH}.<your-domain>` pointing
     google-chrome --app="https://agy-mcp.<your-domain>/web" --class="AGYNexusOverwatch" --window-size=1420,960
     ```
 
+### Cloud & Mobile Screenshot Inspection (`inspect_visual_artifacts`)
+- **Public Signed Media URLs**: Signed `/web/media/{token}/{filename}` links automatically resolve your public `https://` origin via `AG_BRIDGE_PUBLIC_URL`, `SUBDOMAIN_HASH + AG_BRIDGE_DOMAIN`, or your `secrets.env` Connected Apps header—stripping any path component so `PATH_SECRET` is never embedded in media URLs and mobile clients never receive private `.lan` links.
+- **Native Multimodal MCP Delivery (`< 20 KB` Wire Budget)**: Cloud/Mobile Gemini cannot fetch external URLs into vision context directly. Instead, Gemini calls `inspect_visual_artifacts(targets="#01", session_identifier="...", region="full"|"top"|"middle"|"bottom")` (or `ask_workspace_readonly(file_subpath="image:#01@top")` when using a cached tool schema) to receive WebP `ImageContent` thumbnails compressed strictly under `12.2 KB` raw (`<= 18.5 KB` JSON-RPC wire payload after `4/3` base64 expansion) directly over the authenticated MCP stream.
+
 ---
 
 ## 6. Viewing Request Logs & Troubleshooting
@@ -169,6 +174,7 @@ journalctl --user -u ag-bridge.service -f
 [agy-nexus] http=POST rpc=tools/list tool=- status=200 bytes=7476 ms=1
 [agy-nexus] http=POST rpc=tools/call tool=unlock_sessions status=200 bytes=11420 ms=34
 [agy-nexus] http=POST rpc=tools/call tool=load_session_into_gemini status=200 bytes=19374 ms=142
+[agy-nexus] http=POST rpc=tools/call tool=inspect_visual_artifacts status=200 bytes=16840 ms=19
 [agy-nexus] http=GET rpc=web_stats tool=last_90d status=200 bytes=18412 ms=6
 ```
 
@@ -180,7 +186,7 @@ journalctl --user -u ag-bridge.service -f
 
 ## 7. Automated Test Suite
 
-Run the end-to-end test suite anytime to verify all 9 MCP tools, passphrase locking, line-range file reads, and git diff pagination:
+Run the end-to-end test suite anytime to verify all 10 MCP tools, passphrase locking, line-range file reads, multimodal WebP inspection, and git diff pagination:
 ```bash
 AG_BRIDGE_URL="http://127.0.0.1:8765/${PATH_SECRET}/mcp" \
 AG_BRIDGE_PASSPHRASE="<your passphrase>" \

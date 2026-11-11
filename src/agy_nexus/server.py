@@ -17,34 +17,18 @@ import uvicorn
 
 import agy_nexus.config as cfg
 from agy_nexus.config import (
-    AGY_BG_DIR,
-    AGY_BRAIN_DIR,
-    AGY_CONFIG_DIR,
-    AGY_DATA_DIR,
-    AGY_DB_FILE,
-    AGY_GITLAB_DIR,
-    BIND_HOST,
-    BIND_PORT,
-    PASS_HASH,
-    PATH_SECRET,
-    SESSION_STATE,
-    TTL_SECONDS,
-    is_unlocked,
-    mcp,
-    normalize_phrase,
-    verify_passphrase,
+    AGY_BG_DIR, AGY_BRAIN_DIR, AGY_CONFIG_DIR, AGY_DATA_DIR, AGY_DB_FILE, AGY_GITLAB_DIR,
+    BIND_HOST, BIND_PORT, PASS_HASH, PATH_SECRET, SESSION_STATE, TTL_SECONDS,
+    is_unlocked, mcp, normalize_phrase, verify_passphrase,
 )
 import agy_nexus.handoff  # noqa: F401
-from agy_nexus.media import (
-    discover_visual_artifacts,
-    sign_media_url,
-    verify_and_resolve_media,
-)
+from agy_nexus.media import discover_visual_artifacts, sign_media_url, verify_and_resolve_media
 from agy_nexus.middleware import BridgeCompatMiddleware
 from agy_nexus.search import _search_workspaces_and_history
 from agy_nexus.session_tree import build_project_session_tree
 from agy_nexus.sessions import _list_saved_sessions_internal, _load_projects_map
 from agy_nexus.stats import build_nexus_stats_bundle
+from agy_nexus.tools_media import run_multimodal_media_self_test
 import agy_nexus.tools_ops  # noqa: F401
 import agy_nexus.tools_session  # noqa: F401
 import agy_nexus.tools_workspace  # noqa: F401
@@ -93,7 +77,9 @@ def run_self_test() -> int:
         bg_dir=AGY_BG_DIR,
         period="current_month",
     )
-    assert "ascii_mobile_report" in stats_bundle and "project_session_tree" in stats_bundle
+    from agy_nexus.telemetry_scanner import classify_model_key
+    assert "ascii_mobile_report" in stats_bundle and "model_series" in stats_bundle and "project_hierarchy" in stats_bundle
+    assert classify_model_key("MODEL_PLACEHOLDER_M427") == "carbon", "Expected M427 to classify as carbon"
     print(f"  [+] Telemetry & Activity Heatmap engine ({stats_bundle['summary']['period_steps']} steps indexed): PASS")
 
     # 5. FastMCP Stateless JSON Route Generation, /web HTML & JS Syntax Check
@@ -108,7 +94,7 @@ def run_self_test() -> int:
     app = BridgeCompatMiddleware(raw_app)
     assert app is not None and app.web_html_path.is_file(), "Failed generating Starlette HTTP app or missing web/index.html"
     node_bin = shutil.which("node")
-    for js_name in ("charts.js", "hierarchy.js", "uploads.js", "health.js", "app.js", "sw.js"):
+    for js_name in ("palettes.js", "charts.js", "demo_data.js", "hierarchy.js", "uploads.js", "health.js", "app.js", "sw.js"):
         js_path = app.web_dir / js_name
         assert js_path.is_file(), f"Missing web/{js_name}"
         js_text = js_path.read_text(encoding="utf-8")
@@ -363,6 +349,8 @@ def run_self_test() -> int:
             job_p.unlink(missing_ok=True)
     print("  [+] Context Exceeded Immunity, Timestamped Upload Batches & Two-Step Headless Override Gate: PASS")
     print("  [+] Host Bridge CWE-306 & CWE-88 Zero-Trust Auth, Loopback Default, CIDR & Root Sandbox: PASS")
+    run_multimodal_media_self_test(test_phrase, expected_hash)
+    print("  [+] Public Media Origin Resolution & <20 KB Multimodal WebP ImageContent MCP Endpoint: PASS")
 
     print("[✓] All agy-nexus-mcp v2.6.0 self-tests completed successfully!")
     return 0

@@ -122,7 +122,7 @@ def manage_background_run(
         })
     if action_clean in ("stats", "dashboard", "quota", "heatmap"):
         bundle = build_nexus_stats_bundle(data_dir=AGY_DATA_DIR, brain_dir=AGY_BRAIN_DIR, db_file=AGY_DB_FILE, config_dir=AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR, period=period, style=style)
-        drop_keys = {"heatmap_series", "velocity_series", "workspace_series", "subagent_series", "ascii_mobile_dashboard", "ascii_report_default", "ascii_report_quick", "ascii_report_rich", "summary", "project_session_tree"}
+        drop_keys = {"heatmap_series", "velocity_series", "model_series", "workspace_series", "subagent_series", "project_hierarchy", "ascii_mobile_dashboard", "ascii_report_default", "ascii_report_quick", "ascii_report_rich", "summary", "project_session_tree"}
         compact_bundle = {k: v for k, v in bundle.items() if k not in drop_keys}
         return _compact_json({
             "ok": True, "action": "stats",
@@ -252,7 +252,9 @@ def list_models_and_agents(
     inspected_item: dict[str, Any] = {}
     if inspect_name.strip():
         clean_q, in_s, in_e, in_c = parse_inline_line_spec(inspect_name.strip())
-        resolved_f = resolve_customization_file(clean_q or inspect_name.strip(), AGY_CONFIG_DIR, AGY_DATA_DIR, ws_path)
+        q_cand = (clean_q or inspect_name.strip()).strip()
+        safe_q = q_cand if re.fullmatch(r"(?:(?:skill|skills|agent|agents|rule|rules|global|workspace):)?[A-Za-z0-9_.-]{1,80}", q_cand) and ".." not in q_cand else ""
+        resolved_f = resolve_customization_file(safe_q, AGY_CONFIG_DIR, AGY_DATA_DIR, ws_path) if safe_q else None
         if resolved_f and resolved_f.is_file():
             raw_txt = resolved_f.read_text(encoding="utf-8", errors="replace")
             slice_meta = slice_file_content(

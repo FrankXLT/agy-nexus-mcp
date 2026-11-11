@@ -69,6 +69,8 @@ def main() -> None:
     subdomain_hash = ""
     path_secret = ""
     host_bridge_token = ""
+    saved_domain = ""
+    saved_public_url = ""
 
     if args.keep_existing_urls and env_path.is_file():
         try:
@@ -80,6 +82,10 @@ def main() -> None:
                     path_secret = line.split("=", 1)[1].strip().strip("'\"")
                 elif line.startswith("HOST_BRIDGE_TOKEN="):
                     host_bridge_token = line.split("=", 1)[1].strip().strip("'\"")
+                elif line.startswith("AG_BRIDGE_DOMAIN="):
+                    saved_domain = line.split("=", 1)[1].strip().strip("'\"")
+                elif line.startswith("AG_BRIDGE_PUBLIC_URL="):
+                    saved_public_url = line.split("=", 1)[1].strip().strip("'\"")
         except Exception:
             pass
 
@@ -90,8 +96,15 @@ def main() -> None:
     if not host_bridge_token:
         host_bridge_token = secrets.token_hex(32)   # 64 hex characters (256 bits)
 
+    eff_domain = (args.domain if args.domain != "example.com" or not saved_domain else saved_domain).strip()
+    if not re.fullmatch(r"[A-Za-z0-9.-]+", eff_domain):
+        sys.exit("Error: Invalid --domain (only letters, digits, dots, and hyphens allowed).")
+    if saved_public_url and not re.fullmatch(r"https?://[A-Za-z0-9.-]+(?::\d{1,5})?", saved_public_url):
+        saved_public_url = ""
+    public_url = saved_public_url or (f"https://ag-{subdomain_hash}.{eff_domain}" if eff_domain and eff_domain != "example.com" else "")
+
     env_path.parent.mkdir(parents=True, exist_ok=True)
-    full_url = f"https://ag-{subdomain_hash}.{args.domain}/{path_secret}/mcp"
+    full_url = f"https://ag-{subdomain_hash}.{eff_domain}/{path_secret}/mcp"
 
     ts = datetime.now(timezone.utc).isoformat()
     content = (
@@ -100,6 +113,8 @@ def main() -> None:
         f"# Gemini Connected Apps URL: {full_url}\n\n"
         f"# --- Perimeter & Deadbolt Security ---\n"
         f"SUBDOMAIN_HASH={subdomain_hash}\n"
+        f"AG_BRIDGE_DOMAIN={eff_domain}\n"
+        f"AG_BRIDGE_PUBLIC_URL={public_url}\n"
         f"PATH_SECRET={path_secret}\n"
         f"PASS_HASH={pass_hash}\n"
         f"HOST_BRIDGE_TOKEN={host_bridge_token}\n"
@@ -116,11 +131,13 @@ def main() -> None:
         f"MAX_TRANSCRIPT_TURNS=10\n\n"
         f"# --- Modular Architecture & File Hygiene Standards ---\n"
         f"ENFORCE_MODULAR_HYGIENE={args.enforce_modular}\n"
-        f"TARGET_FILE_LINES=300\n"
+        f"TARGET_FILE_LINES={args.enforce_modular and 300 or 300}\n"
         f"HARD_MAX_FILE_LINES=400\n"
     )
 
-    env_path.write_text(content, encoding="utf-8")
+    fd = os.open(env_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(content)
     os.chmod(env_path, 0o600)
 
     if args.quiet:

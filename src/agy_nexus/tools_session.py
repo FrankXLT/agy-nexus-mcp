@@ -293,10 +293,10 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
         "conversation_id": conv_id, "project_id": project_id,
         "project_name": project_name, "workspace_path": workspace,
         "assistant_guidance": (
-            "STOP AND REPLY TO USER NOW: Session context loaded successfully. "
-            "Do NOT chain a second MCP tool after a successful response (execution_status, git_summary, visual_artifacts, task_content, implementation_plan, walkthrough, and recent_transcript_turns are ALL included below). "
-            "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly once as a same-turn fallback without asking the user to reply 'Go'. "
-            "Answer the user's question directly or explain what Antigravity did in this session."
+            "STOP AND REPLY TO USER NOW unless visual pixel inspection of screenshots was requested: Session context loaded successfully. "
+            "Do NOT chain extra text tools after a successful response (execution_status, git_summary, visual_artifacts, task_content, implementation_plan, walkthrough, and recent_transcript_turns are ALL included below). "
+            "If you need to inspect actual screenshot pixels in vision context, call inspect_visual_artifacts(targets='#01', session_identifier=conversation_id) (or ask_workspace_readonly with file_subpath='image:#01'). "
+            "If a tool call fails with permission_denied or an immediate error, you MAY invoke ask_workspace_readonly once as a same-turn fallback."
         ),
         "project_hygiene_standards": MODULAR_HYGIENE_STANDARDS, "execution_status": db_status_info,
         "compaction_count": db_status_info.get("compaction_count", 0),
@@ -309,6 +309,8 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
         "walkthrough": walk_content, "scratch_files": scratch_files,
         "recent_transcript_turns": recent_turns,
     }
+    if visual_artifacts or scratch_batches:
+        payload["visual_inspection_hint"] = "Call inspect_visual_artifacts(targets='#01,#02', session_identifier=conversation_id, region='full'|'top'|'middle'|'bottom') to receive native <20 KB WebP ImageContent blocks over MCP."
     if included_files:
         payload["included_files"] = included_files
     out_str = _compact_json(payload)

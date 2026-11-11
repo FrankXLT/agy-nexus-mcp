@@ -67,11 +67,19 @@ def ask_workspace_readonly(
     session_identifier: str = "",
     workspace: str = "",
     spoken_passphrase: str = "",
-) -> str:
-    """Read-only codebase explorer and secondary 'Check-in' status reader querying 1..12 comma-separated files (supports line ranges via start_line/end_line or inline 'path/file.py:100-350' syntax, plus 'outline:path/to/file' for 1-call Universal Polyglot structural line-span outlines across Python (.py), Markdown (.md), JSON/JSONC (.json), YAML (.yaml/.yml), and JS/TS/CSS/HTML (.js/.ts/.css/.html) with automatic outlines on truncated file reads, 'skill:<name>' / 'agent:<name>' / 'rule:<name>'), git grep across local repositories, and SQLite FTS5 conversation history. Pass session_identifier or workspace to pin this call in parallel chats without mutating other chats' context.
+) -> Any:
+    """Read-only codebase explorer and secondary 'Check-in' status reader querying 1..12 comma-separated files (supports line ranges via start_line/end_line or inline 'path/file.py:100-350' syntax, 'outline:path/to/file' for 1-call Universal Polyglot structural outlines, 'image:#01,#02[@top]' for <20 KB WebP ImageContent visual inspection, and 'skill:<name>' / 'agent:<name>' / 'rule:<name>'), git grep across local repositories, and SQLite FTS5 conversation history. Pass session_identifier or workspace to pin this call in parallel chats without mutating other chats' context.
     NOTE: This tool returns selected_session_status automatically alongside file details, making it safe for live check-ins and fallback queries."""
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
+    raw_sub = file_subpath.strip()
+    if re.match(r"^(?:image|visual):", raw_sub, flags=re.IGNORECASE):
+        from agy_nexus.tools_media import inspect_visual_artifacts
+        spec = re.sub(r"^(?:image|visual):", "", raw_sub, flags=re.IGNORECASE).strip()
+        reg = "full"
+        if "@" in spec:
+            spec, reg = [p.strip() for p in spec.rsplit("@", 1)]
+        return inspect_visual_artifacts(targets=spec, session_identifier=session_identifier, region=reg or "full", workspace=workspace, spoken_passphrase=spoken_passphrase)
     conv_id, ws, extra_uris = _resolve_pinned_context(session_identifier, workspace, tool_name="ask_workspace_readonly")
     session_dir = (AGY_BRAIN_DIR / conv_id) if conv_id else None
     effective_query = search_query.strip()

@@ -46,6 +46,11 @@ if ([string]::IsNullOrWhiteSpace($Passphrase)) {
     }
 }
 
+if ($Domain -notmatch '^[A-Za-z0-9.-]+$') {
+    Write-Error "Invalid Domain '$Domain' (only letters, digits, dots, and hyphens allowed)."
+    exit 1
+}
+
 $Normalized = ($Passphrase.ToLowerInvariant() -replace '[^a-z0-9]', '')
 if ([string]::IsNullOrEmpty($Normalized)) {
     Write-Error "Passphrase must contain at least one alphanumeric character."
@@ -80,6 +85,7 @@ $parentDir = Split-Path -Parent $EnvFile
 if (-not (Test-Path $parentDir)) { New-Item -ItemType Directory -Path $parentDir -Force | Out-Null }
 
 $FullUrl = "https://ag-$SubdomainHash.$Domain/$PathSecret/mcp"
+$PublicUrl = if ($Domain -ne "example.com") { "https://ag-$SubdomainHash.$Domain" } else { "" }
 $TsUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 $EnforceStr = if ($EnforceModular) { "true" } else { "false" }
 
@@ -90,6 +96,8 @@ $Content = @"
 
 # --- Perimeter & Deadbolt Security ---
 SUBDOMAIN_HASH=$SubdomainHash
+AG_BRIDGE_DOMAIN=$Domain
+AG_BRIDGE_PUBLIC_URL=$PublicUrl
 PATH_SECRET=$PathSecret
 PASS_HASH=$PassHash
 HOST_BRIDGE_TOKEN=$HostBridgeToken
@@ -112,7 +120,10 @@ TARGET_FILE_LINES=$TargetFileLines
 HARD_MAX_FILE_LINES=$HardMaxFileLines
 "@
 
+if (-not (Test-Path $EnvFile)) { New-Item -ItemType File -Path $EnvFile -Force | Out-Null }
+if ($IsLinux -or $IsMacOS) { chmod 600 $EnvFile } else { icacls $EnvFile /inheritance:r /grant:r "$($env:USERNAME):(R,W)" | Out-Null }
 Set-Content -Path $EnvFile -Value $Content -Encoding UTF8
+if ($IsLinux -or $IsMacOS) { chmod 600 $EnvFile }
 
 if (-not $Quiet) {
     Write-Host ""
