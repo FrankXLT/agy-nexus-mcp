@@ -4,6 +4,39 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] — 2026-11-11
+
+### Security
+- **Zero-Trust LAN-Only `agy-polyglot-mcp` Endpoint & Incremental Index Sandboxing (`middleware.py`, `polyglot_index.py`, `polyglot_outline.py`, `hygiene.py`, `config.py`)**:
+  - Enforced constant-time 192-bit token verification (`hmac.compare_digest` via `POLYGLOT_MCP_TOKEN` or domain-separated `HMAC-SHA256(PATH_SECRET, "agy-polyglot-mcp-v1")`) on `/polyglot/{POLYGLOT_MCP_TOKEN}/mcp`, failing closed (`503`) if unconfigured.
+  - Enforced strict LAN-only `403 Forbidden` rejection whenever reverse-proxy/tunnel headers (`X-Forwarded-For`, `X-Real-IP`, `Forwarded`, `CF-Connecting-IP`, `X-Forwarded-Proto`, `X-Forwarded-Host`), browser `Origin` headers, non-local `Host` headers (preventing DNS rebinding), or non-RFC1918/loopback client IPs are present.
+  - Hardened index cache permissions (`0700` directory, `0600` atomic temp-swap files), centralized `is_sensitive_filename()` exclusion (`secrets.env`, `.env.*`, `mcp_config.json`, private keys/tokens), redacted inline YAML scalar values during outlining, blocked relative `..` escape and umbrella root (`$HOME`, `/`, `~/gitlab`, `~/github`) indexing, and ensured `try/finally` read-only SQLite connection cleanup across all session and telemetry scanners.
+
+### Added
+- **Unified Incremental SHA-256 Polyglot Engine & Paired Local `agy-polyglot-mcp` Server (`polyglot_outline.py`, `polyglot_index.py`, `tools_polyglot.py`, `middleware.py`, `server.py`)**:
+  - Replaced `ast_outline.py` completely with a unified Polyglot semantic outliner & incremental `(mtime_ns, size)` + `sha256` JSON workspace index supporting Python, JS/TS/JSX/TSX, Vue, Markdown, JSON/JSONC, YAML, Go, Rust, Shell, SQL, HTML, and CSS/SCSS with `L<start>-L<end>` spans, 1-liner docstrings/comments, and `>100`-line function warnings.
+  - Exposed a dedicated deadbolt-free local MCP server (`agy-polyglot-mcp`) mounted at `/polyglot/{POLYGLOT_MCP_TOKEN}/mcp` (plus `--stdio` CLI entrypoint) providing `polyglot_map`, `polyglot_search`, and `polyglot_outline` for Antigravity IDE agents alongside `agy-nexus-mcp`.
+- **Virtual URI Routing (`virtual_uris.py`, `workspace.py`, `workflows.py`)**:
+  - Added `transcript:latest`, `transcript:turn:<K>`, and `transcript:step:<N>` reading untruncated turns from `.system_generated/logs/transcript_full.jsonl` with `<= 136`-char line wrapping for clean `start_line`/`end_line` pagination.
+  - Added nested `brain:<subpath>` / `brain:<conv_id>/<subpath>` resolution, `polyglot:map[:prefix]` / `polyglot:search:<query>`, and policy-safe read-only `telemetry:stats[:period[:style]]` / `telemetry:quota` / `telemetry:wire` / `telemetry:export_notebook` URIs.
+- **Pragmatic `<= 500` Line Modular Budget & `/web` Polyglot Health Telemetry (`hygiene.py`, `code_health.py`, `web/health.js`, `web/demo_data.js`, `web/charts.js`)**:
+  - Updated target file budget from `<= 300`/`400` to **`<= 500` lines** (`501–650` warning, `650` hard ceiling, functions `<= 100` lines), eliminating artificial micro-file sprawl while keeping semantic navigation instant via Polyglot outlines.
+  - Added deterministic `?demo=1` / `?theme=` / `?period=` URL query overrides on `/web` and upgraded Row 6 (**Code Health, Polyglot Index & Modular Hygiene**) plus all 3 ASCII telemetry tiers with live Polyglot symbol counts and `<= 500L` / `650L` margin reporting.
+
+### Fixed
+- **MCP Streamable HTTP `405 Method Not Allowed` Spec Compliance & Async Event-Loop Offload (`middleware.py`, `server.py`)**:
+  - Returned `405 Method Not Allowed` (`Allow: POST, OPTIONS`, `Cache-Control: no-store`, `X-Accel-Buffering: no`) on `GET`, `DELETE`, and `HEAD` to `*/mcp` per the MCP Streamable HTTP specification, multiplexed lifespans with `finally` cleanup across both FastMCP apps, and offloaded synchronous MCP tool functions via `anyio.to_thread.run_sync` (`is_async = True`) with `timeout_keep_alive=65`.
+- **Policy-Safe Telemetry & Session Stats (`tools_ops.py`, `skills/agy-nexus-stats/SKILL.md`)**:
+  - Added `include_stats: bool = False`, `period`, and `style` directly to `get_session_tree()`, eliminating hosted Gemini `POLICY_DECISION_DENY` blocks on `manage_background_run`.
+- **Read-Only Slice Performance & Pinned-Session Search (`hygiene.py`, `workspace.py`, `inventory.py`, `search.py`, `tools_workspace.py`)**:
+  - Separated `hit_char_cap` from `truncated` so explicit `start_line`/`end_line` slices skip full-file outlining, guarded `resolve_customization_file` against multi-segment/wildcard globs, bounded multi-repo grep to `3.2s` monotonic wall-clock (`1.5s`/repo) across `~/gitlab`, `~/github`, and worktrees, and added Tier-0 pinned session `transcript_full.jsonl` + `brain/` search.
+- **Headless Chained Publish Mode, `RESUME_STAGED` Unwrap & `"Google Nexus"` Routing (`handoff.py`, `sessions.py`, `routing.py`, `tools_session.py`, `stats.py`)**:
+  - Defaulted `execution_mode="auto"` (`"fast"` when `allow_chained_publish=True` and `resume_headless=True`, else `"plan"`), propagated host-bridge wakeup failures accurately (`status="FAILED"`), added `_unwrap_staged_handoff_markdown` (`<!-- BEGIN_USER_HANDOFF_BODY -->`) to prevent `RESUME_STAGED` double-wrapping, narrowed `NEXUS_TITLE_KEYWORDS` so `"Google Nexus"` chats never hijack `workspace_path`, mapped `NEXUS_PROJECT_ID` (`a97e4c10-2600-4a91-8b2c-1e75c90a0301`) cleanly to `agy-nexus-mcp`, dynamically expanded `latest_assistant_response` up to `10,500` chars from `transcript_full.jsonl`, and prioritized SQLite `conversation_summaries` over stale cached slots.
+- **High-Detail Visual Thumbnails & Public HTTPS Media Origin (`tools_media.py`, `docker-compose.yml`)**:
+  - Raised 2-up `inspect_visual_artifacts` `max_edge` to `840px` (`min_quality=58`), added `zoom_warning` guidance for `count > 2` full-frame views, documented hosted Gemini `ImageContent` stripping, and wired `AG_BRIDGE_PUBLIC_URL` + `${HOME}/github:ro` into `docker-compose.yml`.
+
+---
+
 ## [2.6.0] — 2026-11-11
 
 ### Security

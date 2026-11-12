@@ -161,7 +161,10 @@ def render_ascii_default(bundle: dict[str, Any]) -> str:
         _sr(f"STEPS/TOOLS: {tot_steps:,}s | {tot_tools:,}t | {tot_chats}c", f" {tot_steps // act_days:,} s/act-d | {tot_steps // cal_days:,} s/cal-d"),
         _sr(f"TOKEN BURN : {fmt_tok(tot_tok)} Total ({tot_subs} sub runs)", f" {fmt_rate(tot_tok / act_days)} tok/d   | {fmt_rate(tot_tok / max(1.0, act_days / 7.0))} tok/wk"),
         _sr(f"MCP WIRE   : {w_pct}% <20KB (avg {w_avg:.1f}/{w_max:.1f}KB)", f" {w_calls} req ({w_tok} tok) | Gemini Web"),
-        _sr(f"CODE HEALTH: AST {ast_info.get('undefined_names', 0)} undef | {m_info.get('compliant_300', 0)}/{m_info.get('total_modules', 0)} <=300L", f" 0 >400L | Serena LSP: Ready"),
+        _sr(
+            f"CODE HEALTH: Poly {int((code_health.get('polyglot_health') or ast_info).get('total_symbols', 0))} syms | {m_info.get('compliant_500', m_info.get('compliant_300', 0))}/{m_info.get('total_modules', 0)} <=500L",
+            f" {m_info.get('violations_over_650', 0)} >650L | Polyglot+Serena",
+        ),
         "────────────────────────────────────────┴───────────────────────────────",
     ]
 
@@ -237,7 +240,8 @@ def render_ascii_quick(bundle: dict[str, Any]) -> str:
     g_429 = int(((quota.get("pools") or {}).get("google") or {}).get("total_429_count", 0))
     wk_left = int(round(max(0.0, 100.0 - float((quota.get("partner_weekly_pacing") or {}).get("recommended_cumulative_ceiling_pct", 14.3)))))
     code_health = bundle.get("code_health") or {}
-    v_info, m_info, ast_info = code_health.get("version") or {}, code_health.get("modular_hygiene") or {}, code_health.get("ast_integrity") or {}
+    v_info, m_info = code_health.get("version") or {}, code_health.get("modular_hygiene") or {}
+    poly_info = code_health.get("polyglot_health") or code_health.get("ast_integrity") or {}
 
     lines = [
         "════════════════════════════════════════",
@@ -247,7 +251,7 @@ def render_ascii_quick(bundle: dict[str, Any]) -> str:
         f"P-1x :{p_rem:>4.0f}% [{p_bar}] OK | {wk_left}% WkLft"[:40],
         f"Steps:{fmt_k(tot_steps):>6} | Tools:{fmt_k(tot_tools):>5} | Act:{act_days}d"[:40],
         f"Burns:{fmt_tok(tot_tok):>6} | {fmt_rate(tot_tok / act_days)}/d | {fmt_rate(tot_tok / max(1.0, act_days / 7.0))}/wk"[:40],
-        f"Health: AST {ast_info.get('undefined_names', 0)}u | Mod {m_info.get('compliant_300', 0)}/{m_info.get('total_modules', 0)} <=300L | {v_info.get('status', 'OK')[:6]}"[:40],
+        f"Health: Poly {int(poly_info.get('total_symbols', 0))}s | {m_info.get('compliant_500', m_info.get('compliant_300', 0))}/{m_info.get('total_modules', 0)} <=500L | {v_info.get('status', 'OK')[:6]}"[:40],
         "────────────────────────────────────────",
         "HEATMAP (NOW ──► 13w Ago)  │ PEAK & VOL",
     ]

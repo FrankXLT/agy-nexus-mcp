@@ -1,4 +1,4 @@
-// Session Scratch Batch Uploads Modal — Quiet UI & Progress Manager (v2.6.0)
+// Session Scratch Batch Uploads Modal — Quiet UI & Progress Manager (v2.7.0)
 let currentUploadConvId = "";
 let selectedUploadFiles = [];
 let uploadBatchCompleted = false;

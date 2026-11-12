@@ -2,14 +2,14 @@
 """
 agy_nexus.hygiene — Modular Architecture Standards, Line-Range File Slicing,
 and Diff Pagination Helpers for AGY-Nexus MCP.
-Keeps file-slicing, diff-pagination, and modular code hygiene logic cleanly
-separated (< 250 lines) in accordance with the Modular Architecture Standard.
 """
 from __future__ import annotations
+
 import json
 import os
 import re
 from typing import Any
+
 # Configurable Session & Context Window Limits (via secrets.env or container env)
 MIN_TTL_SECONDS = int(os.getenv("MIN_TTL_SECONDS", "300"))
 TTL_SECONDS = max(int(os.getenv("TTL_SECONDS", "7200")), MIN_TTL_SECONDS)
@@ -20,28 +20,48 @@ MAX_DIFF_CHARS = int(os.getenv("MAX_DIFF_CHARS", "15000"))
 MAX_TRANSCRIPT_TURNS = int(os.getenv("MAX_TRANSCRIPT_TURNS", "8"))
 MAX_TASK_DOC_CHARS = int(os.getenv("MAX_TASK_DOC_CHARS", "16000"))
 ENFORCE_MODULAR_HYGIENE = os.getenv("ENFORCE_MODULAR_HYGIENE", "true").strip().lower() in ("1", "true", "yes", "on")
-TARGET_FILE_LINES = int(os.getenv("TARGET_FILE_LINES", "300"))
-HARD_MAX_FILE_LINES = int(os.getenv("HARD_MAX_FILE_LINES", "400"))
+TARGET_FILE_LINES = int(os.getenv("TARGET_FILE_LINES", "500"))
+HARD_MAX_FILE_LINES = int(os.getenv("HARD_MAX_FILE_LINES", "650"))
+
 MODULAR_HYGIENE_STANDARDS: dict[str, Any] = {
     "enabled": ENFORCE_MODULAR_HYGIENE,
-    "target_lines_per_file": f"100-{TARGET_FILE_LINES} lines (<= 12 KB)",
+    "target_lines_per_file": f"100-{TARGET_FILE_LINES} lines (functions <= 100 lines)",
     "hard_split_ceiling_lines": HARD_MAX_FILE_LINES,
     "core_principles": [
-        f"Keep source files between 100 and {TARGET_FILE_LINES} lines (hard split ceiling at {HARD_MAX_FILE_LINES} lines) so every module fits 100% inside a single MCP file read without truncation.",
-        "Decompose by cohesive domain capability (e.g., config, models/types, db/repository, services, routes/handlers, utils) with clean public interfaces and zero circular imports—never create micro-file sprawl.",
+        f"Keep source files cohesive up to {TARGET_FILE_LINES} lines (hard split ceiling at {HARD_MAX_FILE_LINES} lines, functions <= 100 lines); use Polyglot semantic outlines (`agy-polyglot-mcp` / `outline:<path>`) to isolate exact line spans without micro-file sprawl.",
+        "Decompose by cohesive domain capability (e.g., config, models/types, db/repository, services, routes/handlers, utils) with clean public interfaces and zero circular imports—never fragment cohesive modules into tiny files.",
         "Maintain strict root-directory hygiene: keep only project manifests (README.md, pyproject.toml/package.json, docker-compose.yml, .env.example, .gitignore) in the repository root; place code in src/ (or package dir), tests in tests/, and operational scripts in scripts/. Store temporary notes and scratch files strictly in the session brain directory (~/.gemini/antigravity/brain/<conv_id>/scratch/), NEVER in a repo-root scratch/ directory that could shadow handoff files.",
-        "When modifying a legacy file that already exceeds 400 lines, extract new features or subsystems into a dedicated helper module rather than expanding the monolith.",
+        f"When modifying a legacy file that already exceeds {HARD_MAX_FILE_LINES} lines, extract newly added subsystems into a cohesive companion module (<= {TARGET_FILE_LINES} lines) rather than growing the monolith.",
     ],
 }
+
 MODULAR_HYGIENE_MARKDOWN_BLOCK = f"""
 ---
-## Mandatory Modular Architecture, Verification & File Hygiene Standard
+## Mandatory Modular Architecture, Polyglot Navigation & File Hygiene Standard
 When standing up or modifying this project, enforce the following rules automatically:
 1. **Verified Facts vs. Hypotheses Checklist**: Label any unverified assumption as a hypothesis; verify live state, configs, and schemas before mutating code.
-2. **File Size Budget (`100–{TARGET_FILE_LINES} lines`, Hard Ceiling `{HARD_MAX_FILE_LINES} lines`)**: Keep every source file under `{TARGET_FILE_LINES}` lines (`<= 12 KB`) so each module fits completely in a single MCP read and remains easy for surgical edits.
-3. **Cohesive Domain Decomposition (No Micro-File Sprawl)**: Group code by domain responsibility (`config`, `models`, `repository`, `services`, `routes`, `utils`) with zero circular dependencies.
-4. **Root-Directory Hygiene & Scratch File Isolation**: Keep the repo root clean (manifests only; code in `src/`, tests in `tests/`, scripts in `scripts/`). Store temporary scratch scripts/notes strictly in the session brain directory (`~/.gemini/antigravity/brain/<conv_id>/scratch/`), NEVER in a repo-root `scratch/` directory that could shadow handoff files. If a target file exceeds `{HARD_MAX_FILE_LINES}` lines, extract newly added logic into a companion module.
+2. **Polyglot-First Navigation & File Budget (`<= {TARGET_FILE_LINES} lines` Target, `{HARD_MAX_FILE_LINES} lines` Hard Ceiling, Functions `<= 100 lines`)**: Use `agy-polyglot-mcp` (`polyglot_map`, `polyglot_search`, `polyglot_outline`) to locate exact `Lstart-Lend` spans first rather than creating micro-file sprawl. Keep cohesive modules `<= {TARGET_FILE_LINES}` lines (`<= {HARD_MAX_FILE_LINES}` ceiling) and individual functions `<= 100` lines.
+3. **Cohesive Domain Decomposition**: Group code by domain responsibility (`config`, `models`, `repository`, `services`, `routes`, `utils`) with zero circular dependencies.
+4. **Root-Directory Hygiene & Scratch File Isolation**: Keep the repo root clean (manifests only; code in `src/`, tests in `tests/`, scripts in `scripts/`). Store temporary scratch scripts/notes strictly in the session brain directory (`~/.gemini/antigravity/brain/<conv_id>/scratch/`), NEVER in a repo-root `scratch/` directory that could shadow handoff files.
 """
+
+
+_SAFE_ENV_TEMPLATES: frozenset[str] = frozenset({
+    ".env.example", ".env.sample", ".env.template", ".env.dist",
+})
+
+
+def is_sensitive_filename(filename: str) -> bool:
+    """Return True if filename is a secret/credential file that must never be indexed, searched, or read."""
+    low = os.path.basename(filename or "").strip().lower()
+    if not low or low in _SAFE_ENV_TEMPLATES or low.endswith((".env.example", ".env.sample", ".env.template")):
+        return False
+    return (
+        low.startswith(("config.json", "mcp_config.json", "secrets.env", ".env."))
+        or low in (".env", "credentials.json", "session_state.json", "antigravity_state.pbtxt")
+        or low.endswith((".env", ".pem", ".key", "secrets.env.bak"))
+    )
+
 
 def parse_inline_line_spec(raw_sub: str) -> tuple[str, int, int, int]:
     """
@@ -53,6 +73,12 @@ def parse_inline_line_spec(raw_sub: str) -> tuple[str, int, int, int]:
     Returns (cleaned_path_no_line, start_line, end_line, center_line).
     """
     s = raw_sub.strip()
+    if re.match(r"^(?:transcript|telemetry|polyglot):", s, flags=re.IGNORECASE):
+        m_vrange = re.search(r":(\d+)-(\d+)$", s)
+        if m_vrange:
+            st, en = int(m_vrange.group(1)), int(m_vrange.group(2))
+            return s[: m_vrange.start()].strip(), st, max(st, en), 0
+        return s, 0, 0, 0
     m_hash = re.search(r"#L(\d+)(?:-L?(\d+))?$", s)
     if m_hash:
         base = s[: m_hash.start()].strip()
@@ -73,6 +99,7 @@ def parse_inline_line_spec(raw_sub: str) -> tuple[str, int, int, int]:
         return base, 0, 0, int(m_single.group(1))
     return s, 0, 0, 0
 
+
 def slice_file_content(
     full_text: str,
     clean_path: str,
@@ -85,7 +112,7 @@ def slice_file_content(
 ) -> dict[str, Any]:
     """
     Slice file content by line range or centered target line while staying within per_file_cap characters.
-    Returns metadata including total_lines, shown_start_line, shown_end_line, truncated, and next_range_hint.
+    Separates `hit_char_cap` (cap-induced truncation) from `truncated` (partial file view).
     """
     all_lines = full_text.splitlines(keepends=True)
     total_lines = len(all_lines)
@@ -96,6 +123,7 @@ def slice_file_content(
             "shown_end_line": 0,
             "shown_lines": "0-0 of 0",
             "truncated": False,
+            "hit_char_cap": False,
             "content": "",
         }
     st = explicit_start_line if explicit_start_line > 0 else inline_start_line
@@ -110,25 +138,29 @@ def slice_file_content(
     out_chunks: list[str] = []
     char_count = 0
     actual_end = st - 1
+    hit_char_cap = False
     for idx in range(st - 1, max_en):
         line_str = all_lines[idx]
         if char_count + len(line_str) > per_file_cap and out_chunks:
+            hit_char_cap = True
             break
         if len(line_str) > per_file_cap and not out_chunks:
             out_chunks.append(line_str[:per_file_cap])
             actual_end = idx + 1
+            hit_char_cap = True
             break
         out_chunks.append(line_str)
         char_count += len(line_str)
         actual_end = idx + 1
     content = "".join(out_chunks)
-    truncated = (st > 1) or (actual_end < total_lines)
+    truncated = (st > 1) or (actual_end < total_lines) or hit_char_cap
     result: dict[str, Any] = {
         "total_lines": total_lines,
         "shown_start_line": st,
         "shown_end_line": actual_end,
         "shown_lines": f"{st}-{actual_end} of {total_lines}",
         "truncated": truncated,
+        "hit_char_cap": hit_char_cap,
         "content": content,
     }
     if actual_end < total_lines:
@@ -141,9 +173,10 @@ def slice_file_content(
     if ENFORCE_MODULAR_HYGIENE and total_lines > HARD_MAX_FILE_LINES:
         result["modularity_advisory"] = (
             f"File has {total_lines} lines (exceeds {HARD_MAX_FILE_LINES}-line modular ceiling). "
-            f"If modifying this area, extract new logic into a focused helper module (<= {TARGET_FILE_LINES} lines)."
+            f"If modifying this area, extract new logic into a cohesive module (<= {TARGET_FILE_LINES} lines)."
         )
     return result
+
 
 def slice_git_diff(
     diff_out: str,
@@ -191,7 +224,8 @@ def slice_git_diff(
         )
     return res
 
-def _compact_markdown(text: str, max_chars: int = 5500) -> str:
+
+def _compact_markdown(text: str, max_chars: int = 5500, source_hint: str = "...") -> str:
     """Keep markdown under max_chars while preserving all section headings, intro, and the latest trailing sections."""
     if len(text) <= max_chars:
         return text
@@ -202,13 +236,15 @@ def _compact_markdown(text: str, max_chars: int = 5500) -> str:
     toc = "\n".join(headings)[:toc_cap]
     head_part = text[:head_cap]
     tail_part = text[-tail_cap:]
+    hint_expr = f"'{source_hint}'" if source_hint != "..." else "..."
     return (
-        f"[Document Outline ({len(text)} total chars — use ask_workspace_readonly(file_subpath=..., start_line=..., end_line=...) for middle sections)]:\n"
+        f"[Document Outline ({len(text)} total chars — use ask_workspace_readonly(file_subpath={hint_expr}, start_line=..., end_line=...) for middle sections)]:\n"
         f"{toc}\n\n"
         f"--- [Beginning] ---\n{head_part}\n\n"
         f"... [middle omitted] ...\n\n"
         f"--- [End (Latest Checkpoints)] ---\n{tail_part}"
     )
+
 
 def _summarize_jsonl_line(raw_line: str) -> dict[str, Any]:
     """Parse a raw transcript.jsonl line into a compact, readable summary object."""

@@ -114,21 +114,22 @@ def main() -> int:
         print("ERROR: Provide --passphrase or set AG_BRIDGE_PASSPHRASE environment variable.", file=sys.stderr)
         return 2
     call_mcp, call_tool = make_caller(mcp_url)
-    # 1. Transport & Protocol Layer
+    # 1. Transport & Protocol Layer (MCP Streamable HTTP Spec: 405 on GET/DELETE/HEAD /mcp, 204 on OPTIONS /mcp)
+    expected_codes = {"HEAD": (405,), "GET": (405,), "OPTIONS": (200, 204), "DELETE": (405,)}
     for method in ["HEAD", "GET", "OPTIONS", "DELETE"]:
         cmd = ["curl", "-sS", "-o", "/dev/null", "-w", "%{http_code}", "--http2", "-X", method, mcp_url]
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
         code = int(p.stdout.strip() or "0")
-        record("1. Transport", f"HTTP {method} probe", code in (200, 202, 204), f"HTTP {code}")
+        record("1. Transport", f"HTTP {method} /mcp spec compliance", code in expected_codes[method], f"HTTP {code}")
     code, rpc = call_mcp("initialize", {
         "protocolVersion": "2025-03-26",
         "capabilities": {},
-        "clientInfo": {"name": "permutation-tester-v2", "version": "2.0.0"},
+        "clientInfo": {"name": "permutation-tester-v2", "version": "2.7.0"},
     })
     record("1. Transport", "MCP initialize handshake", code == 200 and "result" in rpc, f"HTTP {code}")
     code, rpc = call_mcp("tools/list", {})
     tools = rpc.get("result", {}).get("tools", [])
-    record("1. Transport", "tools/list exposes 9 tools", code == 200 and len(tools) == 9, f"count={len(tools)}")
+    record("1. Transport", "tools/list exposes 11 tools", code == 200 and len(tools) == 11, f"count={len(tools)}")
     # 2. Deadbolt & Passphrase Permutations
     _, _, r_lock = call_tool("lock_bridge", {})
     record("2. Deadbolt", "lock_bridge() engages deadbolt", r_lock.get("locked") is True, f"locked={r_lock.get('locked')}")

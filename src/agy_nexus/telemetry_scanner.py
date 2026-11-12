@@ -14,12 +14,17 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-CACHE_VERSION = 4
+CACHE_VERSION = 6
 WIRE_TELEMETRY_RING: list[dict[str, Any]] = []
 MAX_WIRE_RING = 200
+MODEL_CHANGE_RE = re.compile(
+    r"changed setting `?Model Selection`? from .+? to `?([^\n`]+?)`?\.(?:\s+No need|\s*</USER_SETTINGS_CHANGE>|\s*$)",
+    re.MULTILINE,
+)
 
 ANTIGRAVITY_MODEL_PLACEHOLDERS: dict[str, dict[str, str]] = {
     "MODEL_PLACEHOLDER_M417": {"id": "MODEL_PLACEHOLDER_M417", "model_key": "carbon", "label": "Gemini 4 Carbon", "pool": "20x Google Ultra", "subagent_inherit": "Gemini 4 Carbon"},
+    "MODEL_PLACEHOLDER_M427": {"id": "MODEL_PLACEHOLDER_M427", "model_key": "carbon", "label": "Gemini 4 Carbon", "pool": "20x Google Ultra", "subagent_inherit": "Gemini 4 Carbon"},
     "MODEL_PLACEHOLDER_M322": {"id": "MODEL_PLACEHOLDER_M322", "model_key": "flash", "label": "Gemini 3.8 Flash", "pool": "20x Google Ultra", "subagent_inherit": "Gemini 3.8 Flash"},
 }
 
@@ -32,12 +37,12 @@ def get_active_mainchat_model(data_dir: Path | None = None) -> dict[str, Any]:
         try:
             txt = pb_file.read_text(encoding="utf-8", errors="replace")
             m = re.search(r"last_selected_agent_model:\s*([A-Za-z0-9_.-]+)", txt)
-            if m:
-                raw_ph = m.group(1).strip()
+            if m: raw_ph = m.group(1).strip()
             switched_iso = datetime.fromtimestamp(pb_file.stat().st_mtime, tz=timezone.utc).strftime("%Y-%m-%d")
         except Exception:
             pass
-    info = dict(ANTIGRAVITY_MODEL_PLACEHOLDERS.get(raw_ph, {"id": raw_ph, "model_key": classify_model_key(raw_ph, ""), "label": "Gemini 4 Carbon" if "417" in raw_ph.lower() or "carbon" in raw_ph.lower() else "Gemini 4 Argon (Pro)", "pool": "20x Google Ultra", "subagent_inherit": "Gemini 4 Carbon" if "417" in raw_ph.lower() else "Gemini 4 Argon"}))
+    is_carb = any(k in raw_ph.lower() for k in ("417", "427", "carbon"))
+    info = dict(ANTIGRAVITY_MODEL_PLACEHOLDERS.get(raw_ph, {"id": raw_ph, "model_key": classify_model_key(raw_ph, ""), "label": "Gemini 4 Carbon" if is_carb else "Gemini 4 Argon (Pro)", "pool": "20x Google Ultra", "subagent_inherit": "Gemini 4 Carbon" if is_carb else "Gemini 4 Argon"}))
     info["state_updated_date"] = switched_iso
     return info
 
@@ -186,14 +191,10 @@ def get_live_quota_and_pool_status(data_or_config_dir: Path, config_dir: Path | 
 
 def classify_model_key(raw_model: str, agent_name: str = "") -> str:
     s = f"{raw_model or ''} {agent_name or ''}".lower()
-    if any(k in s for k in ("claude", "sonnet", "opus")):
-        return "claude_partner"
-    if "gpt" in s or "120b" in s:
-        return "gpt_oss"
-    if "flash" in s or "m322" in s:
-        return "flash"
-    if "carbon" in s or "m417" in s:
-        return "carbon"
+    if any(k in s for k in ("claude", "sonnet", "opus")): return "claude_partner"
+    if "gpt" in s or "120b" in s: return "gpt_oss"
+    if "flash" in s or "m322" in s: return "flash"
+    if any(k in s for k in ("carbon", "m417", "m427")): return "carbon"
     return "argon_pro"
 
 def normalize_workspace_name(ws_raw: str) -> str:
@@ -205,19 +206,23 @@ def normalize_workspace_name(ws_raw: str) -> str:
         ws_name = parts[-1] if parts else "unassigned"
     return re.sub(r"-wt-\d+$", "", ws_name)
 
-def to_4h_slot(c_str: str, fallback_mtime: float) -> tuple[str, str]:
+def to_1h_slot(c_str: str, fallback_mtime: float) -> tuple[str, str, str]:
     if c_str:
         try:
-            dt = datetime.fromisoformat(c_str)
+            dt = datetime.fromisoformat(c_str.replace("Z", "+00:00"))
             dt_loc = (dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt).astimezone(DISPLAY_TZ)
             day_s = f"{dt_loc.year:04d}-{dt_loc.month:02d}-{dt_loc.day:02d}"
-            return day_s, f"{day_s}T{(dt_loc.hour // 4) * 4:02d}"
+            return day_s, f"{day_s}T{dt_loc.hour:02d}", f"{day_s}T{(dt_loc.hour // 4) * 4:02d}"
         except Exception:
             if len(c_str) >= 10 and c_str[4] == "-":
-                return c_str[:10], f"{c_str[:10]}T12"
+                return c_str[:10], f"{c_str[:10]}T12", f"{c_str[:10]}T12"
     dt_fb = datetime.fromtimestamp(fallback_mtime, tz=DISPLAY_TZ)
     day_fb = dt_fb.strftime("%Y-%m-%d")
-    return day_fb, f"{day_fb}T{(dt_fb.hour // 4) * 4:02d}"
+    return day_fb, f"{day_fb}T{dt_fb.hour:02d}", f"{day_fb}T{(dt_fb.hour // 4) * 4:02d}"
+
+def to_4h_slot(c_str: str, fallback_mtime: float) -> tuple[str, str]:
+    d, _, s4 = to_1h_slot(c_str, fallback_mtime)
+    return d, s4
 
 def scan_transcript_stats(brain_dir: Path, bg_dir: Path) -> dict[str, Any]:
     cache_file = bg_dir / "nexus_stats_cache.json"
@@ -225,8 +230,7 @@ def scan_transcript_stats(brain_dir: Path, bg_dir: Path) -> dict[str, Any]:
     if cache_file.exists():
         try:
             loaded = json.loads(cache_file.read_text(encoding="utf-8"))
-            if loaded.get("cache_version") == CACHE_VERSION:
-                cache = loaded
+            if loaded.get("cache_version") == CACHE_VERSION: cache = loaded
         except Exception:
             pass
     main_info = get_active_mainchat_model(brain_dir.parent if brain_dir else None)
@@ -234,32 +238,35 @@ def scan_transcript_stats(brain_dir: Path, bg_dir: Path) -> dict[str, Any]:
     conv_cache, updated = cache.setdefault("conversations", {}), False
     if brain_dir.exists():
         for entry in brain_dir.iterdir():
-            if not entry.is_dir() or entry.name.startswith("."):
-                continue
+            if not entry.is_dir() or entry.name.startswith("."): continue
             t_path = entry / ".system_generated" / "logs" / "transcript.jsonl"
-            if not t_path.exists():
-                continue
+            if not t_path.exists(): continue
             try:
                 st = t_path.stat()
                 mtime, fsize = round(st.st_mtime, 2), st.st_size
             except Exception:
                 continue
             cached = conv_cache.get(entry.name)
-            if cached and cached.get("mtime") == mtime and cached.get("size") == fsize:
-                continue
+            if cached and cached.get("mtime") == mtime and cached.get("size") == fsize: continue
             d_steps, d_tools, d_tokens, slot_steps, d_models, d_mtoks = {}, {}, {}, {}, {}, {}
+            s1_steps, s1_toks, s1_models, s1_mtoks = {}, {}, {}, {}
             m_counts = {"carbon": 0, "argon_pro": 0, "flash": 0, "claude_partner": 0, "gpt_oss": 0}
             m_tokens = {"carbon": 0, "argon_pro": 0, "flash": 0, "claude_partner": 0, "gpt_oss": 0}
-            subs_cnt = 0
+            subs_cnt, active_conv_mk = 0, ""
             try:
                 with open(t_path, "r", encoding="utf-8", errors="replace") as f:
                     for line in f:
-                        if not line.startswith("{"):
-                            continue
+                        if not line.startswith("{"): continue
                         obj = json.loads(line)
-                        day_s, slot_s = to_4h_slot(str(obj.get("created_at") or ""), mtime)
-                        d_steps[day_s], slot_steps[slot_s] = d_steps.get(day_s, 0) + 1, slot_steps.get(slot_s, 0) + 1
-                        step_chars = len(str(obj.get("content") or "")) + len(str(obj.get("thinking") or ""))
+                        day_s, s1, slot_s = to_1h_slot(str(obj.get("created_at") or ""), mtime)
+                        c_txt = str(obj.get("content") or "")
+                        if "Model Selection" in c_txt:
+                            m_hits = MODEL_CHANGE_RE.findall(c_txt)
+                            if m_hits: active_conv_mk = classify_model_key(m_hits[-1], "")
+                        raw_m = str(obj.get("model") or "")
+                        cur_mk = classify_model_key(raw_m, "") if raw_m else (active_conv_mk or (main_mk if (main_mk == "carbon" and main_switch_date and day_s >= main_switch_date) else "argon_pro"))
+                        d_steps[day_s], slot_steps[slot_s], s1_steps[s1] = d_steps.get(day_s, 0) + 1, slot_steps.get(slot_s, 0) + 1, s1_steps.get(s1, 0) + 1
+                        step_chars = len(c_txt) + len(str(obj.get("thinking") or ""))
                         tcs = obj.get("tool_calls")
                         if isinstance(tcs, list) and tcs:
                             d_tools[day_s] = d_tools.get(day_s, 0) + len(tcs)
@@ -272,19 +279,20 @@ def scan_transcript_stats(brain_dir: Path, bg_dir: Path) -> dict[str, Any]:
                                             if isinstance(s, dict):
                                                 subs_cnt += 1
                                                 raw_sm, role_s = str(s.get("Model") or ""), str(s.get("TypeName") or s.get("Role") or "")
-                                                mk = main_mk if (raw_sm.lower() == "inherit" and main_mk == "carbon" and not any(k in role_s.lower() for k in ("claude", "flash", "argon"))) else classify_model_key(raw_sm, role_s)
+                                                is_inh = raw_sm.lower() in ("inherit", "") and not any(k in role_s.lower() for k in ("claude", "flash", "argon", "gpt"))
+                                                mk = cur_mk if is_inh else classify_model_key(raw_sm, role_s)
                                                 m_counts[mk] = m_counts.get(mk, 0) + 1
                                                 dm = d_models.setdefault(day_s, {})
                                                 dm[mk] = dm.get(mk, 0) + 1
                         est_tok = max(12, round(step_chars / 4.0))
-                        d_tokens[day_s] = d_tokens.get(day_s, 0) + est_tok
+                        d_tokens[day_s], s1_toks[s1] = d_tokens.get(day_s, 0) + est_tok, s1_toks.get(s1, 0) + est_tok
+                        sm_map, smt_map = s1_models.setdefault(s1, {}), s1_mtoks.setdefault(s1, {})
+                        sm_map[cur_mk], smt_map[cur_mk] = sm_map.get(cur_mk, 0) + 1, smt_map.get(cur_mk, 0) + est_tok
                         if obj.get("type") == "PLANNER_RESPONSE":
-                            raw_m = str(obj.get("model") or "")
-                            mk = main_mk if (not raw_m and main_mk == "carbon" and main_switch_date and day_s >= main_switch_date) else classify_model_key(raw_m, "")
-                            m_counts[mk], m_tokens[mk] = m_counts.get(mk, 0) + 1, m_tokens.get(mk, 0) + est_tok
+                            m_counts[cur_mk], m_tokens[cur_mk] = m_counts.get(cur_mk, 0) + 1, m_tokens.get(cur_mk, 0) + est_tok
                             dm, dtk = d_models.setdefault(day_s, {}), d_mtoks.setdefault(day_s, {})
-                            dm[mk], dtk[mk] = dm.get(mk, 0) + 1, dtk.get(mk, 0) + est_tok
-                conv_cache[entry.name] = {"mtime": mtime, "size": fsize, "day_steps": d_steps, "day_tools": d_tools, "day_tokens": d_tokens, "slot_steps": slot_steps, "day_models": d_models, "day_model_tokens": d_mtoks, "model_counts": m_counts, "model_tokens": m_tokens, "subagents_spawned": subs_cnt}
+                            dm[cur_mk], dtk[cur_mk] = dm.get(cur_mk, 0) + 1, dtk.get(cur_mk, 0) + est_tok
+                conv_cache[entry.name] = {"mtime": mtime, "size": fsize, "day_steps": d_steps, "day_tools": d_tools, "day_tokens": d_tokens, "slot_steps": slot_steps, "slot_1h_steps": s1_steps, "slot_1h_tokens": s1_toks, "slot_1h_models": s1_models, "slot_1h_model_tokens": s1_mtoks, "day_models": d_models, "day_model_tokens": d_mtoks, "model_counts": m_counts, "model_tokens": m_tokens, "subagents_spawned": subs_cnt, "last_conv_model": active_conv_mk}
                 updated = True
             except Exception:
                 continue

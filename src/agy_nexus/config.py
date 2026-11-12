@@ -20,7 +20,7 @@ from fastmcp import FastMCP
 from agy_nexus.hygiene import TTL_SECONDS
 
 def _load_env_file() -> None:
-    """Load KEY=VALUE pairs into os.environ if not already present."""
+    """Load KEY=VALUE pairs into os.environ (populating empty placeholders) and derive public origin."""
     env_candidates = [
         Path(os.getenv("AG_BRIDGE_ENV_FILE", "/config/secrets.env")),
         Path.home() / ".config/ag-bridge-mcp/secrets.env",
@@ -28,12 +28,22 @@ def _load_env_file() -> None:
     for candidate in env_candidates:
         try:
             if candidate.is_file():
-                for line in candidate.read_text(encoding="utf-8").splitlines():
-                    line = line.strip()
+                for raw_line in candidate.read_text(encoding="utf-8").splitlines():
+                    line = raw_line.strip()
+                    if line.startswith("# Gemini Connected Apps URL:"):
+                        m_url = re.search(r"(https?://[A-Za-z0-9.-]+(?::\d+)?)", line)
+                        if m_url and not m_url.group(1).endswith(".example.com") and not m_url.group(1).endswith("//example.com"):
+                            if not os.environ.get("_DERIVED_SECRETS_PUBLIC_URL"):
+                                os.environ["_DERIVED_SECRETS_PUBLIC_URL"] = m_url.group(1)
+                        continue
                     if not line or line.startswith("#") or "=" not in line:
                         continue
                     k, v = line.split("=", 1)
-                    os.environ.setdefault(k.strip(), v.strip().strip("'\""))
+                    kc, vc = k.strip(), v.strip().strip("'\"")
+                    if vc and not os.environ.get(kc):
+                        os.environ[kc] = vc
+                    elif kc not in os.environ:
+                        os.environ[kc] = vc
                 break
         except Exception:
             continue
@@ -278,8 +288,8 @@ mcp = FastMCP(
         "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'.\n"
         "2. ONE-SHOT BUNDLED SUPER-CALLS (GET ALL FILES & CONTEXT IN 1 CALL):\n"
         "- Do NOT call `list_saved_sessions` first when the user asks to inspect or load a session: call `load_session_into_gemini(session_identifier='1'|'latest'|<project_or_title_keyword>|<uuid>, include_files='path1,path2')` directly in 1 shot! It resolves `'1'`, `'latest'`, project names, or title keywords automatically and returns `task.md`, `implementation_plan.md`, `walkthrough.md`, `execution_status`, `git_summary`, `visual_artifacts`, and `included_files`.\n"
-        "- When exploring code with `ask_workspace_readonly`, batch all needed files in a single comma-separated `file_subpath='a.py,b.py,skill:name'` (up to 12 files per call). Even if you do not know the filenames yet and only pass `question` / `search_query`, `ask_workspace_readonly` automatically greps the repository AND reads the top matching files in that same single call!\n"
-        "- For live telemetry/quota stats, call `manage_background_run(action='stats', period='current_month'|'last_month'|'last_90d'|'last_year', style='default'|'quick'|'rich')` and render `ascii_mobile_report`.\n"
+        "- When exploring code with `ask_workspace_readonly`, batch all needed files or virtual URIs in a single comma-separated `file_subpath='a.py,outline:b.py,transcript:latest,brain:scratch/notes.md'` (up to 12 items per call). Even if you only pass `question` / `search_query`, `ask_workspace_readonly` automatically searches the pinned session, Polyglot semantic index, and repository in that same single call!\n"
+        "- For live telemetry/quota stats, PREFER calling `get_session_tree(include_stats=True, period='last_90d'|'current_month'|'last_month'|'last_year', style='default'|'quick'|'rich')` (or `ask_workspace_readonly(question='Latest stats', file_subpath='telemetry:stats:last_90d:default')`) to avoid Gemini policy blocks on background-run verbs, and render `ascii_mobile_report`.\n"
         "3. PROJECT ROUTING: When calling `send_handoff_and_resume`, pass `session_identifier` (for existing sessions) or `project_name` and `workspace_path` (when `create_new_session=True`)."
     ),
 )
@@ -293,6 +303,14 @@ def get_host_bridge_token() -> str:
     if len(HOST_BRIDGE_TOKEN) >= 32:
         return HOST_BRIDGE_TOKEN
     return hmac.new(PATH_SECRET.encode("utf-8"), b"agy-host-bridge-agentapi-v1", hashlib.sha256).hexdigest() if len(PATH_SECRET) >= 32 else ""
+
+def get_polyglot_mcp_token(secret: str = "") -> str:
+    """Return explicit POLYGLOT_MCP_TOKEN or domain-separated HMAC-SHA256 derived from PATH_SECRET for local LAN IDE routing."""
+    explicit = os.getenv("POLYGLOT_MCP_TOKEN", "").strip()
+    if (not secret or secret == PATH_SECRET) and len(explicit) >= 32:
+        return explicit
+    seed = (secret or PATH_SECRET).strip()
+    return hmac.new(seed.encode("utf-8"), b"agy-polyglot-mcp-v1", hashlib.sha256).hexdigest()[:48] if len(seed) >= 32 else ""
 
 def get_host_bridge_headers() -> dict[str, str]:
     """Build JSON + X-Bridge-Token headers for authenticated /agentapi requests."""

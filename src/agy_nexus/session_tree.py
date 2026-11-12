@@ -16,6 +16,7 @@ from agy_nexus import __version__
 from agy_nexus.config import AGY_BG_DIR, AGY_GITLAB_DIR, SESSION_STATE
 from agy_nexus.hygiene import TTL_SECONDS
 from agy_nexus.sessions import _list_saved_sessions_internal, _load_projects_map
+from agy_nexus.telemetry_scanner import normalize_workspace_name
 
 
 def _format_relative_age(iso_str: str) -> str:
@@ -114,7 +115,7 @@ def build_project_session_tree(
     bg_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Build grouped Project -> Chat -> Session ID hierarchy with parallel slot states and 76-col ASCII tree."""
-    sessions = _list_saved_sessions_internal(limit=max(10, min(limit, 50)), status_filter="ALL", include_subagents=False)
+    sessions = _list_saved_sessions_internal(limit=max(10, min(limit, 200)), status_filter="ALL", include_subagents=False)
     projects_map = _load_projects_map()
     active_contexts = SESSION_STATE.get("active_contexts") or {}
     sel_conv = str(SESSION_STATE.get("selected_session") or "")
@@ -133,16 +134,16 @@ def build_project_session_tree(
 
     pf_clean = (project_filter or "").strip().lower()
     grouped: dict[str, dict[str, Any]] = {}
-
     for s in sessions:
         cid = str(s.get("conversation_id") or "")
         title = str(s.get("title") or "Untitled Conversation")
         pid = str(s.get("project_id") or "")
         wpath = str(s.get("workspace_path") or str(AGY_GITLAB_DIR)).rstrip("/")
         repo_short = Path(wpath).name if wpath else "unassigned"
-        pname = str(s.get("project_name") or projects_map.get(pid, {}).get("name") or repo_short or "Unassigned Workspace")
+        norm_repo = normalize_workspace_name(wpath) if wpath else "unassigned"
+        pname = str(s.get("project_name") or projects_map.get(pid, {}).get("name") or norm_repo or "Unassigned Workspace")
         if not pid:
-            pid = f"ws:{repo_short}"
+            pid = f"ws:{norm_repo}"
 
         st = str(s.get("status") or "IDLE")
         is_running = st in ("RUNNING", "STALLED_WAITING_APPROVAL")

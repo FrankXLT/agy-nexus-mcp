@@ -15,7 +15,11 @@ from agy_nexus.config import (
     SESSION_STATE,
     _save_session_state,
 )
-from agy_nexus.sessions import _list_saved_sessions_internal, _load_projects_map
+from agy_nexus.sessions import (
+    NEXUS_TITLE_KEYWORDS,
+    _list_saved_sessions_internal,
+    _load_projects_map,
+)
 from agy_nexus.workspace import _resolve_workspace_str
 
 def _resolve_session_identifier(ident_raw: str) -> str:
@@ -60,18 +64,23 @@ def _session_matches_repo_hint(conv_id: str, repo_hint: str) -> bool:
     uris = SESSION_STATE.get("session_workspace_uris_map", {}).get(conv_id) or []
     ws = str(SESSION_STATE.get("session_workspace_map", {}).get(conv_id) or "")
     title = str(SESSION_STATE.get("session_title_map", {}).get(conv_id) or "").lower()
-    all_paths = [ws.lower()] + [str(u).lower() for u in uris]
+    all_paths = [ws.lower()] + [str(u).lower() for u in uris if u]
     for p in all_paths:
-        if rh in p or p.endswith("/" + rh):
+        if p.endswith("/" + rh) or f"/{rh}/" in p:
             return True
-    if rh == "antigravity-config" and any(k in title for k in ("mcp", "antigravity", "nexus", "bridge")):
-        return True
+    if rh in ("antigravity-config", "agy-nexus-mcp", "ag-bridge-mcp"):
+        if any(k in title for k in NEXUS_TITLE_KEYWORDS):
+            return True
+        if rh in ("agy-nexus-mcp", "ag-bridge-mcp") and any(
+            p.endswith("/antigravity-config") or "/antigravity-config/" in p for p in all_paths
+        ) and any(k in title for k in NEXUS_TITLE_KEYWORDS):
+            return True
     for pinfo in _load_projects_map().values():
         pname = str(pinfo.get("name") or "").lower()
         p_paths = [str(x).lower() for x in (pinfo.get("workspace_paths") or [])]
-        if any(rh in pp for pp in p_paths) and pname and pname in title:
+        if any(pp.endswith("/" + rh) or f"/{rh}/" in pp for pp in p_paths) and pname and pname in title:
             return True
-    return rh in title
+    return len(rh) >= 4 and bool(re.search(rf"\b{re.escape(rh)}\b", title))
 
 def _extract_handoff_repo_hint(
     workspace_path: str,
@@ -88,15 +97,23 @@ def _extract_handoff_repo_hint(
             if resolved:
                 return Path(resolved).name.lower()
     md = f"{session_title or ''}\n{activate_skills or ''}\n{research_markdown or ''}"
-    gitlab_re = re.escape(str(AGY_GITLAB_DIR))
-    m_repo = re.search(rf"{gitlab_re}/([a-zA-Z0-9._-]+)", md)
-    if m_repo:
-        return m_repo.group(1).lower()
-    if any(k in md.lower() for k in ("sidecars/ag-bridge-mcp", "ag_bridge.py", "ag_bridge_stats.py", "agy-nexus-stats", "agy-nexus-mcp")):
+    gh_dir = AGY_GITLAB_DIR.parent / "github"
+    for host_dir in (AGY_GITLAB_DIR, gh_dir):
+        host_re = re.escape(str(host_dir))
+        m_repo = re.search(rf"{host_re}/([a-zA-Z0-9._-]+)", md)
+        if m_repo:
+            return m_repo.group(1).lower()
+    if any(k in md.lower() for k in ("quiet-ui-skills", "quiet ui", "quiet-ui", "quiet-ui-diagrams", "visual-architecture-system")):
+        return "quiet-ui-skills"
+    if any(k in md.lower() for k in ("sidecars/ag-bridge-mcp", "ag_bridge.py", "ag_bridge_stats.py", "agy-nexus-stats", "agy-nexus-mcp", "agy-polyglot-mcp")):
+        sidecar_dir = AGY_GITLAB_DIR / "antigravity-config" / "sidecars" / "ag-bridge-mcp"
+        if sidecar_dir.is_symlink():
+            return "agy-nexus-mcp"
         return "antigravity-config"
-    known_repos: list[str] = ["antigravity-config"]
-    if AGY_GITLAB_DIR.is_dir():
-        known_repos.extend(d.name.lower() for d in AGY_GITLAB_DIR.iterdir() if d.is_dir() and not d.name.startswith("."))
+    known_repos: list[str] = ["agy-nexus-mcp", "antigravity-config"]
+    for host_dir in (AGY_GITLAB_DIR, gh_dir):
+        if host_dir.is_dir():
+            known_repos.extend(d.name.lower() for d in host_dir.iterdir() if d.is_dir() and not d.name.startswith("."))
     wt_root = AGY_DATA_DIR / "worktrees"
     if wt_root.is_dir():
         known_repos.extend(d.name.lower() for d in wt_root.iterdir() if d.is_dir() and not d.name.startswith("."))

@@ -13,7 +13,7 @@
   <link rel="icon" type="image/svg+xml" href="/web/icon.svg" />
   <link rel="apple-touch-icon" href="/web/icon-192.png" />
   <title>AGY-NEXUS-MCP — Usage, Quota &amp; Project Activity Dashboard</title>
-  <link rel="stylesheet" href="/web/styles.css?v=2.6.0b" />
+  <link rel="stylesheet" href="/web/styles.css?v=2.7.0" />
 </head>
 <body>
   <!-- Top Navigation Bar -->
@@ -21,14 +21,18 @@
     <div class="brand">
       <span class="sq-dot"></span>
       <div>
-        <div class="brand-title mono">AGY-NEXUS-MCP <span class="version-tag" id="versionTag" title="Installed version"><span class="status-dot-6px cyan" id="versionDot"></span><span id="versionLabel">v2.6.0</span></span> <span style="font-weight:400;color:var(--text-dim)">// DASHBOARD</span></div>
+        <div class="brand-title mono">AGY-NEXUS-MCP <span class="version-tag" id="versionTag" title="Installed version"><span class="status-dot-6px cyan" id="versionDot"></span><span id="versionLabel">v2.7.0</span></span> <span style="font-weight:400;color:var(--text-dim)">// DASHBOARD</span></div>
         <div class="brand-sub" id="subtitleStatus">Usage, Model Quotas, Subagents, Tokens &amp; Project Activity</div></div>
     </div>
     <div class="controls">
-      <button class="tab-btn active" data-period="current_month">This Month (MTD)</button>
-      <button class="tab-btn" data-period="last_month">Last Month</button>
-      <button class="tab-btn" data-period="last_90d">Rolling 90 Days</button>
-      <button class="tab-btn" data-period="last_year">Rolling 52 Weeks</button>
+      <button type="button" class="tab-btn active" data-period="current_month">This Month (MTD)</button>
+      <button type="button" class="tab-btn" data-period="last_month">Last Month</button>
+      <button type="button" class="tab-btn" data-period="last_90d">Rolling 90 Days</button>
+      <button type="button" class="tab-btn" data-period="last_year">Rolling 52 Weeks</button>
+      <div class="metric-toggle mono" role="group" aria-label="Chart metric unit">
+        <button type="button" class="metric-btn active" data-metric="steps" title="Plot stacked step volume">Steps</button>
+        <button type="button" class="metric-btn" data-metric="tokens" title="Plot stacked token volume">Tokens</button>
+      </div>
       <!-- Single Consolidated Dropdown with 4 Color Schemes + 4 Compactness Icons -->
       <div class="style-menu-wrap" id="styleMenuWrap">
         <button type="button" class="btn" id="styleMenuBtn" title="Color scheme &amp; compactness" aria-expanded="false">
@@ -84,8 +88,9 @@
             • <strong>Linux Desktop:</strong> Launch <strong>AGY-NEXUS Overwatch</strong> from your app launcher or run <code class="mono">agy-nexus-app</code>.<br/>
             • <strong>Android / Chrome PWA:</strong> Open via <code class="mono">https://</code> then tap <strong>⋮ → Add to Home screen → Install</strong>.</div>
         </div></div>
-      <button class="btn" id="lockBtn" title="Lock dashboard">Lock</button></div>
+      <button type="button" class="btn" id="lockBtn" title="Lock dashboard">Lock</button></div>
   </header>
+
   <!-- Passphrase Gate -->
   <section id="authOverlay" class="auth-overlay">
     <div class="auth-kicker mono">PASSPHRASE PROTECTED</div>
@@ -101,6 +106,7 @@
       <button type="button" id="previewDemoBtn" class="btn">Preview Sample Data</button>
       <span class="mono" style="font-size:10px; color:var(--text-dim);">SHA-256 Verified</span></div>
     <div id="authStatus" class="auth-status mono"></div></section>
+
   <!-- Main Dashboard Grid -->
   <main id="dashboardMain" class="container hidden">
     <!-- KPI 1: Google Pool Usage -->
@@ -117,8 +123,8 @@
           <div class="bar-marker" style="left:90%" title="Target: >=90% on Google Pool"></div></div>
       </div>
       <div class="card-ftr mono">
-        <div class="ftr-item"><span>CARBON 4</span><strong id="kpiCarbonPct">0.0%</strong></div>
-        <div class="ftr-item"><span>ARGON 4</span><strong id="kpiArgonPct">63.8%</strong></div>
+        <div class="ftr-item"><span>CARBON 4</span><strong id="kpiCarbonPct">2.6%</strong></div>
+        <div class="ftr-item"><span>ARGON 4</span><strong id="kpiArgonPct">61.2%</strong></div>
         <div class="ftr-item"><span>FLASH 3.8</span><strong id="kpiFlashPct">30.4%</strong></div></div>
     </article>
     <!-- KPI 2: Partner Weekly Quota -->
@@ -173,6 +179,7 @@
         <div class="ftr-item"><span>REQUESTS</span><strong id="kpiRpcCount">64</strong></div>
         <div class="ftr-item"><span>TOP CLIENT</span><strong id="kpiTopClient">Gemini Mobile</strong></div></div>
     </article>
+
     <!-- Row 2: Daily Activity Heatmap -->
     <section class="card col-12">
       <div class="card-hdr">
@@ -188,140 +195,105 @@
       <div class="heat-legend">
         <div id="heatInspector" class="mono">Click any day square to inspect steps, tool calls, tokens, and active chats for that date.</div>
         <div class="legend-scale mono"><span>Less</span><span class="heat-cell" data-level="0" style="cursor:default" title="0 steps"></span><span class="heat-cell" data-level="1" style="cursor:default" title="Low activity (Q1)"></span><span class="heat-cell" data-level="2" style="cursor:default" title="Moderate activity (Q2)"></span><span class="heat-cell" data-level="3" style="cursor:default" title="High activity (Q3)"></span><span class="heat-cell" data-level="4" style="cursor:default" title="Peak activity (Q4)"></span><span>More</span></div>
-      </div></section>
-    <!-- Row 3 Left: Activity Velocity vs Average Pace (Sub-Daily Resolution) -->
-    <section class="card col-7">
-      <div class="card-hdr">
-        <span class="card-label">Activity Over Time vs. Average Pace</span>
-        <span class="card-tag mono" id="linePlotTag">4H SUB-DAILY // SOLID = ACTUAL, DASHED = AVG</span></div>
-      <div class="chart-box">
-        <svg id="velocityLineSvg" class="line-plot" viewBox="0 0 620 185" preserveAspectRatio="none"></svg></div>
-      <div class="card-ftr mono">
-        <div class="ftr-item"><span>GREEN CURVE</span>Sub-Daily Step Volume</div>
-        <div class="ftr-item"><span>DASHED LINE</span>Average Pace</div>
-        <div class="ftr-item"><span>PARTNER TARGET</span>&lt;= 14.3% / day</div></div>
-    </section>
-    <!-- Row 3 Right: Model Usage vs Target Share -->
-    <section class="card col-5">
-      <div class="card-hdr">
-        <span class="card-label">Model Usage vs. Target Share</span>
-        <span class="card-tag mono">90% GOOGLE / 10% PARTNER</span></div>
-      <div id="modelAllocationList" style="margin: 4px 0 8px;">
-        <div class="model-row">
-          <div class="model-top"><span><strong>Gemini 4 Carbon</strong> (Main / Apex)</span><span class="mono"><strong id="rowCarbonActual">0.0%</strong> <span style="color:var(--text-dim)">/ Target 25%</span></span></div>
-          <div class="bar-track" style="margin:4px 0"><div class="bar-fill focal" id="barCarbonActual" style="width:0%"></div><div class="bar-marker" style="left:25%"></div></div></div>
-        <div class="model-row">
-          <div class="model-top"><span><strong>Gemini 4 Argon</strong> (Pro)</span><span class="mono"><strong id="rowArgonActual">63.8%</strong> <span style="color:var(--text-dim)">/ Target 40%</span></span></div>
-          <div class="bar-track" style="margin:4px 0"><div class="bar-fill focal" id="barArgonActual" style="width:63.8%"></div><div class="bar-marker" style="left:40%"></div></div></div>
-        <div class="model-row">
-          <div class="model-top"><span><strong>Gemini 3.8 Flash</strong> (Fast Tasks)</span><span class="mono"><strong id="rowFlashActual">30.4%</strong> <span style="color:var(--text-dim)">/ Target 25%</span></span></div>
-          <div class="bar-track" style="margin:4px 0"><div class="bar-fill" id="barFlashActual" style="width:30.4%"></div><div class="bar-marker" style="left:25%"></div></div></div>
-        <div class="model-row">
-          <div class="model-top"><span><strong>Claude Sonnet / Opus 5.5</strong> (Partner)</span><span class="mono"><strong id="rowClaudeActual">5.1%</strong> <span style="color:var(--text-dim)">/ Target &lt;=8%</span></span></div>
-          <div class="bar-track" style="margin:4px 0"><div class="bar-fill" id="barClaudeActual" style="width:5.1%"></div><div class="bar-marker" style="left:8%"></div></div></div>
-        <div class="model-row">
-          <div class="model-top"><span><strong>GPT-OSS 120B</strong> (Backup)</span><span class="mono"><strong id="rowGptActual">0.7%</strong> <span style="color:var(--text-dim)">/ Target &lt;=2%</span></span></div>
-          <div class="bar-track" style="margin:4px 0"><div class="bar-fill" id="barGptActual" style="width:0.7%"></div><div class="bar-marker" style="left:2%"></div></div></div>
       </div>
-      <div class="card-ftr mono">
+    </section>
+
+    <!-- Row 3: Full-Width Plot 1 — Activity & Model Usage Over Time + 1-to-3 Col Combined Legend -->
+    <section class="card col-12">
+      <div class="card-hdr" style="flex-wrap:wrap;">
+        <div class="hdr-group">
+          <span class="card-label">Activity &amp; Model Usage Over Time</span>
+          <span class="card-tag mono">90% GOOGLE / 10% PARTNER</span>
+        </div>
+        <span class="card-tag mono" id="linePlotTag">1H BINS · AVG + P95</span>
+      </div>
+      <div class="chart-box">
+        <svg id="velocityLineSvg" class="line-plot"></svg>
+        <div class="plot-tooltip hidden"></div>
+      </div>
+      <div class="legend-wrap">
+        <div id="modelLegendGrid" class="plot-legend-grid" role="group" aria-label="Model usage legend and solo filter"></div>
+      </div>
+      <div class="card-ftr ftr-5col mono">
         <div class="ftr-item"><span>GOOGLE POOL</span><strong id="ftrGoogleTot">94.2%</strong></div>
         <div class="ftr-item"><span>PARTNER POOL</span><strong id="ftrPartnerTot">5.8%</strong></div>
-        <div class="ftr-item"><span>STATUS</span>ON TRACK</div></div>
+        <div class="ftr-item"><span>BIN AVERAGE</span><strong id="ftrModelAvg">0 steps</strong></div>
+        <div class="ftr-item"><span>95TH PERCENTILE</span><strong id="ftrModelP95">0 steps</strong></div>
+        <div class="ftr-item"><span>PEAK BIN</span><strong id="ftrModelPeak">0 steps</strong></div>
+      </div>
     </section>
-    <!-- Row 4 Left: Subagent Activity Over Time (Sub-Daily Stacked Area Chart) -->
-    <section class="card col-7">
-      <div class="card-hdr">
-        <span class="card-label">Subagent Activity Over Time</span>
-        <span class="card-tag mono" id="subagentResTag">4H SUB-DAILY STACKED</span></div>
+
+    <!-- Row 4: Full-Width Plot 2 — Subagent Activity Over Time + 1-to-3 Col Combined Legend -->
+    <section class="card col-12">
+      <div class="card-hdr" style="flex-wrap:wrap;">
+        <div class="hdr-group">
+          <span class="card-label">Subagent Activity Over Time</span>
+          <span class="card-tag mono" id="subagentTotalTag">0 RUNS</span>
+        </div>
+        <span class="card-tag mono" id="subagentResTag">1H BINS · STACKED ROLES</span>
+      </div>
       <div class="chart-box">
-        <svg id="subagentAreaSvg" class="line-plot" viewBox="0 0 620 185" preserveAspectRatio="none"></svg></div>
-      <div id="subagentLegend" class="series-legend mono"></div></section>
-    <!-- Row 4 Right: Subagent Breakdown Table -->
-    <section class="card col-5">
-      <div class="card-hdr">
-        <span class="card-label">Subagent Breakdown</span>
-        <span class="card-tag mono" id="subagentTotalTag">227 RUNS</span></div>
-      <div style="overflow-x:auto;">
-        <table class="table-clean">
-          <thead>
-            <tr>
-              <th>Subagent Role</th>
-              <th>Model</th>
-              <th class="mono">Runs</th>
-              <th class="mono">Steps</th>
-              <th class="mono">Tokens</th>
-              <th class="mono">Share</th>
-            </tr></thead>
-          <tbody id="subagentTableBody"></tbody></table>
-      </div></section>
-    <!-- Row 5 Left: Project Activity Over Time (Sub-Daily Stacked Area Chart) -->
-    <section class="card col-7">
-      <div class="card-hdr">
-        <span class="card-label">Project Activity Over Time</span>
-        <span class="card-tag mono" id="workspaceResTag">4H SUB-DAILY STACKED</span></div>
-      <div class="chart-box">
-        <svg id="workspaceAreaSvg" class="line-plot" viewBox="0 0 620 185" preserveAspectRatio="none"></svg></div>
-      <div id="workspaceLegend" class="series-legend mono"></div></section>
-    <!-- Row 5 Right: Project Breakdown Table -->
-    <section class="card col-5">
-      <div class="card-hdr">
-        <span class="card-label">Project Breakdown</span>
-        <span class="card-tag mono" id="workspaceTotalTag">TOP PROJECTS</span></div>
-      <div style="overflow-x:auto;">
-        <table class="table-clean">
-          <thead>
-            <tr>
-              <th>Project</th>
-              <th class="mono">Chats</th>
-              <th class="mono">Steps</th>
-              <th class="mono">Tokens</th>
-              <th class="mono">Share</th>
-            </tr></thead>
-          <tbody id="workspaceTableBody"></tbody></table>
-      </div></section>
-    <!-- Row 6: Project, Chat & Session Hierarchy (col-12) -->
+        <svg id="subagentAreaSvg" class="line-plot"></svg>
+        <div class="plot-tooltip hidden"></div>
+      </div>
+      <div class="legend-wrap">
+        <div id="subagentLegendGrid" class="plot-legend-grid" role="group" aria-label="Subagent role legend and solo filter"></div>
+      </div>
+    </section>
+
+    <!-- Row 5: Merged Full-Width Plot 3 + Collapsed Project, Chat & Session Hierarchy Legend -->
     <section class="card col-12" id="hierarchySectionCard">
       <div class="card-hdr" style="flex-wrap:wrap;">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          <span class="card-label">Project, Chat &amp; Session Hierarchy</span>
+        <div class="hdr-group">
+          <span class="card-label">Project &amp; Session Activity Over Time</span>
+          <span class="card-tag mono" id="workspaceResTag">TOP 10 + SESSION SHADES</span>
           <span class="card-tag mono" id="hierarchyBackupBadge">3-2-1 SYNC: ✓</span>
-          <span class="card-tag mono" id="hierarchySlotsBadge">SLOTS: 0 · PINNED: 0 · AUTO-RESOLVED: 0</span></div>
+          <span class="card-tag mono" id="hierarchySlotsBadge">SLOTS: 0 · PINNED: 0 · AUTO: 0</span>
+        </div>
         <div class="controls">
-          <button type="button" class="tab-btn" id="hierarchyFilterActiveBtn" title="Show only pinned or active/running sessions">Pinned / Active</button>
-          <button type="button" class="tab-btn active" id="hierarchyFilterAllBtn" title="Show all indexed sessions grouped by project">All Sessions</button>
-          <button type="button" class="btn mono" id="hierarchyExpandAllBtn" title="Expand or collapse all project groups">Expand All</button>
-          <button type="button" class="btn mono" id="copyAsciiTreeBtn" title="Copy 76-column ASCII Project-Chat-Session tree">Copy ASCII Tree</button></div>
+          <button type="button" class="btn-solo active mono hidden" id="clearProjectSoloBtn" title="Clear project solo filter">Show All Projects &times;</button>
+          <button type="button" class="tab-btn active" id="hierarchyFilterAllBtn" title="Show Top-10 active projects plus Other Projects roll-up">Window Active</button>
+          <button type="button" class="tab-btn" id="hierarchyFilterActiveBtn" title="Show only pinned or live sessions">Pinned / Live</button>
+          <button type="button" class="btn mono hidden" id="hierarchyShowIdleBtn" title="Toggle projects with zero activity in this time span">+ Idle (0)</button>
+          <button type="button" class="btn mono" id="hierarchyExpandAllBtn" title="Expand or collapse all project legend rows">Expand All</button>
+          <button type="button" class="btn mono" id="copyAsciiTreeBtn" title="Copy 76-column ASCII Project-Chat-Session tree">Copy ASCII Tree</button>
+        </div>
+      </div>
+      <div class="chart-box">
+        <svg id="workspaceAreaSvg" class="line-plot"></svg>
+        <div class="plot-tooltip hidden"></div>
       </div>
       <div id="hierarchyProjectList" class="hier-list"></div>
     </section>
-    <!-- Row 7: Code Health, AST Integrity & Modular Hygiene (col-12) -->
+
+    <!-- Row 6: Code Health, Polyglot Index & Modular Hygiene (col-12) -->
     <section class="card col-12" id="codeHealthCard">
       <div class="card-hdr" style="flex-wrap:wrap;">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          <span class="card-label">Code Health, AST Integrity &amp; Modular Hygiene</span>
-          <span class="card-tag mono" id="codeHealthCeilingBadge">CEILING: 100% PASS (0 &gt;400L)</span>
-          <span class="card-tag mono" id="codeHealthAstBadge">AST: 0 UNDEF</span>
-          <span class="card-tag mono" id="codeHealthSerenaBadge">SERENA LSP: READY</span>
+        <div class="hdr-group">
+          <span class="card-label">Code Health, Polyglot Index &amp; Modular Hygiene</span>
+          <span class="card-tag mono" id="codeHealthCeilingBadge">CEILING: 100% PASS (0 &gt;650L)</span>
+          <span class="card-tag mono" id="codeHealthAstBadge">POLYGLOT: READY</span>
+          <span class="card-tag mono" id="codeHealthSerenaBadge">POLYGLOT MCP: READY</span>
         </div>
         <div class="mono" style="font-size:11px;color:var(--text-dim);" id="versionCompareMeta">
-          Installed: v2.6.0 · Remote: v2.5.0 (Staged Locally)
+          Installed: v2.7.0 · Remote: v2.6.0 (Staged Locally)
         </div>
       </div>
       <div class="health-kpi-row">
-        <div class="health-kpi-item"><span class="kpi-lbl">Installed vs. GitHub</span><div class="kpi-val mono" id="kpiVersionComp"><span class="status-dot-6px cyan"></span> Staged Locally</div><span class="kpi-sub" id="kpiVersionSub">v2.6.0 installed · v2.5.0 GitHub release</span></div>
-        <div class="health-kpi-item"><span class="kpi-lbl">Modular Budget (&le;300L)</span><div class="kpi-val mono" id="kpiModularBudget">18 / 25 Modules</div><span class="kpi-sub" id="kpiModularSub">7 warning (301-400L) · 0 violations (&gt;400L)</span></div>
-        <div class="health-kpi-item"><span class="kpi-lbl">Python AST Integrity</span><div class="kpi-val mono" id="kpiAstIntegrity">0 Undefined Names</div><span class="kpi-sub" id="kpiAstSub">All 25 modules scope-verified</span></div>
-        <div class="health-kpi-item"><span class="kpi-lbl">Local Subagent LSP</span><div class="kpi-val mono" id="kpiLspStatus">Serena Ready</div><span class="kpi-sub" id="kpiLspSub">LSP v2.1.0 · --context=antigravity</span></div>
+        <div class="health-kpi-item"><span class="kpi-lbl">Installed vs. GitHub</span><div class="kpi-val mono" id="kpiVersionComp"><span class="status-dot-6px cyan"></span> Staged Locally</div><span class="kpi-sub" id="kpiVersionSub">v2.7.0 installed · v2.6.0 GitHub release</span></div>
+        <div class="health-kpi-item"><span class="kpi-lbl">Modular Budget (&le;500L)</span><div class="kpi-val mono" id="kpiModularBudget">29 / 31 Modules</div><span class="kpi-sub" id="kpiModularSub">2 warning (501-650L) · 0 violations (&gt;650L)</span></div>
+        <div class="health-kpi-item"><span class="kpi-lbl">Polyglot Semantic Index</span><div class="kpi-val mono" id="kpiAstIntegrity">0 Symbols Indexed</div><span class="kpi-sub" id="kpiAstSub">SHA-256 incremental index</span></div>
+        <div class="health-kpi-item"><span class="kpi-lbl">Local IDE Outliner</span><div class="kpi-val mono" id="kpiLspStatus">Polyglot MCP Ready</div><span class="kpi-sub" id="kpiLspSub">agy-polyglot-mcp incremental SHA-256</span></div>
       </div>
-      <div style="overflow-x:auto;margin-top:12px;">
+      <div class="table-region-wrap" tabindex="0" role="region" aria-label="Python module modular hygiene and Polyglot symbol index" style="margin-top:12px;">
         <table class="table-clean" id="modulesTable">
           <thead>
             <tr>
               <th>Module</th>
               <th class="mono">Lines</th>
-              <th>Budget Status (&le;300L)</th>
-              <th>AST Scope Integrity</th>
-              <th class="mono">Ceiling Margin</th>
+              <th>Budget Status (&le;500L)</th>
+              <th>Polyglot Symbols</th>
+              <th class="mono">Ceiling Margin (650L)</th>
             </tr>
           </thead>
           <tbody id="modulesTableBody"></tbody>
@@ -342,9 +314,7 @@
     <div class="upload-modal-body">
       <div class="upload-dropzone" id="uploadDropzone" tabindex="0">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="upload-icon">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-          <polyline points="17 8 12 3 7 8"/>
-          <line x1="12" y1="3" x2="12" y2="15"/>
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
         </svg>
         <div class="upload-dropzone-txt">Drag and drop files here, paste (Ctrl+V), or <span class="upload-browse-link">browse</span></div>
         <div class="upload-dropzone-hint mono">Images, logs, text, JSON, YAML, PDF, ZIP (max 100 files, 200 MB)</div>
@@ -355,16 +325,11 @@
         <input type="text" id="uploadBatchLabel" class="input-text mono" placeholder="e.g. repro, ui_assets" maxlength="32" pattern="[a-z0-9_-]{1,32}" />
       </div>
       <div id="uploadFileList" class="upload-file-list hidden">
-        <div class="upload-file-list-hdr">
-          <span id="uploadFileCount" class="mono">0 files selected</span>
-          <span id="uploadTotalSize" class="mono">0 B</span>
-        </div>
+        <div class="upload-file-list-hdr"><span id="uploadFileCount" class="mono">0 files selected</span><span id="uploadTotalSize" class="mono">0 B</span></div>
         <div id="uploadFileItems" class="upload-file-items"></div>
       </div>
       <div id="uploadProgressWrap" class="upload-progress-wrap hidden">
-        <div class="bar-track">
-          <div id="uploadProgressBar" class="bar-fill focal" style="width: 0%;"></div>
-        </div>
+        <div class="bar-track"><div id="uploadProgressBar" class="bar-fill focal" style="width: 0%;"></div></div>
         <div class="upload-progress-status mono" id="uploadProgressStatus">Uploading... 0%</div>
       </div>
       <div id="uploadSuccessWrap" class="upload-success-wrap hidden">
@@ -384,10 +349,12 @@
     </div>
   </dialog>
 
-  <script src="/web/charts.js?v=2.6.0b"></script>
-  <script src="/web/hierarchy.js?v=2.6.0b"></script>
-  <script src="/web/uploads.js?v=2.6.0b"></script>
-  <script src="/web/health.js?v=2.6.0b"></script>
-  <script src="/web/app.js?v=2.6.0b"></script>
+  <script src="/web/palettes.js?v=2.7.0"></script>
+  <script src="/web/charts.js?v=2.7.0"></script>
+  <script src="/web/demo_data.js?v=2.7.0"></script>
+  <script src="/web/hierarchy.js?v=2.7.0"></script>
+  <script src="/web/uploads.js?v=2.7.0"></script>
+  <script src="/web/health.js?v=2.7.0"></script>
+  <script src="/web/app.js?v=2.7.0"></script>
 </body>
 </html>

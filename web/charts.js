@@ -1,261 +1,399 @@
-const SERIES_COLORS = ["#059669", "#2563eb", "#d97706", "#7c3aed", "#db2777", "#0891b2"];
-    const THEME_META = {
-      "obsidian":   { label: "Obsidian",   bg: "#0b0d10", border: "#10b981", themeColor: "#101318" },
-      "dark-paper": { label: "Dark Paper", bg: "#21201c", border: "#ede8df", themeColor: "#1c1b18" },
-      "warm-paper": { label: "Warm Paper", bg: "#f6f4f0", border: "#525a65", themeColor: "#edeae4" },
-      "white":      { label: "Pure White", bg: "#ffffff", border: "#0f172a", themeColor: "#ffffff" },
-      "pure-white": { label: "Pure White", bg: "#ffffff", border: "#0f172a", themeColor: "#ffffff" }, };
-    const VALID_DENSITIES = ["D1", "D2", "D3", "D4"];
-    const VALID_PERIODS = ["current_month", "last_month", "last_90d", "last_year"];
-    const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const DOW_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-    (function migrateLegacyStyle() {
-      const legacy = localStorage.getItem("nexus_view_style");
-      if (legacy && !localStorage.getItem("nexus_surface")) {
-        const idx = legacy.lastIndexOf("-");
-        if (idx > 0) {
-          localStorage.setItem("nexus_surface", legacy.slice(0, idx));
-          localStorage.setItem("nexus_density", legacy.slice(idx + 1)); }
-      }
-    })();
-    const initThemePref = localStorage.getItem("nexus_theme") || localStorage.getItem("nexus_surface") || "obsidian";
-    const state = {
-      passphrase: localStorage.getItem("nexus_passphrase") || sessionStorage.getItem("nexus_passphrase") || "",
-      period: VALID_PERIODS.includes(localStorage.getItem("nexus_period")) ? localStorage.getItem("nexus_period") : "current_month",
-      surface: THEME_META[initThemePref] ? initThemePref : "obsidian",
-      density: VALID_DENSITIES.includes(localStorage.getItem("nexus_density")) ? localStorage.getItem("nexus_density") : "D2",
-      selectedDate: localStorage.getItem("nexus_selected_date") || "",
-      demoMode: localStorage.getItem("nexus_demo_mode") === "1",
-      bundle: null, };
-    function formatCompactTokens(tok) {
-      const n = Number(tok || 0);
-      if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
-      if (n >= 1_000) return (n / 1_000).toFixed(1) + "k";
-      return String(n); }
-    function applyThemeAndDensity(surface, density) {
-      const rawS = THEME_META[surface] ? surface : (THEME_META[localStorage.getItem("nexus_theme")] ? localStorage.getItem("nexus_theme") : "obsidian");
-      const s = rawS === "pure-white" ? "white" : rawS;
-      const d = VALID_DENSITIES.includes(density) ? density : "D2";
-      state.surface = s;
-      state.density = d;
-      document.documentElement.setAttribute("data-surface", s);
-      document.documentElement.setAttribute("data-theme", s === "white" ? "pure-white" : s);
-      document.documentElement.setAttribute("data-density", d);
-      localStorage.setItem("nexus_surface", s);
-      localStorage.setItem("nexus_density", d);
-      const meta = THEME_META[s];
-      const swatchEl = document.getElementById("triggerSwatch");
-      const themeLabelEl = document.getElementById("triggerThemeLabel");
-      const densityLabelEl = document.getElementById("triggerDensityLabel");
-      const metaThemeEl = document.getElementById("metaThemeColor");
-      if (swatchEl) {
-        swatchEl.style.background = meta.bg;
-        swatchEl.style.borderColor = meta.border; }
-      if (themeLabelEl) themeLabelEl.textContent = meta.label;
-      if (densityLabelEl) densityLabelEl.textContent = d;
-      if (metaThemeEl) metaThemeEl.setAttribute("content", meta.themeColor);
-      document.querySelectorAll(".theme-opt").forEach((btn) => {
-        btn.classList.toggle("active", btn.dataset.theme === s); });
-      document.querySelectorAll(".density-opt").forEach((btn) => {
-        btn.classList.toggle("active", btn.dataset.density === d); });
+// AGY-NEXUS Overwatch — LibreNMS / RRDTool Stacked Bar Engine, Adaptive DPI Binning & Foreground Axes (v2.7.0)
+
+const THEME_META = {
+  "obsidian":   { label: "Obsidian",   bg: "#0b0d10", border: "#10b981", themeColor: "#101318" },
+  "dark-paper": { label: "Dark Paper", bg: "#21201c", border: "#ede8df", themeColor: "#1c1b18" },
+  "warm-paper": { label: "Warm Paper", bg: "#f6f4f0", border: "#525a65", themeColor: "#edeae4" },
+  "white":      { label: "Pure White", bg: "#ffffff", border: "#0f172a", themeColor: "#ffffff" },
+  "pure-white": { label: "Pure White", bg: "#ffffff", border: "#0f172a", themeColor: "#ffffff" },
+};
+const VALID_DENSITIES = ["D1", "D2", "D3", "D4"];
+const VALID_PERIODS = ["current_month", "last_month", "last_90d", "last_year"];
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const DOW_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const ALLOWED_BIN_HOURS = [1, 2, 3, 4, 6, 8, 12, 24, 48, 72, 168];
+
+(function migrateLegacyStyle() {
+  const legacy = localStorage.getItem("nexus_view_style");
+  if (legacy && !localStorage.getItem("nexus_surface")) {
+    const idx = legacy.lastIndexOf("-");
+    if (idx > 0) {
+      localStorage.setItem("nexus_surface", legacy.slice(0, idx));
+      localStorage.setItem("nexus_density", legacy.slice(idx + 1));
     }
-    const REAL_SAMPLE_90D = {"period":{"key":"last_90d","label":"Rolling 90 Days","start_date":"2026-08-10","end_date":"2026-11-07","total_days":90,"active_days":47,"resolution":"8h sub-daily"},"kpis":{"total_conversations":65,"total_subagents_spawned":227,"window_steps":208496,"period_steps":208496,"window_tool_calls":103976,"period_tool_calls":103976,"window_tokens":77386140,"active_days":47,"avg_daily_steps":4436.1,"tok_per_day":1646514,"tok_per_week":11525595,"peak_day":{"date":"2026-10-31","steps":10964}},"model_usage_vs_target":[{"model_key":"argon_pro","label":"Gemini 4 Argon (Pro)","pool":"20x Google Ultra","actual_calls":83381,"est_tokens":21298182,"actual_pct":83.3,"target_pct":65.0,"delta_pct":18.3,"status":"OVER_TARGET"},{"model_key":"flash","label":"Gemini 3.8 Flash","pool":"20x Google Ultra","actual_calls":16707,"est_tokens":3743021,"actual_pct":16.7,"target_pct":25.0,"delta_pct":-8.3,"status":"ON_TARGET"},{"model_key":"claude_partner","label":"Claude Sonnet/Opus 5.5","pool":"Partner Pool (Weekly)","actual_calls":12,"est_tokens":4139,"actual_pct":0.0,"target_pct":8.0,"delta_pct":-8.0,"status":"ON_TARGET"},{"model_key":"gpt_oss","label":"GPT-OSS 120B","pool":"Partner Pool (Failover)","actual_calls":0,"est_tokens":0,"actual_pct":0.0,"target_pct":2.0,"delta_pct":-2.0,"status":"ON_TARGET"}],"subagent_role_breakdown":{"flash-surgeon":{"runs":116,"steps":21746,"tokens":8921830,"tok_per_day":189826,"tok_per_week":1328783,"share_pct":51.0},"flash-auditor":{"runs":78,"steps":9112,"tokens":3019401,"tok_per_day":64243,"tok_per_week":449698,"share_pct":21.4},"research":{"runs":5,"steps":862,"tokens":332958,"tok_per_day":7084,"tok_per_week":49589,"share_pct":2.0},"claude-specialist":{"runs":1,"steps":31,"tokens":16324,"tok_per_day":347,"tok_per_week":2431,"share_pct":0.1},"flash-scout":{"runs":20,"steps":3012,"tokens":1138144,"tok_per_day":24216,"tok_per_week":169511,"share_pct":7.1},"argon-architect":{"runs":2,"steps":132,"tokens":64204,"tok_per_day":1366,"tok_per_week":9562,"share_pct":0.3},"argon-surgeon":{"runs":2,"steps":3170,"tokens":1313526,"tok_per_day":27947,"tok_per_week":195632,"share_pct":7.4},"argon-sentinel":{"runs":3,"steps":4537,"tokens":1913868,"tok_per_day":40721,"tok_per_week":285044,"share_pct":10.6}},"top_workspaces":[{"workspace":"nexus-mesh-telemetry","sessions":10,"steps":75084,"tokens":29184267,"tok_per_day":620942,"tok_per_week":4346593,"share_pct":36.0},{"workspace":"automation-gitops","sessions":19,"steps":57456,"tokens":18729221,"tok_per_day":398494,"tok_per_week":2789458,"share_pct":27.6},{"workspace":"chronos-board","sessions":5,"steps":40110,"tokens":16502882,"tok_per_day":351125,"tok_per_week":2457876,"share_pct":19.2},{"workspace":"quantum-dsp-workbench","sessions":11,"steps":10298,"tokens":3680580,"tok_per_day":78310,"tok_per_week":548171,"share_pct":4.9},{"workspace":"unassigned","sessions":7,"steps":6839,"tokens":2766007,"tok_per_day":58851,"tok_per_week":411958,"share_pct":3.3},{"workspace":"rf-signal-lab","sessions":1,"steps":5701,"tokens":1975308,"tok_per_day":42028,"tok_per_week":294195,"share_pct":2.7},{"workspace":"agy-nexus-config","sessions":1,"steps":4518,"tokens":1885146,"tok_per_day":40109,"tok_per_week":280766,"share_pct":2.2},{"workspace":"container-gitops","sessions":7,"steps":3346,"tokens":1020048,"tok_per_day":21703,"tok_per_week":151922,"share_pct":1.6},{"workspace":"edge-sensor-node","sessions":2,"steps":2691,"tokens":1005275,"tok_per_day":21389,"tok_per_week":149722,"share_pct":1.3},{"workspace":"mail-taxonomy-ai","sessions":1,"steps":1327,"tokens":343609,"tok_per_day":7311,"tok_per_week":51176,"share_pct":0.6}],"series_dates":["2026-09-21 04:00","2026-09-21 12:00","2026-09-21 20:00","2026-09-22 04:00","2026-09-22 12:00","2026-09-22 20:00","2026-09-23 04:00","2026-09-23 12:00","2026-09-23 20:00","2026-09-24 04:00","2026-09-24 12:00","2026-09-24 20:00","2026-09-25 04:00","2026-09-25 12:00","2026-09-25 20:00","2026-09-26 04:00","2026-09-26 12:00","2026-09-26 20:00","2026-09-27 04:00","2026-09-27 12:00","2026-09-27 20:00","2026-09-28 04:00","2026-09-28 12:00","2026-09-28 20:00","2026-09-29 04:00","2026-09-29 12:00","2026-09-29 20:00","2026-09-30 04:00","2026-09-30 12:00","2026-09-30 20:00","2026-10-01 04:00","2026-10-01 12:00","2026-10-01 20:00","2026-10-02 04:00","2026-10-02 12:00","2026-10-02 20:00","2026-10-03 04:00","2026-10-03 12:00","2026-10-03 20:00","2026-10-04 04:00","2026-10-04 12:00","2026-10-04 20:00","2026-10-05 04:00","2026-10-05 12:00","2026-10-05 20:00","2026-10-06 04:00","2026-10-06 12:00","2026-10-06 20:00","2026-10-07 04:00","2026-10-07 12:00","2026-10-07 20:00","2026-10-08 04:00","2026-10-08 12:00","2026-10-08 20:00","2026-10-09 04:00","2026-10-09 12:00","2026-10-09 20:00","2026-10-10 04:00","2026-10-10 12:00","2026-10-10 20:00","2026-10-11 04:00","2026-10-11 12:00","2026-10-11 20:00","2026-10-12 04:00","2026-10-12 12:00","2026-10-12 20:00","2026-10-13 04:00","2026-10-13 12:00","2026-10-13 20:00","2026-10-14 04:00","2026-10-14 12:00","2026-10-14 20:00","2026-10-15 04:00","2026-10-15 12:00","2026-10-15 20:00","2026-10-16 04:00","2026-10-16 12:00","2026-10-16 20:00","2026-10-17 04:00","2026-10-17 12:00","2026-10-17 20:00","2026-10-18 04:00","2026-10-18 12:00","2026-10-18 20:00","2026-10-19 04:00","2026-10-19 12:00","2026-10-19 20:00","2026-10-20 04:00","2026-10-20 12:00","2026-10-20 20:00","2026-10-21 04:00","2026-10-21 12:00","2026-10-21 20:00","2026-10-22 04:00","2026-10-22 12:00","2026-10-22 20:00","2026-10-23 04:00","2026-10-23 12:00","2026-10-23 20:00","2026-10-24 04:00","2026-10-24 12:00","2026-10-24 20:00","2026-10-25 04:00","2026-10-25 12:00","2026-10-25 20:00","2026-10-26 04:00","2026-10-26 12:00","2026-10-26 20:00","2026-10-27 04:00","2026-10-27 12:00","2026-10-27 20:00","2026-10-28 04:00","2026-10-28 12:00","2026-10-28 20:00","2026-10-29 04:00","2026-10-29 12:00","2026-10-29 20:00","2026-10-30 04:00","2026-10-30 12:00","2026-10-30 20:00","2026-10-31 04:00","2026-10-31 12:00","2026-10-31 20:00","2026-11-01 04:00","2026-11-01 12:00","2026-11-01 20:00","2026-11-02 04:00","2026-11-02 12:00","2026-11-02 20:00","2026-11-03 04:00","2026-11-03 12:00","2026-11-03 20:00","2026-11-04 04:00","2026-11-04 12:00","2026-11-04 20:00","2026-11-05 04:00","2026-11-05 12:00","2026-11-05 20:00","2026-11-06 04:00","2026-11-06 12:00","2026-11-06 20:00","2026-11-07 04:00","2026-11-07 12:00"],"series_res":"8h sub-daily","vel_vals":[0,0,0,401,92,271,541,255,1117,780,262,560,918,2912,2611,1839,3107,1402,440,914,1772,1527,883,924,230,185,961,1448,2160,1718,1513,3049,2937,1176,2407,2614,1075,1652,3513,1091,3578,3378,1740,171,1996,858,0,1692,925,571,1234,1144,2156,2808,1038,451,0,93,2207,1281,1843,1945,1718,514,330,2070,1089,0,1368,485,230,1121,594,299,2146,2362,614,536,458,693,756,597,2443,1055,913,212,694,381,184,2567,789,233,647,1232,274,125,3462,1253,4453,2209,3652,3479,1372,4529,3429,4196,1049,2474,2067,422,2315,1104,1450,3646,1875,802,2155,881,888,2776,2485,4669,3810,2250,2211,1515,1994,294,954,1226,296,1378,1602,1827,1139,960,181,1172,1773,2054,2156,860,3657],"sub_keys":["flash-surgeon","flash-auditor","argon-sentinel","argon-surgeon","flash-scout","other-subagents"],"sub_layers":{"flash-surgeon":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,785,0,0,1792,0,3098,1058,1451,268,0,502,779,1707,345,532,890,0,816,0,625,1013,405,384,271,82,38,214,303,1910,802,333,499,335,467,0,0,14,0,0,14,0,0,14,0,0,0,0,0,0,0],"flash-auditor":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,343,0,305,131,480,405,229,752,545,441,348,328,205,140,358,89,104,289,278,45,301,278,0,250,243,391,288,201,43,91,210,0,124,131,42,96,95,0,108,151,0,86,68,0,34,66,0],"argon-sentinel":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,114,0,169,227,0,47,174,0,113,171,0,43,242,0,335,177,0,234,259,0,536,196,0,105,122,0,206,248,0,69,165,0,141,177,0,121,146,0],"argon-surgeon":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,328,73,136,116,0,0,195,0,0,122,0,90,112,0,441,187,0,85,239,0,0,163,0,0,162,0,0,166,0,48,182,0,0,211,0,0,114,0],"flash-scout":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,148,252,425,86,413,56,0,0,34,0,0,32,0,0,54,0,0,317,394,96,100,160,0,234,0,0,26,0,0,30,0,0,68,0,0,59,0,0,28,0],"other-subagents":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,444,31,285,0,0,0,0,0,189,0,0,0,0,0,0,0,0,0,0,76,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},"ws_keys":["nexus-mesh-telemetry","automation-gitops","chronos-board","quantum-dsp-workbench","unassigned","other-projects"],"ws_layers":{"nexus-mesh-telemetry":[0,0,0,58,0,228,0,0,0,0,0,0,0,0,24,0,0,0,0,0,0,0,0,0,0,0,0,16,351,330,923,1579,789,714,2011,1791,1075,1652,2948,810,2843,3222,1740,81,1798,858,0,1692,925,571,1234,1144,1881,2733,1038,451,0,93,2207,1281,1232,669,826,44,0,1159,0,0,727,378,0,999,88,0,1507,1536,555,451,458,79,166,200,1310,20,0,0,179,0,0,592,0,0,29,23,0,0,0,0,0,420,803,1203,611,1988,908,1716,569,1340,1171,0,1566,484,941,2482,249,595,738,0,0,0,0,73,232,367,1073,1194,0,0,43,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"automation-gitops":[0,0,0,93,0,0,447,255,1117,780,262,560,803,2767,2587,1839,3107,1402,440,914,1772,1527,883,924,230,185,848,704,1629,724,528,806,1465,371,0,823,0,0,0,0,247,156,0,90,198,0,0,0,0,0,0,0,275,75,0,0,0,0,0,0,611,121,238,445,147,394,692,0,435,107,188,114,506,299,502,826,59,85,0,0,0,0,79,114,234,0,135,194,0,107,0,0,0,0,0,0,0,0,0,0,670,763,301,653,241,909,111,677,716,0,153,555,0,158,481,0,666,881,38,1988,1309,479,1809,734,0,313,601,0,152,449,0,281,615,0,257,638,0,244,568,0,172,409,0],"chronos-board":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,614,590,397,1054,921,679,212,380,187,184,1868,789,233,506,1209,200,125,3462,1253,3876,1623,2122,998,458,1665,1908,1571,369,0,0,0,356,0,0,269,1098,54,0,0,0,0,798,4117,1483,760,684,0,1038,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"quantum-dsp-workbench":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,290,1403,655,208,181,875,832,1707,1859,295,1993],"unassigned":[0,0,0,0,0,0,94,0,0,0,0,0,115,145,0,0,0,0,0,0,0,0,0,0,0,0,113,728,86,0,0,132,119,91,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,633,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,112,0,74,0,0,0,58,0,0,0,0,0,0,0,0,457,87,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,578,296,1097,565,196,9,0,0,53,373,347,125,156,0],"other-projects":[0,0,0,250,92,43,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,94,664,62,532,564,0,396,0,0,0,565,281,488,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,522,654,25,183,517,397,0,206,0,42,8,0,0,137,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,519,166,57,515,2,223,372,0,0,0,93,422,240,65,509,737,47,153,751,0,850,788,378,0,286,389,454,8,355,294,759,199,0,0,132,228,218,114,0,0,0,0,0,0,1664]},"days_packed":[["2026-08-10",0,0,0,0,0,0,0,1],["2026-08-11",1,0,0,0,0,0,0,1],["2026-08-12",2,0,0,0,0,0,0,1],["2026-08-13",3,0,0,0,0,0,0,1],["2026-08-14",4,0,0,0,0,0,0,1],["2026-08-15",5,0,0,0,0,0,0,1],["2026-08-16",6,0,0,0,0,0,0,1],["2026-08-17",0,0,0,0,0,0,0,1],["2026-08-18",1,0,0,0,0,0,0,1],["2026-08-19",2,0,0,0,0,0,0,1],["2026-08-20",3,0,0,0,0,0,0,1],["2026-08-21",4,0,0,0,0,0,0,1],["2026-08-22",5,0,0,0,0,0,0,1],["2026-08-23",6,0,0,0,0,0,0,1],["2026-08-24",0,0,0,0,0,0,0,1],["2026-08-25",1,0,0,0,0,0,0,1],["2026-08-26",2,0,0,0,0,0,0,1],["2026-08-27",3,0,0,0,0,0,0,1],["2026-08-28",4,0,0,0,0,0,0,1],["2026-08-29",5,0,0,0,0,0,0,1],["2026-08-30",6,0,0,0,0,0,0,1],["2026-08-31",0,0,0,0,0,0,0,1],["2026-09-01",1,0,0,0,0,0,0,1],["2026-09-02",2,0,0,0,0,0,0,1],["2026-09-03",3,0,0,0,0,0,0,1],["2026-09-04",4,0,0,0,0,0,0,1],["2026-09-05",5,0,0,0,0,0,0,1],["2026-09-06",6,0,0,0,0,0,0,1],["2026-09-07",0,0,0,0,0,0,0,1],["2026-09-08",1,0,0,0,0,0,0,1],["2026-09-09",2,0,0,0,0,0,0,1],["2026-09-10",3,0,0,0,0,0,0,1],["2026-09-11",4,0,0,0,0,0,0,1],["2026-09-12",5,0,0,0,0,0,0,1],["2026-09-13",6,0,0,0,0,0,0,1],["2026-09-14",0,0,0,0,0,0,0,1],["2026-09-15",1,0,0,0,0,0,0,1],["2026-09-16",2,0,0,0,0,0,0,1],["2026-09-17",3,0,0,0,0,0,0,1],["2026-09-18",4,0,0,0,0,0,0,1],["2026-09-19",5,0,0,0,0,0,0,1],["2026-09-20",6,0,0,0,0,0,0,1],["2026-09-21",0,0,0,0,0,0,0,1],["2026-09-22",1,764,364,225617,5,1,0,1],["2026-09-23",2,1913,922,588564,5,1,0,1],["2026-09-24",3,1602,789,494637,2,1,0,1],["2026-09-25",4,6441,3188,1616222,7,4,0,1],["2026-09-26",5,6348,3149,1680947,6,4,0,1],["2026-09-27",6,3126,1524,931639,4,2,0,1],["2026-09-28",0,3334,1628,865290,6,2,0,1],["2026-09-29",1,1376,683,419632,3,1,0,1],["2026-09-30",2,5326,2630,1423306,6,3,0,1],["2026-10-01",3,7499,3716,2022170,5,4,0,1],["2026-10-02",4,6197,3054,1797161,8,4,0,1],["2026-10-03",5,6240,3047,2071359,3,4,0,1],["2026-10-04",6,8047,3924,2875300,6,4,0,1],["2026-10-05",0,3907,1896,1523239,3,3,0,1],["2026-10-06",1,2550,1253,1011437,1,2,0,1],["2026-10-07",2,2730,1327,1078955,1,2,0,1],["2026-10-08",3,6108,2988,2087359,2,3,0,1],["2026-10-09",4,1489,729,519238,1,1,0,1],["2026-10-10",5,3581,1757,1159978,1,2,0,1],["2026-10-11",6,5506,2643,1832035,5,3,0,1],["2026-10-12",0,2914,1408,1090133,4,2,0,1],["2026-10-13",1,2457,1241,941544,3,2,0,1],["2026-10-14",2,1836,891,789462,3,1,0,1],["2026-10-15",3,3039,1479,1093345,5,2,0,1],["2026-10-16",4,3512,1774,1369416,5,2,0,1],["2026-10-17",5,1907,1045,921960,3,1,0,1],["2026-10-18",6,4095,2229,1928683,4,3,0,1],["2026-10-19",0,1819,954,903267,5,1,0,1],["2026-10-20",1,3132,1709,1563934,4,2,0,1],["2026-10-21",2,1669,846,840934,4,1,0,1],["2026-10-22",3,1631,801,614188,7,1,0,1],["2026-10-23",4,9168,4310,3441954,38,4,0,1],["2026-10-24",5,9340,4747,4081416,34,4,0,1],["2026-10-25",6,9330,4679,4075554,37,4,0,1],["2026-10-26",0,7719,3793,2908422,47,4,0,1],["2026-10-27",1,4804,2324,1983630,33,3,0,1],["2026-10-28",2,6200,3164,2686101,26,4,0,1],["2026-10-29",3,4832,2371,2045622,27,3,0,1],["2026-10-30",4,4545,2278,1744940,14,3,0,1],["2026-10-31",5,10964,5453,4172427,46,4,0,1],["2026-11-01",6,5976,3019,2600073,23,3,0,1],["2026-11-02",0,3242,1641,1368005,18,2,0,1],["2026-11-03",1,2900,1474,1330496,12,2,0,1],["2026-11-04",2,4568,2364,1654899,13,3,0,1],["2026-11-05",3,2313,1252,975230,22,1,0,1],["2026-11-06",4,5983,3111,2384661,14,3,0,1],["2026-11-07",5,4517,2408,1651759,14,3,0,1]],"quota_and_pools":{"active_tier_profile":"ultra-20x","pools":{"google":{"status":"HEALTHY","cooldown_remaining_seconds":0,"total_429_count":0,"last_reason":""},"claude":{"status":"HEALTHY","cooldown_remaining_seconds":0,"total_429_count":0,"last_reason":""},"gpt_oss":{"status":"HEALTHY","cooldown_remaining_seconds":0,"total_429_count":0,"last_reason":""}},"partner_weekly_pacing":{"day_of_week_index":6,"daily_target_pct":14.28,"recommended_cumulative_ceiling_pct":85.7},"target_model_allocation":{"argon_pro":{"label":"Gemini 4 Argon (Pro)","pool":"20x Google Ultra","target_pct":65.0},"flash":{"label":"Gemini 3.8 Flash","pool":"20x Google Ultra","target_pct":25.0},"claude_partner":{"label":"Claude Sonnet/Opus 5.5","pool":"Partner Pool (Weekly)","target_pct":8.0},"gpt_oss":{"label":"GPT-OSS 120B","pool":"Partner Pool (Failover)","target_pct":2.0}},"recent_quota_events":[]},"wire_telemetry":{"total_recorded_calls":200,"avg_kb":9.26,"max_kb":33.73,"total_mcp_tokens":514411,"budget_compliance_pct":95.5,"by_product":{"Gemini Web / Cloud MCP":{"calls":200,"tokens":514411,"bytes":1896453}},"recent_calls":[{"ts":"2026-11-07T20:50:24.854209+00:00","tool":"ask_workspace_readonly","product":"Gemini Web / Cloud MCP","bytes":19483,"kb":19.03,"est_tokens":5036,"under_20kb_budget":true,"duration_ms":1534.0},{"ts":"2026-11-07T20:50:23.244521+00:00","tool":"-","product":"Gemini Web / Cloud MCP","bytes":0,"kb":0.0,"est_tokens":14,"under_20kb_budget":true,"duration_ms":0.0},{"ts":"2026-11-07T20:50:23.122948+00:00","tool":"-","product":"Gemini Web / Cloud MCP","bytes":2410,"kb":2.35,"est_tokens":654,"under_20kb_budget":true,"duration_ms":1.0},{"ts":"2026-11-07T20:49:05.615153+00:00","tool":"-","product":"Gemini Web / Cloud MCP","bytes":9235,"kb":9.02,"est_tokens":2326,"under_20kb_budget":true,"duration_ms":2.0},{"ts":"2026-11-07T20:49:05.504955+00:00","tool":"-","product":"Gemini Web / Cloud MCP","bytes":0,"kb":0.0,"est_tokens":14,"under_20kb_budget":true,"duration_ms":0.0},{"ts":"2026-11-07T20:49:05.404352+00:00","tool":"-","product":"Gemini Web / Cloud MCP","bytes":2410,"kb":2.35,"est_tokens":654,"under_20kb_budget":true,"duration_ms":2.0},{"ts":"2026-11-07T20:42:36.257587+00:00","tool":"-","product":"Gemini Web / Cloud MCP","bytes":9237,"kb":9.02,"est_tokens":2327,"under_20kb_budget":true,"duration_ms":1.0},{"ts":"2026-11-07T20:31:26.327009+00:00","tool":"load_session_into_gemini","product":"Gemini Web / Cloud MCP","bytes":15419,"kb":15.06,"est_tokens":3906,"under_20kb_budget":true,"duration_ms":173.0},{"ts":"2026-11-07T20:30:15.606763+00:00","tool":"-","product":"Gemini Web / Cloud MCP","bytes":9236,"kb":9.02,"est_tokens":2326,"under_20kb_budget":true,"duration_ms":1.0},{"ts":"2026-11-07T20:28:34.812954+00:00","tool":"-","product":"Gemini Web / Cloud MCP","bytes":9236,"kb":9.02,"est_tokens":2326,"under_20kb_budget":true,"duration_ms":2.0},{"ts":"2026-11-07T20:27:32.907441+00:00","tool":"inspect_git_diff","product":"Gemini Web / Cloud MCP","bytes":6334,"kb":6.19,"est_tokens":1640,"under_20kb_budget":true,"duration_ms":78.0},{"ts":"2026-11-07T20:26:19.111016+00:00","tool":"-","product":"Gemini Web / Cloud MCP","bytes":9236,"kb":9.02,"est_tokens":2326,"under_20kb_budget":true,"duration_ms":1.0},{"ts":"2026-11-07T20:25:58.991387+00:00","tool":"send_handoff_and_resume","product":"Gemini Web / Cloud MCP","bytes":2129,"kb":2.08,"est_tokens":2069,"under_20kb_budget":true,"duration_ms":227.0},{"ts":"2026-11-07T20:24:58.439752+00:00","tool":"-","product":"Gemini Web / Cloud MCP","bytes":9236,"kb":9.02,"est_tokens":2326,"under_20kb_budget":true,"duration_ms":1.0},{"ts":"2026-11-07T20:24:32.465905+00:00","tool":"load_session_into_gemini","product":"Gemini Web / Cloud MCP","bytes":15138,"kb":14.78,"est_tokens":3836,"under_20kb_budget":true,"duration_ms":129.0}]},"routing_telemetry":{"active_slots":5,"pinned_calls":22,"auto_resolved_calls":6,"selected_session":"031d6672-9375-a94d-ee14-21e19d067ef5","selected_workspace":"/home/dev/gitlab/agy-nexus-config","ttl_remaining_seconds":7170,"ttl_remaining_min":119.5,"slots":[{"conversation_id":"882e8349-52d4-bee1-35bb-6e985a4150e8","title":"Anti-Slop Visual Architecture Engine Testing And Implementation","project_id":"outside-of-project","project_name":"outside-of-project","workspace":"/home/dev/gitlab","workspace_uris":[],"mode":"PINNED (READ-ONLY)","last_tool":"ask_workspace_readonly","last_used_at":1794084623.323011},{"conversation_id":"031d6672-9375-a94d-ee14-21e19d067ef5","title":"Antigravity MCP Integration","project_id":"4d9233c7-3fc9-b9bd-cdcf-40857850212b","project_name":"Core Infrastructure & Container GitOps","workspace":"/home/dev/gitlab/agy-nexus-config","workspace_uris":["/home/dev/gitlab/container-gitops","/home/dev/gitlab/agy-nexus-config","/home/dev/gitlab/mesh-infra-ops"],"mode":"MAIN WRITER","last_tool":"load_session_into_gemini","last_used_at":1794083486.1735172},{"conversation_id":"21e3d46d-c57e-82cb-02ce-ae50d3d6fd02","title":"Ideation of Features","project_id":"75230a0b-48a9-c82c-1ec6-cfcd4fc446ed","project_name":"mail-taxonomy-ai","workspace":"/home/dev/gitlab/mail-taxonomy-ai","workspace_uris":["/home/dev/gitlab/mail-taxonomy-ai"],"mode":"MAIN WRITER","last_tool":"send_handoff_and_resume","last_used_at":1794083158.7835445},{"conversation_id":"859dbded-76ce-bd86-861c-8397545e55c8","title":"[QDSP-Learn-RF] RF & DSP Data Communications","project_id":"80c83a61-6c39-999e-b74d-af2b6c5eceee","project_name":"quantum-dsp-workbench","workspace":"/home/dev/gitlab/quantum-dsp-workbench","workspace_uris":["/home/dev/gitlab/quantum-dsp-workbench"],"mode":"PINNED (READ-ONLY)","last_tool":"ask_workspace_readonly","last_used_at":1794082918.7981372},{"conversation_id":"b5e74c3c-15dd-1552-8f4a-5ff63090b4db","title":"[QDSP-Portal] Landing Page & Platform Shell","project_id":"80c83a61-6c39-999e-b74d-af2b6c5eceee","project_name":"quantum-dsp-workbench","workspace":"/home/dev/gitlab/quantum-dsp-workbench","workspace_uris":["/home/dev/gitlab/quantum-dsp-workbench"],"mode":"MAIN TREE","last_tool":"load_session_into_gemini","last_used_at":1794082897.4855998}]},"backup_321":{"ok":true,"short_sha":"55d0304","head_sha":"55d03049c91a299947538704451a7d6061ef7d43","origin_sha":"55d03049c91a299947538704451a7d6061ef7d43","gitlab_sha":"55d03049c91a299947538704451a7d6061ef7d43","shas_match":true,"bundle_size_bytes":2317401,"bundle_size_kb":2263.1,"timestamp_utc":"2026-11-07T19:18:46.001785+00:00","age":"1h ago","status_label":"SYNCED ✓"},"project_session_tree":{"projects_count":8,"sessions_count":19,"active_only":false,"project_filter":"","projects":[{"project_id":"491f269e-6a46-6930-b114-8a596add625a","project_name":"Core Infrastructure & Container GitOps","workspaces":["/home/dev/gitlab/container-gitops","/home/dev/gitlab/agy-nexus-config","/home/dev/gitlab/mesh-mesh-infra-ops","/home/dev/.gemini/antigravity/worktrees/container-gitops/prevent_container_flush_bug","/home/dev/.gemini/antigravity/worktrees/container-gitops/research_container_ldap_support"],"shared_repo":false,"running_count":1,"pinned_count":1,"sessions":[{"index":"1","conversation_id":"031d6672-9375-a94d-ee14-21e19d067ef5","title":"Antigravity MCP Integration","project_id":"491f269e-6a46-6930-b114-8a596add625a","project_name":"Core Infrastructure & Container GitOps","workspace_path":"/home/dev/gitlab/agy-nexus-config","workspace_short":"agy-nexus-config","status":"RUNNING","is_running":true,"is_pinned":true,"status_badge":"[● RUNNING]","mode":"MAIN WRITER","shared_repo":false,"step_count":4164,"last_updated":"2026-11-07 20:49:22.852903882+00:00","relative_age":"1m ago"},{"index":"20","conversation_id":"71bf3617-da78-cfad-ec6f-3034f1b76421","title":"Container Management & Repairs","project_id":"491f269e-6a46-6930-b114-8a596add625a","project_name":"Core Infrastructure & Container GitOps","workspace_path":"/home/dev/.gemini/antigravity/worktrees/container-gitops/prevent_container_flush_bug","workspace_short":"prevent_container_flush_bug","status":"IDLE","is_running":false,"is_pinned":false,"status_badge":"[○ IDLE]","mode":"WORKTREE","shared_repo":false,"step_count":1271,"last_updated":"2026-10-30 23:54:10.388656595+00:00","relative_age":"7d ago"},{"index":"23","conversation_id":"5d03d9c3-8668-71f0-2a26-ef9f993c4e1e","title":"Container LDAP Support Research","project_id":"491f269e-6a46-6930-b114-8a596add625a","project_name":"Core Infrastructure & Container GitOps","workspace_path":"/home/dev/.gemini/antigravity/worktrees/container-gitops/research_container_ldap_support","workspace_short":"research_container_ldap_support","status":"IDLE","is_running":false,"is_pinned":false,"status_badge":"[○ IDLE]","mode":"WORKTREE","shared_repo":false,"step_count":422,"last_updated":"2026-10-25 10:50:14.787460618+00:00","relative_age":"13d ago"}],"project_index":1,"total_sessions":3},{"project_id":"f45b9fc8-3341-770a-a5e9-6b51edd7d403","project_name":"chronos-board","workspaces":["/home/dev/chronos-board","/home/dev/.gemini/antigravity/worktrees/chronos-board/plan_sprint_one","/home/dev/.gemini/antigravity/worktrees/chronos-board/sunburst_chart_legend_slideout","/home/dev/.gemini/antigravity/worktrees/chronos-board/collect_phase_one_ux","/home/dev/.gemini/antigravity/worktrees/chronos-board/chronos-board_business_case"],"shared_repo":false,"running_count":1,"pinned_count":0,"sessions":[{"index":"28","conversation_id":"6cfff61b-3207-3d03-60ef-acd0ef2dadce","title":"Project Infrastructure And Development Plan","project_id":"f45b9fc8-3341-770a-a5e9-6b51edd7d403","project_name":"chronos-board","workspace_path":"/home/dev/chronos-board","workspace_short":"chronos-board","status":"RUNNING","is_running":true,"is_pinned":false,"status_badge":"[● RUNNING]","mode":"MAIN WRITER","shared_repo":false,"step_count":5592,"last_updated":"2026-10-21 00:05:55.418600153+00:00","relative_age":"17d ago"},{"index":"18","conversation_id":"96c5da58-741a-063a-b7fa-d45a5e38c0fe","title":"Phase 1 Sprints & Bugs","project_id":"f45b9fc8-3341-770a-a5e9-6b51edd7d403","project_name":"chronos-board","workspace_path":"/home/dev/.gemini/antigravity/worktrees/chronos-board/plan_sprint_one","workspace_short":"plan_sprint_one","status":"IDLE","is_running":false,"is_pinned":false,"status_badge":"[○ IDLE]","mode":"WORKTREE","shared_repo":false,"step_count":8389,"last_updated":"2026-11-02 12:09:08.068236159+00:00","relative_age":"5d ago"},{"index":"24","conversation_id":"fe94ac36-73db-ed55-54e8-2c2240a80c42","title":"Sunburst And Chord Chart Refinement","project_id":"f45b9fc8-3341-770a-a5e9-6b51edd7d403","project_name":"chronos-board","workspace_path":"/home/dev/.gemini/antigravity/worktrees/chronos-board/sunburst_chart_legend_slideout","workspace_short":"sunburst_chart_legend_slideout","status":"IDLE","is_running":false,"is_pinned":false,"status_badge":"[○ IDLE]","mode":"WORKTREE","shared_repo":false,"step_count":1026,"last_updated":"2026-10-24 03:40:42.086892026+00:00","relative_age":"14d ago"}],"project_index":2,"total_sessions":3},{"project_id":"e1676a6d-c5ba-1829-f129-86a6cea0e5bd","project_name":"quantum-dsp-workbench","workspaces":["/home/dev/gitlab/quantum-dsp-workbench"],"shared_repo":true,"running_count":0,"pinned_count":2,"sessions":[{"index":"3","conversation_id":"b5e74c3c-15dd-1552-8f4a-5ff63090b4db","title":"[QDSP-Portal] Landing Page & Platform Shell","project_id":"e1676a6d-c5ba-1829-f129-86a6cea0e5bd","project_name":"quantum-dsp-workbench","workspace_path":"/home/dev/gitlab/quantum-dsp-workbench","workspace_short":"quantum-dsp-workbench","status":"COMPLETED","is_running":false,"is_pinned":true,"status_badge":"[◉ PINNED · IDLE]","mode":"MAIN TREE","shared_repo":true,"step_count":2544,"last_updated":"2026-11-07 19:25:24.808652175+00:00","relative_age":"1h ago"},{"index":"4","conversation_id":"859dbded-76ce-bd86-861c-8397545e55c8","title":"[QDSP-Learn-RF] RF & DSP Data Communications","project_id":"e1676a6d-c5ba-1829-f129-86a6cea0e5bd","project_name":"quantum-dsp-workbench","workspace_path":"/home/dev/gitlab/quantum-dsp-workbench","workspace_short":"quantum-dsp-workbench","status":"COMPLETED","is_running":false,"is_pinned":true,"status_badge":"[◉ PINNED · IDLE]","mode":"PINNED (READ-ONLY)","shared_repo":true,"step_count":1390,"last_updated":"2026-11-07 19:10:53.577571513+00:00","relative_age":"1h ago"},{"index":"5","conversation_id":"bc9fca12-1ee9-f0f5-c26f-66781c29ba51","title":"[QDSP-Core] Chief Architect & Audit Team","project_id":"e1676a6d-c5ba-1829-f129-86a6cea0e5bd","project_name":"quantum-dsp-workbench","workspace_path":"/home/dev/gitlab/quantum-dsp-workbench","workspace_short":"quantum-dsp-workbench","status":"COMPLETED","is_running":false,"is_pinned":false,"status_badge":"[○ COMPLETED]","mode":"MAIN TREE","shared_repo":true,"step_count":5883,"last_updated":"2026-11-07 15:34:56.307664748+00:00","relative_age":"5h ago"}],"project_index":3,"total_sessions":3},{"project_id":"unscoped-workspace","project_name":"Unscoped Workspace","workspaces":["/home/dev/gitlab"],"shared_repo":false,"running_count":0,"pinned_count":1,"sessions":[{"index":"6","conversation_id":"882e8349-52d4-bee1-35bb-6e985a4150e8","title":"Anti-Slop Visual Architecture Engine Testing And Implementation","project_id":"unscoped-workspace","project_name":"Unscoped Workspace","workspace_path":"/home/dev/gitlab","workspace_short":"gitlab","status":"COMPLETED","is_running":false,"is_pinned":true,"status_badge":"[◉ PINNED · IDLE]","mode":"PINNED (READ-ONLY)","shared_repo":false,"step_count":4014,"last_updated":"2026-11-07 10:43:43.499017467+00:00","relative_age":"10h ago"},{"index":"25","conversation_id":"8cf8341b-fd77-1af6-dd3f-39a63bfa11cc","title":"Antigravity Subagent Tasking Support","project_id":"unscoped-workspace","project_name":"Unscoped Workspace","workspace_path":"/home/dev/gitlab","workspace_short":"gitlab","status":"IDLE","is_running":false,"is_pinned":false,"status_badge":"[○ IDLE]","mode":"MAIN TREE","shared_repo":false,"step_count":244,"last_updated":"2026-10-23 23:12:36.604097198+00:00","relative_age":"14d ago"}],"project_index":4,"total_sessions":2},{"project_id":"4f009432-b083-7ae1-fae3-74fc93ac6fd5","project_name":"mail-taxonomy-ai","workspaces":["/home/dev/gitlab/mail-taxonomy-ai"],"shared_repo":false,"running_count":0,"pinned_count":1,"sessions":[{"index":"2","conversation_id":"21e3d46d-c57e-82cb-02ce-ae50d3d6fd02","title":"Ideation of Features","project_id":"4f009432-b083-7ae1-fae3-74fc93ac6fd5","project_name":"mail-taxonomy-ai","workspace_path":"/home/dev/gitlab/mail-taxonomy-ai","workspace_short":"mail-taxonomy-ai","status":"IDLE","is_running":false,"is_pinned":true,"status_badge":"[◉ PINNED · IDLE]","mode":"MAIN WRITER","shared_repo":false,"step_count":1327,"last_updated":"2026-11-07 20:48:25.195286961+00:00","relative_age":"2m ago"}],"project_index":5,"total_sessions":1},{"project_id":"17a366d5-ffca-a150-7130-7a36567ed847","project_name":"NexusMesh ANMS (Network Telemetry Platform)","workspaces":["/home/dev/gitlab/nexus-mesh-telemetry","/home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/rearchitect_api_strategy_redis","/home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/optimize_canvas_generation_dynamic_devices","/home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/hide_single_node_devices"],"shared_repo":false,"running_count":0,"pinned_count":0,"sessions":[{"index":"17","conversation_id":"2b1f7c7d-8e70-44c1-450b-c981e059f7e3","title":"Redesigning Server Architecture And Strategy","project_id":"17a366d5-ffca-a150-7130-7a36567ed847","project_name":"NexusMesh ANMS (Network Telemetry Platform)","workspace_path":"/home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/rearchitect_api_strategy_redis","workspace_short":"rearchitect_api_strategy_redis","status":"COMPLETED","is_running":false,"is_pinned":false,"status_badge":"[○ COMPLETED]","mode":"WORKTREE","shared_repo":false,"step_count":1959,"last_updated":"2026-11-02 23:25:55.399958165+00:00","relative_age":"4d ago"},{"index":"21","conversation_id":"6ad3b743-488e-17f8-f998-698ceac4d64d","title":"Canvas Node Optimization and Setup","project_id":"17a366d5-ffca-a150-7130-7a36567ed847","project_name":"NexusMesh ANMS (Network Telemetry Platform)","workspace_path":"/home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/optimize_canvas_generation_dynamic_devices","workspace_short":"optimize_canvas_generation_dynamic_devices","status":"IDLE","is_running":false,"is_pinned":false,"status_badge":"[○ IDLE]","mode":"WORKTREE","shared_repo":false,"step_count":12829,"last_updated":"2026-10-30 02:53:20.349260877+00:00","relative_age":"8d ago"},{"index":"29","conversation_id":"8c40259a-ba02-976b-0fea-b595d0c72470","title":"Filtering Single Unbounded Nodes","project_id":"17a366d5-ffca-a150-7130-7a36567ed847","project_name":"NexusMesh ANMS (Network Telemetry Platform)","workspace_path":"/home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/hide_single_node_devices","workspace_short":"hide_single_node_devices","status":"IDLE","is_running":false,"is_pinned":false,"status_badge":"[○ IDLE]","mode":"WORKTREE","shared_repo":false,"step_count":707,"last_updated":"2026-10-17 11:55:43.353629269+00:00","relative_age":"21d ago"}],"project_index":6,"total_sessions":3},{"project_id":"d9b08096-bed9-3429-4073-40913fd89752","project_name":"Automation & Edge Security GitOps","workspaces":["/home/dev/gitlab/automation-gitops","/home/dev/.gemini/antigravity/worktrees/automation-gitops/cam_grid_security_dashboard_migration","/home/dev/.gemini/antigravity/worktrees/automation-gitops/audit_home_automations","/home/dev/.gemini/antigravity/worktrees/automation-gitops/mobile_wall_panel_redesign","/home/dev/.gemini/antigravity/worktrees/automation-gitops/orbital_ember_rolls_11h46"],"shared_repo":false,"running_count":0,"pinned_count":0,"sessions":[{"index":"7","conversation_id":"d7590de0-5a72-be58-b123-c77c1a76f1dd","title":"Security Automation DevSecOps (& Audit Cron)","project_id":"d9b08096-bed9-3429-4073-40913fd89752","project_name":"Automation & Edge Security GitOps","workspace_path":"/home/dev/.gemini/antigravity/worktrees/automation-gitops/cam_grid_security_dashboard_migration","workspace_short":"cam_grid_security_dashboard_migration","status":"IDLE","is_running":false,"is_pinned":false,"status_badge":"[○ IDLE]","mode":"WORKTREE","shared_repo":false,"step_count":4314,"last_updated":"2026-11-07 09:24:56.865647699+00:00","relative_age":"11h ago"},{"index":"8","conversation_id":"11822340-57c1-2caf-e121-f55e3f0105db","title":"Home Automation DevOps (& Audit Cron)","project_id":"d9b08096-bed9-3429-4073-40913fd89752","project_name":"Automation & Edge Security GitOps","workspace_path":"/home/dev/.gemini/antigravity/worktrees/automation-gitops/audit_home_automations","workspace_short":"audit_home_automations","status":"IDLE","is_running":false,"is_pinned":false,"status_badge":"[○ IDLE]","mode":"WORKTREE","shared_repo":false,"step_count":4813,"last_updated":"2026-11-07 09:07:42.709116217+00:00","relative_age":"11h ago"},{"index":"19","conversation_id":"8c12f68a-76d4-898d-c0ea-dca7246f244d","title":"Mobile Automation Edge Dashboard Redesign","project_id":"d9b08096-bed9-3429-4073-40913fd89752","project_name":"Automation & Edge Security GitOps","workspace_path":"/home/dev/.gemini/antigravity/worktrees/automation-gitops/mobile_wall_panel_redesign","workspace_short":"mobile_wall_panel_redesign","status":"IDLE","is_running":false,"is_pinned":false,"status_badge":"[○ IDLE]","mode":"WORKTREE","shared_repo":false,"step_count":1249,"last_updated":"2026-11-01 00:12:15.168103206+00:00","relative_age":"6d ago"}],"project_index":7,"total_sessions":3},{"project_id":"7068307a-2ee8-21cd-2002-85faad4ccbc9","project_name":"rf-signal-lab","workspaces":["/home/dev/gitlab/rf-signal-lab"],"shared_repo":false,"running_count":0,"pinned_count":0,"sessions":[{"index":"22","conversation_id":"13977fe1-0589-276b-fec0-ba77614900c9","title":"RF Lab Edition 6","project_id":"7068307a-2ee8-21cd-2002-85faad4ccbc9","project_name":"rf-signal-lab","workspace_path":"/home/dev/gitlab/rf-signal-lab","workspace_short":"rf-signal-lab","status":"IDLE","is_running":false,"is_pinned":false,"status_badge":"[○ IDLE]","mode":"MAIN TREE","shared_repo":false,"step_count":5097,"last_updated":"2026-10-30 02:18:50.676224867+00:00","relative_age":"8d ago"}],"project_index":8,"total_sessions":1}],"routing_telemetry":{"active_slots":5,"pinned_calls":22,"auto_resolved_calls":6,"selected_session":"031d6672-9375-a94d-ee14-21e19d067ef5","selected_workspace":"/home/dev/gitlab/agy-nexus-config","ttl_remaining_seconds":7170,"ttl_remaining_min":119.5,"slots":[{"conversation_id":"882e8349-52d4-bee1-35bb-6e985a4150e8","title":"Anti-Slop Visual Architecture Engine Testing And Implementation","project_id":"outside-of-project","project_name":"outside-of-project","workspace":"/home/dev/gitlab","workspace_uris":[],"mode":"PINNED (READ-ONLY)","last_tool":"ask_workspace_readonly","last_used_at":1794084623.323011},{"conversation_id":"031d6672-9375-a94d-ee14-21e19d067ef5","title":"Antigravity MCP Integration","project_id":"4d9233c7-3fc9-b9bd-cdcf-40857850212b","project_name":"Core Infrastructure & Container GitOps","workspace":"/home/dev/gitlab/agy-nexus-config","workspace_uris":["/home/dev/gitlab/container-gitops","/home/dev/gitlab/agy-nexus-config","/home/dev/gitlab/mesh-infra-ops"],"mode":"MAIN WRITER","last_tool":"load_session_into_gemini","last_used_at":1794083486.1735172},{"conversation_id":"21e3d46d-c57e-82cb-02ce-ae50d3d6fd02","title":"Ideation of Features","project_id":"75230a0b-48a9-c82c-1ec6-cfcd4fc446ed","project_name":"mail-taxonomy-ai","workspace":"/home/dev/gitlab/mail-taxonomy-ai","workspace_uris":["/home/dev/gitlab/mail-taxonomy-ai"],"mode":"MAIN WRITER","last_tool":"send_handoff_and_resume","last_used_at":1794083158.7835445},{"conversation_id":"859dbded-76ce-bd86-861c-8397545e55c8","title":"[QDSP-Learn-RF] RF & DSP Data Communications","project_id":"80c83a61-6c39-999e-b74d-af2b6c5eceee","project_name":"quantum-dsp-workbench","workspace":"/home/dev/gitlab/quantum-dsp-workbench","workspace_uris":["/home/dev/gitlab/quantum-dsp-workbench"],"mode":"PINNED (READ-ONLY)","last_tool":"ask_workspace_readonly","last_used_at":1794082918.7981372},{"conversation_id":"b5e74c3c-15dd-1552-8f4a-5ff63090b4db","title":"[QDSP-Portal] Landing Page & Platform Shell","project_id":"80c83a61-6c39-999e-b74d-af2b6c5eceee","project_name":"quantum-dsp-workbench","workspace":"/home/dev/gitlab/quantum-dsp-workbench","workspace_uris":["/home/dev/gitlab/quantum-dsp-workbench"],"mode":"MAIN TREE","last_tool":"load_session_into_gemini","last_used_at":1794082897.4855998}]},"backup_321":{"ok":true,"short_sha":"55d0304","head_sha":"55d03049c91a299947538704451a7d6061ef7d43","origin_sha":"55d03049c91a299947538704451a7d6061ef7d43","gitlab_sha":"55d03049c91a299947538704451a7d6061ef7d43","shas_match":true,"bundle_size_bytes":2317401,"bundle_size_kb":2263.1,"timestamp_utc":"2026-11-07T19:18:46.001785+00:00","age":"1h ago","status_label":"SYNCED ✓"},"ascii_tree":"╔══════════════════════════════════════════════════════════════════════════╗\n║ AGY-NEXUS // PROJECT -> CHAT -> SESSION ID HIERARCHY (COPY-READY)        ║\n╠══════════════════════════════════════════════════════════════════════════╣\n║ ACTIVE SLOTS: 5 | PINNED: 22 | AUTO-PATH: 6 | TTL: 119.5m                ║\n║ 3-2-1 BACKUP: 55d0304 (SYNCED ✓ · 2263.1 KB · 1h ago)                    ║\n╚══════════════════════════════════════════════════════════════════════════╝\n\n[PROJECT 1] Core Infrastructure & Container GitOps\n  project_id : 491f269e-6a46-6930-b114-8a596add625a\n  workspaces : /home/dev/gitlab/container-gitops, /home/dev/gitlab/agy-nexus-config, /home/dev/gitlab/mesh-mesh-infra-ops, /home/dev/.gemini/antigravity/worktrees/container-gitops/prevent_container_flush_bug, /home/dev/.gemini/antigravity/worktrees/container-gitops/research_container_ldap_support\n  ├─ [#1] Antigravity MCP Integration\n  │   session_id : 031d6672-9375-a94d-ee14-21e19d067ef5\n  │   workspace  : /home/dev/gitlab/agy-nexus-config\n  │   status     : [● RUNNING] · MAIN WRITER · 4,164 steps · 1m ago\n  ├─ [#20] Container Management & Repairs\n  │   session_id : 71bf3617-da78-cfad-ec6f-3034f1b76421\n  │   workspace  : /home/dev/.gemini/antigravity/worktrees/container-gitops/prevent_container_flush_bug\n  │   status     : [○ IDLE] · WORKTREE · 1,271 steps · 7d ago\n  └─ [#23] Container LDAP Support Research\n      session_id : 5d03d9c3-8668-71f0-2a26-ef9f993c4e1e\n      workspace  : /home/dev/.gemini/antigravity/worktrees/container-gitops/research_container_ldap_support\n      status     : [○ IDLE] · WORKTREE · 422 steps · 13d ago\n\n[PROJECT 2] chronos-board\n  project_id : f45b9fc8-3341-770a-a5e9-6b51edd7d403\n  workspaces : /home/dev/chronos-board, /home/dev/.gemini/antigravity/worktrees/chronos-board/plan_sprint_one, /home/dev/.gemini/antigravity/worktrees/chronos-board/sunburst_chart_legend_slideout, /home/dev/.gemini/antigravity/worktrees/chronos-board/collect_phase_one_ux, /home/dev/.gemini/antigravity/worktrees/chronos-board/chronos-board_business_case\n  ├─ [#28] Project Infrastructure And Development Plan\n  │   session_id : 6cfff61b-3207-3d03-60ef-acd0ef2dadce\n  │   workspace  : /home/dev/chronos-board\n  │   status     : [● RUNNING] · MAIN WRITER · 5,592 steps · 17d ago\n  ├─ [#18] Phase 1 Sprints & Bugs\n  │   session_id : 96c5da58-741a-063a-b7fa-d45a5e38c0fe\n  │   workspace  : /home/dev/.gemini/antigravity/worktrees/chronos-board/plan_sprint_one\n  │   status     : [○ IDLE] · WORKTREE · 8,389 steps · 5d ago\n  └─ [#24] Sunburst And Chord Chart Refinement\n      session_id : fe94ac36-73db-ed55-54e8-2c2240a80c42\n      workspace  : /home/dev/.gemini/antigravity/worktrees/chronos-board/sunburst_chart_legend_slideout\n      status     : [○ IDLE] · WORKTREE · 1,026 steps · 14d ago\n\n[PROJECT 3] quantum-dsp-workbench [SHARED REPO]\n  project_id : e1676a6d-c5ba-1829-f129-86a6cea0e5bd\n  workspaces : /home/dev/gitlab/quantum-dsp-workbench\n  ├─ [#3] [QDSP-Portal] Landing Page & Platform Shell\n  │   session_id : b5e74c3c-15dd-1552-8f4a-5ff63090b4db\n  │   workspace  : /home/dev/gitlab/quantum-dsp-workbench\n  │   status     : [◉ PINNED · IDLE] · MAIN TREE · 2,544 steps · 1h ago\n  ├─ [#4] [QDSP-Learn-RF] RF & DSP Data Communications\n  │   session_id : 859dbded-76ce-bd86-861c-8397545e55c8\n  │   workspace  : /home/dev/gitlab/quantum-dsp-workbench\n  │   status     : [◉ PINNED · IDLE] · PINNED (READ-ONLY) · 1,390 steps · 1h ago\n  └─ [#5] [QDSP-Core] Chief Architect & Audit Team\n      session_id : bc9fca12-1ee9-f0f5-c26f-66781c29ba51\n      workspace  : /home/dev/gitlab/quantum-dsp-workbench\n      status     : [○ COMPLETED] · MAIN TREE · 5,883 steps · 5h ago\n\n[PROJECT 4] Unscoped Workspace\n  project_id : unscoped-workspace\n  workspaces : /home/dev/gitlab\n  ├─ [#6] Anti-Slop Visual Architecture Engine Testing And Implementation\n  │   session_id : 882e8349-52d4-bee1-35bb-6e985a4150e8\n  │   workspace  : /home/dev/gitlab\n  │   status     : [◉ PINNED · IDLE] · PINNED (READ-ONLY) · 4,014 steps · 10h ago\n  └─ [#25] Antigravity Subagent Tasking Support\n      session_id : 8cf8341b-fd77-1af6-dd3f-39a63bfa11cc\n      workspace  : /home/dev/gitlab\n      status     : [○ IDLE] · MAIN TREE · 244 steps · 14d ago\n\n[PROJECT 5] mail-taxonomy-ai\n  project_id : 4f009432-b083-7ae1-fae3-74fc93ac6fd5\n  workspaces : /home/dev/gitlab/mail-taxonomy-ai\n  └─ [#2] Ideation of Features\n      session_id : 21e3d46d-c57e-82cb-02ce-ae50d3d6fd02\n      workspace  : /home/dev/gitlab/mail-taxonomy-ai\n      status     : [◉ PINNED · IDLE] · MAIN WRITER · 1,327 steps · 2m ago\n\n[PROJECT 6] NexusMesh ANMS (Network Telemetry Platform)\n  project_id : 17a366d5-ffca-a150-7130-7a36567ed847\n  workspaces : /home/dev/gitlab/nexus-mesh-telemetry, /home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/rearchitect_api_strategy_redis, /home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/optimize_canvas_generation_dynamic_devices, /home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/hide_single_node_devices\n  ├─ [#17] Redesigning Server Architecture And Strategy\n  │   session_id : 2b1f7c7d-8e70-44c1-450b-c981e059f7e3\n  │   workspace  : /home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/rearchitect_api_strategy_redis\n  │   status     : [○ COMPLETED] · WORKTREE · 1,959 steps · 4d ago\n  ├─ [#21] Canvas Node Optimization and Setup\n  │   session_id : 6ad3b743-488e-17f8-f998-698ceac4d64d\n  │   workspace  : /home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/optimize_canvas_generation_dynamic_devices\n  │   status     : [○ IDLE] · WORKTREE · 12,829 steps · 8d ago\n  └─ [#29] Filtering Single Unbounded Nodes\n      session_id : 8c40259a-ba02-976b-0fea-b595d0c72470\n      workspace  : /home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/hide_single_node_devices\n      status     : [○ IDLE] · WORKTREE · 707 steps · 21d ago\n\n[PROJECT 7] Automation & Edge Security GitOps\n  project_id : d9b08096-bed9-3429-4073-40913fd89752\n  workspaces : /home/dev/gitlab/automation-gitops, /home/dev/.gemini/antigravity/worktrees/automation-gitops/cam_grid_security_dashboard_migration, /home/dev/.gemini/antigravity/worktrees/automation-gitops/audit_home_automations, /home/dev/.gemini/antigravity/worktrees/automation-gitops/mobile_wall_panel_redesign, /home/dev/.gemini/antigravity/worktrees/automation-gitops/orbital_ember_rolls_11h46\n  ├─ [#7] Security Automation DevSecOps (& Audit Cron)\n  │   session_id : d7590de0-5a72-be58-b123-c77c1a76f1dd\n  │   workspace  : /home/dev/.gemini/antigravity/worktrees/automation-gitops/cam_grid_security_dashboard_migration\n  │   status     : [○ IDLE] · WORKTREE · 4,314 steps · 11h ago\n  ├─ [#8] Home Automation DevOps (& Audit Cron)\n  │   session_id : 11822340-57c1-2caf-e121-f55e3f0105db\n  │   workspace  : /home/dev/.gemini/antigravity/worktrees/automation-gitops/audit_home_automations\n  │   status     : [○ IDLE] · WORKTREE · 4,813 steps · 11h ago\n  └─ [#19] Mobile Automation Edge Dashboard Redesign\n      session_id : 8c12f68a-76d4-898d-c0ea-dca7246f244d\n      workspace  : /home/dev/.gemini/antigravity/worktrees/automation-gitops/mobile_wall_panel_redesign\n      status     : [○ IDLE] · WORKTREE · 1,249 steps · 6d ago\n\n[PROJECT 8] rf-signal-lab\n  project_id : 7068307a-2ee8-21cd-2002-85faad4ccbc9\n  workspaces : /home/dev/gitlab/rf-signal-lab\n  └─ [#22] RF Lab Edition 6\n      session_id : 13977fe1-0589-276b-fec0-ba77614900c9\n      workspace  : /home/dev/gitlab/rf-signal-lab\n      status     : [○ IDLE] · MAIN TREE · 5,097 steps · 8d ago"}};
-    const REAL_SAMPLE_MTD = {"period":{"key":"current_month","label":"This Month — MTD (Nov 2026)","start_date":"2026-11-01","end_date":"2026-11-07","total_days":7,"active_days":7,"resolution":"4h sub-daily"},"kpis":{"total_conversations":18,"total_subagents_spawned":27,"window_steps":29499,"period_steps":29499,"window_tool_calls":15269,"period_tool_calls":15269,"window_tokens":11965123,"active_days":7,"avg_daily_steps":4214.1,"tok_per_day":1709303,"tok_per_week":11965123,"peak_day":{"date":"2026-11-06","steps":5983}},"model_usage_vs_target":[{"model_key":"argon_pro","label":"Gemini 4 Argon (Pro)","pool":"20x Google Ultra","actual_calls":11545,"est_tokens":3622302,"actual_pct":85.5,"target_pct":65.0,"delta_pct":20.5,"status":"OVER_TARGET"},{"model_key":"flash","label":"Gemini 3.8 Flash","pool":"20x Google Ultra","actual_calls":1952,"est_tokens":483258,"actual_pct":14.5,"target_pct":25.0,"delta_pct":-10.5,"status":"ON_TARGET"},{"model_key":"claude_partner","label":"Claude Sonnet/Opus 5.5","pool":"Partner Pool (Weekly)","actual_calls":0,"est_tokens":0,"actual_pct":0.0,"target_pct":8.0,"delta_pct":-8.0,"status":"ON_TARGET"},{"model_key":"gpt_oss","label":"GPT-OSS 120B","pool":"Partner Pool (Failover)","actual_calls":0,"est_tokens":0,"actual_pct":0.0,"target_pct":2.0,"delta_pct":-2.0,"status":"ON_TARGET"}],"subagent_role_breakdown":{"flash-auditor":{"runs":8,"steps":1546,"tokens":520703,"tok_per_day":74386,"tok_per_week":520703,"share_pct":20.1},"flash-scout":{"runs":3,"steps":705,"tokens":262066,"tok_per_day":37438,"tok_per_week":262066,"share_pct":9.2},"flash-surgeon":{"runs":11,"steps":1676,"tokens":663711,"tok_per_day":94816,"tok_per_week":663711,"share_pct":21.8},"argon-surgeon":{"runs":2,"steps":1285,"tokens":550590,"tok_per_day":78656,"tok_per_week":550590,"share_pct":16.7},"argon-sentinel":{"runs":3,"steps":2491,"tokens":1079551,"tok_per_day":154222,"tok_per_week":1079551,"share_pct":32.3}},"top_workspaces":[{"workspace":"quantum-dsp-workbench","sessions":11,"steps":10298,"tokens":3680580,"tok_per_day":525797,"tok_per_week":3680580,"share_pct":34.9},{"workspace":"automation-gitops","sessions":2,"steps":5433,"tokens":2268592,"tok_per_day":324085,"tok_per_week":2268592,"share_pct":18.4},{"workspace":"unassigned","sessions":1,"steps":3795,"tokens":1869056,"tok_per_day":267008,"tok_per_week":1869056,"share_pct":12.9},{"workspace":"agy-nexus-config","sessions":1,"steps":3508,"tokens":1508732,"tok_per_day":215533,"tok_per_week":1508732,"share_pct":11.9},{"workspace":"nexus-mesh-telemetry","sessions":1,"steps":2677,"tokens":1264341,"tok_per_day":180620,"tok_per_week":1264341,"share_pct":9.1},{"workspace":"chronos-board","sessions":1,"steps":2482,"tokens":1034678,"tok_per_day":147811,"tok_per_week":1034678,"share_pct":8.4},{"workspace":"mail-taxonomy-ai","sessions":1,"steps":1306,"tokens":339144,"tok_per_day":48449,"tok_per_week":339144,"share_pct":4.4}],"series_dates":["2026-11-01 00:00","2026-11-01 04:00","2026-11-01 08:00","2026-11-01 12:00","2026-11-01 16:00","2026-11-01 20:00","2026-11-02 00:00","2026-11-02 04:00","2026-11-02 08:00","2026-11-02 12:00","2026-11-02 16:00","2026-11-02 20:00","2026-11-03 00:00","2026-11-03 04:00","2026-11-03 08:00","2026-11-03 12:00","2026-11-03 16:00","2026-11-03 20:00","2026-11-04 00:00","2026-11-04 04:00","2026-11-04 08:00","2026-11-04 12:00","2026-11-04 16:00","2026-11-04 20:00","2026-11-05 00:00","2026-11-05 04:00","2026-11-05 08:00","2026-11-05 12:00","2026-11-05 16:00","2026-11-05 20:00","2026-11-06 00:00","2026-11-06 04:00","2026-11-06 08:00","2026-11-06 12:00","2026-11-06 16:00","2026-11-06 20:00","2026-11-07 00:00","2026-11-07 04:00","2026-11-07 08:00","2026-11-07 12:00"],"series_res":"4h sub-daily","vel_vals":[321,1929,1524,687,1507,8,0,1994,176,118,537,417,0,1226,172,124,658,720,0,1602,1446,381,603,536,0,960,39,142,703,469,512,1261,271,1783,1828,328,0,860,1014,2643],"sub_keys":["argon-sentinel","flash-surgeon","flash-auditor","argon-surgeon","flash-scout"],"sub_layers":{"argon-sentinel":[0,259,0,0,536,0,0,196,0,0,105,0,0,122,0,0,206,0,0,248,0,0,69,0,0,165,0,0,141,0,0,177,0,0,121,0,0,146,0,0],"flash-surgeon":[0,333,206,293,335,0,0,467,0,0,0,0,0,14,0,0,0,0,0,14,0,0,0,0,0,14,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"flash-auditor":[20,181,43,0,91,0,0,210,0,0,58,66,0,131,20,22,80,16,0,95,0,0,108,0,0,151,0,0,86,0,0,68,0,0,34,0,0,66,0,0],"argon-surgeon":[0,239,0,0,0,0,0,163,0,0,0,0,0,162,0,0,0,0,0,166,0,0,48,0,0,182,0,0,0,0,0,211,0,0,0,0,0,114,0,0],"flash-scout":[0,100,160,0,0,0,0,234,0,0,0,0,0,26,0,0,0,0,0,30,0,0,0,0,0,68,0,0,0,0,0,59,0,0,0,0,0,28,0,0]},"ws_keys":["quantum-dsp-workbench","automation-gitops","unassigned","agy-nexus-config","nexus-mesh-telemetry","other-projects"],"ws_layers":{"quantum-dsp-workbench":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,290,1022,381,119,536,0,208,39,142,459,416,254,578,260,1447,1531,328,0,295,675,1318],"automation-gitops":[0,734,0,0,313,0,0,601,0,0,152,0,0,449,0,0,281,0,0,615,0,0,257,0,0,638,0,0,244,0,0,568,0,0,172,0,0,409,0,0],"unassigned":[0,0,0,0,0,0,0,0,0,0,0,0,0,578,172,124,377,720,0,565,196,0,9,0,0,0,0,0,0,53,258,115,11,336,125,0,0,156,0,0],"agy-nexus-config":[204,185,454,0,0,8,0,355,176,118,342,417,0,199,0,0,0,0,0,132,228,0,218,0,0,114,0,0,0,0,0,0,0,0,0,0,0,0,0,358],"nexus-mesh-telemetry":[0,367,386,687,1194,0,0,0,0,0,43,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"other-projects":[117,643,684,0,0,0,0,1038,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,339,967]},"days_packed":[["2026-10-26",0,7719,3793,2908422,47,4,0,0],["2026-10-27",1,4804,2324,1983630,33,3,0,0],["2026-10-28",2,6200,3164,2686101,26,4,0,0],["2026-10-29",3,4832,2371,2045622,27,3,0,0],["2026-10-30",4,4545,2278,1744940,14,3,0,0],["2026-10-31",5,10964,5453,4172427,46,4,0,0],["2026-11-01",6,5976,3019,2600073,23,3,0,1],["2026-11-02",0,3242,1641,1368005,18,2,0,1],["2026-11-03",1,2900,1474,1330496,12,2,0,1],["2026-11-04",2,4568,2364,1654899,13,3,0,1],["2026-11-05",3,2313,1252,975230,22,1,0,1],["2026-11-06",4,5983,3111,2384661,14,3,0,1],["2026-11-07",5,4517,2408,1651759,14,3,0,1],["2026-11-08",6,0,0,0,0,-1,1,0],["2026-11-09",0,0,0,0,0,-1,1,0],["2026-11-10",1,0,0,0,0,-1,1,0],["2026-11-11",2,0,0,0,0,-1,1,0],["2026-11-12",3,0,0,0,0,-1,1,0],["2026-11-13",4,0,0,0,0,-1,1,0],["2026-11-14",5,0,0,0,0,-1,1,0],["2026-11-15",6,0,0,0,0,-1,1,0],["2026-11-16",0,0,0,0,0,-1,1,0],["2026-11-17",1,0,0,0,0,-1,1,0],["2026-11-18",2,0,0,0,0,-1,1,0],["2026-11-19",3,0,0,0,0,-1,1,0],["2026-11-20",4,0,0,0,0,-1,1,0],["2026-11-21",5,0,0,0,0,-1,1,0],["2026-11-22",6,0,0,0,0,-1,1,0],["2026-11-23",0,0,0,0,0,-1,1,0],["2026-11-24",1,0,0,0,0,-1,1,0],["2026-11-25",2,0,0,0,0,-1,1,0],["2026-11-26",3,0,0,0,0,-1,1,0],["2026-11-27",4,0,0,0,0,-1,1,0],["2026-11-28",5,0,0,0,0,-1,1,0],["2026-11-29",6,0,0,0,0,-1,1,0],["2026-11-30",0,0,0,0,0,-1,1,0]]};
-    const SAMPLE_CODE_HEALTH = {
-      version: {
-        installed: "2.6.0",
-        remote: "v2.5.0",
-        status: "staged_locally",
-        status_label: "Staged Locally (v2.6.0 > v2.5.0)",
-        status_dot: "#38bdf8",
-        repo: "github.com/FrankXLT/agy-nexus-mcp",
-      },
-      modular_hygiene: {
-        total_modules: 25,
-        compliant_300: 18,
-        warning_301_400: 7,
-        violations_over_400: 0,
-        ceiling_pass: true,
-        total_lines: 5842,
-        modules: [
-          { name: "models.py", lines: 395, status: "warning" },
-          { name: "ascii_default.py", lines: 382, status: "warning" },
-          { name: "routes.py", lines: 368, status: "warning" },
-          { name: "ascii_rich.py", lines: 354, status: "warning" },
-          { name: "stats.py", lines: 341, status: "warning" },
-          { name: "server.py", lines: 326, status: "warning" },
-          { name: "storage.py", lines: 312, status: "warning" },
-          { name: "code_health.py", lines: 242, status: "compliant" },
-          { name: "ast_visitor.py", lines: 228, status: "compliant" },
-          { name: "auth.py", lines: 215, status: "compliant" },
-          { name: "session_tree.py", lines: 198, status: "compliant" },
-          { name: "wire.py", lines: 184, status: "compliant" },
-          { name: "backup.py", lines: 172, status: "compliant" },
-          { name: "config.py", lines: 165, status: "compliant" },
-          { name: "pools.py", lines: 156, status: "compliant" },
-          { name: "telemetry.py", lines: 148, status: "compliant" },
-          { name: "subagents.py", lines: 139, status: "compliant" },
-          { name: "heatmap.py", lines: 125, status: "compliant" },
-          { name: "periods.py", lines: 114, status: "compliant" },
-          { name: "logging.py", lines: 98, status: "compliant" },
-          { name: "utils.py", lines: 89, status: "compliant" },
-          { name: "exceptions.py", lines: 74, status: "compliant" },
-          { name: "types.py", lines: 62, status: "compliant" },
-          { name: "constants.py", lines: 48, status: "compliant" },
-          { name: "__init__.py", lines: 22, status: "compliant" },
-        ],
-      },
-      ast_integrity: {
-        clean: true,
-        undefined_count: 0,
-        undefined_names: 0,
-        scanned_files: 25,
-        flagged_modules: 0,
-        details: {},
-      },
-      local_lsp: {
-        engine: "serena",
-        installed: true,
-        available: true,
-        version: "v2.1.0",
-        status: "ready",
-      },
-    };
-    function unpackSampleBundle(raw, periodKey) {
-      const clone = JSON.parse(JSON.stringify(raw));
-      const heatmap_series = (clone.days_packed || []).map((r) => ({
-        date: r[0], weekday: r[1], steps: r[2], tools: r[3], tokens: r[4],
-        sessions: r[5], level: r[6], future: Boolean(r[7]), in_window: Boolean(r[8]),
-      }));
-      const dates = clone.series_dates || [];
-      const res = clone.series_res || "8h sub-daily";
-      clone.velocity_series = { dates, values: clone.vel_vals || [], resolution: res };
-      clone.subagent_series = { keys: clone.sub_keys || [], dates, layers: clone.sub_layers || {}, resolution: res };
-      clone.workspace_series = { keys: clone.ws_keys || [], dates, layers: clone.ws_layers || {}, resolution: res };
-      ["days_packed", "series_dates", "series_res", "vel_vals", "sub_keys", "sub_layers", "ws_keys", "ws_layers"].forEach((k) => delete clone[k]);
-      ["quota_and_pools", "wire_telemetry", "routing_telemetry", "backup_321", "project_session_tree"].forEach((k) => {
-        if (!clone[k] && REAL_SAMPLE_90D[k]) clone[k] = REAL_SAMPLE_90D[k];
-      });
-      if (!clone.code_health) {
-        clone.code_health = JSON.parse(JSON.stringify(SAMPLE_CODE_HEALTH));
-      }
-      if (periodKey && clone.period) clone.period.key = periodKey;
-      return Object.assign({ server: "agy-nexus-mcp", version: "2.6.0", heatmap_series }, clone);
+  }
+})();
+
+const urlParams = (typeof window !== "undefined" && window.location) ? new URLSearchParams(window.location.search) : new URLSearchParams();
+const urlDemo = urlParams.get("demo") === "1" || urlParams.get("demo") === "true";
+const urlTheme = urlParams.get("theme") || urlParams.get("surface") || "";
+const urlPeriod = urlParams.get("period") || "";
+const urlDensity = (urlParams.get("density") || "").toUpperCase();
+const initThemePref = THEME_META[urlTheme] ? urlTheme : (localStorage.getItem("nexus_surface") || localStorage.getItem("nexus_theme") || "obsidian");
+const initPeriodPref = VALID_PERIODS.includes(urlPeriod) ? urlPeriod : (VALID_PERIODS.includes(localStorage.getItem("nexus_period")) ? localStorage.getItem("nexus_period") : "current_month");
+const initDensityPref = VALID_DENSITIES.includes(urlDensity) ? urlDensity : (VALID_DENSITIES.includes(localStorage.getItem("nexus_density")) ? localStorage.getItem("nexus_density") : "D2");
+let fetchSeq = 0;
+const state = {
+  passphrase: urlDemo ? "" : (localStorage.getItem("nexus_passphrase") || sessionStorage.getItem("nexus_passphrase") || ""),
+  period: initPeriodPref,
+  surface: THEME_META[initThemePref] ? initThemePref : "obsidian",
+  density: initDensityPref,
+  metric: localStorage.getItem("nexus_metric") === "tokens" ? "tokens" : "steps",
+  selectedDate: localStorage.getItem("nexus_selected_date") || "",
+  demoMode: urlDemo || localStorage.getItem("nexus_demo_mode") === "1",
+  soloModel: "",
+  soloSubagent: "",
+  soloProject: "",
+  bundle: null,
+};
+
+function formatCompactTokens(tok) {
+  const n = Number(tok || 0);
+  if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(2) + "B";
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + "k";
+  return String(Math.round(n));
+}
+
+function formatMetricVal(val, metric) {
+  const n = Number(val || 0);
+  if (metric === "tokens") return formatCompactTokens(n);
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + "M";
+  if (n >= 10_000) return (n / 1_000).toFixed(1) + "k";
+  if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "k";
+  return String(Math.round(n));
+}
+
+function applyThemeAndDensity(surface, density) {
+  const rawS = THEME_META[surface] ? surface : (THEME_META[localStorage.getItem("nexus_surface")] ? localStorage.getItem("nexus_surface") : "obsidian");
+  const s = rawS === "pure-white" ? "white" : rawS;
+  const d = VALID_DENSITIES.includes(density) ? density : "D2";
+  state.surface = s;
+  state.density = d;
+  document.documentElement.setAttribute("data-surface", s);
+  document.documentElement.setAttribute("data-theme", s === "white" ? "pure-white" : s);
+  document.documentElement.setAttribute("data-density", d);
+  localStorage.setItem("nexus_surface", s);
+  localStorage.removeItem("nexus_theme");
+  localStorage.setItem("nexus_density", d);
+  const meta = THEME_META[s];
+  const swatchEl = document.getElementById("triggerSwatch"), themeLabelEl = document.getElementById("triggerThemeLabel");
+  const densityLabelEl = document.getElementById("triggerDensityLabel"), metaThemeEl = document.getElementById("metaThemeColor");
+  if (swatchEl) { swatchEl.style.background = meta.bg; swatchEl.style.borderColor = meta.border; }
+  if (themeLabelEl) themeLabelEl.textContent = meta.label;
+  if (densityLabelEl) densityLabelEl.textContent = d;
+  if (metaThemeEl) metaThemeEl.setAttribute("content", meta.themeColor);
+  document.querySelectorAll(".theme-opt").forEach((btn) => btn.classList.toggle("active", btn.dataset.theme === s));
+  document.querySelectorAll(".density-opt").forEach((btn) => btn.classList.toggle("active", btn.dataset.density === d));
+  const mainEl = document.getElementById("dashboardMain");
+  if (state.bundle && mainEl && !mainEl.classList.contains("hidden") && typeof renderDashboard === "function") {
+    requestAnimationFrame(() => renderDashboard(state.bundle));
+  }
+}
+
+async function fetchStats(period) {
+  const mySeq = ++fetchSeq;
+  if (state.demoMode) {
+    localStorage.setItem("nexus_demo_mode", "1");
+    state.bundle = generateDemoBundle(period);
+    document.getElementById("authOverlay").classList.add("hidden");
+    document.getElementById("dashboardMain").classList.remove("hidden");
+    renderDashboard(state.bundle);
+    return;
+  }
+  const statusEl = document.getElementById("authStatus");
+  if (statusEl) statusEl.textContent = "Verifying passphrase...";
+  try {
+    const apiPath = window.location.pathname.replace(/\/web\/?$/, "") + "/web/api/stats?period=" + encodeURIComponent(period);
+    const resp = await fetch(apiPath, {
+      method: "GET",
+      headers: { "X-Nexus-Passphrase": state.passphrase, "X-Client-Product": "Web Dashboard" },
+    });
+    if (mySeq !== fetchSeq) return;
+    if (resp.status === 401 || resp.status === 403) {
+      if (statusEl) statusEl.textContent = "Invalid passphrase. Try again or click Preview Sample Data.";
+      localStorage.removeItem("nexus_passphrase"); sessionStorage.removeItem("nexus_passphrase");
+      if (typeof clearSensitiveView === "function") clearSensitiveView();
+      document.getElementById("authOverlay").classList.remove("hidden");
+      document.getElementById("dashboardMain").classList.add("hidden");
+      return;
     }
-    function generateDemoBundle(period) {
-      if (period === "current_month") {
-        return unpackSampleBundle(REAL_SAMPLE_MTD, "current_month");
-      }
-      return unpackSampleBundle(REAL_SAMPLE_90D, period || "last_90d");
+    const data = await resp.json();
+    if (mySeq !== fetchSeq) return;
+    if (data.ok === false) {
+      if (statusEl) statusEl.textContent = data.error || "Unable to load dashboard data.";
+      return;
     }
-    async function fetchStats(period) {
-      if (state.demoMode) {
-        localStorage.setItem("nexus_demo_mode", "1");
-        state.bundle = generateDemoBundle(period);
-        document.getElementById("authOverlay").classList.add("hidden");
-        document.getElementById("dashboardMain").classList.remove("hidden");
-        renderDashboard(state.bundle);
-        return; }
-      const statusEl = document.getElementById("authStatus");
-      if (statusEl) statusEl.textContent = "Verifying passphrase...";
-      try {
-        const apiPath = window.location.pathname.replace(/\/web\/?$/, "") + "/web/api/stats?period=" + encodeURIComponent(period);
-        const resp = await fetch(apiPath, {
-          method: "GET",
-          headers: { "X-Nexus-Passphrase": state.passphrase, "X-Client-Product": "Web Dashboard" }, });
-        if (resp.status === 401 || resp.status === 403) {
-          if (statusEl) statusEl.textContent = "Invalid passphrase. Try again or click Preview Sample Data.";
-          localStorage.removeItem("nexus_passphrase");
-          sessionStorage.removeItem("nexus_passphrase");
-          document.getElementById("authOverlay").classList.remove("hidden");
-          document.getElementById("dashboardMain").classList.add("hidden");
-          return; }
-        const data = await resp.json();
-        if (data.ok === false) {
-          if (statusEl) statusEl.textContent = data.error || "Unable to load dashboard data.";
-          return; }
-        localStorage.setItem("nexus_passphrase", state.passphrase);
-        sessionStorage.setItem("nexus_passphrase", state.passphrase);
-        localStorage.removeItem("nexus_demo_mode");
-        if (statusEl) statusEl.textContent = "";
-        state.bundle = data;
-        document.getElementById("authOverlay").classList.add("hidden");
-        document.getElementById("dashboardMain").classList.remove("hidden");
-        renderDashboard(data);
-      } catch (err) {
-        if (statusEl) statusEl.textContent = "Connection or render error: " + (err && err.message ? err.message : String(err));
+    localStorage.setItem("nexus_passphrase", state.passphrase); sessionStorage.setItem("nexus_passphrase", state.passphrase);
+    localStorage.removeItem("nexus_demo_mode");
+    if (statusEl) statusEl.textContent = "";
+    state.bundle = data;
+    document.getElementById("authOverlay").classList.add("hidden");
+    document.getElementById("dashboardMain").classList.remove("hidden");
+    renderDashboard(data);
+  } catch (err) {
+    if (mySeq === fetchSeq && statusEl) statusEl.textContent = "Connection or render error: " + (err && err.message ? err.message : String(err));
+  }
+}
+
+function formatBinLabel(binHours) {
+  if (binHours >= 168) return `${Math.round(binHours / 168)}W`;
+  if (binHours >= 24 && binHours % 24 === 0) return `${binHours / 24}D`;
+  return `${binHours}H`;
+}
+
+function computeOptimalBinning(plotW, baseStepHours, nRaw) {
+  const baseH = Math.max(1, Number(baseStepHours || 4));
+  if (nRaw <= 1) return { groupSize: 1, binHours: baseH, label: formatBinLabel(baseH), dpr: 1 };
+  const dpr = Math.max(1, Math.min(4, Number(window.devicePixelRatio || 1)));
+  const targetPitch = dpr >= 2 ? 5.2 : 6.8;
+  const minPitch = dpr >= 2 ? 3.4 : 4.6;
+  const cands = ALLOWED_BIN_HOURS.filter((h) => h >= baseH && h % baseH === 0);
+  if (!cands.length) cands.push(baseH);
+  let bestH = cands[cands.length - 1];
+  let bestDist = Infinity;
+  cands.forEach((h) => {
+    const g = Math.max(1, Math.round(h / baseH));
+    const pitch = plotW / Math.max(1, Math.ceil(nRaw / g));
+    if (pitch >= minPitch && Math.abs(pitch - targetPitch) < bestDist) {
+      bestDist = Math.abs(pitch - targetPitch);
+      bestH = h;
+    }
+  });
+  return { groupSize: Math.max(1, Math.round(bestH / baseH)), binHours: bestH, label: formatBinLabel(bestH), dpr };
+}
+
+function computeNiceYScale(rawMax, plotH) {
+  const safeMax = Math.max(10, Number(rawMax || 0) * 1.06);
+  const rough = safeMax / (plotH >= 155 ? 4 : 3);
+  const pow10 = Math.pow(10, Math.floor(Math.log10(rough)));
+  const norm = rough / pow10;
+  const niceNorm = norm <= 1 ? 1 : (norm <= 2 ? 2 : (norm <= 2.5 ? 2.5 : (norm <= 5 ? 5 : 10)));
+  const majorStep = niceNorm * pow10;
+  const maxY = Math.max(majorStep, Math.ceil(safeMax / majorStep) * majorStep);
+  const majorVals = [], minorVals = [], minorStep = majorStep / 2;
+  for (let v = 0; v <= maxY + minorStep * 0.1; v += minorStep) {
+    const rounded = Number(v.toFixed(4));
+    if (Math.abs((rounded / majorStep) - Math.round(rounded / majorStep)) < 0.01) majorVals.push(rounded);
+    else if (rounded > 0 && rounded < maxY) minorVals.push(rounded);
+  }
+  return { maxY, majorVals, minorVals };
+}
+
+function formatXTickLabel(dateStr, binHours, nBins) {
+  const raw = String(dateStr || "");
+  const m = Number(raw.slice(5, 7)), d = raw.slice(8, 10);
+  const mon = (m >= 1 && m <= 12) ? MONTH_NAMES[m - 1] : raw.slice(5, 7);
+  return (binHours < 24 && nBins <= 48 && raw.length >= 16) ? `${mon} ${d} ${raw.slice(11, 16)}` : `${mon} ${d}`;
+}
+
+function aggregateSeriesBins(dates, rawBands, groupSize) {
+  const nRaw = dates.length, binDates = [], binEnds = [];
+  for (let i = 0; i < nRaw; i += groupSize) {
+    binDates.push(dates[i]);
+    binEnds.push(dates[Math.min(nRaw - 1, i + groupSize - 1)]);
+  }
+  const nBins = binDates.length;
+  const bands = rawBands.map((b) => {
+    const src = b.values || [], agg = new Array(nBins).fill(0);
+    for (let bi = 0; bi < nBins; bi++) {
+      let sum = 0;
+      const start = bi * groupSize, end = Math.min(nRaw, start + groupSize);
+      for (let k = start; k < end; k++) sum += Number(src[k] || 0);
+      agg[bi] = sum;
+    }
+    return { ...b, agg };
+  });
+  return { binDates, binEnds, nBins, bands };
+}
+
+function attachPlotHoverEvents(svg) {
+  if (svg._hoverBound) return;
+  svg._hoverBound = true;
+  svg.addEventListener("pointermove", (e) => {
+    const ctx = svg._chartCtx;
+    if (!ctx || !ctx.nBins) return;
+    const boxRect = svg.getBoundingClientRect();
+    const relX = e.clientX - boxRect.left;
+    const idx = Math.floor((relX - ctx.padL) / ctx.stepPx);
+    const cross = svg.querySelector(".hover-crosshair");
+    const tip = svg.parentElement && svg.parentElement.querySelector(".plot-tooltip");
+    if (idx < 0 || idx >= ctx.nBins || !tip) {
+      if (cross) cross.classList.add("hidden");
+      if (tip) tip.classList.add("hidden");
+      return;
+    }
+    const cx = Math.round(ctx.padL + (idx + 0.5) * ctx.stepPx) + 0.5;
+    if (cross) { cross.setAttribute("x1", String(cx)); cross.setAttribute("x2", String(cx)); cross.classList.remove("hidden"); }
+    const tot = ctx.binTotals[idx] || 0;
+    const items = ctx.bands
+      .filter((b) => !b.hidden)
+      .map((b) => ({ label: b.tooltipLabel || b.label, val: b.agg[idx] || 0, fill: b.fill }))
+      .filter((x) => x.val > 0)
+      .sort((a, b) => b.val - a.val);
+    const rangeTxt = ctx.binDates[idx] === ctx.binEnds[idx] ? ctx.binDates[idx] : `${ctx.binDates[idx]} → ${ctx.binEnds[idx].slice(-5)}`;
+    const unit = ctx.metric === "tokens" ? "tok" : "steps";
+    const rowsHtml = items.slice(0, 6).map((it) => {
+      const pct = tot > 0 ? ((it.val / tot) * 100).toFixed(0) + "%" : "";
+      return `<div class="tip-row"><span class="tip-lbl"><span class="swatch-dot" style="background:${it.fill}"></span>${escapeHtmlSafe(it.label)}</span><span class="mono">${formatMetricVal(it.val, ctx.metric)} <span class="tip-pct">${pct}</span></span></div>`;
+    }).join("");
+    const extra = items.length > 6 ? `<div class="tip-more mono">+${items.length - 6} more active in bin</div>` : "";
+    tip.innerHTML = `<div class="tip-hdr mono"><span>${escapeHtmlSafe(rangeTxt)} (${ctx.binLabel})</span><strong>${formatMetricVal(tot, ctx.metric)} ${unit}</strong></div>${rowsHtml || '<div class="tip-more mono">0 activity in bin</div>'}${extra}`;
+    tip.classList.remove("hidden");
+    const tipW = tip.offsetWidth || 230;
+    tip.style.left = `${Math.round((relX + tipW + 20 > boxRect.width) ? Math.max(6, relX - tipW - 12) : (relX + 12))}px`;
+  });
+  svg.addEventListener("pointerleave", () => {
+    const cross = svg.querySelector(".hover-crosshair");
+    const tip = svg.parentElement && svg.parentElement.querySelector(".plot-tooltip");
+    if (cross) cross.classList.add("hidden");
+    if (tip) tip.classList.add("hidden");
+  });
+}
+
+function renderLibreStackedPlot(svgId, tagId, opts) {
+  const svg = document.getElementById(svgId);
+  if (!svg) return { nBins: 0, binLabel: "-", avgVal: 0, p95Val: 0, peakVal: 0, bandPeaks: {} };
+  const box = svg.parentElement, tipEl = box && box.querySelector(".plot-tooltip");
+  if (tipEl) tipEl.classList.add("hidden");
+  const W = Math.max(300, Math.round((box && box.clientWidth) || 960)), H = Math.max(132, Math.round((box && box.clientHeight) || 195));
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.removeAttribute("preserveAspectRatio");
+
+  const dates = Array.isArray(opts.dates) ? opts.dates : [], rawBands = Array.isArray(opts.bands) ? opts.bands : [];
+  if (!dates.length || !rawBands.length) {
+    svg.innerHTML = `<text class="axis-label" x="52" y="${Math.round(H / 2)}">No activity recorded in this window.</text>`;
+    svg._chartCtx = null;
+    return { nBins: 0, binLabel: "-", avgVal: 0, p95Val: 0, peakVal: 0, bandPeaks: {} };
+  }
+
+  const padL = 48, padR = opts.showRefLines ? 54 : 16, padT = 14, padB = 24;
+  const plotW = Math.max(120, W - padL - padR), plotH = Math.max(72, H - padT - padB);
+  const binCfg = computeOptimalBinning(plotW, opts.stepHours || 4, dates.length);
+  const { binDates, binEnds, nBins, bands } = aggregateSeriesBins(dates, rawBands, binCfg.groupSize);
+
+  const binTotals = new Array(nBins).fill(0), bandPeaks = {};
+  let peakVal = 0;
+  bands.forEach((b) => { bandPeaks[b.id] = 0; });
+  for (let i = 0; i < nBins; i++) {
+    let s = 0;
+    bands.forEach((b) => {
+      const v = b.agg[i] || 0;
+      if (v > bandPeaks[b.id]) bandPeaks[b.id] = v;
+      if (!b.hidden) s += v;
+    });
+    binTotals[i] = s;
+    if (s > peakVal) peakVal = s;
+  }
+
+  const nzTotals = binTotals.filter((v) => v > 0).sort((a, b) => a - b);
+  const avgVal = nzTotals.length ? (nzTotals.reduce((a, b) => a + b, 0) / nzTotals.length) : 0;
+  const p95Val = nzTotals.length ? nzTotals[Math.min(nzTotals.length - 1, Math.floor(nzTotals.length * 0.95))] : 0;
+  const yScale = computeNiceYScale(Math.max(peakVal, p95Val), plotH);
+  const stepPx = plotW / Math.max(1, nBins), gapPx = stepPx >= 4.8 ? 1 : 0;
+  const yAt = (val) => padT + plotH - (Math.min(yScale.maxY, Math.max(0, val)) / yScale.maxY) * plotH;
+
+  let barsSvg = "";
+  const visBands = bands.filter((b) => !b.hidden);
+  for (let i = 0; i < nBins; i++) {
+    if (binTotals[i] <= 0) continue;
+    const x0 = Math.round(padL + i * stepPx), bw = Math.max(1, Math.round(padL + (i + 1) * stepPx) - gapPx - x0);
+    let cum = 0;
+    for (let k = 0; k < visBands.length; k++) {
+      const b = visBands[k], v = b.agg[i] || 0;
+      if (v <= 0) continue;
+      const yBot = Math.round(yAt(cum));
+      cum += v;
+      const yTop = Math.min(yBot - 1, Math.round(yAt(cum))), bh = Math.max(1, yBot - yTop);
+      barsSvg += `<rect x="${x0}" y="${yTop}" width="${bw}" height="${bh}" fill="${b.fill}" fill-opacity="0.88"/>`;
+      if (bh >= 2 && bw >= 2) barsSvg += `<line x1="${x0}" y1="${yTop + 0.5}" x2="${x0 + bw}" y2="${yTop + 0.5}" stroke="${b.cap}" stroke-width="1"/>`;
+    }
+  }
+
+  let refSvg = "";
+  if (opts.showRefLines && peakVal > 0) {
+    if (avgVal > 0) {
+      const ay = Math.round(yAt(avgVal)) + 0.5;
+      refSvg += `<line x1="${padL}" y1="${ay}" x2="${padL + plotW}" y2="${ay}" class="ref-line-avg"/><text class="ref-label avg" x="${padL + plotW + 4}" y="${ay + 3}">Avg ${formatMetricVal(avgVal, opts.metric)}</text>`;
+    }
+    if (p95Val > 0 && Math.abs(yAt(p95Val) - yAt(avgVal)) >= 11) {
+      const py = Math.round(yAt(p95Val)) + 0.5;
+      refSvg += `<line x1="${padL}" y1="${py}" x2="${padL + plotW}" y2="${py}" class="ref-line-p95"/><text class="ref-label p95" x="${padL + plotW + 4}" y="${py + 3}">P95</text>`;
+    }
+  }
+
+  // Foreground Major & Minor Gridlines + Spines + LibreNMS Arrowheads (Rendered Strictly OVER Bars)
+  let fgGrid = "";
+  yScale.minorVals.forEach((v) => {
+    const y = Math.round(yAt(v)) + 0.5;
+    fgGrid += `<line class="fg-grid-minor" x1="${padL}" y1="${y}" x2="${padL + plotW}" y2="${y}"/>`;
+  });
+  yScale.majorVals.forEach((v) => {
+    const y = Math.round(yAt(v)) + 0.5;
+    if (v > 0) fgGrid += `<line class="fg-grid-major" x1="${padL}" y1="${y}" x2="${padL + plotW}" y2="${y}"/>`;
+    fgGrid += `<text class="axis-label" x="${padL - 6}" y="${y + 3}" text-anchor="end">${formatMetricVal(v, opts.metric)}</text>`;
+  });
+
+  const maxXTicks = Math.max(2, Math.floor(plotW / 96));
+  let majorStride = Math.max(1, Math.ceil(nBins / maxXTicks));
+  if (binCfg.binHours < 24) {
+    const dayBins = Math.max(1, Math.round(24 / binCfg.binHours));
+    if (nBins > dayBins * 2) majorStride = Math.max(1, Math.ceil((nBins / dayBins) / maxXTicks)) * dayBins;
+  }
+  const majorXIdxs = [];
+  for (let i = 0; i < nBins; i += majorStride) majorXIdxs.push(i);
+  if (nBins > 1 && (nBins - 1 - majorXIdxs[majorXIdxs.length - 1]) > majorStride * 0.55) majorXIdxs.push(nBins - 1);
+  const minorDivs = majorStride >= 4 ? (majorStride % 4 === 0 ? 4 : (majorStride % 3 === 0 ? 3 : 2)) : 0;
+  majorXIdxs.forEach((idx, mPos) => {
+    const x = Math.round(padL + (idx + 0.5) * stepPx) + 0.5;
+    if (idx > 0) fgGrid += `<line class="fg-grid-major" x1="${x}" y1="${padT}" x2="${x}" y2="${padT + plotH}"/>`;
+    fgGrid += `<line class="fg-axis-tick" x1="${x}" y1="${padT + plotH}" x2="${x}" y2="${padT + plotH + 4}"/>`;
+    const anchor = idx === 0 ? "start" : (idx >= nBins - 2 ? "end" : "middle");
+    fgGrid += `<text class="axis-label" x="${x}" y="${H - 5}" text-anchor="${anchor}">${escapeHtmlSafe(formatXTickLabel(binDates[idx], binCfg.binHours, nBins))}</text>`;
+    if (minorDivs > 0 && mPos < majorXIdxs.length - 1) {
+      const nextIdx = majorXIdxs[mPos + 1];
+      for (let md = 1; md < minorDivs; md++) {
+        const mx = Math.round(padL + (idx + ((nextIdx - idx) * md) / minorDivs + 0.5) * stepPx) + 0.5;
+        fgGrid += `<line class="fg-grid-minor" x1="${mx}" y1="${padT}" x2="${mx}" y2="${padT + plotH}"/>`;
       }
     }
-    function renderStackedAreaChart(svgId, legendId, resTagId, seriesBundle, heatDays, fallbackItems) {
-      const svg = document.getElementById(svgId);
-      const legendEl = document.getElementById(legendId);
-      if (!svg || !legendEl) return;
-      const resLabel = (seriesBundle && seriesBundle.resolution) ? seriesBundle.resolution.toUpperCase() : "4H SUB-DAILY";
-      const resEl = document.getElementById(resTagId);
-      if (resEl) resEl.textContent = resLabel + " STACKED";
-      let keys = (seriesBundle && Array.isArray(seriesBundle.keys) && seriesBundle.keys.length) ? seriesBundle.keys.slice(0, 6) : [];
-      let dates = (seriesBundle && Array.isArray(seriesBundle.dates) && seriesBundle.dates.length) ? seriesBundle.dates : [];
-      let layers = (seriesBundle && seriesBundle.layers) ? seriesBundle.layers : {};
-      if (!dates.length || !keys.length) {
-        svg.innerHTML = `<text class="axis-label" x="20" y="95">No activity recorded for this time period.</text>`;
-        legendEl.innerHTML = "";
-        return; }
-      const nPts = dates.length;
-      const W = 620, H = 185, padL = 44, padR = 14, padT = 14, padB = 24;
-      const plotW = W - padL - padR;
-      const plotH = H - padT - padB;
-      const cumMatrix = [];
-      let maxStack = 50;
-      for (let i = 0; i < nPts; i++) {
-        let running = 0;
-        const col = [0];
-        keys.forEach((k) => {
-          const val = Number((layers[k] && layers[k][i]) || 0);
-          running += val;
-          col.push(running); });
-        if (running > maxStack) maxStack = running;
-        cumMatrix.push(col); }
-      const xAt = (i) => padL + (nPts === 1 ? plotW / 2 : (i / (nPts - 1)) * plotW);
-      const yAt = (v) => padT + plotH - (Math.min(maxStack, v) / maxStack) * plotH;
-      let shapesHtml = `
-        <line class="grid-line" x1="${padL}" y1="${padT}" x2="${W - padR}" y2="${padT}" />
-        <line class="grid-line" x1="${padL}" y1="${padT + plotH / 2}" x2="${W - padR}" y2="${padT + plotH / 2}" />
-        <line class="grid-line" x1="${padL}" y1="${padT + plotH}" x2="${W - padR}" y2="${padT + plotH}" />
-        <text class="axis-label" x="2" y="${padT + 4}">${maxStack >= 1000 ? (maxStack / 1000).toFixed(1) + "k" : maxStack}</text>
-        <text class="axis-label" x="2" y="${padT + plotH / 2 + 3}">${Math.round(maxStack / 2) >= 1000 ? (maxStack / 2000).toFixed(1) + "k" : Math.round(maxStack / 2)}</text>
-        <text class="axis-label" x="2" y="${padT + plotH}">0</text>
-      `;
-      keys.forEach((k, kIdx) => {
-        const color = SERIES_COLORS[kIdx % SERIES_COLORS.length];
-        const topPts = [];
-        const botPts = [];
-        for (let i = 0; i < nPts; i++) {
-          const x = xAt(i).toFixed(1);
-          const yTop = yAt(cumMatrix[i][kIdx + 1]).toFixed(1);
-          const yBot = yAt(cumMatrix[i][kIdx]).toFixed(1);
-          topPts.push(`${x},${yTop}`);
-          botPts.unshift(`${x},${yBot}`); }
-        const polyPts = topPts.concat(botPts).join(" ");
-        shapesHtml += `<polygon points="${polyPts}" fill="${color}" fill-opacity="0.28" />`;
-        shapesHtml += `<polyline fill="none" stroke="${color}" stroke-width="1.6" points="${topPts.join(" ")}" />`; });
-      shapesHtml += `
-        <text class="axis-label" x="${padL}" y="${H - 4}">${dates[0]}</text>
-        <text class="axis-label" x="${W - padR - 92}" y="${H - 4}">${dates[nPts - 1]}</text>
-      `;
-      svg.innerHTML = shapesHtml;
-      legendEl.innerHTML = keys.map((k, kIdx) => {
-        const color = SERIES_COLORS[kIdx % SERIES_COLORS.length];
-        const tot = (layers[k] || []).reduce((a, b) => a + Number(b || 0), 0);
-        return `<span class="legend-item"><span class="swatch-dot" style="background:${color}"></span><span>${k} (${tot.toLocaleString()})</span></span>`;
-      }).join(""); }
-    function computeIsoWeekday(dateStr, fallbackWeekday) {
-      if (typeof fallbackWeekday === "number" && fallbackWeekday >= 0 && fallbackWeekday <= 6) {
-        return fallbackWeekday;
-      }
-      const parts = String(dateStr || "").split("-").map(Number);
-      if (parts.length === 3 && !isNaN(parts[0])) {
-        const dt = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
-        return (dt.getUTCDay() + 6) % 7;
-      }
-      return 0;
-    }
+  });
+
+  const yBase = padT + plotH + 0.5, xSpine = padL + 0.5, xRight = padL + plotW + 5, yTopArrow = Math.max(3, padT - 6);
+  const spinesSvg = `<line class="fg-axis-spine" x1="${xSpine}" y1="${yBase}" x2="${xSpine}" y2="${yTopArrow + 3}"/><polygon class="fg-axis-arrow" points="${xSpine},${yTopArrow - 1} ${xSpine - 3},${yTopArrow + 5} ${xSpine + 3},${yTopArrow + 5}"/><line class="fg-axis-spine" x1="${padL}" y1="${yBase}" x2="${xRight - 3}" y2="${yBase}"/><polygon class="fg-axis-arrow" points="${xRight + 1},${yBase} ${xRight - 5},${yBase - 3} ${xRight - 5},${yBase + 3}"/>`;
+
+  svg.innerHTML = `<rect x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="var(--plot-canvas-bg)" rx="2"/><g class="layer-bars" shape-rendering="crispEdges">${barsSvg}</g><g class="layer-ref">${refSvg}</g><g class="layer-fg-axes" pointer-events="none">${fgGrid}${spinesSvg}</g><line class="hover-crosshair hidden" x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + plotH}" pointer-events="none"/>`;
+  svg._chartCtx = { padL, stepPx, nBins, binDates, binEnds, binTotals, bands, binLabel: binCfg.label, metric: opts.metric };
+  attachPlotHoverEvents(svg);
+
+  const tagEl = tagId ? document.getElementById(tagId) : null;
+  if (tagEl) {
+    const suffix = opts.tagSuffix ? ` · ${opts.tagSuffix}` : "";
+    tagEl.textContent = `${binCfg.label} BINS (${nBins} BARS · ${Math.round(binCfg.dpr)}X DPI)${suffix}`;
+  }
+  return { nBins, binLabel: binCfg.label, avgVal, p95Val, peakVal, bandPeaks };
+}
+
+function computeIsoWeekday(dateStr, fallbackWeekday) {
+  if (typeof fallbackWeekday === "number" && fallbackWeekday >= 0 && fallbackWeekday <= 6) return fallbackWeekday;
+  const parts = String(dateStr || "").split("-").map(Number);
+  if (parts.length === 3 && !isNaN(parts[0])) return (new Date(Date.UTC(parts[0], parts[1] - 1, parts[2])).getUTCDay() + 6) % 7;
+  return 0;
+}
+
+(function initPlotResizeObserver() {
+  if (typeof ResizeObserver === "undefined") return;
+  let rafId = 0, lastW = 0;
+  const ro = new ResizeObserver((entries) => {
+    const w = entries[0] && Math.round(entries[0].contentRect.width);
+    if (!w || Math.abs(w - lastW) < 4 || !state.bundle) return;
+    lastW = w;
+    cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(() => {
+      if (state.bundle && typeof renderAllTimePlots === "function") renderAllTimePlots(state.bundle);
+    });
+  });
+  window.addEventListener("DOMContentLoaded", () => {
+    const main = document.getElementById("dashboardMain");
+    if (main) ro.observe(main);
+  });
+})();

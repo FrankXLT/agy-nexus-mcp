@@ -35,21 +35,29 @@ Every incoming request to AGY-Nexus MCP is protected by three independent securi
 - **Browser CSRF & Request Envelope Hardening**:
   - Rejects any request carrying a browser `Origin` header (`403`), rejects `OPTIONS` preflights (`405`), requires `Content-Type: application/json`, and caps request bodies at `1 MB` (`413`).
 
+### Layer 5 — Zero-Trust LAN-Only `agy-polyglot-mcp` Endpoint (`/polyglot/{POLYGLOT_MCP_TOKEN}/mcp`)
+- **Domain-Separated 192-Bit Capability Token**:
+  - Verified in constant time (`hmac.compare_digest`) against `POLYGLOT_MCP_TOKEN` (`>= 32` chars) or `HMAC-SHA256(PATH_SECRET, "agy-polyglot-mcp-v1")[:48]`, failing closed (`503`) if unconfigured.
+- **Anti-Proxy, Anti-CSRF & Anti-DNS-Rebinding Enforcement (`403 Forbidden`)**:
+  - Immediately rejects any request carrying reverse-proxy/tunnel headers (`X-Forwarded-For`, `X-Real-IP`, `Forwarded`, `CF-Connecting-IP`, `X-Forwarded-Proto`, `X-Forwarded-Host`), any browser `Origin` header, any non-local `Host` header (only loopback IPs, `localhost`, `.lan` / `.local`, or private RFC1918 literals are accepted), or any non-private socket peer IP.
+- **Sensitive-File Exclusion & `0700`/`0600` Index Permissions**:
+  - Incremental SHA-256 index files (`~/.local/share/ag-bridge-mcp/polyglot_index/`) are written atomically with `0700` directory and `0600` file permissions, excluding sensitive filenames (`secrets.env`, `.env.*`, `mcp_config.json`, private keys/tokens) and redacting inline YAML scalar values.
+
 ---
 
 ## 2. File & Workspace Sandboxing
 
 - **Read-Only Default for Research Tools**:
-  - `list_saved_sessions`, `load_session_into_gemini`, `ask_workspace_readonly`, `inspect_git_diff`, `get_quota_and_system_stats`, and `audit_multi_repo_drift` open SQLite databases in `?mode=ro` read-only URI mode and never mutate source files.
+  - `list_saved_sessions`, `load_session_into_gemini`, `ask_workspace_readonly`, `inspect_git_diff`, `get_session_tree`, `polyglot_map`, `polyglot_search`, and `polyglot_outline` open SQLite databases in `?mode=ro` read-only URI mode (closed deterministically via `try/finally`) and never mutate source files.
 - **Strict Path Traversal & Host `git-inspect` Sandboxing**:
-  - Every file path resolved by `src/agy_nexus/search.py` and `src/agy_nexus/workspace.py` is canonicalized via `Path.resolve()` and checked with `.is_relative_to(workspace_root)` before access.
-  - Host `git-inspect` (`host_bridge/bridge_security.py`) restricts inspection strictly to `AGY_GITLAB_DIR` and `AGY_DATA_DIR/worktrees` (explicitly forbidding `/` and `$HOME`) and strips leading dashes on git refs to prevent option injection (`CWE-88`).
+  - Every file path resolved by `src/agy_nexus/search.py`, `src/agy_nexus/workspace.py`, and `src/agy_nexus/polyglot_index.py` is canonicalized via `Path.resolve()` and checked with `.is_relative_to(workspace_root)` before access, explicitly blocking umbrella parent directories (`$HOME`, `/`, `~/gitlab`, `~/github`).
+  - Host `git-inspect` (`host_bridge/bridge_security.py`) restricts inspection strictly to `AGY_GITLAB_DIR` and `AGY_DATA_DIR/worktrees` and strips leading dashes on git refs to prevent option injection (`CWE-88`).
 
 ---
 
 ## 3. Secret Storage Requirements
 
-- Runtime secrets (`SUBDOMAIN_HASH`, `PATH_SECRET`, `PASS_HASH`, `HOST_BRIDGE_TOKEN`) **must** live outside the Git repository in `~/.config/ag-bridge-mcp/secrets.env` with `0600` (`-rw-------`) file permissions.
+- Runtime secrets (`SUBDOMAIN_HASH`, `PATH_SECRET`, `PASS_HASH`, `HOST_BRIDGE_TOKEN`, and optional `POLYGLOT_MCP_TOKEN`) **must** live outside the Git repository in `~/.config/ag-bridge-mcp/secrets.env` with `0600` (`-rw-------`) file permissions.
 - Never commit `secrets.env` or passphrases to version control.
 
 ---

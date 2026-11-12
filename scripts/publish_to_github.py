@@ -88,7 +88,7 @@ def _read_package_version(src_root: Path) -> str:
         m = re.search(r'^version\s*=\s*"([^"]+)"', pyproject.read_text(encoding="utf-8"), re.M)
         if m:
             return m.group(1).strip()
-    return "2.6.0"
+    return "2.7.0"
 
 
 def _extract_changelog_section(src_root: Path, version: str) -> str:
@@ -231,7 +231,7 @@ def main() -> int:
             print(f"[✓] Branch main on https://github.com/{gh_login}/{repo_name} is already up to date.")
 
     if not args.no_release:
-        rel_title = args.release_title.strip() or f"{tag_name} — Zero-Trust Host Bridge Security, Scratch Batch Uploads & Polyglot Outliner"
+        rel_title = args.release_title.strip() or f"{tag_name} — Unified Incremental Polyglot MCP, Virtual URIs, Zero-Trust Host Bridge & Modular v2.7 Architecture"
         rel_body = _extract_changelog_section(src_root, pkg_version)
         st_existing, existing_rel = _github_api("GET", f"/repos/{gh_login}/{repo_name}/releases/tags/{tag_name}", token)
         if st_existing == 200 and existing_rel.get("id"):
