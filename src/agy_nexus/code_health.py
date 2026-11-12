@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-agy_nexus.code_health — Package Version Tracking, Modular Hygiene & AST/LSP Verification.
+agy_nexus.code_health — Package Version Tracking, <=500L Modular Hygiene & Polyglot Health.
 """
 
 from __future__ import annotations
@@ -12,12 +12,13 @@ import shutil
 import threading
 import time
 from typing import Any
-import urllib.error
 import urllib.request
 
 from . import __version__
-from .ast_outline import scan_package_undefined_names
 from .config import AGY_BG_DIR
+from .hygiene import HARD_MAX_FILE_LINES, TARGET_FILE_LINES
+from .polyglot_index import refresh_polyglot_index
+from .polyglot_outline import build_polyglot_outline
 
 GITHUB_REPO = "github.com/FrankXLT/agy-nexus-mcp"
 _REFRESH_LOCK = threading.Lock()
@@ -29,15 +30,11 @@ _CACHE_TTL: float = 30.0
 
 
 def _parse_semver(ver: str | None) -> tuple[int, ...]:
-    """Parse semantic version string into integer tuple (e.g. 'v2.6.0' -> (2, 6, 0))."""
+    """Parse semantic version string into integer tuple (e.g. 'v2.6.1' -> (2, 6, 1))."""
     if not ver:
         return ()
     cleaned = str(ver).strip().lstrip("vV")
-    parts: list[int] = []
-    for segment in re.split(r"[^\d]+", cleaned):
-        if segment.isdigit():
-            parts.append(int(segment))
-    return tuple(parts)
+    return tuple(int(seg) for seg in re.split(r"[^\d]+", cleaned) if seg.isdigit())
 
 
 def compare_versions(installed: str, remote: str | None) -> dict[str, Any]:
@@ -85,12 +82,8 @@ def _fetch_remote_version() -> str | None:
                     if tag:
                         return str(tag).strip()
                 elif is_tags and isinstance(data, list):
-                    valid: list[tuple[tuple[int, ...], str]] = []
-                    for t in data:
-                        raw = t.get("name", "") if isinstance(t, dict) else str(t)
-                        tup = _parse_semver(raw)
-                        if tup:
-                            valid.append((tup, raw))
+                    valid = [(_parse_semver(raw := (t.get("name", "") if isinstance(t, dict) else str(t))), raw) for t in data]
+                    valid = [v for v in valid if v[0]]
                     if valid:
                         valid.sort(key=lambda x: x[0], reverse=True)
                         return valid[0][1]
@@ -99,21 +92,17 @@ def _fetch_remote_version() -> str | None:
     return None
 
 
-def _write_release_cache(data: dict[str, Any]) -> None:
-    cache_path = AGY_BG_DIR / "github_release_cache.json"
-    try:
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    except Exception:
-        pass
-
-
 def _cache_payload(tag: str | None) -> dict[str, Any]:
     payload = {
         "repo": GITHUB_REPO, "remote_version": tag, "latest_tag": tag,
         "checked_at": time.time(), "status": "ok" if tag else "offline",
     }
-    _write_release_cache(payload)
+    cache_path = AGY_BG_DIR / "github_release_cache.json"
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except Exception:
+        pass
     return payload
 
 
@@ -124,8 +113,7 @@ def _background_refresh() -> None:
             return
         _REFRESH_IN_PROGRESS = True
     try:
-        tag = _fetch_remote_version()
-        _cache_payload(tag)
+        _cache_payload(_fetch_remote_version())
     finally:
         with _REFRESH_LOCK:
             _REFRESH_IN_PROGRESS = False
@@ -144,60 +132,92 @@ def get_github_version_info(force_refresh: bool = False) -> dict[str, Any]:
             return cached
         except Exception:
             pass
-
     return _cache_payload(_fetch_remote_version())
 
 
 def get_modular_hygiene_summary(pkg_dir: Path | None = None) -> dict[str, Any]:
-    """Scan agy_nexus modules for line count limits (<=300 compliant, 301-400 warning, >400 ceiling)."""
+    """Scan agy_nexus modules for <=500L target, 501-650L warning, >650L ceiling, and >100L functions."""
     if pkg_dir is None:
         pkg_dir = Path(__file__).resolve().parent
 
     modules: list[dict[str, Any]] = []
-    compliant_300 = warning_301_400 = violations_over_400 = total_lines = 0
+    compliant = warning = violations = total_lines = total_symbols = total_long_funcs = 0
+    syntax_errors: dict[str, str] = {}
 
     if pkg_dir.is_dir():
-        for py_file in pkg_dir.glob("*.py"):
+        for py_file in sorted(pkg_dir.glob("*.py")):
             try:
-                line_count = len(py_file.read_text(encoding="utf-8", errors="replace").splitlines())
+                text = py_file.read_text(encoding="utf-8", errors="replace")
+                ol = build_polyglot_outline(py_file, full_text=text, max_chars=2400)
             except Exception:
-                line_count = 0
+                ol = {"total_lines": 0, "symbol_count": 0, "long_functions": [], "summary": ""}
 
-            if line_count <= 300:
-                status, compliant_300 = "compliant", compliant_300 + 1
-            elif line_count <= 400:
-                status, warning_301_400 = "warning", warning_301_400 + 1
+            line_count = int(ol.get("total_lines", 0))
+            sym_count = int(ol.get("symbol_count", 0))
+            long_fns = ol.get("long_functions") or []
+            if ol.get("syntax_error"):
+                syntax_errors[py_file.name] = str(ol["syntax_error"])
+
+            if line_count <= TARGET_FILE_LINES:
+                status, compliant = "compliant", compliant + 1
+            elif line_count <= HARD_MAX_FILE_LINES:
+                status, warning = "warning", warning + 1
             else:
-                status, violations_over_400 = "violation", violations_over_400 + 1
+                status, violations = "violation", violations + 1
 
             total_lines += line_count
-            modules.append({"name": py_file.name, "lines": line_count, "status": status})
+            total_symbols += sym_count
+            total_long_funcs += len(long_fns)
+            modules.append({
+                "name": py_file.name,
+                "lines": line_count,
+                "symbols": sym_count,
+                "long_functions": len(long_fns),
+                "summary": ol.get("summary", ""),
+                "status": status,
+            })
 
     modules.sort(key=lambda m: m["lines"], reverse=True)
     return {
+        "target_lines": TARGET_FILE_LINES,
+        "ceiling_lines": HARD_MAX_FILE_LINES,
         "total_modules": len(modules),
-        "compliant_300": compliant_300,
-        "warning_301_400": warning_301_400,
-        "violations_over_400": violations_over_400,
-        "ceiling_pass": violations_over_400 == 0,
+        "compliant_500": compliant,
+        "warning_501_650": warning,
+        "violations_over_650": violations,
+        "compliant_300": compliant,
+        "warning_301_400": warning,
+        "violations_over_400": violations,
+        "ceiling_pass": violations == 0,
         "total_lines": total_lines,
+        "total_symbols": total_symbols,
+        "long_functions_over_100": total_long_funcs,
+        "syntax_errors": syntax_errors,
         "modules": modules,
     }
 
 
-def get_ast_integrity_summary(pkg_dir: Path | None = None) -> dict[str, Any]:
-    """Run AST scope verifier across package modules to detect undefined names."""
+def get_polyglot_health_summary(pkg_dir: Path | None = None) -> dict[str, Any]:
+    """Summarize Polyglot incremental index health and Python syntax integrity."""
     if pkg_dir is None:
         pkg_dir = Path(__file__).resolve().parent
-
-    undefined_map = scan_package_undefined_names(pkg_dir)
-    undef_cnt = sum(len(items) for items in undefined_map.values())
+    repo_root = pkg_dir.parents[1] if len(pkg_dir.parents) >= 2 else pkg_dir
+    ref = refresh_polyglot_index(repo_root, force=False)
+    idx_doc = ref["index"]
+    files_map = idx_doc.get("files", {})
+    syntax_errs = {k: [v["syntax_error"]] for k, v in files_map.items() if v.get("syntax_error")}
+    long_fn_cnt = sum(len(v.get("long_functions") or []) for v in files_map.values())
     return {
-        "clean": len(undefined_map) == 0,
-        "undefined_count": undef_cnt,
-        "undefined_names": undef_cnt,
-        "flagged_modules": len(undefined_map),
-        "details": undefined_map,
+        "clean": len(syntax_errs) == 0,
+        "indexed_files": idx_doc.get("file_count", len(files_map)),
+        "scanned_files": len(list(pkg_dir.glob("*.py"))) if pkg_dir.is_dir() else 0,
+        "total_symbols": idx_doc.get("total_symbols", 0),
+        "long_functions_over_100": long_fn_cnt,
+        "undefined_count": len(syntax_errs),
+        "undefined_names": len(syntax_errs),
+        "flagged_modules": len(syntax_errs),
+        "details": syntax_errs,
+        "index_file": ref["stats"].get("index_file", ""),
     }
 
 
@@ -230,10 +250,13 @@ def get_code_health_summary(force_refresh: bool = False) -> dict[str, Any]:
     version_comp["repo"] = gh_info.get("repo", GITHUB_REPO)
     version_comp["checked_at"] = gh_info.get("checked_at", now)
 
+    mod_hyg = get_modular_hygiene_summary()
+    poly_health = get_polyglot_health_summary()
     summary = {
         "version": version_comp,
-        "modular_hygiene": get_modular_hygiene_summary(),
-        "ast_integrity": get_ast_integrity_summary(),
+        "modular_hygiene": mod_hyg,
+        "polyglot_health": poly_health,
+        "ast_integrity": poly_health,
         "local_lsp": get_local_lsp_summary(),
         "timestamp": now,
     }

@@ -62,22 +62,49 @@ def get_session_tree(
     active_only: bool = False,
     project_filter: str = "",
     limit: int = 25,
+    include_stats: bool = False,
+    period: str = "last_90d",
+    style: str = "default",
     spoken_passphrase: str = "",
 ) -> str:
-    """Return a copy-ready 76-column ASCII Project -> Chat -> Session ID hierarchy tree (with untruncated UUIDs and workspace paths), parallel context slot telemetry, and 3-2-1 backup status."""
+    """Return a copy-ready 76-column ASCII Project -> Chat -> Session ID hierarchy tree (with untruncated UUIDs and workspace paths), parallel context slot telemetry, 3-2-1 backup status, and optional policy-safe Dual-Pool Quota & Activity Heatmap stats (include_stats=True, period='last_90d'|'current_month'|'last_month'|'last_year', style='default'|'quick'|'rich')."""
     if not is_unlocked(spoken_passphrase):
-        return LOCKED_RESPONSE
-    tree_bundle = build_project_session_tree(active_only=active_only, project_filter=project_filter, limit=limit, bg_dir=AGY_BG_DIR)
-    return _compact_json({
+        if not (ALLOW_LOCKED_STATS and include_stats):
+            return LOCKED_RESPONSE
+    eff_lim = min(limit, 12) if include_stats else limit
+    tree_bundle = build_project_session_tree(active_only=active_only, project_filter=project_filter, limit=eff_lim, bg_dir=AGY_BG_DIR)
+    stats_extra: dict[str, Any] = {}
+    if include_stats:
+        bundle = build_nexus_stats_bundle(
+            data_dir=AGY_DATA_DIR, brain_dir=AGY_BRAIN_DIR, db_file=AGY_DB_FILE,
+            config_dir=AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR, period=period, style=style,
+        )
+        stats_extra = {
+            "period_key": bundle.get("period_key"),
+            "ascii_mobile_report": bundle.get("ascii_mobile_report"),
+            "totals": bundle.get("totals"),
+            "quota_and_pools": bundle.get("quota_and_pools"),
+        }
+    out_payload = {
         "ok": True,
-        "action": "get_session_tree",
+        "action": "get_session_tree_with_stats" if include_stats else "get_session_tree",
         "assistant_guidance": (
             "STOP AND REPLY TO USER NOW: Do NOT chain a second MCP tool after a successful response (all data is already included below). "
-            "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'. "
-            "Render ascii_tree verbatim inside a fenced ```text block so the user can copy untruncated session_id and workspace values."
+            "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly(question='Stats', file_subpath='telemetry:stats') or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'. "
+            + (
+                "Render ascii_mobile_report inside a fenced ```text block first (plus ascii_tree if session hierarchy was requested)."
+                if include_stats
+                else "Render ascii_tree verbatim inside a fenced ```text block so the user can copy untruncated session_id and workspace values."
+            )
         ),
+        **stats_extra,
         **tree_bundle,
-    })
+    }
+    out_s = _compact_json(out_payload)
+    if include_stats and len(out_s.encode("utf-8")) > 19200:
+        out_payload.pop("projects", None)
+        out_s = _compact_json(out_payload)
+    return out_s
 
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def manage_background_run(
@@ -178,8 +205,10 @@ def manage_background_run(
     if AGY_DB_FILE.is_file():
         try:
             con = sqlite3.connect(f"file:{AGY_DB_FILE}?mode=ro", uri=True)
-            row = con.execute("SELECT title, status, step_count, last_modified_time, not_fully_idle, killed FROM conversation_summaries WHERE conversation_id = ?", (conv_id,)).fetchone()
-            con.close()
+            try:
+                row = con.execute("SELECT title, status, step_count, last_modified_time, not_fully_idle, killed FROM conversation_summaries WHERE conversation_id = ?", (conv_id,)).fetchone()
+            finally:
+                con.close()
             if row:
                 db_info = {"title": row[0], "status": row[1], "step_count": row[2], "last_modified": row[3], "not_fully_idle": bool(row[4]), "killed": bool(row[5])}
         except Exception:

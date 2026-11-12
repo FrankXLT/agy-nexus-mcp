@@ -1,7 +1,7 @@
 [project]
 name = "agy-nexus-mcp"
-version = "2.6.0"
-description = "AGY-NEXUS-MCP: Antigravity Mission Control, Cross-Session FTS5 Memory, Dual-Pool Quota Overwatch, Activity Heatmap, Three-Tier ASCII Telemetry & Chromium PWA Dashboard"
+version = "2.7.0"
+description = "AGY-NEXUS-MCP & AGY-POLYGLOT-MCP: Antigravity Mission Control, Unified Incremental Polyglot Semantic Index, Cross-Session FTS5 Memory, Dual-Pool Quota Overwatch & Chromium PWA Dashboard"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
@@ -23,6 +23,7 @@ dependencies = [
 
 [project.scripts]
 agy-nexus-mcp = "agy_nexus.server:main"
+agy-polyglot-mcp = "agy_nexus.tools_polyglot:main"
 ag-bridge = "ag_bridge:main"
 
 [build-system]

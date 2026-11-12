@@ -6,12 +6,19 @@ agy_nexus.middleware — Stateless Cloud MCP Compatibility, /web Dashboard & Wir
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import functools
+import hmac
+import ipaddress
 import json
 from pathlib import Path
 import re
 import time
 from typing import Any
+import urllib.parse
 
+import anyio
+
+from agy_nexus import __version__
 from agy_nexus.config import (
     AGY_BG_DIR,
     AGY_BRAIN_DIR,
@@ -25,11 +32,109 @@ from agy_nexus.media import record_verified_public_origin, verify_and_resolve_me
 from agy_nexus.stats import build_nexus_stats_bundle, record_wire_telemetry
 from agy_nexus.webhook_proxy import handle_webhook_sync_proxy
 
-class BridgeCompatMiddleware:
-    """ASGI wrapper serving /web Overwatch dashboard, HTTP method discovery, and sanitized JSON-RPC telemetry."""
+_PROXY_HEADER_KEYS: frozenset[bytes] = frozenset({
+    b"x-forwarded-for",
+    b"x-real-ip",
+    b"forwarded",
+    b"cf-connecting-ip",
+    b"x-forwarded-proto",
+    b"x-forwarded-host",
+    b"x-forwarded-port",
+    b"true-client-ip",
+    b"cf-ray",
+    b"via",
+})
 
-    def __init__(self, app: Any) -> None:
+
+def _is_allowed_lan_host(raw_host: str) -> bool:
+    """Allow only loopback/RFC1918 IPs, localhost, Docker internal names, or local .lan/.local domains."""
+    raw = (raw_host or "").strip()
+    if not raw:
+        return False
+    if raw.startswith("[") and "]" in raw:
+        host = raw[1 : raw.index("]")].strip().lower()
+    else:
+        host = raw.split(":", 1)[0].strip().rstrip(".").lower()
+    if not host:
+        return False
+    try:
+        ip = ipaddress.ip_address(host)
+        return bool(ip.is_loopback or ip.is_private)
+    except ValueError:
+        pass
+    return (
+        host in ("localhost", "host.docker.internal", "testserver", "ag-bridge-mcp")
+        or "." not in host
+        or host.endswith((".lan", ".local", ".internal", ".home.arpa"))
+    )
+
+
+def _is_allowed_lan_client_ip(client_ip: str) -> bool:
+    raw = (client_ip or "").strip()
+    if raw in ("", "testclient"):
+        return True
+    try:
+        ip = ipaddress.ip_address(raw.split("%", 1)[0])
+        return bool(ip.is_loopback or ip.is_private)
+    except ValueError:
+        return False
+
+
+async def _multiplex_lifespan(app_a: Any, app_b: Any, scope: dict[str, Any], receive: Any, send: Any) -> None:
+    """Run ASGI lifespans for both FastMCP servers (agy-nexus-mcp + agy-polyglot-mcp) in lockstep."""
+    in_a_w, in_a_r = anyio.create_memory_object_stream[dict[str, Any]](4)
+    in_b_w, in_b_r = anyio.create_memory_object_stream[dict[str, Any]](4)
+    out_a_w, out_a_r = anyio.create_memory_object_stream[dict[str, Any]](4)
+    out_b_w, out_b_r = anyio.create_memory_object_stream[dict[str, Any]](4)
+    try:
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(app_a, dict(scope), in_a_r.receive, out_a_w.send)
+            tg.start_soon(app_b, dict(scope), in_b_r.receive, out_b_w.send)
+
+            msg = await receive()
+            if msg.get("type") != "lifespan.startup":
+                tg.cancel_scope.cancel()
+                return
+            await in_a_w.send(msg)
+            await in_b_w.send(msg)
+            res_a = await out_a_r.receive()
+            res_b = await out_b_r.receive()
+            if res_a.get("type") == "lifespan.startup.failed":
+                await send(res_a)
+                tg.cancel_scope.cancel()
+                return
+            if res_b.get("type") == "lifespan.startup.failed":
+                await send(res_b)
+                tg.cancel_scope.cancel()
+                return
+            await send({"type": "lifespan.startup.complete"})
+
+            msg_shut = await receive()
+            if msg_shut.get("type") != "lifespan.shutdown":
+                tg.cancel_scope.cancel()
+                return
+            await in_a_w.send(msg_shut)
+            await in_b_w.send(msg_shut)
+            shut_a = await out_a_r.receive()
+            shut_b = await out_b_r.receive()
+            if shut_a.get("type") == "lifespan.shutdown.failed":
+                await send(shut_a)
+            elif shut_b.get("type") == "lifespan.shutdown.failed":
+                await send(shut_b)
+            else:
+                await send({"type": "lifespan.shutdown.complete"})
+    finally:
+        for stream in (in_a_w, in_b_w, out_a_w, out_b_w, in_a_r, in_b_r, out_a_r, out_b_r):
+            await stream.aclose()
+
+
+class BridgeCompatMiddleware:
+    """ASGI wrapper serving /web Overwatch dashboard, dual MCP routing, Streamable HTTP 405 compliance, and sanitized JSON-RPC telemetry."""
+
+    def __init__(self, app: Any, polyglot_app: Any = None, polyglot_token: str = "") -> None:
         self.app = app
+        self.polyglot_app = polyglot_app
+        self.polyglot_token = (polyglot_token or "").strip()
         self.web_dir = Path(__file__).resolve().parent.parent.parent / "web"
         self.web_html_path = self.web_dir / "index.html"
         self.pwa_assets = {
@@ -42,7 +147,11 @@ class BridgeCompatMiddleware:
         }
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
-        if scope.get("type") != "http":
+        scope_type = scope.get("type")
+        if scope_type == "lifespan" and self.polyglot_app is not None:
+            await _multiplex_lifespan(self.app, self.polyglot_app, scope, receive, send)
+            return
+        if scope_type != "http":
             await self.app(scope, receive, send)
             return
 
@@ -58,6 +167,61 @@ class BridgeCompatMiddleware:
         if req_path.startswith("/github-webhook-sync"):
             await handle_webhook_sync_proxy(method, req_path, raw_qs, headers, receive, send)
             return
+
+        # Zero-Trust LAN/Localhost Guard for agy-polyglot-mcp (/polyglot/{POLYGLOT_MCP_TOKEN}/mcp)
+        target_asgi_app = self.app
+        if req_path == "/polyglot" or req_path.startswith("/polyglot/"):
+            client_ip = str((scope.get("client") or ("", 0))[0] or "")
+            has_proxy_hdr = False
+            host_val = ""
+            origin_val = ""
+            for hk, hv in headers:
+                hkl = hk.lower()
+                if hkl in _PROXY_HEADER_KEYS:
+                    has_proxy_hdr = True
+                    break
+                if hkl == b"host" and not host_val:
+                    host_val = hv.decode("latin-1", errors="ignore").strip()
+                elif hkl == b"origin" and not origin_val:
+                    origin_val = hv.decode("latin-1", errors="ignore").strip()
+            origin_ok = True
+            if origin_val:
+                parsed_origin = urllib.parse.urlparse(origin_val)
+                origin_ok = origin_val.lower() != "null" and _is_allowed_lan_host(parsed_origin.netloc)
+            if has_proxy_hdr or not _is_allowed_lan_host(host_val) or not origin_ok or not _is_allowed_lan_client_ip(client_ip):
+                deny_b = b'{"ok":false,"error":"agy-polyglot-mcp is restricted to direct LAN/localhost IDE clients."}'
+                await send({
+                    "type": "http.response.start",
+                    "status": 403,
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (b"content-length", str(len(deny_b)).encode("ascii")),
+                        (b"cache-control", b"no-store"),
+                        (b"x-content-type-options", b"nosniff"),
+                    ],
+                })
+                await send({"type": "http.response.body", "body": deny_b})
+                print(f"[agy-polyglot] http={method} rpc=lan_guard_blocked tool=- status=403 bytes={len(deny_b)} ms=0", flush=True)
+                return
+            parts = req_path.split("/")
+            token_valid = (
+                self.polyglot_app is not None
+                and len(self.polyglot_token) >= 32
+                and len(parts) == 4
+                and parts[1] == "polyglot"
+                and parts[3] == "mcp"
+                and hmac.compare_digest(parts[2].encode("utf-8"), self.polyglot_token.encode("utf-8"))
+            )
+            if not token_valid:
+                nf_poly = b'{"ok":false,"error":"Not found"}'
+                await send({
+                    "type": "http.response.start",
+                    "status": 404,
+                    "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(nf_poly)).encode("ascii"))],
+                })
+                await send({"type": "http.response.body", "body": nf_poly})
+                return
+            target_asgi_app = self.polyglot_app
 
         # 0. Redirect bare root GET / -> /web
         if method == "GET" and req_path == "":
@@ -85,7 +249,7 @@ class BridgeCompatMiddleware:
                     if target_file.stat().st_size > 45 * 1024 * 1024:
                         status_code, msg_text = 413, "Media file exceeds 45 MB limit."
                     else:
-                        media_bytes = target_file.read_bytes()
+                        media_bytes = await anyio.to_thread.run_sync(target_file.read_bytes)
                         await send({
                             "type": "http.response.start",
                             "status": 200,
@@ -125,7 +289,7 @@ class BridgeCompatMiddleware:
                 await send({"type": "http.response.body", "body": nf_b})
                 return
 
-        # 2. Serve /web/api/stats JSON (authenticated by X-Nexus-Passphrase header)
+        # 2. Serve /web/api/stats JSON (authenticated by X-Nexus-Passphrase header, offloaded from event loop)
         if method in ("GET", "POST") and req_path.endswith("/web/api/stats"):
             supplied_pass = ""
             for hk, hv in headers:
@@ -146,13 +310,16 @@ class BridgeCompatMiddleware:
                 await send({"type": "http.response.body", "body": err_b})
                 print("[agy-nexus] http=GET rpc=web_stats_unauthorized tool=- status=401 bytes=0 ms=1", flush=True)
                 return
-            bundle = build_nexus_stats_bundle(
-                data_dir=AGY_DATA_DIR,
-                brain_dir=AGY_BRAIN_DIR,
-                db_file=AGY_DB_FILE,
-                config_dir=AGY_CONFIG_DIR,
-                bg_dir=AGY_BG_DIR,
-                period=period_val,
+            bundle = await anyio.to_thread.run_sync(
+                functools.partial(
+                    build_nexus_stats_bundle,
+                    data_dir=AGY_DATA_DIR,
+                    brain_dir=AGY_BRAIN_DIR,
+                    db_file=AGY_DB_FILE,
+                    config_dir=AGY_CONFIG_DIR,
+                    bg_dir=AGY_BG_DIR,
+                    period=period_val,
+                )
             )
             ok_b = json.dumps({"ok": True, **bundle}).encode("utf-8")
             await send({
@@ -183,6 +350,43 @@ class BridgeCompatMiddleware:
                 print(f"[agy-nexus] http=POST rpc=session_upload conv={safe_conv} ms={elapsed_ms}", flush=True)
                 return
 
+        # 3. MCP Streamable HTTP Transport Spec Compliance on */mcp routes (POST + OPTIONS only; 405 on GET/DELETE/HEAD)
+        is_mcp_route = req_path == "/mcp" or req_path.endswith("/mcp")
+        if is_mcp_route and method != "POST":
+            if method == "OPTIONS":
+                await send({
+                    "type": "http.response.start",
+                    "status": 204,
+                    "headers": [
+                        (b"allow", b"POST, OPTIONS"),
+                        (b"cache-control", b"no-store"),
+                        (b"x-accel-buffering", b"no"),
+                        (b"content-length", b"0"),
+                    ],
+                })
+                await send({"type": "http.response.body", "body": b""})
+                print("[agy-nexus] http=OPTIONS rpc=mcp_preflight tool=- status=204 bytes=0 ms=0", flush=True)
+                return
+            mna_body = (
+                b""
+                if method == "HEAD"
+                else b'{"jsonrpc":"2.0","error":{"code":-32000,"message":"Method Not Allowed: stateless streamable-http endpoint accepts POST only."},"id":null}'
+            )
+            await send({
+                "type": "http.response.start",
+                "status": 405,
+                "headers": [
+                    (b"allow", b"POST, OPTIONS"),
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(mna_body)).encode("ascii")),
+                    (b"cache-control", b"no-store"),
+                    (b"x-accel-buffering", b"no"),
+                ],
+            })
+            await send({"type": "http.response.body", "body": mna_body})
+            print(f"[agy-nexus] http={method} rpc=mcp_405 tool=- status=405 bytes={len(mna_body)} ms=0", flush=True)
+            return
+
         if method == "HEAD":
             await send({
                 "type": "http.response.start",
@@ -198,7 +402,7 @@ class BridgeCompatMiddleware:
                 "type": "http.response.start",
                 "status": 204,
                 "headers": [
-                    (b"allow", b"GET, POST, HEAD, DELETE, OPTIONS"),
+                    (b"allow", b"GET, POST, HEAD, OPTIONS"),
                     (b"content-length", b"0"),
                 ],
             })
@@ -207,7 +411,7 @@ class BridgeCompatMiddleware:
             return
 
         if method in ("GET", "DELETE"):
-            body = json.dumps({"ok": True, "service": "agy-nexus-mcp", "version": "2.6.0", "transport": "streamable-http", "stateless": True, "web_dashboard": "/web"}).encode("utf-8")
+            body = json.dumps({"ok": True, "service": "agy-nexus-mcp", "version": __version__, "transport": "streamable-http", "stateless": True, "web_dashboard": "/web"}).encode("utf-8")
             await send({
                 "type": "http.response.start",
                 "status": 200,
@@ -300,8 +504,9 @@ class BridgeCompatMiddleware:
                 rpc_summary["bytes"] = int(rpc_summary["bytes"]) + len(msg.get("body") or b"")
             await send(msg)
 
+        log_prefix = "[agy-polyglot]" if target_asgi_app is self.polyglot_app else "[agy-nexus]"
         try:
-            await self.app(scope, wrapped_receive, wrapped_send)
+            await target_asgi_app(scope, wrapped_receive, wrapped_send)
         finally:
             elapsed_ms = int((time.time() - t0) * 1000)
             tel_event = {
@@ -312,14 +517,14 @@ class BridgeCompatMiddleware:
                 "status": rpc_summary["status"],
                 "bytes": rpc_summary["bytes"],
                 "req_bytes": rpc_summary["req_bytes"],
-                "product": rpc_summary["product"],
+                "product": rpc_summary["product"] or ("agy-polyglot-mcp" if target_asgi_app is self.polyglot_app else ""),
                 "user_agent": rpc_summary["user_agent"],
                 "reported_tokens": rpc_summary["reported_tokens"],
                 "ms": elapsed_ms,
             }
-            record_wire_telemetry(tel_event, AGY_BG_DIR)
+            await anyio.to_thread.run_sync(record_wire_telemetry, tel_event, AGY_BG_DIR)
             print(
-                f"[agy-nexus] http={tel_event['http']} rpc={tel_event['rpc']} "
+                f"{log_prefix} http={tel_event['http']} rpc={tel_event['rpc']} "
                 f"tool={tel_event['tool']} status={tel_event['status']} bytes={tel_event['bytes']} ms={elapsed_ms}",
                 flush=True,
             )

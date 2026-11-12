@@ -1,4 +1,4 @@
-// AGY-NEXUS Overwatch — Unified Plot 3 Legend & Collapsed Project -> Chat -> Session Hierarchy (v2.6.0)
+// AGY-NEXUS Overwatch — Unified Plot 3 Legend & Collapsed Project -> Chat -> Session Hierarchy (v2.7.0)
 
 let hierarchyPinnedOnly = false;
 let hierarchyShowIdle = false;

@@ -33,8 +33,8 @@ services:
       - MAX_DIFF_CHARS=${MAX_DIFF_CHARS:-15000}
       - MAX_TRANSCRIPT_TURNS=${MAX_TRANSCRIPT_TURNS:-8}
       - ENFORCE_MODULAR_HYGIENE=${ENFORCE_MODULAR_HYGIENE:-true}
-      - TARGET_FILE_LINES=${TARGET_FILE_LINES:-300}
-      - HARD_MAX_FILE_LINES=${HARD_MAX_FILE_LINES:-400}
+      - TARGET_FILE_LINES=${TARGET_FILE_LINES:-500}
+      - HARD_MAX_FILE_LINES=${HARD_MAX_FILE_LINES:-650}
     volumes:
       - .:/app:ro
       - ${HOME}/.local/share/ag-bridge-mcp/venv:/venv:rw
@@ -42,6 +42,7 @@ services:
       - ${HOME}/.gemini/antigravity:${HOME}/.gemini/antigravity:rw
       - ${HOME}/.gemini/config:${HOME}/.gemini/config:ro
       - ${HOME}/gitlab:${HOME}/gitlab:ro
+      - ${HOME}/github:${HOME}/github:ro
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |

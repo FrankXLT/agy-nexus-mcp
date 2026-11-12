@@ -13,7 +13,7 @@
   <link rel="icon" type="image/svg+xml" href="/web/icon.svg" />
   <link rel="apple-touch-icon" href="/web/icon-192.png" />
   <title>AGY-NEXUS-MCP — Usage, Quota &amp; Project Activity Dashboard</title>
-  <link rel="stylesheet" href="/web/styles.css?v=2.6.0d" />
+  <link rel="stylesheet" href="/web/styles.css?v=2.7.0" />
 </head>
 <body>
   <!-- Top Navigation Bar -->
@@ -21,7 +21,7 @@
     <div class="brand">
       <span class="sq-dot"></span>
       <div>
-        <div class="brand-title mono">AGY-NEXUS-MCP <span class="version-tag" id="versionTag" title="Installed version"><span class="status-dot-6px cyan" id="versionDot"></span><span id="versionLabel">v2.6.0</span></span> <span style="font-weight:400;color:var(--text-dim)">// DASHBOARD</span></div>
+        <div class="brand-title mono">AGY-NEXUS-MCP <span class="version-tag" id="versionTag" title="Installed version"><span class="status-dot-6px cyan" id="versionDot"></span><span id="versionLabel">v2.7.0</span></span> <span style="font-weight:400;color:var(--text-dim)">// DASHBOARD</span></div>
         <div class="brand-sub" id="subtitleStatus">Usage, Model Quotas, Subagents, Tokens &amp; Project Activity</div></div>
     </div>
     <div class="controls">
@@ -266,34 +266,34 @@
       <div id="hierarchyProjectList" class="hier-list"></div>
     </section>
 
-    <!-- Row 6: Code Health, AST Integrity & Modular Hygiene (col-12) -->
+    <!-- Row 6: Code Health, Polyglot Index & Modular Hygiene (col-12) -->
     <section class="card col-12" id="codeHealthCard">
       <div class="card-hdr" style="flex-wrap:wrap;">
         <div class="hdr-group">
-          <span class="card-label">Code Health, AST Integrity &amp; Modular Hygiene</span>
-          <span class="card-tag mono" id="codeHealthCeilingBadge">CEILING: 100% PASS (0 &gt;400L)</span>
-          <span class="card-tag mono" id="codeHealthAstBadge">AST: 0 UNDEF</span>
-          <span class="card-tag mono" id="codeHealthSerenaBadge">SERENA LSP: READY</span>
+          <span class="card-label">Code Health, Polyglot Index &amp; Modular Hygiene</span>
+          <span class="card-tag mono" id="codeHealthCeilingBadge">CEILING: 100% PASS (0 &gt;650L)</span>
+          <span class="card-tag mono" id="codeHealthAstBadge">POLYGLOT: READY</span>
+          <span class="card-tag mono" id="codeHealthSerenaBadge">POLYGLOT MCP: READY</span>
         </div>
         <div class="mono" style="font-size:11px;color:var(--text-dim);" id="versionCompareMeta">
-          Installed: v2.6.0 · Remote: v2.5.0 (Staged Locally)
+          Installed: v2.7.0 · Remote: v2.6.0 (Staged Locally)
         </div>
       </div>
       <div class="health-kpi-row">
-        <div class="health-kpi-item"><span class="kpi-lbl">Installed vs. GitHub</span><div class="kpi-val mono" id="kpiVersionComp"><span class="status-dot-6px cyan"></span> Staged Locally</div><span class="kpi-sub" id="kpiVersionSub">v2.6.0 installed · v2.5.0 GitHub release</span></div>
-        <div class="health-kpi-item"><span class="kpi-lbl">Modular Budget (&le;300L)</span><div class="kpi-val mono" id="kpiModularBudget">19 / 26 Modules</div><span class="kpi-sub" id="kpiModularSub">7 warning (301-400L) · 0 violations (&gt;400L)</span></div>
-        <div class="health-kpi-item"><span class="kpi-lbl">Python AST Integrity</span><div class="kpi-val mono" id="kpiAstIntegrity">0 Undefined Names</div><span class="kpi-sub" id="kpiAstSub">All 26 modules scope-verified</span></div>
-        <div class="health-kpi-item"><span class="kpi-lbl">Local Subagent LSP</span><div class="kpi-val mono" id="kpiLspStatus">Serena Ready</div><span class="kpi-sub" id="kpiLspSub">LSP v2.1.0 · --context=antigravity</span></div>
+        <div class="health-kpi-item"><span class="kpi-lbl">Installed vs. GitHub</span><div class="kpi-val mono" id="kpiVersionComp"><span class="status-dot-6px cyan"></span> Staged Locally</div><span class="kpi-sub" id="kpiVersionSub">v2.7.0 installed · v2.6.0 GitHub release</span></div>
+        <div class="health-kpi-item"><span class="kpi-lbl">Modular Budget (&le;500L)</span><div class="kpi-val mono" id="kpiModularBudget">29 / 31 Modules</div><span class="kpi-sub" id="kpiModularSub">2 warning (501-650L) · 0 violations (&gt;650L)</span></div>
+        <div class="health-kpi-item"><span class="kpi-lbl">Polyglot Semantic Index</span><div class="kpi-val mono" id="kpiAstIntegrity">0 Symbols Indexed</div><span class="kpi-sub" id="kpiAstSub">SHA-256 incremental index</span></div>
+        <div class="health-kpi-item"><span class="kpi-lbl">Local IDE Outliner</span><div class="kpi-val mono" id="kpiLspStatus">Polyglot MCP Ready</div><span class="kpi-sub" id="kpiLspSub">agy-polyglot-mcp incremental SHA-256</span></div>
       </div>
-      <div class="table-region-wrap" tabindex="0" role="region" aria-label="Python module modular hygiene and AST scope verification" style="margin-top:12px;">
+      <div class="table-region-wrap" tabindex="0" role="region" aria-label="Python module modular hygiene and Polyglot symbol index" style="margin-top:12px;">
         <table class="table-clean" id="modulesTable">
           <thead>
             <tr>
               <th>Module</th>
               <th class="mono">Lines</th>
-              <th>Budget Status (&le;300L)</th>
-              <th>AST Scope Integrity</th>
-              <th class="mono">Ceiling Margin</th>
+              <th>Budget Status (&le;500L)</th>
+              <th>Polyglot Symbols</th>
+              <th class="mono">Ceiling Margin (650L)</th>
             </tr>
           </thead>
           <tbody id="modulesTableBody"></tbody>
@@ -349,12 +349,12 @@
     </div>
   </dialog>
 
-  <script src="/web/palettes.js?v=2.6.0d"></script>
-  <script src="/web/charts.js?v=2.6.0d"></script>
-  <script src="/web/demo_data.js?v=2.6.0d"></script>
-  <script src="/web/hierarchy.js?v=2.6.0d"></script>
-  <script src="/web/uploads.js?v=2.6.0d"></script>
-  <script src="/web/health.js?v=2.6.0d"></script>
-  <script src="/web/app.js?v=2.6.0d"></script>
+  <script src="/web/palettes.js?v=2.7.0"></script>
+  <script src="/web/charts.js?v=2.7.0"></script>
+  <script src="/web/demo_data.js?v=2.7.0"></script>
+  <script src="/web/hierarchy.js?v=2.7.0"></script>
+  <script src="/web/uploads.js?v=2.7.0"></script>
+  <script src="/web/health.js?v=2.7.0"></script>
+  <script src="/web/app.js?v=2.7.0"></script>
 </body>
 </html>

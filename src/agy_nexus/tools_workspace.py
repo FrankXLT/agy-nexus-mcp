@@ -19,7 +19,7 @@ from agy_nexus.config import (
     mcp,
     pin_session_context,
 )
-from agy_nexus.ast_outline import build_file_outline
+from agy_nexus.polyglot_outline import build_file_outline
 from agy_nexus.hygiene import MAX_DIFF_CHARS, MAX_FILE_CHARS, MAX_TOTAL_FILE_CHARS, slice_git_diff
 from agy_nexus.routing import _resolve_session_identifier
 from agy_nexus.search import _get_configured_mcp_servers, _search_workspaces_and_history
@@ -68,8 +68,7 @@ def ask_workspace_readonly(
     workspace: str = "",
     spoken_passphrase: str = "",
 ) -> Any:
-    """Read-only codebase explorer and secondary 'Check-in' status reader querying 1..12 comma-separated files (supports line ranges via start_line/end_line or inline 'path/file.py:100-350' syntax, 'outline:path/to/file' for 1-call Universal Polyglot structural outlines, 'image:#01,#02[@top]' for <20 KB WebP ImageContent visual inspection, and 'skill:<name>' / 'agent:<name>' / 'rule:<name>'), git grep across local repositories, and SQLite FTS5 conversation history. Pass session_identifier or workspace to pin this call in parallel chats without mutating other chats' context.
-    NOTE: This tool returns selected_session_status automatically alongside file details, making it safe for live check-ins and fallback queries."""
+    """Read-only codebase explorer and secondary 'Check-in' status reader querying 1..12 comma-separated files or virtual URIs (supports line ranges via start_line/end_line or inline 'path/file.py:100-350', 'outline:path/to/file' for 1-call Polyglot semantic outlines, 'polyglot:map[:prefix]' / 'polyglot:search:<query>', 'transcript:latest' / 'transcript:step:<N>' for untruncated assistant turns, 'brain:<subpath>' for nested session artifacts, 'telemetry:stats[:period[:style]]' for policy-safe quota/heatmap stats, 'image:#01,#02[@top]', and 'skill:<name>' / 'agent:<name>' / 'rule:<name>'), git grep across local repositories, and SQLite FTS5 conversation history."""
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
     raw_sub = file_subpath.strip()
@@ -83,16 +82,28 @@ def ask_workspace_readonly(
     conv_id, ws, extra_uris = _resolve_pinned_context(session_identifier, workspace, tool_name="ask_workspace_readonly")
     session_dir = (AGY_BRAIN_DIR / conv_id) if conv_id else None
     effective_query = search_query.strip()
-    if not effective_query and not file_subpath.strip() and question.strip():
+    if not effective_query and not raw_sub and question.strip():
         words = [w for w in re.findall(r"[A-Za-z0-9_-]{4,}", question) if w.lower() not in {"find", "existing", "project", "current", "what", "where", "with", "from", "that", "this", "read", "check", "audit"}]
         if words:
             effective_query = words[0]
     search_bundle = (
-        _search_workspaces_and_history(effective_query, primary_ws=ws if ws.is_dir() else None)
+        _search_workspaces_and_history(
+            effective_query,
+            primary_ws=ws if ws.is_dir() else None,
+            conv_id=conv_id,
+            workspace_pinned=bool(workspace.strip()),
+        )
         if effective_query
-        else {"configured_mcp_servers": _get_configured_mcp_servers(), "available_repositories": [], "code_search_matches": [], "historical_session_matches": []}
+        else {
+            "configured_mcp_servers": [] if raw_sub else _get_configured_mcp_servers(),
+            "available_repositories": [],
+            "pinned_session_matches": [],
+            "polyglot_symbol_matches": [],
+            "code_search_matches": [],
+            "historical_session_matches": [],
+        }
     )
-    effective_subpath = file_subpath.strip()
+    effective_subpath = raw_sub
     if not effective_subpath and search_bundle["code_search_matches"]:
         auto_specs: list[str] = []
         seen_files: set[str] = set()
@@ -107,6 +118,10 @@ def ask_workspace_readonly(
                         break
         if auto_specs:
             effective_subpath = ",".join(auto_specs)
+    elif not effective_subpath and search_bundle.get("polyglot_symbol_matches"):
+        effective_subpath = ",".join(
+            m["slice_hint"] for m in search_bundle["polyglot_symbol_matches"][:3] if m.get("slice_hint")
+        )
     file_result = _resolve_and_read_files(
         effective_subpath,
         ws=ws,
@@ -136,30 +151,49 @@ def ask_workspace_readonly(
         "code_search_matches": search_bundle["code_search_matches"],
         "historical_session_matches": search_bundle["historical_session_matches"],
     }
+    if search_bundle.get("pinned_session_matches"):
+        out_ws["pinned_session_matches"] = search_bundle["pinned_session_matches"]
+    if search_bundle.get("polyglot_symbol_matches"):
+        out_ws["polyglot_symbol_matches"] = search_bundle["polyglot_symbol_matches"]
     if auto_ws:
         out_ws["auto_resolved_workspace"] = auto_ws
-    if not file_subpath.strip():
+    if not raw_sub:
         out_ws["configured_mcp_servers"] = search_bundle["configured_mcp_servers"]
         out_ws["available_repositories"] = search_bundle["available_repositories"]
     out_json = _compact_json(out_ws)
     if len(out_json.encode("utf-8")) > 19200:
         out_ws["historical_session_matches"] = out_ws.get("historical_session_matches", [])[:2]
         out_ws["code_search_matches"] = out_ws.get("code_search_matches", [])[:5]
+        out_ws.pop("polyglot_symbol_matches", None)
         out_json = _compact_json(out_ws)
     if len(out_json.encode("utf-8")) > 19200 and isinstance(out_ws.get("file_details"), dict):
         files_arr = out_ws["file_details"].get("files") or ([out_ws["file_details"]] if "path" in out_ws["file_details"] else [])
-        while len(out_json.encode("utf-8")) > 19200 and files_arr:
+        suffix_msg = "\n... [compacted for <20KB wire ceiling — use start_line/end_line for remaining lines]"
+        for _ in range(10):
+            cur_bytes = len(out_json.encode("utf-8"))
+            if cur_bytes <= 19200 or not files_arr:
+                break
             largest = max(files_arr, key=lambda f: len(str(f.get("content", ""))))
             content_str = str(largest.get("content", ""))
-            if len(content_str) <= 800:
+            if len(content_str) <= 950:
+                for f_item in files_arr:
+                    pol = f_item.get("polyglot_outline")
+                    if isinstance(pol, dict) and isinstance(pol.get("symbols"), list) and len(pol["symbols"]) > 15:
+                        pol["symbols"] = pol["symbols"][:15] + ["... [symbols compacted]"]
+                out_json = _compact_json(out_ws)
                 break
-            excess = len(out_json.encode("utf-8")) - 18800
+            excess = cur_bytes - 18600
             new_len = max(800, len(content_str) - max(excess, 1500))
-            largest["content"] = content_str[:new_len] + "\n... [compacted for <20KB wire ceiling — use start_line/end_line for remaining lines]"
+            if new_len + len(suffix_msg) >= len(content_str):
+                new_len = max(400, len(content_str) // 2)
+            largest["content"] = content_str[:new_len] + suffix_msg
             largest["truncated"] = True
-            if "ast_outline" not in largest and largest.get("path"):
+            if "polyglot_outline" not in largest and largest.get("path") and not str(largest.get("path")).startswith("virtual://"):
                 try:
-                    largest["ast_outline"] = build_file_outline(Path(largest["path"]), max_chars=1200, include_callers=False)
+                    ol_fb = build_file_outline(Path(largest["path"]), max_chars=1200, include_callers=False)
+                    largest["polyglot_outline"] = {
+                        k: v for k, v in ol_fb.items() if k not in ("symbol_items", "formatted_outline")
+                    }
                 except Exception:
                     pass
             out_json = _compact_json(out_ws)

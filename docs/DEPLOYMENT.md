@@ -129,11 +129,26 @@ Create an `A` or `CNAME` record for `ag-{SUBDOMAIN_HASH}.<your-domain>` pointing
    - **Transport**: `Streamable HTTP / SSE`
 3. Save and confirm the status shows **Connected**.
 
+### Connect `agy-polyglot-mcp` in Local Antigravity IDE (LAN-Only, Deadbolt-Free)
+`agy-nexus-mcp` (`v2.7.0+`) also exposes a paired, deadbolt-free local MCP server (`agy-polyglot-mcp`) for Antigravity IDE agents (`polyglot_map`, `polyglot_search`, `polyglot_outline`) backed by an incremental SHA-256 JSON semantic outline cache. For security, `/polyglot/*` rejects any request carrying reverse-proxy headers (`X-Forwarded-For`, `CF-Connecting-IP`, etc.), browser `Origin` headers, or public `Host` domains with `403 Forbidden`.
+
+Register it in `~/.gemini/config/mcp_config.json` (and `~/.gemini/antigravity/mcp_config.json` if used on your workstation):
+```json
+{
+  "mcpServers": {
+    "agy-polyglot-mcp": {
+      "serverUrl": "http://<host>.lan:8765/polyglot/<POLYGLOT_MCP_TOKEN>/mcp"
+    }
+  }
+}
+```
+*(By default, `<POLYGLOT_MCP_TOKEN>` is derived deterministically via `HMAC-SHA256(PATH_SECRET, "agy-polyglot-mcp-v1")[:48]`, or you can set an explicit `>=32`-char `POLYGLOT_MCP_TOKEN` in `secrets.env`. You can also run `agy-polyglot-mcp --stdio` directly as a local stdio MCP server.)*
+
 ### Open the Web Dashboard & Install as a Chromium Standalone App (PWA)
-- **Local Network (HTTP)**: `http://<host>.lan:8765/web`
+- **Local Network (HTTP)**: `http://<host>.lan:8765/web` (append `?demo=1` for depersonalized sample telemetry)
 - **Secret Path (HTTPS)**: `https://ag-{SUBDOMAIN_HASH}.<your-domain>/{PATH_SECRET}/web`
 - **Dedicated Dashboard Hostname (HTTPS — Recommended for Mobile/Desktop PWA Install)**:
-  - Because Chromium browsers require a trusted `https://` origin (or `http://localhost`) to enable native PWA installation (`beforeinstallprompt`) and Service Workers (`/web/sw.js`), you can optionally create a dedicated SSL proxy host in Nginx Proxy Manager (for example, `https://agy-mcp.<your-domain>`) forwarding to `http://<host>.lan:8765` with the following **Advanced** Nginx snippet to allow `/` and `/web/*` while keeping `/mcp` isolated on your secret subdomain:
+  - Because Chromium browsers require a trusted `https://` origin (or `http://localhost`) to enable native PWA installation (`beforeinstallprompt`) and Service Workers (`/web/sw.js`), you can optionally create a dedicated SSL proxy host in Nginx Proxy Manager (for example, `https://agy-mcp.<your-domain>`) forwarding to `http://<host>.lan:8765` with the following **Advanced** Nginx snippet to allow `/` and `/web/*` while keeping `/mcp` isolated on your secret subdomain and `/polyglot/*` strictly off the public proxy:
     ```nginx
     if ($request_method !~ ^(GET|HEAD|POST|OPTIONS)$) {
         return 405;
@@ -151,7 +166,7 @@ Create an `A` or `CNAME` record for `ag-{SUBDOMAIN_HASH}.<your-domain>` pointing
 
 ### Cloud & Mobile Screenshot Inspection (`inspect_visual_artifacts`)
 - **Public Signed Media URLs**: Signed `/web/media/{token}/{filename}` links automatically resolve your public `https://` origin via `AG_BRIDGE_PUBLIC_URL`, `SUBDOMAIN_HASH + AG_BRIDGE_DOMAIN`, or your `secrets.env` Connected Apps header—stripping any path component so `PATH_SECRET` is never embedded in media URLs and mobile clients never receive private `.lan` links.
-- **Native Multimodal MCP Delivery (`< 20 KB` Wire Budget)**: Cloud/Mobile Gemini cannot fetch external URLs into vision context directly. Instead, Gemini calls `inspect_visual_artifacts(targets="#01", session_identifier="...", region="full"|"top"|"middle"|"bottom")` (or `ask_workspace_readonly(file_subpath="image:#01@top")` when using a cached tool schema) to receive WebP `ImageContent` thumbnails compressed strictly under `12.2 KB` raw (`<= 18.5 KB` JSON-RPC wire payload after `4/3` base64 expansion) directly over the authenticated MCP stream.
+- **High-Detail WebP Delivery (`< 20 KB` Wire Budget)**: `inspect_visual_artifacts(targets="#01", session_identifier="...", region="full"|"top"|"middle"|"bottom")` compresses 1–2 up WebP `ImageContent` crops (`max_edge=840px`, `min_quality=58`) strictly under `12.2 KB` raw (`<= 18.5 KB` JSON-RPC wire payload) for MCP clients that render binary `ImageContent`, while warning when `>2` full frames are requested at once. *(Note: Hosted Gemini `custom_mcp` adapters currently strip binary `ImageContent` blocks; inspect uploaded images directly via local Antigravity or signed HTTPS `/web/media/` links.)*
 
 ---
 
@@ -171,10 +186,10 @@ journalctl --user -u ag-bridge.service -f
 ### Example Log Output
 ```text
 [*] Starting ag-bridge-mcp on 0.0.0.0:8765 (stateless_http=True, json_response=True)
-[agy-nexus] http=POST rpc=tools/list tool=- status=200 bytes=7476 ms=1
+[agy-nexus] http=POST rpc=tools/list tool=- status=200 bytes=9420 ms=1
 [agy-nexus] http=POST rpc=tools/call tool=unlock_sessions status=200 bytes=11420 ms=34
-[agy-nexus] http=POST rpc=tools/call tool=load_session_into_gemini status=200 bytes=19374 ms=142
-[agy-nexus] http=POST rpc=tools/call tool=inspect_visual_artifacts status=200 bytes=16840 ms=19
+[agy-nexus] http=POST rpc=tools/call tool=load_session_into_gemini status=200 bytes=19374 ms=48
+[agy-nexus] http=POST rpc=tools/call tool=get_session_tree status=200 bytes=14210 ms=19
 [agy-nexus] http=GET rpc=web_stats tool=last_90d status=200 bytes=18412 ms=6
 ```
 
@@ -186,8 +201,12 @@ journalctl --user -u ag-bridge.service -f
 
 ## 7. Automated Test Suite
 
-Run the end-to-end test suite anytime to verify all 10 MCP tools, passphrase locking, line-range file reads, multimodal WebP inspection, and git diff pagination:
+Run the built-in self-tests and end-to-end suites anytime to verify all 11 `agy-nexus-mcp` tools, all 3 `agy-polyglot-mcp` tools, `405` Streamable HTTP compliance, passphrase locking, virtual URIs, and git diff pagination:
 ```bash
+python3 ag_bridge.py --self-test
+python3 -m agy_nexus.tools_polyglot --self-test
+python3 tests/test_v261_bridge_fixes.py
+
 AG_BRIDGE_URL="http://127.0.0.1:8765/${PATH_SECRET}/mcp" \
 AG_BRIDGE_PASSPHRASE="<your passphrase>" \
 uv run python3 tests/run_permutation_suite.py

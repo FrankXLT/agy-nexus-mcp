@@ -1,4 +1,4 @@
-// AGY-NEXUS Overwatch — LibreNMS / RRDTool-Aligned Color Palettes & Coupled Lightness + Hue Session Shaders (v2.6.0)
+// AGY-NEXUS Overwatch — LibreNMS / RRDTool-Aligned Color Palettes & Coupled Lightness + Hue Session Shaders (v2.7.0)
 
 const MODEL_PALETTE = {
   carbon:         { label: "Gemini 4 Carbon",        short: "Carbon 4",    role: "Main / Apex",  light: "#15803d", dark: "#22c55e" },

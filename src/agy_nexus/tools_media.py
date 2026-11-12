@@ -78,6 +78,7 @@ def encode_image_to_webp_budget(
     budget_bytes: int = MAX_TOTAL_RAW_WEBP_BYTES,
     max_edge: int = 960,
     region: str = "full",
+    min_quality: int = 22,
 ) -> tuple[bytes, dict[str, Any]]:
     """Downscale and encode PNG/JPEG/WebP/GIF to RGB WebP strictly within budget_bytes."""
     if PilImage is None or ImageOps is None:
@@ -98,10 +99,15 @@ def encode_image_to_webp_budget(
             rgb = cropped.convert("RGB")
 
     cw, ch = rgb.size
-    ladder = [(1.0, 78), (1.0, 64), (0.86, 56), (0.74, 48), (0.62, 42), (0.50, 36), (0.38, 30), (0.28, 26), (0.20, 22)]
+    full_ladder = [
+        (1.0, 78), (1.0, 68), (0.92, 62), (0.84, 58), (0.74, 58),
+        (0.64, 58), (0.60, 48), (0.50, 38), (0.38, 30), (0.28, 26), (0.20, 22),
+    ]
+    preferred = [step for step in full_ladder if step[1] >= min_quality] or full_ladder
+    fallback = [step for step in full_ladder if step[1] < min_quality]
     best_bytes = b""
     thumb_w, thumb_h, used_q = cw, ch, 78
-    for scale, qual in ladder:
+    for scale, qual in (*preferred, *fallback):
         lim_edge = max(80, int(round(max_edge * scale)))
         if max(cw, ch) > lim_edge:
             ratio = lim_edge / float(max(cw, ch))
@@ -253,7 +259,8 @@ def inspect_visual_artifacts(
     workspace: str = "",
     spoken_passphrase: str = "",
 ) -> list[TextContent | ImageContent]:
-    """Multimodal screenshot & visual artifact inspector returning native MCP ImageContent (WebP thumbnails strictly <20 KB total wire payload) directly into Gemini's vision context without requiring public HTTP image fetching.
+    """Multimodal screenshot & visual artifact inspector returning native MCP ImageContent (WebP thumbnails strictly <20 KB total wire payload) plus 30-minute HMAC-signed HTTPS links.
+    NOTE: Hosted Gemini Web/Mobile `custom_mcp` adapters strip binary MCP `ImageContent` blocks on ingress; when running from Gemini Web, share `signed_url` links with the user or route pixel review to Antigravity IDE.
     - targets: Comma-separated upload sequence numbers ('#01', '1,2', '1-4', '#42'), filenames, or relative paths. Leave empty to page through the latest upload batch or session artifacts via offset/limit (max 4 images/call).
     - region: 'full' (default), 'top', 'upper', 'middle', 'lower', 'bottom', or 'x,y,w,h' (0..1 normalized or pixels) to zoom into fine UI text on tall mobile screenshots at crisp detail."""
     if not is_unlocked(spoken_passphrase):
@@ -280,7 +287,8 @@ def inspect_visual_artifacts(
 
     count = len(selected)
     per_img_budget = max(2_800, MAX_TOTAL_RAW_WEBP_BYTES // count)
-    max_edge = 960 if count == 1 else (680 if count == 2 else (540 if count == 3 else 440))
+    max_edge = 960 if count == 1 else (840 if count == 2 else (560 if count == 3 else 460))
+    min_qual = 58 if count <= 2 else 22
     image_blocks: list[ImageContent] = []
     items_meta: list[dict[str, Any]] = []
 
@@ -295,7 +303,9 @@ def inspect_visual_artifacts(
             items_meta.append({"seq": item["seq"], "name": item["name"], "rel_path": item["rel_path"], "format": "svg_xml_text", "svg_excerpt": svg_txt})
             continue
         try:
-            webp_bytes, enc_meta = encode_image_to_webp_budget(fpath, budget_bytes=per_img_budget, max_edge=max_edge, region=region)
+            webp_bytes, enc_meta = encode_image_to_webp_budget(
+                fpath, budget_bytes=per_img_budget, max_edge=max_edge, region=region, min_quality=min_qual
+            )
             image_blocks.append(McpImage(data=webp_bytes, format="webp").to_image_content())
             items_meta.append({
                 "seq": item["seq"], "name": item["name"], "rel_path": item["rel_path"],
@@ -306,13 +316,19 @@ def inspect_visual_artifacts(
 
     next_off = (max(0, int(offset or 0)) + count) if not targets.strip() else None
     has_more = bool(next_off is not None and next_off < len(catalog))
-    summary_json = _compact_json({
+    summary_payload: dict[str, Any] = {
         "ok": True, "conversation_id": conv_id, "returned_images": len(image_blocks),
         "total_available": len(catalog), "has_more": has_more,
         "next_offset": next_off if has_more else None,
-        "zoom_tip": "Pass region='top'|'middle'|'bottom' or 'x,y,w,h' with a single target for retina-level text legibility.",
+        "zoom_tip": "Pass region='top'|'middle'|'bottom' or 'x,y,w,h' with 1-2 targets for retina-level text legibility.",
         "items": items_meta,
-    })
+    }
+    if count > 2 and (region or "full").strip().lower() == "full":
+        summary_payload["zoom_warning"] = (
+            "Multi-image (count>2) full-frame thumbnails compress small UI text to stay <20 KB. "
+            "Pass limit=1 or limit=2 with region='top'|'middle'|'bottom' for crisp legibility."
+        )
+    summary_json = _compact_json(summary_payload)
     return [TextContent(type="text", text=summary_json), *image_blocks]
 
 
@@ -323,20 +339,20 @@ def run_multimodal_media_self_test(test_phrase: str, expected_hash: str) -> None
     orig_ver = media_mod._VERIFIED_REQUEST_ORIGIN
     try:
         media_mod._VERIFIED_REQUEST_ORIGIN = ""
-        os.environ["AG_BRIDGE_PUBLIC_URL"] = "https://ag-test1234.serenitycreek.net/secret_should_strip/mcp"
-        assert get_public_base_url() == "https://ag-test1234.serenitycreek.net", f"Expected stripped origin, got {get_public_base_url()}"
+        os.environ["AG_BRIDGE_PUBLIC_URL"] = "https://ag-test1234.example.net/secret_should_strip/mcp"
+        assert get_public_base_url() == "https://ag-test1234.example.net", f"Expected stripped origin, got {get_public_base_url()}"
         os.environ["AG_BRIDGE_PUBLIC_URL"] = ""
         os.environ["SUBDOMAIN_HASH"] = "ab12cd34ef56"
-        os.environ["AG_BRIDGE_DOMAIN"] = "serenitycreek.net"
-        assert get_public_base_url() == "https://ag-ab12cd34ef56.serenitycreek.net"
+        os.environ["AG_BRIDGE_DOMAIN"] = "example.net"
+        assert get_public_base_url() == "https://ag-ab12cd34ef56.example.net"
         os.environ["AG_BRIDGE_DOMAIN"] = "example.com"
-        os.environ["_DERIVED_SECRETS_PUBLIC_URL"] = "https://ag-derived99.serenitycreek.net"
-        assert get_public_base_url() == "https://ag-derived99.serenitycreek.net"
+        os.environ["_DERIVED_SECRETS_PUBLIC_URL"] = "https://ag-derived99.example.net"
+        assert get_public_base_url() == "https://ag-derived99.example.net"
         os.environ["_DERIVED_SECRETS_PUBLIC_URL"] = ""
-        record_verified_public_origin([(b"host", b"evil.lan")], client_ip="192.168.3.10")
+        record_verified_public_origin([(b"host", b"evil.lan")], client_ip="10.0.0.10")
         assert media_mod._VERIFIED_REQUEST_ORIGIN == ""
-        record_verified_public_origin([(b"host", b"expanse.lan:8765"), (b"x-forwarded-host", b"ag-proxy99.serenitycreek.net")], client_ip="192.168.3.10")
-        assert media_mod._VERIFIED_REQUEST_ORIGIN == "https://ag-proxy99.serenitycreek.net"
+        record_verified_public_origin([(b"host", b"workstation.lan:8765"), (b"x-forwarded-host", b"ag-proxy99.example.net")], client_ip="10.0.0.10")
+        assert media_mod._VERIFIED_REQUEST_ORIGIN == "https://ag-proxy99.example.net"
         assert not _resolve_workspace_str("/etc").startswith("/etc")
     finally:
         media_mod._VERIFIED_REQUEST_ORIGIN = orig_ver

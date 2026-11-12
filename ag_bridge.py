@@ -4,7 +4,7 @@ ag_bridge.py — Root entrypoint shim for agy-nexus-mcp (`src/agy_nexus`).
 
 Preserves 100% backward compatibility with existing Docker Compose containers,
 systemd service units, CLI scripts, and test suites while keeping all domain
-modules cleanly organized inside `src/agy_nexus/` (<= 300 lines per file).
+modules cleanly organized inside `src/agy_nexus/` (<= 500 lines target, <= 650 ceiling).
 """
 
 from pathlib import Path
@@ -35,14 +35,24 @@ from agy_nexus.config import (  # noqa: E402, F401
     normalize_phrase,
     verify_passphrase,
 )
-from agy_nexus.ast_outline import (  # noqa: E402, F401
+from agy_nexus.polyglot_outline import (  # noqa: E402, F401
     build_ast_outline,
     build_file_outline,
-    check_python_undefined_names,
+    build_polyglot_outline,
     find_symbol_callers,
-    scan_package_undefined_names,
 )
-from agy_nexus.polyglot_outline import build_polyglot_outline  # noqa: E402, F401
+from agy_nexus.polyglot_index import (  # noqa: E402, F401
+    polyglot_file_outline,
+    polyglot_repo_map,
+    polyglot_symbol_search,
+    refresh_polyglot_index,
+)
+from agy_nexus.tools_polyglot import (  # noqa: E402, F401
+    polyglot_map,
+    polyglot_mcp,
+    polyglot_outline,
+    polyglot_search,
+)
 from agy_nexus.handoff import _resolve_skill_directives, send_handoff_and_resume  # noqa: E402, F401
 from agy_nexus.uploads import handle_session_upload_request, list_scratch_upload_batches, save_scratch_upload_batch  # noqa: E402, F401
 from agy_nexus.middleware import BridgeCompatMiddleware  # noqa: E402, F401

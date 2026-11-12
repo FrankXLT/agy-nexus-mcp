@@ -6,6 +6,7 @@ Provides:
 3. Split-trust quarantine handoff staging (`stage_quarantine_handoff`) for unattended scheduled runs when opted in via `AG_BRIDGE_ALLOW_LOCKED_STAGING=true`.
 """
 
+from contextlib import closing
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -24,23 +25,28 @@ def _slugify(value: str, fallback: str = "session", max_len: int = 36) -> str:
     return cleaned[:max_len].rstrip("-") or fallback
 
 def export_notebook_bundle(
-    brain_dir: Path, db_file: Path, bg_dir: Path, projects_map: dict[str, dict[str, Any]], limit: int = 25
+    brain_dir: Path,
+    db_file: Path,
+    bg_dir: Path,
+    projects_map: dict[str, dict[str, Any]],
+    limit: int = 25,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Export completed session implementation_plan.md and walkthrough.md artifacts with SHA-256 deduplication."""
     export_root = Path(os.getenv("AGY_NOTEBOOK_EXPORT_DIR", str(bg_dir / "notebook_exports"))).expanduser()
-    export_root.mkdir(parents=True, exist_ok=True)
+    if not dry_run:
+        export_root.mkdir(parents=True, exist_ok=True)
 
     meta_by_id: dict[str, dict[str, Any]] = {}
     if db_file.is_file():
         try:
-            con = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True)
-            rows = con.execute(
-                "SELECT conversation_id, title, step_count, last_modified_time, workspace_uris, project_id "
-                "FROM conversation_summaries WHERE parent_conversation_id IS NULL OR parent_conversation_id = '' "
-                "ORDER BY last_modified_time DESC LIMIT ?",
-                (max(limit * 3, 60),),
-            ).fetchall()
-            con.close()
+            with closing(sqlite3.connect(f"file:{db_file}?mode=ro", uri=True)) as con:
+                rows = con.execute(
+                    "SELECT conversation_id, title, step_count, last_modified_time, workspace_uris, project_id "
+                    "FROM conversation_summaries WHERE parent_conversation_id IS NULL OR parent_conversation_id = '' "
+                    "ORDER BY last_modified_time DESC LIMIT ?",
+                    (max(limit * 3, 60),),
+                ).fetchall()
             for row in rows:
                 cid, pid = str(row[0] or ""), str(row[5] or "")
                 pname = projects_map.get(pid, {}).get("name", pid or "workspace")
@@ -66,7 +72,7 @@ def export_notebook_bundle(
     created_count, updated_count, unchanged_count = 0, 0, 0
     exported_files: list[dict[str, Any]] = []
     if not brain_dir.is_dir():
-        return {"export_dir": str(export_root), "created": 0, "updated": 0, "unchanged": 0, "files": []}
+        return {"export_dir": str(export_root), "dry_run": dry_run, "created": 0, "updated": 0, "unchanged": 0, "files": []}
 
     candidate_dirs = sorted(
         [d for d in brain_dir.iterdir() if d.is_dir() and not d.name.startswith(".")],
@@ -124,15 +130,18 @@ def export_notebook_bundle(
                     state_label = "unchanged"
                     unchanged_count += 1
                 else:
-                    target_path.write_text(compiled_md, encoding="utf-8")
+                    if not dry_run:
+                        target_path.write_text(compiled_md, encoding="utf-8")
                     state_label = "updated"
                     updated_count += 1
             except Exception:
-                target_path.write_text(compiled_md, encoding="utf-8")
+                if not dry_run:
+                    target_path.write_text(compiled_md, encoding="utf-8")
                 state_label = "updated"
                 updated_count += 1
         else:
-            target_path.write_text(compiled_md, encoding="utf-8")
+            if not dry_run:
+                target_path.write_text(compiled_md, encoding="utf-8")
             created_count += 1
 
         exported_files.append({
@@ -146,6 +155,7 @@ def export_notebook_bundle(
 
     return {
         "export_dir": str(export_root),
+        "dry_run": dry_run,
         "total_exported": len(exported_files),
         "created": created_count,
         "updated": updated_count,
@@ -169,11 +179,13 @@ def inspect_multi_repo_drift(
     }
 
     candidates: list[Path] = []
-    if gitlab_dir.is_dir():
-        for entry in sorted(gitlab_dir.iterdir()):
-            if entry.is_dir() and not entry.name.startswith(".") and (entry / ".git").exists():
-                if is_all or entry.name.lower() in requested_names:
-                    candidates.append(entry)
+    gh_dir = gitlab_dir.parent / "github"
+    for host_dir in (gitlab_dir, gh_dir):
+        if host_dir.is_dir():
+            for entry in sorted(host_dir.iterdir()):
+                if entry.is_dir() and not entry.name.startswith(".") and (entry / ".git").exists():
+                    if is_all or entry.name.lower() in requested_names:
+                        candidates.append(entry)
 
     wt_root = data_dir / "worktrees"
     if wt_root.is_dir():

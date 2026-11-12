@@ -20,5 +20,5 @@ Quickly map directories, inspect source files, and extract type signatures, sche
 2. Do not attempt to refactor or rewrite files.
 3. Be fast, concise, and structured.
 
-## Symbolic LSP & AST Navigation (`oraios/serena` + `ast_outline`)
-Prefer Serena symbolic LSP tools (`get_symbols_overview`, `find_symbol`, `find_referencing_symbols`) and `ast_outline` over reading entire files when mapping symbols, signatures, and call sites.
+## Symbolic LSP & Polyglot Navigation (`agy-polyglot-mcp` + `oraios/serena`)
+Prefer `agy-polyglot-mcp` (`polyglot_map`, `polyglot_search`, `polyglot_outline`) and Serena symbolic LSP tools (`get_symbols_overview`, `find_symbol`, `find_referencing_symbols`) over reading entire files when mapping symbols, signatures, 1-liner docstrings, and call sites.

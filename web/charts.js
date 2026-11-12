@@ -1,4 +1,4 @@
-// AGY-NEXUS Overwatch — LibreNMS / RRDTool Stacked Bar Engine, Adaptive DPI Binning & Foreground Axes (v2.6.0)
+// AGY-NEXUS Overwatch — LibreNMS / RRDTool Stacked Bar Engine, Adaptive DPI Binning & Foreground Axes (v2.7.0)
 
 const THEME_META = {
   "obsidian":   { label: "Obsidian",   bg: "#0b0d10", border: "#10b981", themeColor: "#101318" },
@@ -24,16 +24,23 @@ const ALLOWED_BIN_HOURS = [1, 2, 3, 4, 6, 8, 12, 24, 48, 72, 168];
   }
 })();
 
-const initThemePref = localStorage.getItem("nexus_surface") || localStorage.getItem("nexus_theme") || "obsidian";
+const urlParams = (typeof window !== "undefined" && window.location) ? new URLSearchParams(window.location.search) : new URLSearchParams();
+const urlDemo = urlParams.get("demo") === "1" || urlParams.get("demo") === "true";
+const urlTheme = urlParams.get("theme") || urlParams.get("surface") || "";
+const urlPeriod = urlParams.get("period") || "";
+const urlDensity = (urlParams.get("density") || "").toUpperCase();
+const initThemePref = THEME_META[urlTheme] ? urlTheme : (localStorage.getItem("nexus_surface") || localStorage.getItem("nexus_theme") || "obsidian");
+const initPeriodPref = VALID_PERIODS.includes(urlPeriod) ? urlPeriod : (VALID_PERIODS.includes(localStorage.getItem("nexus_period")) ? localStorage.getItem("nexus_period") : "current_month");
+const initDensityPref = VALID_DENSITIES.includes(urlDensity) ? urlDensity : (VALID_DENSITIES.includes(localStorage.getItem("nexus_density")) ? localStorage.getItem("nexus_density") : "D2");
 let fetchSeq = 0;
 const state = {
-  passphrase: localStorage.getItem("nexus_passphrase") || sessionStorage.getItem("nexus_passphrase") || "",
-  period: VALID_PERIODS.includes(localStorage.getItem("nexus_period")) ? localStorage.getItem("nexus_period") : "current_month",
+  passphrase: urlDemo ? "" : (localStorage.getItem("nexus_passphrase") || sessionStorage.getItem("nexus_passphrase") || ""),
+  period: initPeriodPref,
   surface: THEME_META[initThemePref] ? initThemePref : "obsidian",
-  density: VALID_DENSITIES.includes(localStorage.getItem("nexus_density")) ? localStorage.getItem("nexus_density") : "D2",
+  density: initDensityPref,
   metric: localStorage.getItem("nexus_metric") === "tokens" ? "tokens" : "steps",
   selectedDate: localStorage.getItem("nexus_selected_date") || "",
-  demoMode: localStorage.getItem("nexus_demo_mode") === "1",
+  demoMode: urlDemo || localStorage.getItem("nexus_demo_mode") === "1",
   soloModel: "",
   soloSubagent: "",
   soloProject: "",

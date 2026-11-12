@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-agy-nexus-mcp — Usage, Quota, 1h Adaptive Stacked Series, Token Metering & Three-Tier ASCII Engine (v2.6.0)
+agy-nexus-mcp — Usage, Quota, 1h Adaptive Stacked Series, Token Metering & Three-Tier ASCII Engine (v2.7.0)
 """
 
 from __future__ import annotations
@@ -50,22 +50,9 @@ __all__ = [
 ]
 
 
-def _pick_primary_workspace(uris: list[str], title: str) -> str:
-    if not uris:
-        return ""
-    cleaned = [str(u).replace("file://", "").rstrip("/") for u in uris if u]
-    if len(cleaned) <= 1:
-        return cleaned[0] if cleaned else ""
-    t_low = (title or "").lower()
-    if any(k in t_low for k in ("mcp", "antigravity", "nexus", "bridge")):
-        for u in cleaned:
-            if "antigravity-config" in u:
-                return u
-    for u in cleaned:
-        bname = u.rsplit("/", 1)[-1].lower()
-        if bname and bname in t_low:
-            return u
-    return cleaned[0]
+def _pick_primary_workspace(uris: list[str], title: str, project_id: str = "") -> str:
+    from agy_nexus.sessions import pick_primary_workspace_uri
+    return pick_primary_workspace_uri(uris, title, project_id=project_id)
 
 
 def render_ascii_stats(bundle: dict[str, Any], style: str = "default") -> str:
@@ -116,11 +103,13 @@ def build_nexus_stats_bundle(
     if db_file.exists():
         try:
             conn = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True, timeout=3.0)
-            conn.row_factory = sqlite3.Row
-            cols = {str(r[1]) for r in conn.execute("PRAGMA table_info(conversation_summaries)").fetchall()}
-            proj_col = ", project_id" if "project_id" in cols else ""
-            rows = conn.execute(f"SELECT conversation_id, title, step_count, last_modified_time, workspace_uris, status, parent_conversation_id, agent_name{proj_col} FROM conversation_summaries").fetchall()
-            conn.close()
+            try:
+                conn.row_factory = sqlite3.Row
+                cols = {str(r[1]) for r in conn.execute("PRAGMA table_info(conversation_summaries)").fetchall()}
+                proj_col = ", project_id" if "project_id" in cols else ""
+                rows = conn.execute(f"SELECT conversation_id, title, step_count, last_modified_time, workspace_uris, status, parent_conversation_id, agent_name{proj_col} FROM conversation_summaries").fetchall()
+            finally:
+                conn.close()
             for r in rows:
                 cid, parent_id, agent_name = str(r["conversation_id"]), str(r["parent_conversation_id"] or ""), str(r["agent_name"] or "").strip()
                 uris = json.loads(r["workspace_uris"] or "[]") if isinstance(r["workspace_uris"], str) and r["workspace_uris"].startswith("[") else []

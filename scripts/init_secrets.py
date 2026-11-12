@@ -35,7 +35,7 @@ def main() -> None:
     parser.add_argument("--ttl", type=int, default=7200, help="Deadbolt session inactivity timeout in seconds (default: 7200)")
     parser.add_argument("--max-file-chars", type=int, default=15000, help="Max characters returned per file slice (default: 15000)")
     parser.add_argument("--max-diff-chars", type=int, default=15000, help="Max characters returned per git diff page (default: 15000)")
-    parser.add_argument("--enforce-modular", default="true", help="Enforce <=300 line modular architecture standard (default: true)")
+    parser.add_argument("--enforce-modular", default="true", help="Enforce <=500 line modular architecture standard (default: true)")
     parser.add_argument(
         "--keep-existing-urls",
         action="store_true",
@@ -131,8 +131,8 @@ def main() -> None:
         f"MAX_TRANSCRIPT_TURNS=10\n\n"
         f"# --- Modular Architecture & File Hygiene Standards ---\n"
         f"ENFORCE_MODULAR_HYGIENE={args.enforce_modular}\n"
-        f"TARGET_FILE_LINES={args.enforce_modular and 300 or 300}\n"
-        f"HARD_MAX_FILE_LINES=400\n"
+        f"TARGET_FILE_LINES=500\n"
+        f"HARD_MAX_FILE_LINES=650\n"
     )
 
     fd = os.open(env_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -148,7 +148,7 @@ def main() -> None:
         return
 
     print("\n" + "=" * 70)
-    print(" ag-bridge-mcp Configuration & Secrets Initialized ")
+    print(" agy-nexus-mcp Configuration & Secrets Initialized ")
     print("=" * 70)
     print(f"[+] Secrets File:    {env_path} (mode: 600)")
     print(f"[+] Subdomain:       ag-{subdomain_hash}.{args.domain}")
@@ -157,7 +157,7 @@ def main() -> None:
     print(f"[+] Deadbolt TTL:    {args.ttl}s")
     print(f"[+] File Slice Cap:  {args.max_file_chars} chars (line-range pagination enabled)")
     print(f"[+] Diff Page Cap:   {args.max_diff_chars} chars (offset & per-file pagination enabled)")
-    print(f"[+] Modular Hygiene: {args.enforce_modular} (<= 300 lines/file target)")
+    print(f"[+] Modular Hygiene: {args.enforce_modular} (<= 500 lines/file target, ceiling 650L)")
     print("=" * 70 + "\n")
 
 

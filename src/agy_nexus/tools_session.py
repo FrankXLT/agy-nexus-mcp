@@ -42,9 +42,15 @@ from agy_nexus.session_status import (
     generate_session_health_warning,
     get_session_telemetry,
 )
-from agy_nexus.sessions import _list_saved_sessions_internal, _load_projects_map
+from agy_nexus.sessions import (
+    _list_saved_sessions_internal,
+    _load_projects_map,
+    pick_primary_workspace_uri,
+    resolve_canonical_project_for_workspace,
+)
 from agy_nexus.stats import build_nexus_stats_bundle, extract_pending_approval
 from agy_nexus.uploads import list_scratch_upload_batches
+from agy_nexus.virtual_uris import resolve_transcript_file
 from agy_nexus.workspace import _collect_git_summary, _resolve_and_read_files
 
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
@@ -152,8 +158,8 @@ def list_saved_sessions(
 
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "", include_files: str = "") -> str:
-    """Primary tool for session 'Check-in' and full context loading in a single call (live execution_status, git_summary, visual_artifacts with 30-min signed /web/media/ links, task.md, implementation_plan.md, walkthrough.md, and recent transcript turns).
-    IMPORTANT: This is the designated tool for checking in on running or completed Antigravity sessions. Because execution_status and git_summary are already included in this response, do NOT chain another tool after a successful response. However, if a call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly once as a same-turn fallback.
+    """Primary tool for session 'Check-in' and full context loading in a single call (live execution_status, git_summary, visual_artifacts with 30-min signed /web/media/ links, task.md, implementation_plan.md, walkthrough.md, and recent untruncated transcript turns).
+    IMPORTANT: This is the designated tool for checking in on running or completed Antigravity sessions. Because execution_status and git_summary are already included in this response, do NOT chain another tool after a successful response. If latest_assistant_response is compacted for the <20 KB wire ceiling, pass file_subpath='transcript:latest' (with start_line/end_line) to ask_workspace_readonly to page the full untruncated response.
     """
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
@@ -171,22 +177,29 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
     if AGY_DB_FILE.is_file():
         try:
             con = sqlite3.connect(f"file:{AGY_DB_FILE}?mode=ro", uri=True)
-            row = con.execute(
-                "SELECT workspace_uris, project_id, status, step_count, last_modified_time, not_fully_idle, killed, title FROM conversation_summaries WHERE conversation_id = ?",
-                (conv_id,),
-            ).fetchone()
-            con.close()
+            try:
+                row = con.execute(
+                    "SELECT workspace_uris, project_id, status, step_count, last_modified_time, not_fully_idle, killed, title FROM conversation_summaries WHERE conversation_id = ?",
+                    (conv_id,),
+                ).fetchone()
+            finally:
+                con.close()
             if row:
+                if row[7] and str(row[7]).strip():
+                    conv_title = str(row[7]).strip()
+                if row[1] and str(row[1]).strip():
+                    project_id = str(row[1]).strip()
                 if row[0]:
                     uris = json.loads(row[0])
                     if uris and isinstance(uris, list):
-                        workspace_uris = [re.sub(r"^file://", "", str(u)).rstrip("/") for u in uris if u]
-                        if not workspace and workspace_uris:
-                            workspace = workspace_uris[0]
-                if not project_id and row[1]:
-                    project_id = str(row[1])
-                if not conv_title and row[7]:
-                    conv_title = str(row[7])
+                        db_uris = [re.sub(r"^file://", "", str(u)).rstrip("/") for u in uris if u]
+                        if db_uris:
+                            workspace_uris = db_uris
+                            workspace = pick_primary_workspace_uri(workspace_uris, conv_title, project_id)
+                SESSION_STATE["session_workspace_map"][conv_id] = workspace
+                SESSION_STATE["session_workspace_uris_map"][conv_id] = workspace_uris or ([workspace] if workspace else [])
+                SESSION_STATE["session_project_map"][conv_id] = project_id
+                SESSION_STATE["session_title_map"][conv_id] = conv_title
                 is_run = bool(row[5]) or str(row[2] or "") == "CASCADE_RUN_STATUS_RUNNING"
                 cur_steps = int(row[3] or 0)
                 telem = get_session_telemetry(conv_id, AGY_BRAIN_DIR, step_count=cur_steps)
@@ -196,18 +209,22 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
                     "step_count": cur_steps,
                     "last_modified": str(row[4] or ""),
                     "is_running": is_run, "not_fully_idle": bool(row[5]), "killed": bool(row[6]),
-                    "summary": "RUNNING" if is_run else "COMPLETED_AND_IDLE (Antigravity finished; do NOT call manage_background_run)",
+                    "summary": "RUNNING" if is_run else "COMPLETED_AND_IDLE (Antigravity finished; do NOT poll background status)",
                 })
         except Exception:
             pass
     projects_map = _load_projects_map()
-    project_name = projects_map.get(project_id, {}).get("name", project_id)
     if not workspace and project_id in projects_map:
         p_paths = projects_map[project_id].get("workspace_paths", [])
         if p_paths:
             workspace = p_paths[0]
             if not workspace_uris:
                 workspace_uris = list(p_paths)
+    if not project_id and workspace:
+        project_id, resolved_pname = resolve_canonical_project_for_workspace(workspace, "")
+    else:
+        resolved_pname = ""
+    project_name = projects_map.get(project_id, {}).get("name") or resolved_pname or project_id
     if not workspace:
         workspace = str(AGY_GITLAB_DIR)
     SESSION_STATE["pinned_calls"] = int(SESSION_STATE.get("pinned_calls") or 0) + 1
@@ -218,22 +235,22 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
         last_tool="load_session_into_gemini", set_default=True,
     )
     has_inc = bool(include_files.strip())
-    task_cap, plan_cap, walk_cap, resp_cap, turns_cap = (1800, 1200, 1400, 1000, 3) if has_inc else (3200, 2400, 2800, 2000, 5)
+    task_cap, plan_cap, walk_cap, turns_cap = (1800, 1200, 1400, 3) if has_inc else (3000, 2200, 2400, 5)
     task_file = session_dir / "task.md"
     task_raw = task_file.read_text(encoding="utf-8", errors="replace") if task_file.is_file() else ""
-    task_content = _compact_markdown(task_raw, max_chars=task_cap) if task_raw else ""
+    task_content = _compact_markdown(task_raw, max_chars=task_cap, source_hint="brain:task.md") if task_raw else ""
     plan_file = session_dir / "implementation_plan.md"
     plan_raw = plan_file.read_text(encoding="utf-8", errors="replace") if plan_file.is_file() else ""
-    plan_content = _compact_markdown(plan_raw, max_chars=plan_cap) if plan_raw else ""
+    plan_content = _compact_markdown(plan_raw, max_chars=plan_cap, source_hint="brain:implementation_plan.md") if plan_raw else ""
     walk_file = session_dir / "walkthrough.md"
     walk_raw = walk_file.read_text(encoding="utf-8", errors="replace") if walk_file.is_file() else ""
-    walk_content = _compact_markdown(walk_raw, max_chars=walk_cap) if walk_raw else ""
+    walk_content = _compact_markdown(walk_raw, max_chars=walk_cap, source_hint="brain:walkthrough.md") if walk_raw else ""
     scratch_dir = session_dir / "scratch"
-    scratch_files = [f.name for f in scratch_dir.iterdir() if f.is_file()][:20] if scratch_dir.is_dir() else []
-    transcript_file = session_dir / ".system_generated" / "logs" / "transcript.jsonl"
+    scratch_files = [f.name for f in sorted(scratch_dir.iterdir()) if f.is_file()][:20] if scratch_dir.is_dir() else []
+    transcript_file = resolve_transcript_file(session_dir)
     recent_turns: list[dict[str, Any]] = []
-    latest_assistant_response = ""
-    if transcript_file.is_file():
+    raw_latest_assistant = ""
+    if transcript_file and transcript_file.is_file():
         try:
             lines = transcript_file.read_text(encoding="utf-8", errors="replace").splitlines()
             for line in lines:
@@ -255,7 +272,7 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
                                 if isinstance(tc, dict):
                                     tool_summary.append(tc.get("name") or tc.get("toolAction") or "call")
                         if content:
-                            latest_assistant_response = content[:resp_cap]
+                            raw_latest_assistant = content
                         if content or thinking or tool_summary:
                             turn_obj: dict[str, Any] = {"type": "PLANNER_RESPONSE", "created_at": entry.get("created_at", "")}
                             if content:
@@ -272,9 +289,10 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
             recent_turns.append({"error": f"Failed reading transcript: {e}"})
     ws_path = Path(workspace) if workspace else AGY_GITLAB_DIR
     git_summary = _collect_git_summary(ws_path)
-    pending_app = extract_pending_approval(transcript_file)
-    if pending_app:
-        db_status_info["pending_approval"] = pending_app
+    if transcript_file and transcript_file.is_file():
+        pending_app = extract_pending_approval(transcript_file)
+        if pending_app:
+            db_status_info["pending_approval"] = pending_app
     included_files = (
         _resolve_and_read_files(
             include_files,
@@ -290,13 +308,12 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
     scratch_batches = list_scratch_upload_batches(conv_id, AGY_BRAIN_DIR)
     payload: dict[str, Any] = {
         "ok": True, "status": "LOADED",
-        "conversation_id": conv_id, "project_id": project_id,
+        "conversation_id": conv_id, "title": conv_title, "project_id": project_id,
         "project_name": project_name, "workspace_path": workspace,
         "assistant_guidance": (
-            "STOP AND REPLY TO USER NOW unless visual pixel inspection of screenshots was requested: Session context loaded successfully. "
-            "Do NOT chain extra text tools after a successful response (execution_status, git_summary, visual_artifacts, task_content, implementation_plan, walkthrough, and recent_transcript_turns are ALL included below). "
-            "If you need to inspect actual screenshot pixels in vision context, call inspect_visual_artifacts(targets='#01', session_identifier=conversation_id) (or ask_workspace_readonly with file_subpath='image:#01'). "
-            "If a tool call fails with permission_denied or an immediate error, you MAY invoke ask_workspace_readonly once as a same-turn fallback."
+            "STOP AND REPLY TO USER NOW: Session context loaded successfully. "
+            "Do NOT chain extra text tools after a successful response unless paging a truncated transcript via ask_workspace_readonly(file_subpath='transcript:latest', start_line=..., end_line=...). "
+            "Note: Hosted Gemini Web/Mobile strips binary MCP ImageContent blocks; share signed_url links with the user or let Antigravity inspect images locally."
         ),
         "project_hygiene_standards": MODULAR_HYGIENE_STANDARDS, "execution_status": db_status_info,
         "compaction_count": db_status_info.get("compaction_count", 0),
@@ -304,22 +321,45 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
         "session_health_warning": db_status_info.get("session_health_warning", ""),
         "git_summary": git_summary, "visual_artifacts": visual_artifacts,
         "scratch_upload_batches": scratch_batches,
-        "latest_assistant_response": latest_assistant_response,
+        "latest_assistant_response": "",
         "task_content": task_content, "implementation_plan": plan_content,
         "walkthrough": walk_content, "scratch_files": scratch_files,
         "recent_transcript_turns": recent_turns,
     }
     if visual_artifacts or scratch_batches:
-        payload["visual_inspection_hint"] = "Call inspect_visual_artifacts(targets='#01,#02', session_identifier=conversation_id, region='full'|'top'|'middle'|'bottom') to receive native <20 KB WebP ImageContent blocks over MCP."
+        payload["visual_inspection_hint"] = "Share signed_url HTTPS links for mobile viewing, or ask Antigravity to inspect uploaded batches under brain:scratch/uploads_.../INDEX.md."
     if included_files:
         payload["included_files"] = included_files
+
+    base_bytes = len(_compact_json(payload).encode("utf-8"))
+    if raw_latest_assistant:
+        avail_cap = max(1200, min(4000, 18200 - base_bytes)) if has_inc else max(2000, min(10500, 18600 - base_bytes))
+        payload["latest_assistant_response"] = _compact_markdown(
+            raw_latest_assistant,
+            max_chars=avail_cap,
+            source_hint="transcript:latest",
+        )
+        if len(raw_latest_assistant) > avail_cap:
+            payload["transcript_uri_hint"] = (
+                "Pass file_subpath='transcript:latest' (with start_line/end_line) to ask_workspace_readonly to page the full untruncated response."
+            )
+
     out_str = _compact_json(payload)
     if len(out_str.encode("utf-8")) > 19000:
-        for k_trim, cap_trim in (("walkthrough", 900), ("implementation_plan", 900), ("latest_assistant_response", 900), ("task_content", 1200)):
+        for k_trim, cap_trim, hint_trim in (
+            ("walkthrough", 900, "brain:walkthrough.md"),
+            ("implementation_plan", 900, "brain:implementation_plan.md"),
+            ("task_content", 1200, "brain:task.md"),
+        ):
             if payload.get(k_trim):
-                payload[k_trim] = _compact_markdown(str(payload[k_trim]), max_chars=cap_trim)
+                payload[k_trim] = _compact_markdown(str(payload[k_trim]), max_chars=cap_trim, source_hint=hint_trim)
         payload["recent_transcript_turns"] = recent_turns[-2:]
         out_str = _compact_json(payload)
+        if len(out_str.encode("utf-8")) > 19200 and payload.get("latest_assistant_response"):
+            excess = len(out_str.encode("utf-8")) - 18600
+            new_cap = max(1500, len(str(payload["latest_assistant_response"])) - excess - 200)
+            payload["latest_assistant_response"] = _compact_markdown(raw_latest_assistant, max_chars=new_cap, source_hint="transcript:latest")
+            out_str = _compact_json(payload)
         if len(out_str.encode("utf-8")) > 19200 and isinstance(payload.get("included_files"), dict):
             inc_files = payload["included_files"].get("files")
             if isinstance(inc_files, list):

@@ -70,7 +70,7 @@ def render_ascii_rich(bundle: dict[str, Any]) -> str:
     code_health = bundle.get("code_health") or {}
     v_info = code_health.get("version") or {}
     m_info = code_health.get("modular_hygiene") or {}
-    ast_info = code_health.get("ast_integrity") or {}
+    poly_info = code_health.get("polyglot_health") or code_health.get("ast_integrity") or {}
 
     lines = [
         "╔══════════════════════════════════════════════════════════════════════════╗",
@@ -87,9 +87,12 @@ def render_ascii_rich(bundle: dict[str, Any]) -> str:
         _box_split(f"Daily : {fmt_rate(tot_tok / act_days)} tok/act-d", f"Calls : {w_calls} MCP reqs ({w_tok} tok)"),
         _box_split(f"Weekly: {fmt_rate(tot_tok / max(1.0, act_days / 7.0))} tok/wk", "Client: Gemini Web (100% / 0 Mob)"),
         "╠════════════════════════════════════╦═════════════════════════════════════╣",
-        _box_split("VERSION & RELEASE STATUS", "AST & MODULAR CODE HEALTH"),
-        _box_split(f"Installed: v{__version__} ({v_info.get('status', 'OK')})", f"AST: {ast_info.get('undefined_names', 0)} undef | {m_info.get('compliant_300', 0)}/{m_info.get('total_modules', 0)} <=300L (0 >400L)"),
-        _box_split(f"Remote   : {v_info.get('remote', 'unknown')}", "Local LSP: Serena Ready (LSP v2.1)"),
+        _box_split("VERSION & RELEASE STATUS", "POLYGLOT & MODULAR CODE HEALTH"),
+        _box_split(
+            f"Installed: v{__version__} ({v_info.get('status', 'OK')})",
+            f"Poly: {int(poly_info.get('total_symbols', 0))} syms | {m_info.get('compliant_500', m_info.get('compliant_300', 0))}/{m_info.get('total_modules', 0)} <=500L (0 >650L)",
+        ),
+        _box_split(f"Remote   : {v_info.get('remote', 'unknown')}", "IDE MCP  : agy-polyglot-mcp + Serena"),
         "╠════════════════════════════════════╩═════════════════════════════════════╣",
         _box_full("DAILY ACTIVITY MATRIX (NOW: W01 ──► W13)     [·· 0  ░░ <1k  ▒▒ <4k  ██]"),
     ]

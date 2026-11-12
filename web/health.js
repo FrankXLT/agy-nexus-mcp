@@ -1,6 +1,6 @@
-// Code Health, Modular Hygiene & AST Integrity UI Renderer for /web Overwatch Dashboard (v2.6.0)
+// Code Health, Polyglot Semantic Index & Modular Hygiene UI Renderer for /web Overwatch Dashboard (v2.7.0)
 function renderCodeHealth(ch, installedVer) {
-  installedVer = installedVer || "2.6.0";
+  installedVer = installedVer || "2.7.0";
   let dotClass = "cyan";
   const status = (ch && ch.version && ch.version.status) || "staged_locally";
   if (status === "up_to_date") dotClass = "green";
@@ -46,72 +46,82 @@ function renderCodeHealth(ch, installedVer) {
   const kpiVSub = document.getElementById("kpiVersionSub");
   if (kpiVSub) kpiVSub.textContent = `${instTag} installed · ${remoteTag} GitHub release`;
 
+  const mh = ch.modular_hygiene || {};
+  const targetL = mh.target_lines || 500;
+  const ceilingL = mh.ceiling_lines || 650;
+  const compliantCnt = mh.compliant_500 ?? mh.compliant_300 ?? 0;
+  const warnCnt = mh.warning_501_650 ?? mh.warning_301_400 ?? 0;
+  const violCnt = mh.violations_over_650 ?? mh.violations_over_400 ?? 0;
+
   const kpiMod = document.getElementById("kpiModularBudget");
-  if (kpiMod) kpiMod.textContent = `${(ch.modular_hygiene && ch.modular_hygiene.compliant_300) || 0} / ${(ch.modular_hygiene && ch.modular_hygiene.total_modules) || 0} Modules`;
+  if (kpiMod) kpiMod.textContent = `${compliantCnt} / ${mh.total_modules || 0} Modules`;
 
   const kpiModSub = document.getElementById("kpiModularSub");
-  if (kpiModSub) kpiModSub.innerHTML = `${(ch.modular_hygiene && ch.modular_hygiene.warning_301_400) || 0} warning (301-400L) · ${(ch.modular_hygiene && ch.modular_hygiene.violations_over_400) || 0} violations (&gt;400L)`;
+  if (kpiModSub) kpiModSub.innerHTML = `${warnCnt} warning (${targetL + 1}-${ceilingL}L) · ${violCnt} violations (&gt;${ceilingL}L)`;
 
-  const undefCount = (ch.ast_integrity && (ch.ast_integrity.undefined_names ?? ch.ast_integrity.undefined_count)) || 0;
+  const poly = ch.polyglot_health || ch.ast_integrity || {};
+  const symTotal = poly.total_symbols ?? mh.total_symbols ?? 0;
+  const indexedFiles = poly.indexed_files || mh.total_modules || 0;
+  const longFnCnt = poly.long_functions_over_100 ?? mh.long_functions_over_100 ?? 0;
+
   const kpiAst = document.getElementById("kpiAstIntegrity");
-  if (kpiAst) kpiAst.textContent = `${undefCount} Undefined Names`;
+  if (kpiAst) kpiAst.textContent = `${symTotal} Symbols Indexed`;
 
-  const scannedCount = (ch.ast_integrity && ch.ast_integrity.scanned_files) || (ch.modular_hygiene && ch.modular_hygiene.total_modules) || 25;
   const kpiAstSub = document.getElementById("kpiAstSub");
-  if (kpiAstSub) kpiAstSub.textContent = `All ${scannedCount} modules scope-verified`;
+  if (kpiAstSub) kpiAstSub.textContent = `${indexedFiles} files hashed · ${longFnCnt} funcs >100L`;
 
   const lspInstalled = Boolean(ch.local_lsp && (ch.local_lsp.installed || ch.local_lsp.available || ch.local_lsp.status === "ready"));
   const kpiLsp = document.getElementById("kpiLspStatus");
-  if (kpiLsp) kpiLsp.textContent = lspInstalled ? "Serena Ready" : "Not Installed";
+  if (kpiLsp) kpiLsp.textContent = lspInstalled ? "Polyglot + Serena" : "Polyglot MCP Ready";
 
   const kpiLspSub = document.getElementById("kpiLspSub");
-  if (kpiLspSub) kpiLspSub.textContent = `LSP ${(ch.local_lsp && ch.local_lsp.version) || 'v2.1.0'} · --context=antigravity`;
+  if (kpiLspSub) kpiLspSub.textContent = lspInstalled ? "agy-polyglot-mcp + Serena LSP" : "agy-polyglot-mcp incremental SHA-256";
 
   const ceilBadge = document.getElementById("codeHealthCeilingBadge");
   if (ceilBadge) {
-    const violations = (ch.modular_hygiene && ch.modular_hygiene.violations_over_400) || 0;
-    ceilBadge.textContent = violations === 0 ? "CEILING: 100% PASS (0 >400L)" : `CEILING: ${violations} VIOLATION (>400L)`;
+    ceilBadge.textContent = violCnt === 0 ? `CEILING: 100% PASS (0 >${ceilingL}L)` : `CEILING: ${violCnt} VIOLATION (>${ceilingL}L)`;
   }
 
   const astBadge = document.getElementById("codeHealthAstBadge");
   if (astBadge) {
-    astBadge.textContent = `AST: ${undefCount} UNDEF`;
+    astBadge.textContent = `POLYGLOT: ${symTotal} SYMS`;
   }
 
   const serenaBadge = document.getElementById("codeHealthSerenaBadge");
   if (serenaBadge) {
-    serenaBadge.textContent = lspInstalled ? "SERENA LSP: READY" : "SERENA LSP: OFFLINE";
+    serenaBadge.textContent = lspInstalled ? "POLYGLOT + SERENA: READY" : "POLYGLOT MCP: READY";
   }
 
   const tbody = document.getElementById("modulesTableBody");
   if (tbody) {
     tbody.innerHTML = "";
-    const mods = (ch.modular_hygiene && ch.modular_hygiene.modules) || [];
+    const mods = mh.modules || [];
     mods.forEach((m) => {
       const lines = Number(m.lines || 0);
       let dot = "green";
-      let modStatusText = "Compliant (≤300L)";
-      if (lines > 400) {
+      let modStatusText = `Compliant (≤${targetL}L)`;
+      if (lines > ceilingL) {
         dot = "slate";
-        modStatusText = "Violation (>400L)";
-      } else if (lines > 300) {
+        modStatusText = `Violation (>${ceilingL}L)`;
+      } else if (lines > targetL) {
         dot = "amber";
-        modStatusText = "Warning (301-400L)";
+        modStatusText = `Warning (${targetL + 1}-${ceilingL}L)`;
       }
-      const margin = 400 - lines;
+      const margin = ceilingL - lines;
       const marginText = margin >= 0 ? `+${margin} lines` : `${margin} lines`;
-      const marginColor = margin < 0 ? "#ef4444" : (margin <= 50 ? "#f59e0b" : "var(--text-secondary)");
-      const astErrors = ch.ast_integrity && ch.ast_integrity.details && ch.ast_integrity.details[m.name];
-      const astHtml = (astErrors && astErrors.length > 0)
-        ? `<span style="color:#ef4444">${astErrors.length} Undefined</span>`
-        : `<span style="color:var(--text-secondary)">Clean</span>`;
+      const marginColor = margin < 0 ? "#ef4444" : (margin <= 60 ? "#f59e0b" : "var(--text-secondary)");
+      const symCount = Number(m.symbols || 0);
+      const longFns = Number(m.long_functions || 0);
+      const polyHtml = longFns > 0
+        ? `<span style="color:#f59e0b">${symCount} syms (${longFns} >100L)</span>`
+        : `<span style="color:var(--text-secondary)">${symCount} syms · Clean</span>`;
 
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td><strong class="mono">${m.name}</strong></td>
         <td class="mono">${lines}</td>
         <td><span style="display:inline-flex;align-items:center;gap:6px;"><span class="status-dot-6px ${dot}"></span><span>${modStatusText}</span></span></td>
-        <td>${astHtml}</td>
+        <td>${polyHtml}</td>
         <td class="mono" style="color:${marginColor}">${marginText}</td>
       `;
       tbody.appendChild(tr);

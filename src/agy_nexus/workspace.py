@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-agy_nexus.workspace — Multi-File Reader, Path Sandboxing & Git Status/Diff Helpers.
+agy_nexus.workspace — Multi-File Reader, Virtual URI & Brain Sandboxing, and Git Helpers.
 """
 
 from __future__ import annotations
@@ -13,7 +13,6 @@ import subprocess
 from typing import Any
 import urllib.request
 
-from agy_nexus.ast_outline import build_file_outline
 import agy_nexus.config as cfg
 from agy_nexus.config import (
     AGY_BRAIN_DIR, AGY_CONFIG_DIR, AGY_DATA_DIR, AGY_GITLAB_DIR,
@@ -21,28 +20,41 @@ from agy_nexus.config import (
 )
 from agy_nexus.hygiene import (
     MAX_FILE_CHARS, MAX_FILES_PER_CALL, MAX_TOTAL_FILE_CHARS,
-    parse_inline_line_spec, slice_file_content,
+    is_sensitive_filename, parse_inline_line_spec, slice_file_content,
 )
 from agy_nexus.inventory import resolve_customization_file
+from agy_nexus.polyglot_outline import build_file_outline
 from agy_nexus.sessions import _load_projects_map
+from agy_nexus.virtual_uris import resolve_brain_uri_path, resolve_virtual_uri_entry
+
+
+def _default_nexus_repo_dir() -> Path:
+    standalone = AGY_GITLAB_DIR / "agy-nexus-mcp"
+    return standalone if standalone.is_dir() else (AGY_GITLAB_DIR / "antigravity-config")
+
 
 def _resolve_workspace_str(ws_input: str) -> str:
     """Resolve short repo names, case-insensitive project names, or URIs to a canonical authorized workspace path."""
-    static_ws_roots = (AGY_GITLAB_DIR.resolve(), (AGY_DATA_DIR / "worktrees").resolve(), AGY_CONFIG_DIR.resolve(), AGY_DATA_DIR.resolve())
+    gh_root = (AGY_GITLAB_DIR.resolve().parent / "github").resolve()
+    static_ws_roots = (
+        AGY_GITLAB_DIR.resolve(), gh_root, (AGY_DATA_DIR / "worktrees").resolve(),
+        AGY_CONFIG_DIR.resolve(),
+    )
     raw = re.sub(r"^file://", "", (ws_input or "").strip()).rstrip("/")
     if not raw:
-        raw = SESSION_STATE.get("selected_workspace") or str(AGY_GITLAB_DIR / "antigravity-config")
+        raw = SESSION_STATE.get("selected_workspace") or str(_default_nexus_repo_dir())
     p = Path(raw)
     if p.is_absolute() and p.is_dir() and any(p.resolve().is_relative_to(r) for r in static_ws_roots):
         return str(p.resolve())
     target_name = p.name if p.is_absolute() else raw.strip("/")
-    if AGY_GITLAB_DIR.is_dir() and target_name and ".." not in Path(target_name).parts:
-        exact_gitlab = (AGY_GITLAB_DIR / target_name).resolve()
-        if exact_gitlab.is_dir() and exact_gitlab.is_relative_to(AGY_GITLAB_DIR.resolve()):
-            return str(exact_gitlab)
-        for entry in AGY_GITLAB_DIR.iterdir():
-            if entry.is_dir() and entry.name.lower() == target_name.lower():
-                return str(entry.resolve())
+    for host_dir in (AGY_GITLAB_DIR, gh_root):
+        if host_dir.is_dir() and target_name and ".." not in Path(target_name).parts:
+            exact_p = (host_dir / target_name).resolve()
+            if exact_p.is_dir() and exact_p.is_relative_to(host_dir.resolve()):
+                return str(exact_p)
+            for entry in host_dir.iterdir():
+                if entry.is_dir() and entry.name.lower() == target_name.lower():
+                    return str(entry.resolve())
     projects_map = _load_projects_map()
     q_lower = target_name.lower()
     for pid, pinfo in projects_map.items():
@@ -59,7 +71,15 @@ def _resolve_workspace_str(ws_input: str) -> str:
                 sub_wts = sorted([d for d in proj_wt.iterdir() if d.is_dir()], key=lambda x: x.stat().st_mtime, reverse=True)
                 if sub_wts:
                     return str(sub_wts[0].resolve())
-    return str((AGY_GITLAB_DIR / "antigravity-config").resolve()) if p.is_absolute() else raw
+    return str(_default_nexus_repo_dir().resolve()) if p.is_absolute() else raw
+
+
+def _should_probe_customization(spec: str) -> bool:
+    low = spec.lower()
+    if low.startswith(("skill:", "agent:", "rule:", "global:", "workspace:")):
+        return True
+    return "/" not in spec and low.endswith(".md")
+
 
 def _resolve_and_read_files(
     file_subpath_csv: str,
@@ -71,7 +91,7 @@ def _resolve_and_read_files(
     end_line: int = 0,
     extra_workspace_uris: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Read 1..12 comma/semicolon-separated file subpaths using the 3-Tier Smart Path Resolver (Explicit Pin -> Repo-Prefix -> Unique Subpath Auto-Discovery)."""
+    """Read 1..12 comma/semicolon-separated file subpaths or virtual URIs (`transcript:*`, `brain:*`, `telemetry:*`, `polyglot:*`)."""
     raw_items = [p.strip() for p in re.split(r"[,;\n]+", file_subpath_csv or "") if p.strip()]
     if not raw_items:
         return {}
@@ -94,13 +114,15 @@ def _resolve_and_read_files(
         search_roots.append(AGY_GITLAB_DIR.resolve())
 
     gitlab_root_res = AGY_GITLAB_DIR.resolve()
+    gh_root_res = (gitlab_root_res.parent / "github").resolve()
     allowed = (
         gitlab_root_res,
-        AGY_DATA_DIR.resolve(),
+        gh_root_res,
         AGY_BRAIN_DIR.resolve(),
         (AGY_DATA_DIR / "worktrees").resolve(),
         AGY_CONFIG_DIR.resolve(),
         (AGY_DATA_DIR / "builtin").resolve(),
+        Path(__file__).resolve().parents[2],
     )
     items_slice = raw_items[:MAX_FILES_PER_CALL]
     remaining_total_chars = max_total_chars
@@ -123,34 +145,62 @@ def _resolve_and_read_files(
             cleaned = cleaned[8:].strip()
         cleaned_no_line, in_start, in_end, in_center = parse_inline_line_spec(cleaned)
 
-        candidates: list[Path] = []
-        cust_match = resolve_customization_file(cleaned_no_line or cleaned, AGY_CONFIG_DIR, AGY_DATA_DIR, ws if ws.is_dir() else None)
-        if cust_match:
-            candidates.append(cust_match)
-        for variant in (cleaned, cleaned_no_line):
-            if not variant:
+        virt_entry = resolve_virtual_uri_entry(
+            cleaned, ws=search_roots[0], session_dir=session_dir, per_file_cap=per_file_cap,
+            start_line=start_line, end_line=end_line, in_start=in_start, in_end=in_end, in_center=in_center,
+        )
+        if virt_entry is not None:
+            virt_entry["requested"] = raw_sub
+            remaining_total_chars = max(4000, remaining_total_chars - len(str(virt_entry.get("content", ""))))
+            files_list.append(virt_entry)
+            continue
+
+        if (cleaned_no_line or cleaned).lower().startswith("brain:"):
+            b_path, b_err = resolve_brain_uri_path(cleaned_no_line or cleaned, session_dir)
+            if b_path is None or b_err:
+                files_list.append({"requested": raw_sub, "error": b_err or f"File not found: {raw_sub}"})
                 continue
-            if variant.startswith("/"):
-                candidates.append(Path(os.path.normpath(variant)).resolve())
-            norm_sub = os.path.normpath(variant).lstrip("/")
-            if repo_prefix:
-                candidates.append((AGY_GITLAB_DIR / repo_prefix.split(" ")[0] / norm_sub).resolve())
-            for sroot in search_roots:
-                candidates.append((sroot / norm_sub).resolve())
-                if norm_sub.startswith("packages/"):
-                    candidates.append((sroot / norm_sub[len("packages/"):]).resolve())
-                else:
-                    candidates.append((sroot / "packages" / norm_sub).resolve())
-                candidates.append((sroot / "sidecars/ag-bridge-mcp" / norm_sub).resolve())
-                if norm_sub.startswith(f"{sroot.name}/"):
-                    candidates.append((sroot / norm_sub[len(sroot.name) + 1:]).resolve())
-            if session_dir and session_dir.is_dir():
-                candidates.append((session_dir / norm_sub).resolve())
-                candidates.append((session_dir / "scratch" / Path(norm_sub).name).resolve())
-                candidates.append((session_dir / Path(norm_sub).name).resolve())
-            # Tier 2: Repo-Prefix Match under AGY_GITLAB_DIR (e.g. agy-nexus-mcp/src/... or oaworkbench-workspace/...)
-            candidates.append((AGY_GITLAB_DIR / norm_sub).resolve())
-            candidates.append((AGY_CONFIG_DIR / norm_sub).resolve())
+            candidates = [b_path]
+        else:
+            candidates = []
+            probe_spec = cleaned_no_line or cleaned
+            if _should_probe_customization(probe_spec):
+                cust_match = resolve_customization_file(probe_spec, AGY_CONFIG_DIR, AGY_DATA_DIR, ws if ws.is_dir() else None)
+                if cust_match:
+                    candidates.append(cust_match)
+            for variant in (cleaned, cleaned_no_line):
+                if not variant:
+                    continue
+                if variant.startswith("/"):
+                    candidates.append(Path(os.path.normpath(variant)).resolve())
+                norm_sub = os.path.normpath(variant).lstrip("/")
+                is_session_artifact = norm_sub.startswith("scratch/") or norm_sub in (
+                    "task.md", "implementation_plan.md", "walkthrough.md", "gemini_research_handoff.md"
+                )
+                if is_session_artifact and session_dir and session_dir.is_dir() and not repo_prefix:
+                    candidates.append((session_dir / norm_sub).resolve())
+                    if not norm_sub.startswith("scratch/"):
+                        candidates.append((session_dir / "scratch" / norm_sub).resolve())
+                if repo_prefix:
+                    candidates.append((AGY_GITLAB_DIR / repo_prefix.split(" ")[0] / norm_sub).resolve())
+                for sroot in search_roots:
+                    candidates.append((sroot / norm_sub).resolve())
+                    if norm_sub.startswith("packages/"):
+                        candidates.append((sroot / norm_sub[len("packages/"):]).resolve())
+                    else:
+                        candidates.append((sroot / "packages" / norm_sub).resolve())
+                    candidates.append((sroot / "sidecars/ag-bridge-mcp" / norm_sub).resolve())
+                    if norm_sub.startswith("sidecars/ag-bridge-mcp/"):
+                        candidates.append((sroot / norm_sub[len("sidecars/ag-bridge-mcp/"):]).resolve())
+                    if norm_sub.startswith(f"{sroot.name}/"):
+                        candidates.append((sroot / norm_sub[len(sroot.name) + 1:]).resolve())
+                if session_dir and session_dir.is_dir():
+                    candidates.append((session_dir / norm_sub).resolve())
+                    candidates.append((session_dir / "scratch" / norm_sub).resolve())
+                    candidates.append((session_dir / "scratch" / Path(norm_sub).name).resolve())
+                    candidates.append((session_dir / Path(norm_sub).name).resolve())
+                candidates.append((AGY_GITLAB_DIR / norm_sub).resolve())
+                candidates.append((AGY_CONFIG_DIR / norm_sub).resolve())
 
         target_path = candidates[0] if candidates else (ws / raw_sub).resolve()
         for cand in candidates:
@@ -161,9 +211,13 @@ def _resolve_and_read_files(
             except Exception:
                 continue
 
-        # Tier 3: Unique Subpath Auto-Discovery across top-level repositories in AGY_GITLAB_DIR
         auto_resolved_ws = ""
-        if not target_path.is_file() and cleaned_no_line and not cleaned_no_line.startswith("/") and AGY_GITLAB_DIR.is_dir():
+        if (
+            not target_path.is_file()
+            and cleaned_no_line
+            and not cleaned_no_line.startswith(("/", "brain:"))
+            and AGY_GITLAB_DIR.is_dir()
+        ):
             norm_rel = os.path.normpath(cleaned_no_line).lstrip("/")
             if not norm_rel.startswith(".."):
                 repo_hits: list[tuple[Path, Path]] = []
@@ -190,9 +244,7 @@ def _resolve_and_read_files(
         if auto_resolved_ws and not top_auto_ws:
             top_auto_ws = auto_resolved_ws
 
-        low_name = target_path.name.lower()
-        is_sensitive_cfg = low_name.startswith(("config.json", "mcp_config.json", "secrets.env")) or low_name == ".env" or low_name.endswith((".env", "secrets.env.bak"))
-        is_safe = (not is_sensitive_cfg) and any(target_path.is_relative_to(a) for a in allowed)
+        is_safe = (not is_sensitive_filename(target_path.name)) and any(target_path.is_relative_to(a) for a in allowed)
         if not is_safe:
             files_list.append({"requested": raw_sub, "error": "Access denied: path outside authorized workspace boundaries."})
         elif target_path.is_file():
@@ -200,12 +252,14 @@ def _resolve_and_read_files(
                 full_text = target_path.read_text(encoding="utf-8", errors="replace")
                 if outline_only:
                     ol = build_file_outline(target_path, full_text, ws_root=search_roots[0], max_chars=3800, include_callers=True)
+                    compact_ol = {k: v for k, v in ol.items() if k not in ("symbol_items", "formatted_outline")}
                     entry_obj = {
                         "requested": raw_sub, "path": str(target_path), "bytes": target_path.stat().st_size,
-                        "mode": "ast_outline", "total_lines": ol["total_lines"], "truncated": False,
-                        "outline": ol, "ast_outline": ol, "content": ol["formatted_outline"],
+                        "mode": "polyglot_outline", "total_lines": ol["total_lines"], "truncated": False,
+                        "polyglot_outline": compact_ol, "content": ol["formatted_outline"],
                     }
-                    if auto_resolved_ws: entry_obj["auto_resolved_workspace"] = auto_resolved_ws
+                    if auto_resolved_ws:
+                        entry_obj["auto_resolved_workspace"] = auto_resolved_ws
                     files_list.append(entry_obj)
                 else:
                     slice_meta = slice_file_content(
@@ -215,10 +269,14 @@ def _resolve_and_read_files(
                     )
                     remaining_total_chars = max(4000, remaining_total_chars - len(slice_meta.get("content", "")))
                     entry_obj = {"requested": raw_sub, "path": str(target_path), "bytes": target_path.stat().st_size, **slice_meta}
-                    if slice_meta.get("truncated"):
+                    is_full_head_read = (
+                        start_line <= 1 and end_line == 0 and in_start <= 1 and in_end == 0 and in_center == 0
+                    )
+                    if slice_meta.get("hit_char_cap") and is_full_head_read:
                         ol_trunc = build_file_outline(target_path, full_text, ws_root=search_roots[0], max_chars=1400, include_callers=False)
-                        entry_obj["ast_outline"] = ol_trunc
-                        entry_obj["outline"] = ol_trunc
+                        entry_obj["polyglot_outline"] = {
+                            k: v for k, v in ol_trunc.items() if k not in ("symbol_items", "formatted_outline")
+                        }
                     if auto_resolved_ws:
                         entry_obj["auto_resolved_workspace"] = auto_resolved_ws
                     files_list.append(entry_obj)
@@ -252,6 +310,7 @@ def _resolve_and_read_files(
         out_bundle["auto_resolved_workspace"] = top_auto_ws
     return out_bundle
 
+
 def _host_git_inspect(
     ws_path: str, target_branch: str = "HEAD", include_untracked: bool = True, summary_only: bool = False, file_path: str = ""
 ) -> dict[str, Any]:
@@ -267,9 +326,10 @@ def _host_git_inspect(
         pass
     return {}
 
-def _collect_git_summary(ws: Path | str) -> dict[str, Any]:
-    """Return branch, short status, diff stat, and untracked files list for a workspace (with host-bridge fallback)."""
-    ws_str, ws_path = str(ws), Path(str(ws))
+
+def _collect_git_summary(ws_path: Path) -> dict[str, Any]:
+    """Return compact branch + status_short + diff_stat + untracked_files for a workspace (with host fallback for worktrees)."""
+    ws_str = str(ws_path) if ws_path else ""
     if ws_path.is_dir() and ws_path.resolve() != AGY_GITLAB_DIR.resolve():
         try:
             branch_proc = subprocess.run(["git", "-c", "safe.directory=*", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(ws_path), capture_output=True, text=True, timeout=4, check=False)
@@ -281,7 +341,7 @@ def _collect_git_summary(ws: Path | str) -> dict[str, Any]:
                     "current_branch": branch_proc.stdout.strip(),
                     "status_short": status_proc.stdout.strip(),
                     "diff_stat": stat_proc.stdout.strip(),
-                    "untracked_files": [l.strip() for l in untracked_proc.stdout.splitlines() if l.strip()][:80],
+                    "untracked_files": [ln.strip() for ln in untracked_proc.stdout.splitlines() if ln.strip()][:80],
                 }
         except Exception:
             pass

@@ -1,4 +1,4 @@
-// AGY-NEXUS Overwatch — Dashboard Controller, 1-to-3 Column Combined Plot Legends & Controls (v2.6.0)
+// AGY-NEXUS Overwatch — Dashboard Controller, 1-to-3 Column Combined Plot Legends & Controls (v2.7.0)
 
 function renderModelPlotAndLegend(b, metric, surface) {
   const ms = b.model_series || {}, vs = b.velocity_series || {};
@@ -263,7 +263,7 @@ function renderDashboard(b) {
 
   renderAllTimePlots(b);
   if (typeof renderHierarchyPanel === "function") renderHierarchyPanel(b);
-  renderCodeHealth(b.code_health, b.version || "2.6.0");
+  renderCodeHealth(b.code_health, b.version || "2.7.0");
 }
 
 applyThemeAndDensity(state.surface, state.density);
@@ -318,7 +318,9 @@ document.querySelectorAll(".density-opt").forEach((btn) => {
   btn.addEventListener("click", (e) => { e.stopPropagation(); applyThemeAndDensity(state.surface, btn.dataset.density); });
 });
 if (chromiumCmdInput && window.location.protocol.startsWith("http")) {
-  chromiumCmdInput.value = `google-chrome --app=${window.location.origin}${window.location.pathname}`;
+  chromiumCmdInput.value = state.demoMode
+    ? "google-chrome --app=https://agy-mcp.example.com/web"
+    : `google-chrome --app=${window.location.origin}${window.location.pathname}`;
 }
 const pwaHttpWarn = document.getElementById("pwaHttpWarn");
 if (pwaHttpWarn && window.location.protocol === "http:" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {

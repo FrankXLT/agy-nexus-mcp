@@ -19,6 +19,34 @@ from agy_nexus.config import (
 )
 from agy_nexus.stats import extract_pending_approval
 
+NEXUS_TITLE_KEYWORDS: tuple[str, ...] = (
+    "agy-nexus",
+    "ag-bridge",
+    "antigravity-config",
+    "agy_nexus",
+    "nexus mcp",
+    "polyglot-mcp",
+)
+NEXUS_PROJECT_ID = "a97e4c10-2600-4a91-8b2c-1e75c90a0301"
+
+
+def pick_primary_workspace_uri(clean_uris: list[str], title: str = "", project_id: str = "") -> str:
+    """Pick deterministic primary workspace path from multi-root session URIs without hijacking unrelated titles like 'Google Nexus'."""
+    if not clean_uris:
+        return ""
+    is_nexus_proj = project_id == NEXUS_PROJECT_ID and (AGY_GITLAB_DIR / "agy-nexus-mcp").is_dir()
+    if len(clean_uris) > 1 and (is_nexus_proj or any(k in (title or "").lower() for k in NEXUS_TITLE_KEYWORDS)):
+        for suffix in ("/agy-nexus-mcp", "/antigravity-config"):
+            for cu in clean_uris:
+                if cu.endswith(suffix) or f"{suffix}/" in cu:
+                    if is_nexus_proj and cu.endswith("/antigravity-config"):
+                        return str(AGY_GITLAB_DIR / "agy-nexus-mcp")
+                    return cu
+    if is_nexus_proj and clean_uris[0].endswith("/antigravity-config"):
+        return str(AGY_GITLAB_DIR / "agy-nexus-mcp")
+    return clean_uris[0]
+
+
 def _load_projects_map() -> dict[str, dict[str, Any]]:
     """Read Antigravity project JSON files from AGY_CONFIG_DIR/projects."""
     proj_map: dict[str, dict[str, Any]] = {}
@@ -48,6 +76,52 @@ def _load_projects_map() -> dict[str, dict[str, Any]]:
             continue
     return proj_map
 
+
+def resolve_canonical_project_for_workspace(ws_path: str, project_hint: str = "") -> tuple[str, str]:
+    """Resolve (project_id, project_name) for a workspace or hint, preferring dedicated single-repo projects over multi-repo umbrellas."""
+    proj_map = _load_projects_map()
+    hint_clean = (project_hint or "").strip()
+    if hint_clean and hint_clean in proj_map:
+        return hint_clean, str(proj_map[hint_clean].get("name") or hint_clean)
+
+    ws_clean = re.sub(r"^file://", "", (ws_path or "").strip()).rstrip("/")
+    alt_ws = ""
+    if "/worktrees/" in ws_clean:
+        m_wt = re.search(r"/worktrees/([^/]+)", ws_clean)
+        if m_wt:
+            alt_ws = str((AGY_GITLAB_DIR / m_wt.group(1)).resolve())
+
+    hint_lower = hint_clean.lower()
+    if ws_clean:
+        matches: list[tuple[int, int, str, str]] = []
+        for pid, pinfo in proj_map.items():
+            p_paths = [str(p).rstrip("/") for p in (pinfo.get("workspace_paths") or []) if p]
+            pname = str(pinfo.get("name") or pid)
+            matched = any(
+                ws_clean == pp or ws_clean.startswith(pp + "/") or (alt_ws and alt_ws == pp)
+                for pp in p_paths
+            )
+            if matched:
+                hint_rank = 0 if (hint_lower and hint_lower == pname.lower()) else 1
+                matches.append((hint_rank, max(1, len(p_paths)), pid, pname))
+        if matches:
+            matches.sort(key=lambda item: (item[0], item[1], item[3].lower()))
+            return matches[0][2], matches[0][3]
+
+    if hint_lower:
+        name_matches: list[tuple[int, str, str]] = []
+        for pid, pinfo in proj_map.items():
+            pname = str(pinfo.get("name") or pid)
+            p_paths = [str(p).rstrip("/") for p in (pinfo.get("workspace_paths") or []) if p]
+            if pname.lower() == hint_lower or any(Path(pp).name.lower() == hint_lower for pp in p_paths):
+                name_matches.append((max(1, len(p_paths)), pid, pname))
+        if name_matches:
+            name_matches.sort(key=lambda item: (item[0], item[2].lower()))
+            return name_matches[0][1], name_matches[0][2]
+
+    return "", hint_clean
+
+
 def _list_saved_sessions_internal(
     limit: int = 15,
     status_filter: str = "ALL",
@@ -64,17 +138,19 @@ def _list_saved_sessions_internal(
     if AGY_DB_FILE.is_file():
         try:
             con = sqlite3.connect(f"file:{AGY_DB_FILE}?mode=ro", uri=True)
-            cur = con.cursor()
-            query = """
-                SELECT conversation_id, title, preview, step_count, last_modified_time,
-                       workspace_uris, status, not_fully_idle, killed, parent_conversation_id, project_id
-                FROM conversation_summaries
-                WHERE (? = 1 OR parent_conversation_id IS NULL OR parent_conversation_id = '')
-                ORDER BY last_modified_time DESC
-                LIMIT ?
-            """
-            rows = cur.execute(query, (1 if include_subagents else 0, max(limit * 3, 45))).fetchall()
-            con.close()
+            try:
+                cur = con.cursor()
+                query = """
+                    SELECT conversation_id, title, preview, step_count, last_modified_time,
+                           workspace_uris, status, not_fully_idle, killed, parent_conversation_id, project_id
+                    FROM conversation_summaries
+                    WHERE (? = 1 OR parent_conversation_id IS NULL OR parent_conversation_id = '')
+                    ORDER BY last_modified_time DESC
+                    LIMIT ?
+                """
+                rows = cur.execute(query, (1 if include_subagents else 0, max(limit * 3, 45))).fetchall()
+            finally:
+                con.close()
             db_queried_ok = True
             idx_counter = 1
             for row in rows:
@@ -95,12 +171,7 @@ def _list_saved_sessions_internal(
                     workspace_uris_list = json.loads(raw_uris) if raw_uris else []
                     if workspace_uris_list and isinstance(workspace_uris_list, list):
                         clean_uris = [re.sub(r"^file://", "", str(u)).rstrip("/") for u in workspace_uris_list if u]
-                        workspace_path = clean_uris[0] if clean_uris else ""
-                        if len(clean_uris) > 1 and any(k in title.lower() for k in ("mcp", "antigravity", "nexus", "bridge")):
-                            for cu in clean_uris:
-                                if cu.endswith("/antigravity-config"):
-                                    workspace_path = cu
-                                    break
+                        workspace_path = pick_primary_workspace_uri(clean_uris, title, project_id)
                 except Exception:
                     pass
                 if not workspace_path and project_id in projects_map:
@@ -114,7 +185,12 @@ def _list_saved_sessions_internal(
                 SESSION_STATE["session_project_map"][conv_id] = project_id
                 SESSION_STATE["session_title_map"][conv_id] = title
                 has_gui_lock = (AGY_PRESENCE_DIR / f"{conv_id}.lock").exists()
-                transcript_path = AGY_BRAIN_DIR / conv_id / ".system_generated" / "logs" / "transcript.jsonl"
+                logs_dir = AGY_BRAIN_DIR / conv_id / ".system_generated" / "logs"
+                transcript_path = (
+                    logs_dir / "transcript_full.jsonl"
+                    if (logs_dir / "transcript_full.jsonl").is_file()
+                    else logs_dir / "transcript.jsonl"
+                )
                 task_path = AGY_BRAIN_DIR / conv_id / "task.md"
                 task_preview = ""
                 task_counts = {"unchecked": 0, "in_progress": 0, "completed": 0}
