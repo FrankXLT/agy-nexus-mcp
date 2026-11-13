@@ -15,7 +15,14 @@ import subprocess
 import time
 from typing import Any
 
-from agy_nexus.config import AGY_BRAIN_DIR, AGY_DATA_DIR, AGY_DB_FILE, AGY_GITLAB_DIR
+from agy_nexus.config import (
+    AGY_BRAIN_DIR,
+    AGY_DATA_DIR,
+    AGY_DB_FILE,
+    AGY_GITLAB_DIR,
+    get_umbrella_roots,
+    get_workspace_pillar_roots,
+)
 from agy_nexus.hygiene import is_sensitive_filename
 from agy_nexus.polyglot_index import polyglot_symbol_search
 from agy_nexus.polyglot_outline import find_symbol_callers
@@ -187,9 +194,8 @@ def _search_workspaces_and_history(
     t_start = time.monotonic()
     deadline = t_start + SEARCH_WALL_CLOCK_BUDGET_S
 
-    gh_dir = AGY_GITLAB_DIR.parent / "github"
     repo_names: set[str] = set()
-    for host_dir in (AGY_GITLAB_DIR, gh_dir):
+    for host_dir in get_workspace_pillar_roots():
         if host_dir.is_dir():
             repo_names.update(d.name for d in host_dir.iterdir() if d.is_dir() and not d.name.startswith("."))
     available_repos = sorted(repo_names)
@@ -207,7 +213,8 @@ def _search_workspaces_and_history(
         if conv_id:
             pinned_matches = _search_pinned_session(conv_id, q, kw_tokens)
 
-        if primary_ws and primary_ws.is_dir() and primary_ws.resolve() not in (AGY_GITLAB_DIR.resolve(), gh_dir.resolve()):
+        umbrella_roots = get_umbrella_roots()
+        if primary_ws and primary_ws.is_dir() and primary_ws.resolve() not in umbrella_roots:
             try:
                 poly_res = polyglot_symbol_search(q, workspace=str(primary_ws), limit=8)
                 polyglot_matches = poly_res.get("matches") or []
@@ -215,10 +222,10 @@ def _search_workspaces_and_history(
                 polyglot_matches = []
 
         repo_targets: list[Path] = []
-        if primary_ws and primary_ws.is_dir() and primary_ws.resolve() not in (AGY_GITLAB_DIR.resolve(), gh_dir.resolve()):
+        if primary_ws and primary_ws.is_dir() and primary_ws.resolve() not in umbrella_roots:
             repo_targets.append(primary_ws.resolve())
         if not workspace_pinned:
-            for host_dir in (AGY_GITLAB_DIR, gh_dir):
+            for host_dir in get_workspace_pillar_roots():
                 if host_dir.is_dir():
                     for d in sorted(host_dir.iterdir()):
                         if d.is_dir() and not d.name.startswith(".") and not d.is_symlink() and d.resolve() not in repo_targets:

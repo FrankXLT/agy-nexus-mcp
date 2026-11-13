@@ -25,6 +25,7 @@ DEFAULT_BIND_HOST = "127.0.0.1"
 DEFAULT_ALLOWED_CIDRS = "127.0.0.0/8,::1/128,172.16.0.0/12"
 MAX_BODY_BYTES = 1_048_576
 TOKEN_DERIVATION_CONTEXT = b"agy-host-bridge-agentapi-v1"
+AGY_WORKSPACE_DIR = Path(os.getenv("AGY_WORKSPACE_DIR", str(Path.home() / "agentic_workspace"))).expanduser()
 
 
 def load_bridge_env_file(env_file: str | Path | None = None) -> dict[str, str]:
@@ -136,13 +137,23 @@ def validate_agentapi_request(
     return 200, "", length
 
 
-def resolve_allowed_git_roots(gitlab_dir: Path, data_dir: Path, extra_roots_raw: str | None = None) -> list[Path]:
+def resolve_allowed_git_roots(
+    gitlab_dir: Path,
+    data_dir: Path,
+    workspace_dir: Path | str | None = None,
+    extra_roots_raw: str | None = None,
+) -> list[Path]:
     """Return canonicalized git-inspect roots, strictly forbidding '/' and '$HOME'."""
     home_res = Path.home().resolve()
     root_fs = Path("/").resolve()
+    ws_base = Path(workspace_dir).expanduser().resolve() if workspace_dir else AGY_WORKSPACE_DIR.resolve()
     candidates = [
         gitlab_dir.expanduser().resolve(),
+        (gitlab_dir.parent / "github").resolve(),
         (data_dir.expanduser() / "worktrees").resolve(),
+        (ws_base / "projects").resolve(),
+        (ws_base / "workbooks").resolve(),
+        (ws_base / "configuration").resolve(),
     ]
     raw_extra = os.getenv("HOST_BRIDGE_EXTRA_ROOTS", "") if extra_roots_raw is None else extra_roots_raw
     for part in re.split(r"[,:]", raw_extra):

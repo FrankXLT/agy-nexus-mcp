@@ -14,6 +14,7 @@ from agy_nexus.config import (
     AGY_DATA_DIR,
     AGY_DB_FILE,
     AGY_GITLAB_DIR,
+    AGY_PROJECTS_DIR,
     LOCKED_RESPONSE,
     READONLY_ANNOTATIONS,
     SESSION_STATE,
@@ -226,7 +227,7 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
         resolved_pname = ""
     project_name = projects_map.get(project_id, {}).get("name") or resolved_pname or project_id
     if not workspace:
-        workspace = str(AGY_GITLAB_DIR)
+        workspace = str(AGY_PROJECTS_DIR if AGY_PROJECTS_DIR.is_dir() else AGY_GITLAB_DIR)
     SESSION_STATE["pinned_calls"] = int(SESSION_STATE.get("pinned_calls") or 0) + 1
     pin_session_context(
         conv_id, title=conv_title, project_id=project_id, project_name=project_name,
@@ -287,7 +288,7 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
             recent_turns = recent_turns[-turns_cap:]
         except Exception as e:
             recent_turns.append({"error": f"Failed reading transcript: {e}"})
-    ws_path = Path(workspace) if workspace else AGY_GITLAB_DIR
+    ws_path = Path(workspace) if workspace else (AGY_PROJECTS_DIR if AGY_PROJECTS_DIR.is_dir() else AGY_GITLAB_DIR)
     git_summary = _collect_git_summary(ws_path)
     if transcript_file and transcript_file.is_file():
         pending_app = extract_pending_approval(transcript_file)

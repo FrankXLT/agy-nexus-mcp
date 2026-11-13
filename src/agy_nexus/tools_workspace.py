@@ -10,11 +10,16 @@ from agy_nexus.config import (
     AGY_BRAIN_DIR,
     AGY_DATA_DIR,
     AGY_GITLAB_DIR,
+    AGY_PROJECTS_DIR,
+    AGY_WORKSPACE_DIR,
     LOCKED_RESPONSE,
     READONLY_ANNOTATIONS,
     SESSION_STATE,
     _compact_json,
     _save_session_state,
+    get_antigravity_config_repo,
+    get_umbrella_roots,
+    get_workspace_pillar_roots,
     is_unlocked,
     mcp,
     pin_session_context,
@@ -43,10 +48,10 @@ def _resolve_pinned_context(session_identifier: str = "", workspace: str = "", t
     if workspace.strip():
         ws_str = _resolve_workspace_str(workspace.strip())
     if not ws_str:
-        ws_str = SESSION_STATE.get("selected_workspace") or str(AGY_GITLAB_DIR)
+        ws_str = SESSION_STATE.get("selected_workspace") or str(AGY_PROJECTS_DIR if AGY_PROJECTS_DIR.is_dir() else AGY_GITLAB_DIR)
     ws = Path(ws_str)
     if not ws.is_dir() and not (AGY_DATA_DIR / "worktrees" / ws.name).is_dir():
-        ws = AGY_GITLAB_DIR
+        ws = AGY_PROJECTS_DIR if AGY_PROJECTS_DIR.is_dir() else AGY_GITLAB_DIR
     if is_pinned_call:
         SESSION_STATE["pinned_calls"] = int(SESSION_STATE.get("pinned_calls") or 0) + 1
         if conv_id:
@@ -234,8 +239,9 @@ def inspect_git_diff(
     pinned_cid, pinned_ws, _ = _resolve_pinned_context(session_identifier, raw_override, tool_name="inspect_git_diff")
     ws_str = str(pinned_ws) if (session_identifier.strip() or raw_override) else _resolve_workspace_str(raw_override)
     ws = Path(ws_str)
-    if ws == AGY_GITLAB_DIR or ws_str == str(AGY_GITLAB_DIR):
-        ws = (AGY_GITLAB_DIR / "antigravity-config").resolve()
+    umbrella_roots = get_umbrella_roots()
+    if (ws.exists() and ws.resolve() in umbrella_roots) or ws_str in {str(u) for u in umbrella_roots}:
+        ws = get_antigravity_config_repo().resolve()
         ws_str = str(ws)
     safe_branch = re.sub(r"[^a-zA-Z0-9_./~^-]", "", target_branch.strip()).lstrip("-") or "HEAD"
     safe_file_path = ""
@@ -244,7 +250,11 @@ def inspect_git_diff(
         if not norm_fp.startswith(".."):
             safe_file_path = norm_fp
     configured_mcps = _get_configured_mcp_servers()
-    allowed_local_roots = (AGY_GITLAB_DIR.resolve(), (AGY_DATA_DIR / "worktrees").resolve())
+    allowed_local_roots = (
+        AGY_WORKSPACE_DIR.resolve(),
+        *get_workspace_pillar_roots(),
+        (AGY_DATA_DIR / "worktrees").resolve(),
+    )
     if ws.is_dir():
         ws_res = ws.resolve()
         if any(ws_res.is_relative_to(r) for r in allowed_local_roots):

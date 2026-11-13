@@ -23,6 +23,7 @@ from agy_nexus.config import (
     SESSION_STATE,
     TTL_SECONDS,
     _compact_json,
+    get_antigravity_config_repo,
     is_unlocked,
     mcp,
 )
@@ -266,7 +267,7 @@ def list_models_and_agents(
     """List Antigravity agent roles, core skills (workspace, user_global, builtin), installed plugin skill bundles (pass skill_scope_filter='all' or 'plugin:<name>' to expand plugin descriptions), global & workspace rules, Customization Scope-Isolation policy, modular hygiene standards, live Dual-Pool Quota Pacing, and Language Server connectivity. Pass inspect_name (e.g. 'agy-nexus-stats', 'argon-sentinel', 'GEMINI.md') to read a specific item."""
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
-    ws_str = SESSION_STATE.get("selected_workspace") or str(AGY_GITLAB_DIR / "antigravity-config")
+    ws_str = SESSION_STATE.get("selected_workspace") or str(get_antigravity_config_repo())
     ws_path = Path(ws_str).resolve() if ws_str and Path(ws_str).is_dir() else None
     agents_list = collect_agents_inventory(AGY_CONFIG_DIR, ws_path)
     skills_list = (

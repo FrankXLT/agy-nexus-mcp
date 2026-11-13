@@ -15,8 +15,17 @@ import urllib.request
 
 import agy_nexus.config as cfg
 from agy_nexus.config import (
-    AGY_BRAIN_DIR, AGY_CONFIG_DIR, AGY_DATA_DIR, AGY_GITLAB_DIR,
-    SESSION_STATE, _save_session_state,
+    AGY_BRAIN_DIR,
+    AGY_CONFIG_DIR,
+    AGY_DATA_DIR,
+    AGY_GITLAB_DIR,
+    AGY_PROJECTS_DIR,
+    AGY_WORKSPACE_DIR,
+    SESSION_STATE,
+    _save_session_state,
+    get_antigravity_config_repo,
+    get_umbrella_roots,
+    get_workspace_pillar_roots,
 )
 from agy_nexus.hygiene import (
     MAX_FILE_CHARS, MAX_FILES_PER_CALL, MAX_TOTAL_FILE_CHARS,
@@ -29,25 +38,32 @@ from agy_nexus.virtual_uris import resolve_brain_uri_path, resolve_virtual_uri_e
 
 
 def _default_nexus_repo_dir() -> Path:
+    cand_proj = AGY_PROJECTS_DIR / "agy-nexus-mcp"
+    if cand_proj.is_dir():
+        return cand_proj
     standalone = AGY_GITLAB_DIR / "agy-nexus-mcp"
-    return standalone if standalone.is_dir() else (AGY_GITLAB_DIR / "antigravity-config")
+    return standalone if standalone.is_dir() else get_antigravity_config_repo()
 
 
 def _resolve_workspace_str(ws_input: str) -> str:
     """Resolve short repo names, case-insensitive project names, or URIs to a canonical authorized workspace path."""
-    gh_root = (AGY_GITLAB_DIR.resolve().parent / "github").resolve()
-    static_ws_roots = (
-        AGY_GITLAB_DIR.resolve(), gh_root, (AGY_DATA_DIR / "worktrees").resolve(),
-        AGY_CONFIG_DIR.resolve(),
+    static_ws_roots = tuple(
+        (set(get_workspace_pillar_roots()) | {(AGY_DATA_DIR / "worktrees").resolve(), AGY_CONFIG_DIR.resolve()})
+        - {Path("/").resolve(), Path.home().resolve()}
     )
     raw = re.sub(r"^file://", "", (ws_input or "").strip()).rstrip("/")
     if not raw:
         raw = SESSION_STATE.get("selected_workspace") or str(_default_nexus_repo_dir())
     p = Path(raw)
-    if p.is_absolute() and p.is_dir() and any(p.resolve().is_relative_to(r) for r in static_ws_roots):
+    if (
+        p.is_absolute()
+        and p.is_dir()
+        and p.resolve() not in get_umbrella_roots()
+        and any(p.resolve() == r or p.resolve().is_relative_to(r) for r in static_ws_roots)
+    ):
         return str(p.resolve())
     target_name = p.name if p.is_absolute() else raw.strip("/")
-    for host_dir in (AGY_GITLAB_DIR, gh_root):
+    for host_dir in get_workspace_pillar_roots():
         if host_dir.is_dir() and target_name and ".." not in Path(target_name).parts:
             exact_p = (host_dir / target_name).resolve()
             if exact_p.is_dir() and exact_p.is_relative_to(host_dir.resolve()):
@@ -111,18 +127,24 @@ def _resolve_and_read_files(
             if ep.is_dir() and ep.resolve() not in search_roots:
                 search_roots.append(ep.resolve())
     if not search_roots:
-        search_roots.append(AGY_GITLAB_DIR.resolve())
+        pillar_roots = get_workspace_pillar_roots()
+        if pillar_roots:
+            search_roots.append(pillar_roots[0])
+        else:
+            search_roots.append(AGY_GITLAB_DIR.resolve())
 
-    gitlab_root_res = AGY_GITLAB_DIR.resolve()
-    gh_root_res = (gitlab_root_res.parent / "github").resolve()
-    allowed = (
-        gitlab_root_res,
-        gh_root_res,
-        AGY_BRAIN_DIR.resolve(),
-        (AGY_DATA_DIR / "worktrees").resolve(),
-        AGY_CONFIG_DIR.resolve(),
-        (AGY_DATA_DIR / "builtin").resolve(),
-        Path(__file__).resolve().parents[2],
+    allowed = tuple(
+        (
+            set(get_workspace_pillar_roots())
+            | {
+                AGY_BRAIN_DIR.resolve(),
+                (AGY_DATA_DIR / "worktrees").resolve(),
+                AGY_CONFIG_DIR.resolve(),
+                (AGY_DATA_DIR / "builtin").resolve(),
+                Path(__file__).resolve().parents[2],
+            }
+        )
+        - {Path("/").resolve(), Path.home().resolve()}
     )
     items_slice = raw_items[:MAX_FILES_PER_CALL]
     remaining_total_chars = max_total_chars
@@ -182,7 +204,10 @@ def _resolve_and_read_files(
                     if not norm_sub.startswith("scratch/"):
                         candidates.append((session_dir / "scratch" / norm_sub).resolve())
                 if repo_prefix:
-                    candidates.append((AGY_GITLAB_DIR / repo_prefix.split(" ")[0] / norm_sub).resolve())
+                    prefix_name = repo_prefix.split(" ")[0]
+                    for host_dir in get_workspace_pillar_roots():
+                        candidates.append((host_dir / prefix_name / norm_sub).resolve())
+                    candidates.append((AGY_GITLAB_DIR / prefix_name / norm_sub).resolve())
                 for sroot in search_roots:
                     candidates.append((sroot / norm_sub).resolve())
                     if norm_sub.startswith("packages/"):
@@ -199,6 +224,8 @@ def _resolve_and_read_files(
                     candidates.append((session_dir / "scratch" / norm_sub).resolve())
                     candidates.append((session_dir / "scratch" / Path(norm_sub).name).resolve())
                     candidates.append((session_dir / Path(norm_sub).name).resolve())
+                for host_dir in get_workspace_pillar_roots():
+                    candidates.append((host_dir / norm_sub).resolve())
                 candidates.append((AGY_GITLAB_DIR / norm_sub).resolve())
                 candidates.append((AGY_CONFIG_DIR / norm_sub).resolve())
 
@@ -216,30 +243,51 @@ def _resolve_and_read_files(
             not target_path.is_file()
             and cleaned_no_line
             and not cleaned_no_line.startswith(("/", "brain:"))
-            and AGY_GITLAB_DIR.is_dir()
         ):
             norm_rel = os.path.normpath(cleaned_no_line).lstrip("/")
             if not norm_rel.startswith(".."):
                 repo_hits: list[tuple[Path, Path]] = []
-                for rdir in sorted(AGY_GITLAB_DIR.iterdir()):
-                    if rdir.is_dir() and not rdir.name.startswith(".") and not rdir.is_symlink():
-                        for probe_rel in (norm_rel, f"packages/{norm_rel}"):
-                            p_cand = (rdir / probe_rel).resolve()
-                            if p_cand.is_file():
-                                repo_hits.append((rdir.resolve(), p_cand))
-                                break
+                for p_root in get_workspace_pillar_roots():
+                    if p_root.is_dir():
+                        for rdir in sorted(p_root.iterdir()):
+                            if rdir.is_dir() and not rdir.name.startswith(".") and not rdir.is_symlink():
+                                for probe_rel in (norm_rel, f"packages/{norm_rel}"):
+                                    p_cand = (rdir / probe_rel).resolve()
+                                    if p_cand.is_file():
+                                        repo_hits.append((rdir.resolve(), p_cand))
+                                        break
                 if len(repo_hits) == 1:
                     auto_resolved_ws, target_path = str(repo_hits[0][0]), repo_hits[0][1]
                     SESSION_STATE["auto_resolved_calls"] = int(SESSION_STATE.get("auto_resolved_calls") or 0) + 1
                     _save_session_state()
-        elif target_path.is_file() and target_path.is_relative_to(gitlab_root_res):
-            rel_parts = target_path.relative_to(gitlab_root_res).parts
-            if rel_parts:
-                cand_repo = (gitlab_root_res / rel_parts[0]).resolve()
-                if cand_repo not in search_roots and cand_repo.is_dir():
-                    auto_resolved_ws = str(cand_repo)
-                    SESSION_STATE["auto_resolved_calls"] = int(SESSION_STATE.get("auto_resolved_calls") or 0) + 1
-                    _save_session_state()
+        elif target_path.is_file():
+            extracted_cand_repo: Path | None = None
+            for p_root in get_workspace_pillar_roots():
+                try:
+                    if target_path.is_relative_to(p_root):
+                        rel_parts = target_path.relative_to(p_root).parts
+                        if rel_parts:
+                            cand = (p_root / rel_parts[0]).resolve()
+                            if cand.is_dir() and cand not in search_roots:
+                                extracted_cand_repo = cand
+                                break
+                except Exception:
+                    pass
+            if not extracted_cand_repo:
+                try:
+                    ws_dir_res = AGY_WORKSPACE_DIR.resolve()
+                    if target_path.is_relative_to(ws_dir_res):
+                        rel_parts = target_path.relative_to(ws_dir_res).parts
+                        if len(rel_parts) >= 2:
+                            cand = (ws_dir_res / rel_parts[0] / rel_parts[1]).resolve()
+                            if cand.is_dir() and cand not in search_roots:
+                                extracted_cand_repo = cand
+                except Exception:
+                    pass
+            if extracted_cand_repo:
+                auto_resolved_ws = str(extracted_cand_repo)
+                SESSION_STATE["auto_resolved_calls"] = int(SESSION_STATE.get("auto_resolved_calls") or 0) + 1
+                _save_session_state()
 
         if auto_resolved_ws and not top_auto_ws:
             top_auto_ws = auto_resolved_ws
@@ -330,7 +378,8 @@ def _host_git_inspect(
 def _collect_git_summary(ws_path: Path) -> dict[str, Any]:
     """Return compact branch + status_short + diff_stat + untracked_files for a workspace (with host fallback for worktrees)."""
     ws_str = str(ws_path) if ws_path else ""
-    if ws_path.is_dir() and ws_path.resolve() != AGY_GITLAB_DIR.resolve():
+    umbrella_roots = get_umbrella_roots()
+    if ws_path.is_dir() and ws_path.resolve() not in umbrella_roots:
         try:
             branch_proc = subprocess.run(["git", "-c", "safe.directory=*", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(ws_path), capture_output=True, text=True, timeout=4, check=False)
             if branch_proc.returncode == 0:
@@ -345,7 +394,7 @@ def _collect_git_summary(ws_path: Path) -> dict[str, Any]:
                 }
         except Exception:
             pass
-    if ws_str and Path(ws_str) != AGY_GITLAB_DIR:
+    if ws_str and Path(ws_str).resolve() not in umbrella_roots:
         host_res = _host_git_inspect(ws_str, target_branch="HEAD", include_untracked=True, summary_only=True)
         if host_res:
             return {

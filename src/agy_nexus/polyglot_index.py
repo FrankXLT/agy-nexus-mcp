@@ -16,7 +16,17 @@ import threading
 import time
 from typing import Any
 
-from agy_nexus.config import AGY_CONFIG_DIR, AGY_DATA_DIR, AGY_GITLAB_DIR, SESSION_STATE
+from agy_nexus.config import (
+    AGY_CONFIG_DIR,
+    AGY_DATA_DIR,
+    AGY_GITLAB_DIR,
+    AGY_PROJECTS_DIR,
+    AGY_WORKSPACE_DIR,
+    SESSION_STATE,
+    get_antigravity_config_repo,
+    get_umbrella_roots,
+    get_workspace_pillar_roots,
+)
 from agy_nexus.hygiene import is_sensitive_filename
 from agy_nexus.polyglot_outline import EXT_LANG, build_polyglot_outline
 
@@ -49,15 +59,21 @@ def get_polyglot_index_dir() -> Path:
 def _allowed_workspace_roots() -> list[Path]:
     pkg_repo = Path(__file__).resolve().parents[2]
     roots = [
-        AGY_GITLAB_DIR.resolve(),
-        (AGY_GITLAB_DIR.resolve().parent / "github").resolve(),
+        AGY_WORKSPACE_DIR.resolve(),
+        *get_workspace_pillar_roots(),
         (AGY_DATA_DIR / "worktrees").resolve(),
         AGY_CONFIG_DIR.resolve(),
         pkg_repo,
     ]
     home_res = Path.home().resolve()
     root_fs = Path("/").resolve()
-    return [r for r in roots if r not in (home_res, root_fs)]
+    seen: set[Path] = set()
+    result: list[Path] = []
+    for r in roots:
+        if r not in (home_res, root_fs) and r not in seen:
+            seen.add(r)
+            result.append(r)
+    return result
 
 
 def _is_safe_workspace(cand: Path) -> bool:
@@ -67,8 +83,7 @@ def _is_safe_workspace(cand: Path) -> bool:
         return False
     if not res.is_dir():
         return False
-    gh_umbrella = (AGY_GITLAB_DIR.resolve().parent / "github").resolve()
-    if res in (AGY_GITLAB_DIR.resolve(), gh_umbrella, (AGY_DATA_DIR / "worktrees").resolve()):
+    if res in get_umbrella_roots():
         return False
     return any(res == r or res.is_relative_to(r) for r in _allowed_workspace_roots())
 
@@ -83,11 +98,9 @@ def resolve_polyglot_workspace(workspace: str = "") -> Path:
             candidates.append(p)
         else:
             clean_slug = raw.strip("/")
-            candidates.extend([
-                AGY_GITLAB_DIR / clean_slug,
-                AGY_GITLAB_DIR.parent / "github" / clean_slug,
-                AGY_DATA_DIR / "worktrees" / clean_slug,
-            ])
+            for pillar in get_workspace_pillar_roots():
+                candidates.append(pillar / clean_slug)
+            candidates.append(AGY_DATA_DIR / "worktrees" / clean_slug)
             wt_root = AGY_DATA_DIR / "worktrees"
             if wt_root.is_dir() and "/" not in clean_slug:
                 for repo_dir in sorted(wt_root.iterdir()):
@@ -100,8 +113,9 @@ def resolve_polyglot_workspace(workspace: str = "") -> Path:
         candidates.append(Path(sel_ws))
     candidates.extend([
         Path(__file__).resolve().parents[2],
+        AGY_PROJECTS_DIR / "agy-nexus-mcp",
         AGY_GITLAB_DIR / "agy-nexus-mcp",
-        AGY_GITLAB_DIR / "antigravity-config",
+        get_antigravity_config_repo(),
         AGY_CONFIG_DIR,
     ])
     for cand in candidates:

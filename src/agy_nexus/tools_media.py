@@ -22,8 +22,20 @@ except ImportError:
 
 import agy_nexus.config as cfg
 from agy_nexus.config import (
-    AGY_BRAIN_DIR, AGY_DATA_DIR, AGY_GITLAB_DIR, LOCKED_RESPONSE, READONLY_ANNOTATIONS,
-    SESSION_STATE, _compact_json, is_unlocked, mcp, pin_session_context,
+    AGY_BRAIN_DIR,
+    AGY_DATA_DIR,
+    AGY_GITLAB_DIR,
+    AGY_PROJECTS_DIR,
+    AGY_WORKSPACE_DIR,
+    LOCKED_RESPONSE,
+    READONLY_ANNOTATIONS,
+    SESSION_STATE,
+    _compact_json,
+    get_umbrella_roots,
+    get_workspace_pillar_roots,
+    is_unlocked,
+    mcp,
+    pin_session_context,
 )
 from agy_nexus.media import (
     ALLOWED_MEDIA_EXTENSIONS, discover_visual_artifacts, get_public_base_url,
@@ -137,6 +149,9 @@ def encode_image_to_webp_budget(
 def _is_strict_child(cand: Path, roots: tuple[Path, ...]) -> bool:
     try:
         rc = cand.resolve()
+        forbidden = {Path("/").resolve(), Path.home().resolve(), *get_umbrella_roots()}
+        if rc in forbidden:
+            return False
         return any(rc != r and rc.is_relative_to(r) for r in roots)
     except Exception:
         return False
@@ -147,7 +162,10 @@ def _build_visual_catalog(conv_id: str, ws_path: Path, batch_folder: str = "") -
     catalog: list[dict[str, Any]] = []
     seen_real: set[str] = set()
     brain_root = AGY_BRAIN_DIR.resolve()
-    allowed_ws_roots = (AGY_GITLAB_DIR.resolve(), (AGY_DATA_DIR / "worktrees").resolve())
+    allowed_ws_roots = (
+        *get_workspace_pillar_roots(),
+        (AGY_DATA_DIR / "worktrees").resolve(),
+    )
     safe_cid = re.sub(r"[^a-zA-Z0-9_-]", "", conv_id)
 
     def _add_entry(fpath: Path, base_dir: Path, scope: str, seq_hint: int = 0, batch_name: str = "") -> None:
@@ -215,7 +233,10 @@ def _select_targets(catalog: list[dict[str, Any]], targets: str, conv_id: str, w
     picked: list[dict[str, Any]] = []
     seen_paths: set[str] = set()
     brain_root = AGY_BRAIN_DIR.resolve()
-    allowed_ws_roots = (AGY_GITLAB_DIR.resolve(), (AGY_DATA_DIR / "worktrees").resolve())
+    allowed_ws_roots = (
+        *get_workspace_pillar_roots(),
+        (AGY_DATA_DIR / "worktrees").resolve(),
+    )
     safe_cid = re.sub(r"[^a-zA-Z0-9_-]", "", conv_id)
 
     for tok in tokens:
@@ -267,10 +288,14 @@ def inspect_visual_artifacts(
         return [TextContent(type="text", text=LOCKED_RESPONSE)]
 
     conv_id = _resolve_session_identifier(session_identifier.strip()) if session_identifier.strip() else str(SESSION_STATE.get("selected_session") or "")
-    slot = (SESSION_STATE.get("active_contexts") or {}).get(conv_id, {}) if conv_id else {}
-    ws_str = _resolve_workspace_str(workspace.strip()) if workspace.strip() else str(slot.get("workspace") or SESSION_STATE["session_workspace_map"].get(conv_id) or SESSION_STATE.get("selected_workspace") or AGY_GITLAB_DIR)
-    ws_path = Path(ws_str) if ws_str else AGY_GITLAB_DIR
-    allowed_ws_roots = (AGY_GITLAB_DIR.resolve(), (AGY_DATA_DIR / "worktrees").resolve())
+    slot = SESSION_STATE.get("active_contexts", {}).get(conv_id) or {}
+    default_ws = AGY_PROJECTS_DIR if AGY_PROJECTS_DIR.is_dir() else AGY_GITLAB_DIR
+    ws_str = _resolve_workspace_str(workspace.strip()) if workspace.strip() else str(slot.get("workspace") or SESSION_STATE["session_workspace_map"].get(conv_id) or SESSION_STATE.get("selected_workspace") or default_ws)
+    ws_path = Path(ws_str) if ws_str else default_ws
+    allowed_ws_roots = (
+        *get_workspace_pillar_roots(),
+        (AGY_DATA_DIR / "worktrees").resolve(),
+    )
     ws_ok = ws_path.is_dir() and _is_strict_child(ws_path, allowed_ws_roots)
     if conv_id:
         pin_session_context(conv_id, workspace=str(ws_path.resolve()) if ws_ok else "", mode="PINNED (VISION)", last_tool="inspect_visual_artifacts", set_default=False)

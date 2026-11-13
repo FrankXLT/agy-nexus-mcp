@@ -55,7 +55,55 @@ AGY_BRAIN_DIR = Path(os.getenv("AGY_BRAIN_DIR", str(AGY_DATA_DIR / "brain"))).ex
 AGY_DB_FILE = Path(os.getenv("AGY_DB_FILE", str(AGY_DATA_DIR / "conversation_summaries.db"))).expanduser()
 AGY_PRESENCE_DIR = Path(os.getenv("AGY_PRESENCE_DIR", str(AGY_DATA_DIR / "presence"))).expanduser()
 AGY_CONFIG_DIR = Path(os.getenv("AGY_CONFIG_DIR", str(Path.home() / ".gemini/config"))).expanduser()
-AGY_GITLAB_DIR = Path(os.getenv("AGY_GITLAB_DIR", str(Path.home() / "gitlab"))).expanduser()
+
+# Canonical 3-pillar workspace topology (projects, workbooks, configuration)
+AGY_WORKSPACE_DIR = Path(os.getenv("AGY_WORKSPACE_DIR", str(Path.home() / "agentic_workspace"))).expanduser()
+AGY_PROJECTS_DIR = Path(os.getenv("AGY_PROJECTS_DIR", str(AGY_WORKSPACE_DIR / "projects"))).expanduser()
+AGY_WORKBOOKS_DIR = Path(os.getenv("AGY_WORKBOOKS_DIR", str(AGY_WORKSPACE_DIR / "workbooks"))).expanduser()
+AGY_CONFIGURATION_DIR = Path(os.getenv("AGY_CONFIGURATION_DIR", str(AGY_WORKSPACE_DIR / "configuration"))).expanduser()
+
+# Backward-compatible AGY_GITLAB_DIR: explicit env -> AGY_PROJECTS_DIR (if exists) -> ~/gitlab fallback
+if os.getenv("AGY_GITLAB_DIR"):
+    AGY_GITLAB_DIR = Path(os.getenv("AGY_GITLAB_DIR", "")).expanduser()
+elif AGY_PROJECTS_DIR.is_dir():
+    AGY_GITLAB_DIR = AGY_PROJECTS_DIR
+else:
+    AGY_GITLAB_DIR = (Path.home() / "gitlab").expanduser()
+
+def get_workspace_pillar_roots() -> list[Path]:
+    """Return existing resolved workspace pillar directories (projects, workbooks, configuration) plus legacy dirs if present."""
+    roots: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in [AGY_PROJECTS_DIR, AGY_WORKBOOKS_DIR, AGY_CONFIGURATION_DIR, AGY_GITLAB_DIR, AGY_GITLAB_DIR.parent / "github"]:
+        try:
+            if candidate.is_dir():
+                res = candidate.resolve()
+                if res not in seen:
+                    seen.add(res)
+                    roots.append(res)
+        except OSError:
+            pass
+    return roots
+
+def get_umbrella_roots() -> set[Path]:
+    """Return resolved paths for parent umbrella directories that contain repos, NOT single-repo workspaces."""
+    return {
+        AGY_WORKSPACE_DIR.resolve(),
+        AGY_PROJECTS_DIR.resolve(),
+        AGY_WORKBOOKS_DIR.resolve(),
+        AGY_CONFIGURATION_DIR.resolve(),
+        AGY_GITLAB_DIR.resolve(),
+        (AGY_GITLAB_DIR.parent / "github").resolve(),
+        (AGY_DATA_DIR / "worktrees").resolve(),
+    }
+
+def get_antigravity_config_repo() -> Path:
+    """Return path to antigravity-config repository under AGY_CONFIGURATION_DIR if present, else AGY_GITLAB_DIR."""
+    cand = AGY_CONFIGURATION_DIR / "antigravity-config"
+    if cand.is_dir() or cand.exists():
+        return cand
+    return AGY_GITLAB_DIR / "antigravity-config"
+
 AGY_BG_DIR = Path(os.getenv("AGY_BG_DIR", str(AGY_DATA_DIR / "sidecar_data/ag-bridge-bg"))).expanduser()
 AGY_HOST_BRIDGE_URL = os.getenv("AGY_HOST_BRIDGE_URL", "http://127.0.0.1:8098/agentapi")
 BIND_HOST = os.getenv("BIND_HOST", "0.0.0.0")

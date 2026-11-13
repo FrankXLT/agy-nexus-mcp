@@ -47,6 +47,7 @@ BIND_HOST = os.getenv("HOST_BRIDGE_BIND_HOST", DEFAULT_BIND_HOST)
 BIND_PORT = int(os.getenv("HOST_BRIDGE_BIND_PORT", "8098"))
 AGY_DATA_DIR = Path(os.getenv("AGY_DATA_DIR", str(Path.home() / ".gemini/antigravity"))).expanduser()
 AGY_CONFIG_DIR = Path(os.getenv("AGY_CONFIG_DIR", str(Path.home() / ".gemini/config"))).expanduser()
+AGY_WORKSPACE_DIR = Path(os.getenv("AGY_WORKSPACE_DIR", str(Path.home() / "agentic_workspace"))).expanduser()
 AGY_GITLAB_DIR = Path(os.getenv("AGY_GITLAB_DIR", str(Path.home() / "gitlab"))).expanduser()
 AGENTAPI_BIN = os.getenv("AGENTAPI_BIN", str(AGY_DATA_DIR / "bin/agentapi"))
 PROJECTS_DIR = AGY_CONFIG_DIR / "projects"
@@ -135,10 +136,21 @@ def resolve_project_workspace(project_name: str = "", workspace_path: str = "", 
     if not target_dir and workspace_path:
         cand = Path(workspace_path).expanduser()
         if not cand.is_absolute():
-            cand = AGY_GITLAB_DIR / workspace_path
+            found_rel = None
+            for base in (
+                AGY_WORKSPACE_DIR / "projects",
+                AGY_WORKSPACE_DIR / "workbooks",
+                AGY_WORKSPACE_DIR / "configuration",
+                AGY_GITLAB_DIR,
+            ):
+                if (base / workspace_path).is_dir():
+                    found_rel = base / workspace_path
+                    break
+            cand = found_rel if found_rel else (AGY_WORKSPACE_DIR / "projects" / workspace_path if (AGY_WORKSPACE_DIR / "projects").is_dir() else AGY_GITLAB_DIR / workspace_path)
         resolved_cand = cand.resolve()
-        allowed_roots = resolve_allowed_git_roots(AGY_GITLAB_DIR, AGY_DATA_DIR)
-        if cand.is_dir() and any(resolved_cand == r or resolved_cand.is_relative_to(r) for r in allowed_roots):
+        allowed_roots = resolve_allowed_git_roots(AGY_GITLAB_DIR, AGY_DATA_DIR, AGY_WORKSPACE_DIR)
+        pkg_root = Path(__file__).resolve().parents[1]
+        if cand.is_dir() and (resolved_cand == pkg_root.resolve() or any(resolved_cand != r and resolved_cand.is_relative_to(r) for r in allowed_roots)):
             target_dir = str(resolved_cand)
             display_name = resolved_cand.name
             for p in projects:
@@ -148,21 +160,33 @@ def resolve_project_workspace(project_name: str = "", workspace_path: str = "", 
                     break
     if not target_dir and project_name:
         slug = re.sub(r"[^a-zA-Z0-9._-]", "-", project_name.strip().lower()).strip("-")
-        for entry in sorted(AGY_GITLAB_DIR.iterdir()) if AGY_GITLAB_DIR.is_dir() else []:
-            if entry.is_dir() and (entry.name.lower() == slug or slug in entry.name.lower()):
-                target_dir = str(entry.resolve())
-                display_name = entry.name
-                for p in projects:
-                    if target_dir in (p.get("paths") or []):
-                        resolved_id = p.get("id")
-                        display_name = p.get("name") or display_name
+        search_roots = [
+            AGY_WORKSPACE_DIR / "projects",
+            AGY_WORKSPACE_DIR / "workbooks",
+            AGY_WORKSPACE_DIR / "configuration",
+            AGY_GITLAB_DIR,
+        ]
+        for sroot in search_roots:
+            if sroot.is_dir():
+                for entry in sorted(sroot.iterdir()):
+                    if entry.is_dir() and (entry.name.lower() == slug or slug in entry.name.lower()):
+                        target_dir = str(entry.resolve())
+                        display_name = entry.name
+                        for p in projects:
+                            if target_dir in (p.get("paths") or []):
+                                resolved_id = p.get("id")
+                                display_name = p.get("name") or display_name
+                                break
                         break
+            if target_dir:
                 break
     if target_dir:
         res_td = Path(target_dir).expanduser().resolve()
-        allowed_roots = resolve_allowed_git_roots(AGY_GITLAB_DIR, AGY_DATA_DIR)
-        if not any(res_td == r or res_td.is_relative_to(r) for r in allowed_roots):
-            target_dir = str(AGY_GITLAB_DIR)
+        allowed_roots = resolve_allowed_git_roots(AGY_GITLAB_DIR, AGY_DATA_DIR, AGY_WORKSPACE_DIR)
+        pkg_root = Path(__file__).resolve().parents[1]
+        if not (res_td == pkg_root.resolve() or any(res_td != r and res_td.is_relative_to(r) for r in allowed_roots)):
+            default_ws = (AGY_WORKSPACE_DIR / "projects") if (AGY_WORKSPACE_DIR / "projects").is_dir() else AGY_GITLAB_DIR
+            target_dir = str(default_ws)
     return resolved_id, target_dir, display_name
 def set_active_project_in_storage(project_id: str | None) -> bool:
     """Update lastActiveProjectId in ~/.config/Antigravity/app_storage.json when spawning a new session."""
@@ -200,10 +224,21 @@ def handle_agentapi_request(payload: dict) -> dict:
         if raw_ws_chk:
             cand_ws = Path(raw_ws_chk).expanduser()
             if not cand_ws.is_absolute():
-                cand_ws = AGY_GITLAB_DIR / raw_ws_chk
+                found_cand = None
+                for base in (
+                    AGY_WORKSPACE_DIR / "projects",
+                    AGY_WORKSPACE_DIR / "workbooks",
+                    AGY_WORKSPACE_DIR / "configuration",
+                    AGY_GITLAB_DIR,
+                ):
+                    if (base / raw_ws_chk).is_dir():
+                        found_cand = base / raw_ws_chk
+                        break
+                cand_ws = found_cand if found_cand else (AGY_WORKSPACE_DIR / "projects" / raw_ws_chk if (AGY_WORKSPACE_DIR / "projects").is_dir() else AGY_GITLAB_DIR / raw_ws_chk)
             res_ws = cand_ws.resolve()
-            allowed_ws_roots = resolve_allowed_git_roots(AGY_GITLAB_DIR, AGY_DATA_DIR)
-            if not any(res_ws == r or res_ws.is_relative_to(r) for r in allowed_ws_roots):
+            allowed_ws_roots = resolve_allowed_git_roots(AGY_GITLAB_DIR, AGY_DATA_DIR, AGY_WORKSPACE_DIR)
+            pkg_root = Path(__file__).resolve().parents[1]
+            if not (res_ws == pkg_root.resolve() or any(res_ws != r and res_ws.is_relative_to(r) for r in allowed_ws_roots)):
                 return {"ok": False, "error": f"Path '{res_ws}' is outside allowed roots."}
     if action == "git-inspect":
         ws_raw = str(payload.get("workspace_path") or "").strip()
@@ -213,8 +248,9 @@ def handle_agentapi_request(payload: dict) -> dict:
         if not ws_raw:
             return {"ok": False, "error": "workspace_path is required"}
         ws_path = Path(ws_raw).expanduser().resolve()
-        allowed_roots = resolve_allowed_git_roots(AGY_GITLAB_DIR, AGY_DATA_DIR)
-        if not any(ws_path == r or ws_path.is_relative_to(r) for r in allowed_roots):
+        allowed_roots = resolve_allowed_git_roots(AGY_GITLAB_DIR, AGY_DATA_DIR, AGY_WORKSPACE_DIR)
+        pkg_root = Path(__file__).resolve().parents[1]
+        if not (ws_path == pkg_root.resolve() or any(ws_path != r and ws_path.is_relative_to(r) for r in allowed_roots)):
             return {"ok": False, "error": f"Path '{ws_path}' is outside allowed roots."}
         if not ws_path.is_dir():
             return {"ok": False, "error": f"Directory '{ws_path}' does not exist."}
@@ -297,7 +333,8 @@ def handle_agentapi_request(payload: dict) -> dict:
         )
         if resolved_proj_id:
             set_active_project_in_storage(resolved_proj_id)
-        run_cwd = resolved_dir if (resolved_dir and Path(resolved_dir).is_dir()) else str(AGY_GITLAB_DIR)
+        default_run_cwd = (AGY_WORKSPACE_DIR / "projects") if (AGY_WORKSPACE_DIR / "projects").is_dir() else AGY_GITLAB_DIR
+        run_cwd = resolved_dir if (resolved_dir and Path(resolved_dir).is_dir()) else str(default_run_cwd)
         cmd = [AGENTAPI_BIN, "new-conversation", f"--model={model}"]
         if title:
             cmd.append(f"--title={title}")

@@ -17,6 +17,8 @@ import sqlite3
 import subprocess
 from typing import Any
 
+from agy_nexus.config import get_workspace_pillar_roots
+
 def _slugify(value: str, fallback: str = "session", max_len: int = 36) -> str:
     """Convert arbitrary title or project string into a filesystem-safe lowercase slug."""
     cleaned = re.sub(r"[^a-z0-9]+", "-", (value or "").lower()).strip("-")
@@ -164,8 +166,8 @@ def export_notebook_bundle(
     }
 
 def inspect_multi_repo_drift(
-    gitlab_dir: Path,
-    data_dir: Path,
+    gitlab_dir: Path | None = None,
+    data_dir: Path | None = None,
     workspace_override: str = "ALL",
     include_untracked: bool = True,
 ) -> dict[str, Any]:
@@ -179,21 +181,31 @@ def inspect_multi_repo_drift(
     }
 
     candidates: list[Path] = []
-    gh_dir = gitlab_dir.parent / "github"
-    for host_dir in (gitlab_dir, gh_dir):
+    seen_cands: set[Path] = set()
+    search_dirs = list(get_workspace_pillar_roots())
+    if gitlab_dir and gitlab_dir.is_dir() and gitlab_dir.resolve() not in search_dirs:
+        search_dirs.append(gitlab_dir.resolve())
+    gh_dir = gitlab_dir.parent / "github" if gitlab_dir else None
+    if gh_dir and gh_dir.is_dir() and gh_dir.resolve() not in search_dirs:
+        search_dirs.append(gh_dir.resolve())
+
+    for host_dir in search_dirs:
         if host_dir.is_dir():
             for entry in sorted(host_dir.iterdir()):
                 if entry.is_dir() and not entry.name.startswith(".") and (entry / ".git").exists():
-                    if is_all or entry.name.lower() in requested_names:
+                    res_e = entry.resolve()
+                    if (is_all or entry.name.lower() in requested_names) and res_e not in seen_cands:
+                        seen_cands.add(res_e)
                         candidates.append(entry)
 
-    wt_root = data_dir / "worktrees"
-    if wt_root.is_dir():
+    wt_root = (data_dir / "worktrees") if data_dir else None
+    if wt_root and wt_root.is_dir():
         for proj_wt in sorted(wt_root.iterdir()):
             if proj_wt.is_dir() and not proj_wt.name.startswith("."):
                 if is_all or proj_wt.name.lower() in requested_names:
                     sub_wts = sorted([d for d in proj_wt.iterdir() if d.is_dir()], key=lambda x: x.stat().st_mtime, reverse=True)
-                    if sub_wts:
+                    if sub_wts and sub_wts[0].resolve() not in seen_cands:
+                        seen_cands.add(sub_wts[0].resolve())
                         candidates.append(sub_wts[0])
 
     repo_reports: list[dict[str, Any]] = []

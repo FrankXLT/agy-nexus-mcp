@@ -25,8 +25,10 @@ from agy_nexus import __version__
 import agy_nexus.config as cfg
 from agy_nexus.config import (
     AGY_BG_DIR, AGY_BRAIN_DIR, AGY_CONFIG_DIR, AGY_DATA_DIR, AGY_DB_FILE, AGY_GITLAB_DIR,
-    BIND_HOST, BIND_PORT, PASS_HASH, PATH_SECRET, SESSION_STATE, TTL_SECONDS,
-    get_polyglot_mcp_token, is_unlocked, mcp, normalize_phrase, verify_passphrase,
+    AGY_PROJECTS_DIR, AGY_WORKSPACE_DIR, BIND_HOST, BIND_PORT, PASS_HASH, PATH_SECRET,
+    SESSION_STATE, TTL_SECONDS, get_antigravity_config_repo, get_polyglot_mcp_token,
+    get_workspace_pillar_roots, is_unlocked, normalize_phrase, verify_passphrase,
+    mcp,
 )
 import agy_nexus.handoff  # noqa: F401
 from agy_nexus.media import discover_visual_artifacts, sign_media_url, verify_and_resolve_media
@@ -184,26 +186,35 @@ def run_self_test() -> int:
 
     # 7. Ephemeral HMAC /web/media/ Signing, Path Sandboxing & Visual Artifact Discovery
     cfg.PASS_HASH = expected_hash
-    artifacts = discover_visual_artifacts("", str(AGY_GITLAB_DIR / "antigravity-config"), limit=5)
-    assert isinstance(artifacts, list) and len(artifacts) > 0, "Expected visual artifacts in antigravity-config"
+    test_repo_dir = Path(__file__).resolve().parents[2]
+    artifacts = discover_visual_artifacts("", str(test_repo_dir), limit=5)
+    assert isinstance(artifacts, list) and len(artifacts) > 0, f"Expected visual artifacts in {test_repo_dir.name}"
     assert verify_and_resolve_media(artifacts[0]["signed_url"])[2] == 200, "Expected 200 on valid signed media URL"
-    signed_expired = sign_media_url("repo:antigravity-config", "docs/assets/dashboard-desktop.png", exp_ts=int(time.time()) - 10)
+    signed_expired = sign_media_url(f"repo:{test_repo_dir.name}", "docs/assets/dashboard-desktop.png", exp_ts=int(time.time()) - 10)
     assert verify_and_resolve_media(signed_expired)[2] == 403, "Expected 403 on expired media link"
-    signed_traversal = sign_media_url("repo:antigravity-config", "../../etc/passwd.png")
+    signed_traversal = sign_media_url(f"repo:{test_repo_dir.name}", "../../etc/passwd.png")
     assert verify_and_resolve_media(signed_traversal)[2] == 403, "Expected 403 on path traversal media link"
     cfg.PASS_HASH = orig_hash
     print(f"  [+] Visual Artifact HMAC /web/media/ signing, sandbox & discovery ({len(artifacts)} artifacts): PASS")
 
     # 8. Parallel Session Isolation, 3-Tier Smart Path Resolver & 76-Col ASCII Session Tree
     tier2_res = _resolve_and_read_files(
-        "antigravity-config/sidecars/ag-bridge-mcp/src/agy_nexus/session_tree.py",
+        f"{test_repo_dir.name}/src/agy_nexus/session_tree.py",
         max_chars_per_file=500,
-        ws=AGY_GITLAB_DIR,
+        ws=AGY_PROJECTS_DIR if AGY_PROJECTS_DIR.is_dir() else AGY_GITLAB_DIR,
     )
     assert isinstance(tier2_res, dict) and tier2_res.get("error") is None and tier2_res.get("auto_resolved_workspace"), f"3-tier path resolver failed: {tier2_res}"
     tree_bundle = build_project_session_tree(active_only=False, limit=10)
     assert "PROJECT -> CHAT -> SESSION ID HIERARCHY" in tree_bundle.get("ascii_tree", ""), "Missing ASCII tree header"
-    print(f"  [+] Parallel Session Isolation, 3-Tier Path Resolver & 76-col Session Tree ({tree_bundle['projects_count']} projects): PASS")
+    from agy_nexus.tools_workspace import inspect_git_diff
+    cfg.PASS_HASH = expected_hash
+    try:
+        single_diff_raw = inspect_git_diff(workspace_override=str(test_repo_dir), spoken_passphrase=test_phrase)
+        single_diff_obj = json.loads(single_diff_raw)
+        assert single_diff_obj.get("ok") is True and "branch" in single_diff_obj, f"inspect_git_diff failed: {single_diff_obj}"
+    finally:
+        cfg.PASS_HASH = orig_hash
+    print(f"  [+] Parallel Session Isolation, 3-Tier Path Resolver, Session Tree & Single-Repo Git Diff ({tree_bundle['projects_count']} projects): PASS")
 
     # 9. Content-Aware Skill Auto-Router, In-Flight Mutex & Session Health Telemetry
     from agy_nexus.inventory import _resolve_skill_directives
@@ -212,7 +223,6 @@ def run_self_test() -> int:
         count_session_compactions,
         generate_session_health_warning,
     )
-    import json
     ui_skills = _resolve_skill_directives("antigravity-config", "", "Refactor web/hierarchy.js and table UI components")
     assert "visual-architecture-system" in ui_skills and "modern-web-guidance" in ui_skills and "agy-nexus-stats" in ui_skills
     stack_skills = _resolve_skill_directives("my-repo", "", "Deploy docker-compose stack via Portainer")
@@ -262,8 +272,9 @@ def run_self_test() -> int:
             ("docker-compose.yml", "yaml", str(pkg_root)),
             ("web/app.js", "javascript", str(pkg_root)),
         ]
-        if (AGY_GITLAB_DIR / "antigravity-config" / "mcp_config.template.json").is_file():
-            poly_targets.append(("mcp_config.template.json", "json", str(AGY_GITLAB_DIR / "antigravity-config")))
+        ag_cfg = get_antigravity_config_repo()
+        if (ag_cfg / "mcp_config.template.json").is_file():
+            poly_targets.append(("mcp_config.template.json", "json", str(ag_cfg)))
         for subpath, expected_lang, target_ws in poly_targets:
             outline_raw = ask_workspace_readonly(
                 question=f"Outline {subpath}",
@@ -364,7 +375,7 @@ def run_self_test() -> int:
         assert DEFAULT_BIND_HOST == "127.0.0.1", f"Expected 127.0.0.1 default bind, got {DEFAULT_BIND_HOST}"
         assert is_client_ip_allowed("127.0.0.1") and is_client_ip_allowed("172.18.0.5")
         assert not is_client_ip_allowed("192.168.1.99") and not is_client_ip_allowed("192.168.31.143")
-        assert Path.home().resolve() not in resolve_allowed_git_roots(AGY_GITLAB_DIR, AGY_DATA_DIR)
+        assert Path.home().resolve() not in resolve_allowed_git_roots(AGY_GITLAB_DIR, AGY_DATA_DIR, AGY_WORKSPACE_DIR)
         assert sanitize_git_ref("--output=/tmp/pwn") == "output/tmp/pwn"
         assert sanitize_conv_id("--csrf_token") == "csrf_token" and guard_cli_positional("--help").startswith("\n")
 
@@ -394,7 +405,7 @@ def run_self_test() -> int:
             assert st_home == 200 and body_home.get("ok") is False and "outside allowed roots" in str(body_home.get("error", ""))
             st_nc, body_nc = _hb_call({"action": "new-conversation", "prompt": "hi", "workspace_path": str(Path.home())}, cfg.get_host_bridge_headers())
             assert st_nc == 200 and body_nc.get("ok") is False and "outside allowed roots" in str(body_nc.get("error", ""))
-            st_git, body_git = _hb_call({"action": "git-inspect", "workspace_path": str(AGY_GITLAB_DIR / "antigravity-config"), "summary_only": True}, cfg.get_host_bridge_headers())
+            st_git, body_git = _hb_call({"action": "git-inspect", "workspace_path": str(get_antigravity_config_repo()), "summary_only": True}, cfg.get_host_bridge_headers())
             assert st_git == 200 and body_git.get("ok") is True, f"Authenticated git-inspect failed: {body_git}"
 
             captured_payloads: list[dict] = []

@@ -18,11 +18,14 @@ from agy_nexus.config import (
     AGY_CONFIG_DIR,
     AGY_DATA_DIR,
     AGY_GITLAB_DIR,
+    AGY_WORKSPACE_DIR,
     ALLOW_LOCKED_STAGING,
     HANDOFF_ANNOTATIONS,
     LOCKED_RESPONSE,
     SESSION_STATE,
     _compact_json,
+    get_antigravity_config_repo,
+    get_workspace_pillar_roots,
     is_unlocked,
     mcp,
     pin_session_context,
@@ -207,13 +210,13 @@ def send_handoff_and_resume(
         else:
             return json.dumps({"ok": False, "status": "ERROR", "error": f"No staged handoff found to resume at {target_check}. Please provide research_markdown."}, indent=2)
 
-    active_ws = workspace_path.strip() or SESSION_STATE.get("selected_workspace") or str(AGY_GITLAB_DIR / "antigravity-config")
+    active_ws = workspace_path.strip() or SESSION_STATE.get("selected_workspace") or str(get_antigravity_config_repo())
     edit_scope_clean = (customization_edit_scope or "none").strip().lower()
     if edit_scope_clean == "global":
         scope_check = evaluate_session_customization_scope(active_ws, AGY_CONFIG_DIR, AGY_GITLAB_DIR)
         if not scope_check["is_global_config_session"] and not _session_matches_repo_hint(conv_id, "antigravity-config"):
             cfg_conv, cfg_reason = _resolve_target_session_for_handoff(
-                session_identifier="", workspace_path=str(AGY_GITLAB_DIR / "antigravity-config"),
+                session_identifier="", workspace_path=str(get_antigravity_config_repo()),
                 project_name="antigravity-config", session_title=session_title,
                 activate_skills=activate_skills, research_markdown=body_clean,
             )
@@ -221,11 +224,11 @@ def send_handoff_and_resume(
                 conv_id = cfg_conv
                 create_new_session = False
                 routing_reason = f"scope_isolation_routed_to_existing_config_session ({cfg_reason})"
-                active_ws = str(AGY_GITLAB_DIR / "antigravity-config")
+                active_ws = str(get_antigravity_config_repo())
             elif resume_headless:
                 create_new_session = True
                 conv_id = ""
-                workspace_path = str(AGY_GITLAB_DIR / "antigravity-config")
+                workspace_path = str(get_antigravity_config_repo())
                 active_ws = workspace_path
                 if not project_name.strip():
                     project_name = "antigravity-config"
@@ -289,8 +292,15 @@ def send_handoff_and_resume(
         eff_project_name = project_name.strip()
         eff_workspace_path = _resolve_workspace_str(workspace_path.strip()) if workspace_path.strip() else ""
         if not eff_workspace_path:
-            gitlab_prefix_re = re.escape(str(AGY_GITLAB_DIR))
-            m_target = re.search(rf"(?:Target\s+Workspace|Workspace|Repository|Directory)[^\n`/]*({gitlab_prefix_re}/[a-zA-Z0-9._-]+)", body_clean, re.I) or re.search(rf"({gitlab_prefix_re}/[a-zA-Z0-9._-]+)", body_clean)
+            m_target = None
+            for p_root in get_workspace_pillar_roots():
+                p_re = re.escape(str(p_root))
+                m_target = re.search(rf"(?:Target\s+Workspace|Workspace|Repository|Directory)[^\n`/]*({p_re}/[a-zA-Z0-9._-]+)", body_clean, re.I) or re.search(rf"({p_re}/[a-zA-Z0-9._-]+)", body_clean)
+                if m_target:
+                    break
+            if not m_target:
+                ws_re = re.escape(str(AGY_WORKSPACE_DIR))
+                m_target = re.search(rf"(?:Target\s+Workspace|Workspace|Repository|Directory)[^\n`/]*({ws_re}/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+)", body_clean, re.I) or re.search(rf"({ws_re}/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+)", body_clean)
             if m_target:
                 eff_workspace_path = _resolve_workspace_str(m_target.group(1).rstrip("/"))
                 eff_project_name = eff_project_name or Path(eff_workspace_path).name

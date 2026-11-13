@@ -53,10 +53,17 @@ def _run_git(repo_dir: Path, args: list[str], check: bool = True) -> subprocess.
 def main() -> int:
     _load_env_file()
     parser = argparse.ArgumentParser(description="Run 3-2-1 backup sync (GitHub origin -> Local GitLab -> .bundle).")
-    default_repo = Path.home() / "gitlab/agy-nexus-mcp"
+    cand_3p = Path.home() / "agentic_workspace/projects/agy-nexus-mcp"
+    cand_gitlab = Path.home() / "gitlab/agy-nexus-mcp"
     script_repo = Path(__file__).resolve().parent.parent
-    if (script_repo / ".git").exists() and not default_repo.exists():
+    if cand_3p.exists():
+        default_repo = cand_3p
+    elif cand_gitlab.exists():
+        default_repo = cand_gitlab
+    elif (script_repo / ".git").exists():
         default_repo = script_repo
+    else:
+        default_repo = cand_3p
     parser.add_argument(
         "--repo-dir",
         default=os.getenv("AGY_NEXUS_REPO_DIR", str(default_repo)),
@@ -106,7 +113,18 @@ def main() -> int:
         gitlab_sha = _run_git(repo_dir, ["rev-parse", "gitlab/main"], check=False).stdout.strip() or head_sha
         print(f"        Local GitLab (gitlab/main): {gitlab_sha}")
     else:
-        print("  [2/3] WARN: No 'gitlab' remote configured; skipping Copy 2 push.")
+        print("  [2/3] WARN: No 'gitlab' remote configured; checking local backup metadata...")
+        meta_status = Path.home() / ".local/share/oaworkbench/backups/metadata/sync_status.json"
+        if meta_status.is_file():
+            try:
+                sync_data = json.loads(meta_status.read_text(encoding="utf-8"))
+                repos = sync_data.get("repositories", sync_data)
+                repo_info = repos.get("agy-nexus-mcp", {}) if isinstance(repos, dict) else {}
+                gitlab_sha = repo_info.get("gitlab_head_sha") or repo_info.get("gitlab_sha", "")
+                if gitlab_sha:
+                    print(f"        Local GitLab (from sync_status.json): {gitlab_sha}")
+            except Exception:
+                pass
 
     # 3. Copy 3 (Offline Portable Archive — Verified .bundle + SHA-256 manifest)
     print(f"  [3/3] Creating and verifying offline Git bundle in {backup_dir}...")

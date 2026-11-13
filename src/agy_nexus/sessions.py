@@ -15,7 +15,10 @@ from agy_nexus.config import (
     AGY_DB_FILE,
     AGY_GITLAB_DIR,
     AGY_PRESENCE_DIR,
+    AGY_PROJECTS_DIR,
     SESSION_STATE,
+    get_antigravity_config_repo,
+    get_workspace_pillar_roots,
 )
 from agy_nexus.stats import extract_pending_approval
 
@@ -34,16 +37,17 @@ def pick_primary_workspace_uri(clean_uris: list[str], title: str = "", project_i
     """Pick deterministic primary workspace path from multi-root session URIs without hijacking unrelated titles like 'Google Nexus'."""
     if not clean_uris:
         return ""
-    is_nexus_proj = project_id == NEXUS_PROJECT_ID and (AGY_GITLAB_DIR / "agy-nexus-mcp").is_dir()
+    nexus_repo = (AGY_PROJECTS_DIR / "agy-nexus-mcp") if (AGY_PROJECTS_DIR / "agy-nexus-mcp").is_dir() else (AGY_GITLAB_DIR / "agy-nexus-mcp")
+    is_nexus_proj = project_id == NEXUS_PROJECT_ID and nexus_repo.is_dir()
     if len(clean_uris) > 1 and (is_nexus_proj or any(k in (title or "").lower() for k in NEXUS_TITLE_KEYWORDS)):
         for suffix in ("/agy-nexus-mcp", "/antigravity-config"):
             for cu in clean_uris:
                 if cu.endswith(suffix) or f"{suffix}/" in cu:
                     if is_nexus_proj and cu.endswith("/antigravity-config"):
-                        return str(AGY_GITLAB_DIR / "agy-nexus-mcp")
+                        return str(nexus_repo)
                     return cu
     if is_nexus_proj and clean_uris[0].endswith("/antigravity-config"):
-        return str(AGY_GITLAB_DIR / "agy-nexus-mcp")
+        return str(nexus_repo)
     return clean_uris[0]
 
 
@@ -89,7 +93,14 @@ def resolve_canonical_project_for_workspace(ws_path: str, project_hint: str = ""
     if "/worktrees/" in ws_clean:
         m_wt = re.search(r"/worktrees/([^/]+)", ws_clean)
         if m_wt:
-            alt_ws = str((AGY_GITLAB_DIR / m_wt.group(1)).resolve())
+            slug = m_wt.group(1)
+            for pillar in get_workspace_pillar_roots():
+                cand = (pillar / slug).resolve()
+                if cand.is_dir():
+                    alt_ws = str(cand)
+                    break
+            if not alt_ws:
+                alt_ws = str((AGY_GITLAB_DIR / slug).resolve())
 
     hint_lower = hint_clean.lower()
     if ws_clean:
@@ -300,7 +311,7 @@ def _list_saved_sessions_internal(
                 "index": idx_str,
                 "conversation_id": conv_id,
                 "title": conv_id,
-                "workspace_path": str(AGY_GITLAB_DIR),
+                "workspace_path": str(AGY_PROJECTS_DIR if AGY_PROJECTS_DIR.is_dir() else AGY_GITLAB_DIR),
                 "workspace_uris": [],
                 "status": "IDLE",
                 "step_count": 0,

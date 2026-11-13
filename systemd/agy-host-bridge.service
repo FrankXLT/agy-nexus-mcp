@@ -9,10 +9,10 @@ EnvironmentFile=%h/.config/ag-bridge-mcp/secrets.env
 Environment=PYTHONUNBUFFERED=1
 Environment=HOST_BRIDGE_BIND_HOST=127.0.0.1
 Environment=HOST_BRIDGE_BIND_PORT=8098
-ExecStart=/usr/bin/python3 %h/gitlab/ag-bridge-mcp/host_bridge/agy_host_bridge.py
+ExecStart=/usr/bin/python3 %h/agentic_workspace/projects/agy-nexus-mcp/host_bridge/agy_host_bridge.py
 Restart=always
 RestartSec=5
-WorkingDirectory=%h/gitlab/ag-bridge-mcp
+WorkingDirectory=%h/agentic_workspace/projects/agy-nexus-mcp
 
 [Install]
 WantedBy=default.target

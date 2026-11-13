@@ -13,7 +13,7 @@ import time
 from typing import Any
 
 from agy_nexus import __version__
-from agy_nexus.config import AGY_BG_DIR, AGY_GITLAB_DIR, SESSION_STATE
+from agy_nexus.config import AGY_BG_DIR, AGY_GITLAB_DIR, AGY_PROJECTS_DIR, SESSION_STATE
 from agy_nexus.hygiene import TTL_SECONDS
 from agy_nexus.sessions import _list_saved_sessions_internal, _load_projects_map
 from agy_nexus.telemetry_scanner import normalize_workspace_name
@@ -138,7 +138,7 @@ def build_project_session_tree(
         cid = str(s.get("conversation_id") or "")
         title = str(s.get("title") or "Untitled Conversation")
         pid = str(s.get("project_id") or "")
-        wpath = str(s.get("workspace_path") or str(AGY_GITLAB_DIR)).rstrip("/")
+        wpath = str(s.get("workspace_path") or str(AGY_PROJECTS_DIR if AGY_PROJECTS_DIR.is_dir() else AGY_GITLAB_DIR)).rstrip("/")
         repo_short = Path(wpath).name if wpath else "unassigned"
         norm_repo = normalize_workspace_name(wpath) if wpath else "unassigned"
         pname = str(s.get("project_name") or projects_map.get(pid, {}).get("name") or norm_repo or "Unassigned Workspace")

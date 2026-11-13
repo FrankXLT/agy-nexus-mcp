@@ -138,7 +138,11 @@ def _resolve_scope_base_dir(scope: str) -> Path | None:
         repo_name = re.sub(r"[^a-zA-Z0-9_.-]", "", scope.split(":", 1)[1])
         if not repo_name or repo_name in (".", ".."):
             return None
-        for root_dir in (cfg.AGY_GITLAB_DIR, cfg.AGY_DATA_DIR / "worktrees"):
+        pkg_root = Path(__file__).resolve().parents[2]
+        if repo_name == pkg_root.name and pkg_root.is_dir():
+            return pkg_root.resolve()
+        candidate_roots = list(cfg.get_workspace_pillar_roots()) + [cfg.AGY_GITLAB_DIR, cfg.AGY_DATA_DIR / "worktrees"]
+        for root_dir in candidate_roots:
             if root_dir.is_dir():
                 root_res = root_dir.resolve()
                 cand = (root_dir / repo_name).resolve()
@@ -245,8 +249,15 @@ def discover_visual_artifacts(conv_id: str, workspace_path: str = "", limit: int
 
     if workspace_path:
         ws_path = Path(workspace_path).resolve()
-        ws_roots = (cfg.AGY_GITLAB_DIR.resolve(), (cfg.AGY_DATA_DIR / "worktrees").resolve())
-        if ws_path.is_dir() and any(ws_path != r and ws_path.is_relative_to(r) for r in ws_roots):
+        pkg_root = Path(__file__).resolve().parents[2]
+        forbidden = {Path("/").resolve(), Path.home().resolve(), *cfg.get_umbrella_roots()}
+        ws_roots = (set(cfg.get_workspace_pillar_roots()) | {(cfg.AGY_DATA_DIR / "worktrees").resolve()}) - {
+            Path("/").resolve(),
+            Path.home().resolve(),
+        }
+        if ws_path.is_dir() and ws_path not in forbidden and (
+            ws_path == pkg_root.resolve() or any(ws_path != r and ws_path.is_relative_to(r) for r in ws_roots)
+        ):
             _scan_dir(ws_path, f"repo:{ws_path.name}", ("docs/assets", "screenshots", "scratch", "sidecars/ag-bridge-mcp/docs/assets"))
 
     candidates.sort(key=lambda item: item[0], reverse=True)

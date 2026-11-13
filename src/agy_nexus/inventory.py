@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Any
+from agy_nexus.config import get_antigravity_config_repo
 CUSTOMIZATION_SCOPE_POLICY: dict[str, Any] = {
     "policy_name": "Antigravity Customization Scope-Isolation Standard",
     "core_rule": (
@@ -186,13 +187,15 @@ def evaluate_session_customization_scope(workspace_str: str, config_dir: Path, g
     """Evaluate whether the currently selected session/workspace is suitable for editing global skills/rules/agents."""
     ws_clean = (workspace_str or "").strip()
     ws_path = Path(ws_clean).resolve() if ws_clean and Path(ws_clean).exists() else None
-    ag_cfg_repo = (gitlab_dir / "antigravity-config").resolve()
+    ag_cfg_repo = get_antigravity_config_repo().resolve()
+    legacy_cfg_repo = (gitlab_dir / "antigravity-config").resolve()
     is_global = bool(
         ws_path
         and (
-            ws_path in (ag_cfg_repo, config_dir.resolve())
+            ws_path in (ag_cfg_repo, legacy_cfg_repo, config_dir.resolve())
             or ws_path.name == "antigravity-config"
             or "/worktrees/antigravity-config/" in f"{ws_path}/"
+            or "/configuration/antigravity-config" in f"{ws_path}/"
         )
     )
     proj_label = ws_path.name if ws_path else (ws_clean or "antigravity-config")
@@ -218,10 +221,15 @@ def resolve_customization_file(query: str, config_dir: Path, data_dir: Path, wor
     q = (query or "").strip()
     if not q:
         return None
+    ag_cfg_repo = get_antigravity_config_repo()
     if q.lower() in ("gemini.md", "global:gemini.md", "workspace:gemini.md"):
         if workspace_dir and q.lower() == "workspace:gemini.md" and (workspace_dir / "GEMINI.md").is_file():
             return (workspace_dir / "GEMINI.md").resolve()
-        return (config_dir / "GEMINI.md").resolve() if (config_dir / "GEMINI.md").is_file() else None
+        if (config_dir / "GEMINI.md").is_file():
+            return (config_dir / "GEMINI.md").resolve()
+        if (ag_cfg_repo / "GEMINI.md").is_file():
+            return (ag_cfg_repo / "GEMINI.md").resolve()
+        return None
     prefix = ""
     if ":" in q and not q.startswith("/"):
         p_cand, rest = q.split(":", 1)
@@ -233,23 +241,27 @@ def resolve_customization_file(query: str, config_dir: Path, data_dir: Path, wor
     if not q_slug or "/" in q_slug or "\\" in q_slug or ".." in q_slug or any(ch in q_slug for ch in "*?[]"):
         return None
     if prefix == "rule" and q_slug == "gemini":
-        return (config_dir / "GEMINI.md").resolve() if (config_dir / "GEMINI.md").is_file() else None
+        if (config_dir / "GEMINI.md").is_file():
+            return (config_dir / "GEMINI.md").resolve()
+        if (ag_cfg_repo / "GEMINI.md").is_file():
+            return (ag_cfg_repo / "GEMINI.md").resolve()
+        return None
     if prefix in ("", "agent"):
-        for folder in (([workspace_dir / ".agents" / "agents"] if workspace_dir else []) + [config_dir / "agents"]):
+        for folder in (([workspace_dir / ".agents" / "agents"] if workspace_dir else []) + [config_dir / "agents", ag_cfg_repo / "agents"]):
             if (folder / f"{q_slug}.md").is_file():
                 return (folder / f"{q_slug}.md").resolve()
     if prefix in ("", "skill"):
-        for sroot in (([workspace_dir / ".agents" / "skills"] if workspace_dir else []) + [config_dir / "skills", data_dir / "builtin" / "skills"]):
+        for sroot in (([workspace_dir / ".agents" / "skills"] if workspace_dir else []) + [config_dir / "skills", ag_cfg_repo / "skills", data_dir / "builtin" / "skills"]):
             if (sroot / q_slug / "SKILL.md").is_file():
                 return (sroot / q_slug / "SKILL.md").resolve()
-        plugins_dir = config_dir / "plugins"
-        if plugins_dir.is_dir():
-            for plugin_sub in sorted(plugins_dir.iterdir()):
-                cand_skill = plugin_sub / "skills" / q_slug / "SKILL.md"
-                if cand_skill.is_file():
-                    return cand_skill.resolve()
+        for pdir in (config_dir / "plugins", ag_cfg_repo / "plugins"):
+            if pdir.is_dir():
+                for plugin_sub in sorted(pdir.iterdir()):
+                    cand_skill = plugin_sub / "skills" / q_slug / "SKILL.md"
+                    if cand_skill.is_file():
+                        return cand_skill.resolve()
     if prefix in ("", "rule"):
-        for rfolder in (([workspace_dir / ".agents" / "rules", workspace_dir / ".gemini" / "rules"] if workspace_dir else []) + [config_dir / "rules"]):
+        for rfolder in (([workspace_dir / ".agents" / "rules", workspace_dir / ".gemini" / "rules"] if workspace_dir else []) + [config_dir / "rules", ag_cfg_repo / "rules"]):
             if (rfolder / f"{q_slug}.md").is_file():
                 return (rfolder / f"{q_slug}.md").resolve()
     return None

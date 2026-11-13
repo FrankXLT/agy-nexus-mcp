@@ -70,7 +70,7 @@ Expected output:
 Deploy using `docker-compose.yml`:
 - `~/.config/ag-bridge-mcp` $\rightarrow$ `/config:ro`
 - `~/.gemini/antigravity` $\rightarrow$ `/home/<user>/.gemini/antigravity:rw`
-- `~/gitlab` $\rightarrow$ `/home/<user>/gitlab:ro`
+- `~/agentic_workspace` $\rightarrow$ `/home/<user>/agentic_workspace:ro` (and/or legacy `~/gitlab` $\rightarrow$ `/home/<user>/gitlab:ro`)
 - `~/.gemini/config` $\rightarrow$ `/home/<user>/.gemini/config:ro`
 - Port: `8765:8765`
 

@@ -12,8 +12,11 @@ from agy_nexus.config import (
     AGY_BRAIN_DIR,
     AGY_DATA_DIR,
     AGY_GITLAB_DIR,
+    AGY_WORKSPACE_DIR,
     SESSION_STATE,
     _save_session_state,
+    get_antigravity_config_repo,
+    get_workspace_pillar_roots,
 )
 from agy_nexus.sessions import (
     NEXUS_TITLE_KEYWORDS,
@@ -97,21 +100,24 @@ def _extract_handoff_repo_hint(
             if resolved:
                 return Path(resolved).name.lower()
     md = f"{session_title or ''}\n{activate_skills or ''}\n{research_markdown or ''}"
-    gh_dir = AGY_GITLAB_DIR.parent / "github"
-    for host_dir in (AGY_GITLAB_DIR, gh_dir):
+    for host_dir in get_workspace_pillar_roots():
         host_re = re.escape(str(host_dir))
         m_repo = re.search(rf"{host_re}/([a-zA-Z0-9._-]+)", md)
         if m_repo:
             return m_repo.group(1).lower()
+    ws_re = re.escape(str(AGY_WORKSPACE_DIR))
+    m_ws_repo = re.search(rf"{ws_re}/(?:projects|workbooks|configuration)/([a-zA-Z0-9._-]+)", md)
+    if m_ws_repo:
+        return m_ws_repo.group(1).lower()
     if any(k in md.lower() for k in ("quiet-ui-skills", "quiet ui", "quiet-ui", "quiet-ui-diagrams", "visual-architecture-system")):
         return "quiet-ui-skills"
     if any(k in md.lower() for k in ("sidecars/ag-bridge-mcp", "ag_bridge.py", "ag_bridge_stats.py", "agy-nexus-stats", "agy-nexus-mcp", "agy-polyglot-mcp")):
-        sidecar_dir = AGY_GITLAB_DIR / "antigravity-config" / "sidecars" / "ag-bridge-mcp"
+        sidecar_dir = get_antigravity_config_repo() / "sidecars" / "ag-bridge-mcp"
         if sidecar_dir.is_symlink():
             return "agy-nexus-mcp"
         return "antigravity-config"
     known_repos: list[str] = ["agy-nexus-mcp", "antigravity-config"]
-    for host_dir in (AGY_GITLAB_DIR, gh_dir):
+    for host_dir in get_workspace_pillar_roots():
         if host_dir.is_dir():
             known_repos.extend(d.name.lower() for d in host_dir.iterdir() if d.is_dir() and not d.name.startswith("."))
     wt_root = AGY_DATA_DIR / "worktrees"
