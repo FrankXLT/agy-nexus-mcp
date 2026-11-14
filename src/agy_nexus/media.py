@@ -27,7 +27,7 @@ ALLOWED_MEDIA_EXTENSIONS: dict[str, bytes] = {
     ".gif": b"image/gif",
 }
 
-MEDIA_TTL_SECONDS = int(os.getenv("AG_BRIDGE_MEDIA_TTL", "1800"))
+MEDIA_TTL_SECONDS = int(os.getenv("AG_BRIDGE_MEDIA_TTL", "604800"))
 _VERIFIED_REQUEST_ORIGIN: str = ""
 _SAFE_HOST_RE = re.compile(r"^[A-Za-z0-9.-]+(?::\d{1,5})?$")
 

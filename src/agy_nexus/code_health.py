@@ -135,49 +135,99 @@ def get_github_version_info(force_refresh: bool = False) -> dict[str, Any]:
     return _cache_payload(_fetch_remote_version())
 
 
+import subprocess
+
+
+def _get_git_dirty_files(repo_root: Path) -> set[str]:
+    """Return set of dirty or untracked file paths from git status --porcelain."""
+    dirty: set[str] = set()
+    try:
+        res = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            timeout=3.0,
+        )
+        if res.returncode == 0:
+            for line in res.stdout.splitlines():
+                if len(line) >= 4:
+                    raw_path = line[3:].strip()
+                    if " -> " in raw_path:
+                        raw_path = raw_path.split(" -> ")[1].strip()
+                    dirty.add(raw_path)
+    except Exception:
+        pass
+    return dirty
+
+
 def get_modular_hygiene_summary(pkg_dir: Path | None = None) -> dict[str, Any]:
-    """Scan agy_nexus modules for <=500L target, 501-650L warning, >650L ceiling, and >100L functions."""
+    """Scan agy_nexus modules, host_bridge and web JS for <=500L target, 501-650L warning, >650L ceiling, and >100L functions."""
     if pkg_dir is None:
         pkg_dir = Path(__file__).resolve().parent
+    repo_root = pkg_dir.parents[1] if len(pkg_dir.parents) >= 2 else pkg_dir
+    dirty_files = _get_git_dirty_files(repo_root)
 
     modules: list[dict[str, Any]] = []
     compliant = warning = violations = total_lines = total_symbols = total_long_funcs = 0
     syntax_errors: dict[str, str] = {}
 
-    if pkg_dir.is_dir():
-        for py_file in sorted(pkg_dir.glob("*.py")):
+    scan_targets: list[tuple[Path, str, str]] = [
+        (pkg_dir, "*.py", "src/agy_nexus/"),
+        (repo_root / "host_bridge", "*.py", "host_bridge/"),
+        (repo_root / "web", "*.js", "web/"),
+    ]
+
+    for dir_path, glob_pat, prefix in scan_targets:
+        if not dir_path.is_dir():
+            continue
+        for src_file in sorted(dir_path.glob(glob_pat)):
             try:
-                text = py_file.read_text(encoding="utf-8", errors="replace")
-                ol = build_polyglot_outline(py_file, full_text=text, max_chars=2400)
+                text = src_file.read_text(encoding="utf-8", errors="replace")
+                ol = build_polyglot_outline(src_file, full_text=text, max_chars=2400)
             except Exception:
                 ol = {"total_lines": 0, "symbol_count": 0, "long_functions": [], "summary": ""}
 
             line_count = int(ol.get("total_lines", 0))
             sym_count = int(ol.get("symbol_count", 0))
             long_fns = ol.get("long_functions") or []
+            rel_name = f"{prefix}{src_file.name}"
             if ol.get("syntax_error"):
-                syntax_errors[py_file.name] = str(ol["syntax_error"])
+                syntax_errors[rel_name] = str(ol["syntax_error"])
 
             if line_count <= TARGET_FILE_LINES:
-                status, compliant = "compliant", compliant + 1
+                status = "compliant"
+                compliant += 1
             elif line_count <= HARD_MAX_FILE_LINES:
-                status, warning = "warning", warning + 1
+                status = "warning"
+                warning += 1
             else:
-                status, violations = "violation", violations + 1
+                status = "violation"
+                violations += 1
+
+            is_dirty = any(d == rel_name or d.endswith("/" + src_file.name) for d in dirty_files)
+            has_long_fns = len(long_fns) > 0
+            is_watchlist = (line_count > TARGET_FILE_LINES) or has_long_fns or is_dirty or bool(ol.get("syntax_error"))
 
             total_lines += line_count
             total_symbols += sym_count
             total_long_funcs += len(long_fns)
             modules.append({
-                "name": py_file.name,
+                "name": rel_name,
+                "file_name": src_file.name,
+                "dir_prefix": prefix,
                 "lines": line_count,
                 "symbols": sym_count,
                 "long_functions": len(long_fns),
                 "summary": ol.get("summary", ""),
                 "status": status,
+                "git_dirty": is_dirty,
+                "is_watchlist": is_watchlist,
             })
 
     modules.sort(key=lambda m: m["lines"], reverse=True)
+    watchlist_items = [m for m in modules if m.get("is_watchlist")]
+
     return {
         "target_lines": TARGET_FILE_LINES,
         "ceiling_lines": HARD_MAX_FILE_LINES,
@@ -193,6 +243,8 @@ def get_modular_hygiene_summary(pkg_dir: Path | None = None) -> dict[str, Any]:
         "total_symbols": total_symbols,
         "long_functions_over_100": total_long_funcs,
         "syntax_errors": syntax_errors,
+        "watchlist_and_exceptions": watchlist_items,
+        "watchlist_count": len(watchlist_items),
         "modules": modules,
     }
 

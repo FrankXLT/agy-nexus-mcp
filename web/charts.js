@@ -33,9 +33,14 @@ const initThemePref = THEME_META[urlTheme] ? urlTheme : (localStorage.getItem("n
 const initPeriodPref = VALID_PERIODS.includes(urlPeriod) ? urlPeriod : (VALID_PERIODS.includes(localStorage.getItem("nexus_period")) ? localStorage.getItem("nexus_period") : "current_month");
 const initDensityPref = VALID_DENSITIES.includes(urlDensity) ? urlDensity : (VALID_DENSITIES.includes(localStorage.getItem("nexus_density")) ? localStorage.getItem("nexus_density") : "D2");
 let fetchSeq = 0;
+const initialView = (typeof window !== "undefined" && window.location && window.location.hash === "#workspace") ? "workspace" : "analytics";
 const state = {
   passphrase: urlDemo ? "" : (localStorage.getItem("nexus_passphrase") || sessionStorage.getItem("nexus_passphrase") || ""),
   period: initPeriodPref,
+  timeframe: localStorage.getItem("nexus_timeframe") || "month",
+  horizon_mode: localStorage.getItem("nexus_horizon_mode") || "to_date",
+  offset: 0,
+  surfaceView: initialView,
   surface: THEME_META[initThemePref] ? initThemePref : "obsidian",
   density: initDensityPref,
   metric: localStorage.getItem("nexus_metric") === "tokens" ? "tokens" : "steps",
@@ -97,14 +102,20 @@ async function fetchStats(period) {
     localStorage.setItem("nexus_demo_mode", "1");
     state.bundle = generateDemoBundle(period);
     document.getElementById("authOverlay").classList.add("hidden");
-    document.getElementById("dashboardMain").classList.remove("hidden");
+    const targetMain = state.surfaceView === "workspace" ? document.getElementById("workspaceMain") : document.getElementById("dashboardMain");
+    if (targetMain) targetMain.classList.remove("hidden");
     renderDashboard(state.bundle);
     return;
   }
   const statusEl = document.getElementById("authStatus");
   if (statusEl) statusEl.textContent = "Verifying passphrase...";
   try {
-    const apiPath = window.location.pathname.replace(/\/web\/?$/, "") + "/web/api/stats?period=" + encodeURIComponent(period);
+    const qParams = new URLSearchParams();
+    qParams.set("period", period || state.period || "current_month");
+    if (state.timeframe) qParams.set("timeframe", state.timeframe);
+    if (state.horizon_mode) qParams.set("horizon_mode", state.horizon_mode);
+    if (typeof state.offset === "number") qParams.set("offset", String(state.offset));
+    const apiPath = window.location.pathname.replace(/\/web\/?$/, "") + "/web/api/stats?" + qParams.toString();
     const resp = await fetch(apiPath, {
       method: "GET",
       headers: { "X-Nexus-Passphrase": state.passphrase, "X-Client-Product": "Web Dashboard" },
@@ -116,6 +127,8 @@ async function fetchStats(period) {
       if (typeof clearSensitiveView === "function") clearSensitiveView();
       document.getElementById("authOverlay").classList.remove("hidden");
       document.getElementById("dashboardMain").classList.add("hidden");
+      const wsMain = document.getElementById("workspaceMain");
+      if (wsMain) wsMain.classList.add("hidden");
       return;
     }
     const data = await resp.json();
@@ -128,8 +141,16 @@ async function fetchStats(period) {
     localStorage.removeItem("nexus_demo_mode");
     if (statusEl) statusEl.textContent = "";
     state.bundle = data;
+
+    // Update active horizon label if present
+    const hLbl = document.getElementById("horizonActiveLabel");
+    if (hLbl && data.horizon_label) hLbl.textContent = data.horizon_label;
+    const stepNext = document.getElementById("stepNextBtn");
+    if (stepNext) stepNext.disabled = (Number(state.offset || 0) === 0);
+
     document.getElementById("authOverlay").classList.add("hidden");
-    document.getElementById("dashboardMain").classList.remove("hidden");
+    const targetMain = state.surfaceView === "workspace" ? document.getElementById("workspaceMain") : document.getElementById("dashboardMain");
+    if (targetMain) targetMain.classList.remove("hidden");
     renderDashboard(data);
   } catch (err) {
     if (mySeq === fetchSeq && statusEl) statusEl.textContent = "Connection or render error: " + (err && err.message ? err.message : String(err));
@@ -146,8 +167,8 @@ function computeOptimalBinning(plotW, baseStepHours, nRaw) {
   const baseH = Math.max(1, Number(baseStepHours || 4));
   if (nRaw <= 1) return { groupSize: 1, binHours: baseH, label: formatBinLabel(baseH), dpr: 1 };
   const dpr = Math.max(1, Math.min(4, Number(window.devicePixelRatio || 1)));
-  const targetPitch = dpr >= 2 ? 5.2 : 6.8;
-  const minPitch = dpr >= 2 ? 3.4 : 4.6;
+  const targetPitch = dpr >= 2 ? 9.5 : 11.0;
+  const minPitch = 6.5;
   const cands = ALLOWED_BIN_HOURS.filter((h) => h >= baseH && h % baseH === 0);
   if (!cands.length) cands.push(baseH);
   let bestH = cands[cands.length - 1];
@@ -289,7 +310,7 @@ function renderLibreStackedPlot(svgId, tagId, opts) {
   const avgVal = nzTotals.length ? (nzTotals.reduce((a, b) => a + b, 0) / nzTotals.length) : 0;
   const p95Val = nzTotals.length ? nzTotals[Math.min(nzTotals.length - 1, Math.floor(nzTotals.length * 0.95))] : 0;
   const yScale = computeNiceYScale(Math.max(peakVal, p95Val), plotH);
-  const stepPx = plotW / Math.max(1, nBins), gapPx = stepPx >= 4.8 ? 1 : 0;
+  const stepPx = plotW / Math.max(1, nBins), gapPx = stepPx >= 9.0 ? 1 : 0;
   const yAt = (val) => padT + plotH - (Math.min(yScale.maxY, Math.max(0, val)) / yScale.maxY) * plotH;
 
   let barsSvg = "";

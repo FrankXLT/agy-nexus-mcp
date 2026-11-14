@@ -1,11 +1,11 @@
-// AGY-NEXUS Overwatch — Deterministic Multi-Window Demo Telemetry Generator (v2.8.0)
+// AGY-NEXUS Overwatch — Deterministic Multi-Window Demo Telemetry Generator (v3.0.0)
 
 const SAMPLE_CODE_HEALTH = {
   version: {
-    installed: "2.8.0",
-    remote: "v2.7.0",
+    installed: "3.0.0",
+    remote: "v2.9.0",
     status: "staged_locally",
-    status_label: "Staged Locally (v2.8.0 > v2.7.0)",
+    status_label: "Staged Locally (v3.0.0 > v2.9.0)",
     status_dot: "#5496ff",
     repo: "github.com/FrankXLT/agy-nexus-mcp",
   },
@@ -44,7 +44,7 @@ const SAMPLE_CODE_HEALTH = {
   },
   polyglot_health: { indexed_files: 78, total_symbols: 368, long_functions_over_100: 2 },
   ast_integrity: { clean: true, undefined_count: 0, undefined_names: 0, scanned_files: 33, flagged_modules: 0, total_symbols: 368, details: {} },
-  local_lsp: { engine: "praxis+serena", installed: true, available: true, version: "v2.8.0", status: "ready" },
+  local_lsp: { engine: "praxis+serena", installed: true, available: true, version: "v3.0.0", status: "ready" },
 };
 
 const DEMO_PROJECTS_CATALOG = [
@@ -319,7 +319,7 @@ function generateDemoBundle(periodKey) {
 
   return {
     server: "agy-nexus-mcp",
-    version: "2.8.0",
+    version: "3.0.0",
     period: { key: pk, label: cfg.label, resolution: cfg.res, active_days: heatmap_series.filter((d) => d.steps > 0).length, total_days: cfg.days },
     kpis: { total_conversations: builtProjs.reduce((a, p) => a + p.sessions.length, 0), total_subagents_spawned: 148, window_steps: totWinSteps, period_steps: totWinSteps, window_tool_calls: Math.round(totWinSteps * 0.51), window_tokens: totWinToks, active_days: heatmap_series.filter((d) => d.steps > 0).length },
     quota_and_pools: { active_tier_profile: "ultra-20x", pools: { google: { status: "HEALTHY" }, claude: { status: "HEALTHY" } }, partner_weekly_pacing: { day_of_week_index: 3, daily_target_pct: 14.28, recommended_cumulative_ceiling_pct: 42.8 } },

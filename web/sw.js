@@ -1,14 +1,16 @@
-const CACHE_NAME = "agy-nexus-overwatch-v2.8.0";
+const CACHE_NAME = "agy-nexus-overwatch-v3.0.0";
 const SHELL_ASSETS = [
   "/web",
-  "/web/styles.css?v=2.8.0",
-  "/web/palettes.js?v=2.8.0",
-  "/web/charts.js?v=2.8.0",
-  "/web/demo_data.js?v=2.8.0",
-  "/web/hierarchy.js?v=2.8.0",
-  "/web/uploads.js?v=2.8.0",
-  "/web/health.js?v=2.8.0",
-  "/web/app.js?v=2.8.0",
+  "/web/styles.css?v=3.0.0",
+  "/web/palettes.js?v=3.0.0",
+  "/web/charts.js?v=3.0.0",
+  "/web/demo_data.js?v=3.0.0",
+  "/web/hierarchy.js?v=3.0.0",
+  "/web/uploads.js?v=3.0.0",
+  "/web/health.js?v=3.0.0",
+  "/web/markdown_renderer.js?v=3.0.0",
+  "/web/explorer.js?v=3.0.0",
+  "/web/app.js?v=3.0.0",
   "/web/manifest.webmanifest",
   "/web/icon.svg",
   "/web/icon-192.png",
@@ -16,7 +18,8 @@ const SHELL_ASSETS = [
 ];
 const SHELL_NAMES = new Set([
   "styles.css", "palettes.js", "charts.js", "demo_data.js", "hierarchy.js",
-  "uploads.js", "health.js", "app.js", "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png",
+  "uploads.js", "health.js", "markdown_renderer.js", "explorer.js", "app.js",
+  "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png",
 ]);
 
 function isCacheableShellAsset(url, req) {

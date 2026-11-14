@@ -424,15 +424,60 @@ def claim_handoff_for_ide(
         return {"ok": True, "status": "CLAIMED", "ticket": dec, "handoff_id": dec["handoff_id"], "copied_to_session_scratch": copied_to, "markdown": content}
 
 
+def reconcile_completed_tickets(bg_dir: Path, db_file: Path | None = None) -> list[str]:
+    """Auto-transition claimed IN_WORK tickets to COMPLETED once their session finishes running or rolls over."""
+    eff_db = db_file or (Path.home() / ".gemini/antigravity/conversation_summaries.db")
+    if not eff_db.is_file():
+        return []
+    completed_ids: list[str] = []
+    ts_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        import sqlite3
+        con = sqlite3.connect(f"file:{eff_db}?mode=ro", uri=True, timeout=2.0)
+        try:
+            with _locked_index(bg_dir) as (_, doc):
+                tickets = doc.get("tickets") or []
+                newer_claimed = {
+                    str(t.get("claimed_by_conversation_id") or ""): str(t.get("handoff_id") or "")
+                    for t in tickets if str(t.get("status") or "").upper() in ("IN_WORK", "STAGED") and t.get("claimed_by_conversation_id")
+                }
+                for t in tickets:
+                    if str(t.get("status") or "").upper() != "IN_WORK":
+                        continue
+                    cid = str(t.get("claimed_by_conversation_id") or t.get("target_conversation_id") or "").strip()
+                    if not cid:
+                        continue
+                    row = con.execute("SELECT status, not_fully_idle FROM conversation_summaries WHERE conversation_id = ?", (cid,)).fetchone()
+                    if row:
+                        raw_st = str(row[0] or "").upper()
+                        is_running = ("RUNNING" in raw_st) or bool(row[1])
+                        newer_hid = newer_claimed.get(cid)
+                        has_newer = bool(newer_hid and newer_hid != str(t.get("handoff_id")))
+                        if not is_running or has_newer:
+                            t.update({"status": "COMPLETED", "completed_at": ts_iso, "updated_at": ts_iso})
+                            completed_ids.append(str(t.get("handoff_id")))
+        finally:
+            con.close()
+    except Exception:
+        pass
+    return completed_ids
+
+
 def list_handoff_tickets(
     bg_dir: Path,
     *,
     workspace: str = "",
     status_filter: str = "ALL",
     include_superseded: bool = True,
+    auto_reconcile: bool = True,
     limit: int = 50,
 ) -> dict[str, Any]:
-    """List staged, in-work, and superseded handoff tickets with workspace prioritization."""
+    """List staged, in-work, completed, and superseded handoff tickets with workspace prioritization."""
+    if auto_reconcile:
+        try:
+            reconcile_completed_tickets(bg_dir)
+        except Exception:
+            pass
     doc = _read_index_unlocked(bg_dir)
     now_utc = datetime.now(timezone.utc)
     ws_clean = (workspace or "").strip().rstrip("/")
@@ -463,12 +508,13 @@ def list_handoff_tickets(
         elif st == "STAGED":
             other_staged.append({"handoff_id": t["handoff_id"], "repo_slug": t["repo_slug"], "title": t["title"], "relative_age": t["relative_age"]})
 
-    rank_order = {"STAGED": 0, "IN_WORK": 1, "SUPERSEDED": 2, "COMPLETED": 3}
+    rank_order = {"STAGED": 0, "IN_WORK": 1, "COMPLETED": 2, "SUPERSEDED": 3}
     filtered.sort(key=lambda x: (rank_order.get(x["status"], 9), -int(x.get("sequence") or 0)))
     capped = filtered[: max(1, min(limit, 200))]
     counts = {
         "staged_unclaimed": sum(1 for x in filtered if x["status"] == "STAGED"),
         "in_work": sum(1 for x in filtered if x["status"] == "IN_WORK"),
+        "completed": sum(1 for x in filtered if x["status"] == "COMPLETED"),
         "superseded": sum(1 for x in filtered if x["status"] == "SUPERSEDED"),
     }
     return {"ok": True, "workspace": ws_clean, "repo_slug": ws_slug, "counts": counts, "tickets": capped, "other_workspaces_staged": other_staged[:15]}

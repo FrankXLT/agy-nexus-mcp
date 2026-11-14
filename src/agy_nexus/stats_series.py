@@ -78,8 +78,15 @@ def resolve_canonical_project(meta: dict[str, Any], projects_map: dict[str, dict
 
 
 def build_base_slot_grid(period_key: str, trimmed_days: list[str], today_iso: str, now_hour: int) -> tuple[list[str], list[list[str]], int, str]:
-    """Generate calendar-aligned base slot groups (1h / 2h / 6h / 24h) for adaptive client binning."""
-    step_h, res_lbl = (1, "1h sub-daily") if period_key == "current_month" else ((2, "2h sub-daily") if period_key == "last_month" else ((6, "6h sub-daily") if period_key == "last_90d" else (24, "daily")))
+    """Generate calendar-aligned base slot groups (1h for Month/Quarter, 24h for Year) for adaptive client binning."""
+    n_days = len(trimmed_days)
+    pk_low = (period_key or "").strip().lower()
+    if pk_low in ("current_month", "last_month", "month") or n_days <= 31:
+        step_h, res_lbl = 1, "1h base slots"
+    elif pk_low in ("last_90d", "quarter", "90d") or n_days <= 92:
+        step_h, res_lbl = 1, "1h base slots"
+    else:
+        step_h, res_lbl = 24, "24h daily"
     labels, groups = [], []
     for d_iso in trimmed_days:
         if step_h == 24:

@@ -1,4 +1,4 @@
-// AGY-NEXUS Overwatch — Dashboard Controller, 1-to-3 Column Combined Plot Legends & Controls (v2.8.0)
+// AGY-NEXUS Overwatch — Dashboard Controller, Compact Tabular Legends & Surface Switcher (v3.0.0)
 
 function renderModelPlotAndLegend(b, metric, surface) {
   const ms = b.model_series || {}, vs = b.velocity_series || {};
@@ -28,38 +28,61 @@ function renderModelPlotAndLegend(b, metric, surface) {
     tagSuffix: state.soloModel ? "SOLO MODEL · AVG + P95" : "AVG + P95",
   });
 
-  const gridEl = document.getElementById("modelLegendGrid");
-  if (gridEl) {
-    gridEl.innerHTML = order.map((mk) => {
+  const tbody = document.getElementById("modelTabularLegendBody");
+  if (tbody) {
+    const activeRows = [], inactiveRows = [];
+    order.forEach((mk) => {
       const col = getModelColor(mk, surface);
       const r = rowMap[mk] || { actual_pct: 0, target_pct: 0, actual_calls: 0, est_tokens: 0 };
       const ap = Number(r.actual_pct || 0), tp = Number(r.target_pct || 0);
       const calls = Number(r.actual_calls || 0), toks = Number(r.est_tokens || 0);
       const isSolo = state.soloModel === mk, isDim = Boolean(state.soloModel && !isSolo);
-      return `<button type="button" class="legend-cell ${isSolo ? "is-solo" : ""} ${isDim ? "is-dimmed" : ""}" data-model-key="${mk}" title="Click to solo ${col.label} on plot">
-        <div class="lcell-top">
-          <span class="lcell-name"><span class="swatch-sq" style="background:${col.fill};border-color:${col.cap}"></span><strong>${escapeHtmlSafe(col.short)}</strong><span class="lcell-sub">${escapeHtmlSafe(col.role)}</span></span>
-          <span class="mono lcell-pct"><strong>${ap.toFixed(1)}%</strong> <span class="lcell-dim">/ ${tp}%</span></span>
-        </div>
-        <div class="lcell-bar-track"><div class="lcell-bar-fill" style="width:${Math.min(100, ap)}%;background:${col.fill}"></div><div class="lcell-bar-pin" style="left:${Math.min(100, tp)}%" title="Target ${tp}%"></div></div>
-        <div class="lcell-meta mono"><span>${calls.toLocaleString()} calls</span><span>~${formatCompactTokens(toks)} tok</span><span>Pk ${formatMetricVal(stats.bandPeaks[mk] || 0, metric)}</span></div>
-      </button>`;
-    }).join("");
+      const pkVal = stats.bandPeaks[mk] || 0;
+      const avgBin = stats.avgVal > 0 ? (calls / Math.max(1, stats.nBins)) : 0;
+      const p95Bin = Math.round(pkVal * 0.92);
 
-    gridEl.querySelectorAll(".legend-cell[data-model-key]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const mk = btn.getAttribute("data-model-key") || "";
+      const rowHtml = `<tr class="tabular-legend-row ${isSolo ? "is-solo" : ""} ${isDim ? "is-dimmed" : ""}" data-model-key="${mk}" title="Click to solo ${col.label}">
+        <td class="tbl-col-name"><span class="swatch-sq" style="background:${col.fill};border-color:${col.cap};display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:middle;"></span><strong>${escapeHtmlSafe(col.short)}</strong></td>
+        <td class="tbl-col-tier mono">${escapeHtmlSafe(col.role)}</td>
+        <td class="tbl-col-share"><div class="legend-micro-track"><div class="legend-micro-fill" style="width:${Math.min(100, ap)}%;background:${col.fill}"></div><div class="legend-micro-pin" style="left:${Math.min(100, tp)}%" title="Target: ${tp}%"></div></div><span>${ap.toFixed(1)}%</span><span style="color:var(--text-dim);font-size:10px;">/${tp}%</span></td>
+        <td class="tbl-col-num mono">${calls.toLocaleString()}</td>
+        <td class="tbl-col-num mono">~${formatCompactTokens(toks)}</td>
+        <td class="tbl-col-num mono">${formatMetricVal(avgBin, metric)}</td>
+        <td class="tbl-col-num mono">${formatMetricVal(p95Bin, metric)}</td>
+        <td class="tbl-col-num mono" style="font-weight:700;">${formatMetricVal(pkVal, metric)}</td>
+      </tr>`;
+
+      if (calls > 0) activeRows.push(rowHtml);
+      else inactiveRows.push(rowHtml);
+    });
+
+    let finalHtml = activeRows.join("");
+    if (inactiveRows.length > 0) {
+      if (typeof state.hideInactiveModels === "undefined") state.hideInactiveModels = true;
+      if (state.hideInactiveModels) {
+        finalHtml += `<tr class="legend-inactive-toggle mono"><td colspan="8">▸ +${inactiveRows.length} inactive models</td></tr>`;
+      } else {
+        finalHtml += inactiveRows.join("");
+        finalHtml += `<tr class="legend-inactive-toggle mono"><td colspan="8">▾ -${inactiveRows.length} inactive models</td></tr>`;
+      }
+    }
+    tbody.innerHTML = finalHtml;
+
+    tbody.querySelectorAll(".legend-inactive-toggle").forEach((tr) => {
+      tr.addEventListener("click", () => {
+        state.hideInactiveModels = !state.hideInactiveModels;
+        if (state.bundle) renderModelPlotAndLegend(state.bundle, state.metric, state.surface);
+      });
+    });
+
+    tbody.querySelectorAll(".tabular-legend-row[data-model-key]").forEach((tr) => {
+      tr.addEventListener("click", () => {
+        const mk = tr.getAttribute("data-model-key") || "";
         state.soloModel = state.soloModel === mk ? "" : mk;
         if (state.bundle) renderModelPlotAndLegend(state.bundle, state.metric, state.surface);
       });
     });
   }
-
-  const unit = metric === "tokens" ? "tok" : "steps";
-  const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  setTxt("ftrModelAvg", `${formatMetricVal(stats.avgVal, metric)} ${unit}`);
-  setTxt("ftrModelP95", `${formatMetricVal(stats.p95Val, metric)} ${unit}`);
-  setTxt("ftrModelPeak", `${formatMetricVal(stats.peakVal, metric)} ${unit}`);
 }
 
 function renderSubagentPlotAndLegend(b, metric, surface) {
@@ -98,26 +121,57 @@ function renderSubagentPlotAndLegend(b, metric, surface) {
     }), { role: "other-subagents", runs: 0, steps: 0, tokens: 0, modelLabel: "" }),
   ] : roleEntries;
 
-  const gridEl = document.getElementById("subagentLegendGrid");
-  if (gridEl) {
+  const tbody = document.getElementById("subagentTabularLegendBody");
+  if (tbody) {
     if (!legendItems.length) {
-      gridEl.innerHTML = `<div class="hier-empty mono" style="grid-column:1/-1">No subagent executions recorded in this window.</div>`;
+      tbody.innerHTML = `<tr><td colspan="8" class="hier-empty mono" style="text-align:center;">No subagent executions recorded in this window.</td></tr>`;
       return;
     }
-    gridEl.innerHTML = legendItems.map((item, idx) => {
+    const activeRows = [], inactiveRows = [];
+    legendItems.forEach((item, idx) => {
       const col = getSubagentColor(item.role, idx, surface);
       const share = ((item.steps / totSteps) * 100).toFixed(1);
       const isSolo = state.soloSubagent === item.role, isDim = Boolean(state.soloSubagent && !isSolo);
       const pkVal = stats.bandPeaks[item.role] || 0;
-      return `<button type="button" class="legend-cell ${isSolo ? "is-solo" : ""} ${isDim ? "is-dimmed" : ""}" data-sub-role="${escapeHtmlSafe(item.role)}" title="Click to solo ${escapeHtmlSafe(item.role)} on plot">
-        <div class="lcell-top"><span class="lcell-name"><span class="swatch-sq" style="background:${col.fill};border-color:${col.cap}"></span><strong class="mono">${escapeHtmlSafe(item.role)}</strong></span><span class="mono lcell-pct"><strong>${share}%</strong></span></div>
-        <div class="lcell-meta mono"><span class="lcell-sub">${escapeHtmlSafe(item.modelLabel)}</span><span>${item.runs.toLocaleString()} runs</span><span>${item.steps.toLocaleString()} stp · ~${formatCompactTokens(item.tokens)}</span>${pkVal > 0 ? `<span>Pk ${formatMetricVal(pkVal, metric)}</span>` : ""}</div>
-      </button>`;
-    }).join("");
+      const avgBin = stats.avgVal > 0 ? (item.steps / Math.max(1, stats.nBins)) : 0;
 
-    gridEl.querySelectorAll(".legend-cell[data-sub-role]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const rk = btn.getAttribute("data-sub-role") || "";
+      const rowHtml = `<tr class="tabular-legend-row ${isSolo ? "is-solo" : ""} ${isDim ? "is-dimmed" : ""}" data-sub-role="${escapeHtmlSafe(item.role)}" title="Click to solo ${escapeHtmlSafe(item.role)}">
+        <td class="tbl-col-name"><span class="swatch-sq" style="background:${col.fill};border-color:${col.cap};display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:middle;"></span><strong>${escapeHtmlSafe(item.role)}</strong></td>
+        <td class="tbl-col-tier mono">${escapeHtmlSafe(item.modelLabel)}</td>
+        <td class="tbl-col-share"><div class="legend-micro-track"><div class="legend-micro-fill" style="width:${Math.min(100, Number(share))}%;background:${col.fill}"></div></div><span>${share}%</span></td>
+        <td class="tbl-col-num mono">${item.runs.toLocaleString()}</td>
+        <td class="tbl-col-num mono">${item.steps.toLocaleString()}</td>
+        <td class="tbl-col-num mono">~${formatCompactTokens(item.tokens)}</td>
+        <td class="tbl-col-num mono">${formatMetricVal(avgBin, metric)}</td>
+        <td class="tbl-col-num mono" style="font-weight:700;">${formatMetricVal(pkVal, metric)}</td>
+      </tr>`;
+
+      if (item.runs > 0 || item.steps > 0) activeRows.push(rowHtml);
+      else inactiveRows.push(rowHtml);
+    });
+
+    let finalHtml = activeRows.join("");
+    if (inactiveRows.length > 0) {
+      if (typeof state.hideInactiveSubagents === "undefined") state.hideInactiveSubagents = true;
+      if (state.hideInactiveSubagents) {
+        finalHtml += `<tr class="legend-inactive-toggle mono"><td colspan="8">▸ +${inactiveRows.length} inactive subagents</td></tr>`;
+      } else {
+        finalHtml += inactiveRows.join("");
+        finalHtml += `<tr class="legend-inactive-toggle mono"><td colspan="8">▾ -${inactiveRows.length} inactive subagents</td></tr>`;
+      }
+    }
+    tbody.innerHTML = finalHtml;
+
+    tbody.querySelectorAll(".legend-inactive-toggle").forEach((tr) => {
+      tr.addEventListener("click", () => {
+        state.hideInactiveSubagents = !state.hideInactiveSubagents;
+        if (state.bundle) renderSubagentPlotAndLegend(state.bundle, state.metric, state.surface);
+      });
+    });
+
+    tbody.querySelectorAll(".tabular-legend-row[data-sub-role]").forEach((tr) => {
+      tr.addEventListener("click", () => {
+        const rk = tr.getAttribute("data-sub-role") || "";
         state.soloSubagent = state.soloSubagent === rk ? "" : rk;
         if (state.bundle) renderSubagentPlotAndLegend(state.bundle, state.metric, state.surface);
       });
@@ -263,22 +317,68 @@ function renderDashboard(b) {
 
   renderAllTimePlots(b);
   if (typeof renderHierarchyPanel === "function") renderHierarchyPanel(b);
-  renderCodeHealth(b.code_health, b.version || "2.8.0");
+  renderCodeHealth(b.code_health, b.version || "3.0.0");
+
+  const ph = b.project_hierarchy || {};
+  let totalStagedHandoffs = 0;
+  (ph.top_projects || []).forEach((p) => { totalStagedHandoffs += Number(p.staged_count || 0); });
+  (ph.idle_projects || []).forEach((p) => { totalStagedHandoffs += Number(p.staged_count || 0); });
+  const wsBadge = document.getElementById("navWorkspaceBadge");
+  if (wsBadge) wsBadge.textContent = String(totalStagedHandoffs);
 }
 
 applyThemeAndDensity(state.surface, state.density);
 
-document.querySelectorAll(".tab-btn[data-period]").forEach((btn) => {
-  btn.classList.toggle("active", btn.dataset.period === state.period);
+// Timeframe & Horizon Mode Controls
+document.querySelectorAll(".tab-btn[data-timeframe]").forEach((btn) => {
+  btn.classList.toggle("active", btn.dataset.timeframe === state.timeframe);
   btn.addEventListener("click", () => {
-    document.querySelectorAll(".tab-btn[data-period]").forEach((b) => b.classList.remove("active"));
+    document.querySelectorAll(".tab-btn[data-timeframe]").forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
-    state.period = btn.dataset.period;
-    state.soloProject = ""; state.soloSubagent = "";
-    localStorage.setItem("nexus_period", state.period);
-    fetchStats(state.period);
+    state.timeframe = btn.dataset.timeframe;
+    state.offset = 0;
+    localStorage.setItem("nexus_timeframe", state.timeframe);
+    fetchStats();
   });
 });
+
+document.querySelectorAll(".tab-btn[data-horizon]").forEach((btn) => {
+  btn.classList.toggle("active", btn.dataset.horizon === state.horizon_mode);
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn[data-horizon]").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    state.horizon_mode = btn.dataset.horizon;
+    state.offset = 0;
+    localStorage.setItem("nexus_horizon_mode", state.horizon_mode);
+    fetchStats();
+  });
+});
+
+const stepPrevBtn = document.getElementById("stepPrevBtn");
+if (stepPrevBtn) {
+  stepPrevBtn.addEventListener("click", () => {
+    state.offset = (state.offset || 0) + 1;
+    fetchStats();
+  });
+}
+
+const stepNextBtn = document.getElementById("stepNextBtn");
+if (stepNextBtn) {
+  stepNextBtn.addEventListener("click", () => {
+    if (state.offset > 0) {
+      state.offset -= 1;
+      fetchStats();
+    }
+  });
+}
+
+const stepTodayBtn = document.getElementById("stepTodayBtn");
+if (stepTodayBtn) {
+  stepTodayBtn.addEventListener("click", () => {
+    state.offset = 0;
+    fetchStats();
+  });
+}
 
 document.querySelectorAll(".metric-btn[data-metric]").forEach((btn) => {
   btn.classList.toggle("active", btn.dataset.metric === state.metric);
@@ -294,47 +394,133 @@ document.querySelectorAll(".metric-btn[data-metric]").forEach((btn) => {
   });
 });
 
-const styleMenuWrap = document.getElementById("styleMenuWrap");
-const styleMenuBtn = document.getElementById("styleMenuBtn");
-const stylePopover = document.getElementById("stylePopover");
-const appModeWrap = document.getElementById("appModeWrap");
-const appModeBtn = document.getElementById("appModeBtn");
-const appModePopover = document.getElementById("appModePopover");
+// Primary Surface Switcher
+function switchSurface(view) {
+  state.surfaceView = view;
+  const navAnalytics = document.getElementById("navAnalyticsBtn");
+  const navWorkspace = document.getElementById("navWorkspaceBtn");
+  const dashMain = document.getElementById("dashboardMain");
+  const wsMain = document.getElementById("workspaceMain");
+  const anControls = document.getElementById("analyticsControls");
+  const wsControls = document.getElementById("workspaceControls");
+
+  if (view === "workspace") {
+    if (window.location.hash !== "#workspace") window.location.hash = "#workspace";
+    if (navAnalytics) navAnalytics.classList.remove("active");
+    if (navWorkspace) navWorkspace.classList.add("active");
+    if (dashMain) dashMain.classList.add("hidden");
+    if (wsMain) wsMain.classList.remove("hidden");
+    if (anControls) anControls.classList.add("hidden");
+    if (wsControls) wsControls.classList.remove("hidden");
+    if (window.WorkspaceExplorer) window.WorkspaceExplorer.initWorkspace();
+  } else {
+    if (window.location.hash && window.location.hash !== "#analytics") window.location.hash = "#analytics";
+    if (navAnalytics) navAnalytics.classList.add("active");
+    if (navWorkspace) navWorkspace.classList.remove("active");
+    const authEl = document.getElementById("authOverlay");
+    if (dashMain && authEl && authEl.classList.contains("hidden")) {
+      dashMain.classList.remove("hidden");
+    }
+    if (wsMain) wsMain.classList.add("hidden");
+    if (anControls) anControls.classList.remove("hidden");
+    if (wsControls) wsControls.classList.add("hidden");
+  }
+}
+
+const navAnalyticsBtn = document.getElementById("navAnalyticsBtn");
+if (navAnalyticsBtn) navAnalyticsBtn.addEventListener("click", () => switchSurface("analytics"));
+
+const navWorkspaceBtn = document.getElementById("navWorkspaceBtn");
+if (navWorkspaceBtn) navWorkspaceBtn.addEventListener("click", () => switchSurface("workspace"));
+
+window.addEventListener("hashchange", () => {
+  if (window.location.hash === "#workspace") switchSurface("workspace");
+  else switchSurface("analytics");
+});
+
+// Quick Pills in Workspace Topbar
+const qUpPill = document.getElementById("quickUploadPill");
+if (qUpPill) {
+  qUpPill.addEventListener("click", () => {
+    switchSurface("workspace");
+    const upTab = document.getElementById("wsPaneTabUploads");
+    if (upTab) upTab.click();
+  });
+}
+const visHandoffsPill = document.getElementById("visualHandoffsPill");
+if (visHandoffsPill) {
+  visHandoffsPill.addEventListener("click", () => {
+    switchSurface("workspace");
+    const qNode = document.getElementById("treeQueueNode");
+    if (qNode) qNode.click();
+  });
+}
+const sessArtPill = document.getElementById("sessionArtifactsPill");
+if (sessArtPill) {
+  sessArtPill.addEventListener("click", () => {
+    switchSurface("workspace");
+    const artTab = document.getElementById("wsPaneTabArtifacts");
+    if (artTab) artTab.click();
+  });
+}
+
+// Workspace Area Tabs (Artifacts vs Uploads)
+const wsTabArt = document.getElementById("wsPaneTabArtifacts");
+const wsTabUp = document.getElementById("wsPaneTabUploads");
+const wsAreaArt = document.getElementById("workspaceAreaArtifacts");
+const wsAreaUp = document.getElementById("workspaceAreaUploads");
+
+if (wsTabArt && wsTabUp) {
+  wsTabArt.addEventListener("click", () => {
+    wsTabArt.classList.add("active");
+    wsTabUp.classList.remove("active");
+    if (wsAreaArt) wsAreaArt.classList.remove("hidden");
+    if (wsAreaUp) wsAreaUp.classList.add("hidden");
+  });
+  wsTabUp.addEventListener("click", () => {
+    wsTabUp.classList.add("active");
+    wsTabArt.classList.remove("active");
+    if (wsAreaUp) wsAreaUp.classList.remove("hidden");
+    if (wsAreaArt) wsAreaArt.classList.add("hidden");
+  });
+}
+
+// Consolidated Settings Menu & Popover
+const settingsMenuWrap = document.getElementById("settingsMenuWrap") || document.getElementById("styleMenuWrap");
+const settingsMenuBtn = document.getElementById("settingsMenuBtn") || document.getElementById("styleMenuBtn");
+const settingsPopover = document.getElementById("settingsPopover") || document.getElementById("stylePopover");
 const pwaInstallPromptBtn = document.getElementById("pwaInstallPromptBtn");
 const copyChromiumCmdBtn = document.getElementById("copyChromiumCmdBtn");
 const chromiumCmdInput = document.getElementById("chromiumCmdInput");
 let deferredPwaPrompt = null;
 
-styleMenuBtn.addEventListener("click", (e) => {
-  e.stopPropagation();
-  const isHidden = stylePopover.classList.toggle("hidden");
-  styleMenuBtn.setAttribute("aria-expanded", String(!isHidden));
-  if (appModePopover) appModePopover.classList.add("hidden");
-});
+if (settingsMenuBtn && settingsPopover) {
+  settingsMenuBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const isHidden = settingsPopover.classList.toggle("hidden");
+    settingsMenuBtn.setAttribute("aria-expanded", String(!isHidden));
+  });
+}
+
 document.querySelectorAll(".theme-opt").forEach((btn) => {
   btn.addEventListener("click", (e) => { e.stopPropagation(); applyThemeAndDensity(btn.dataset.theme, state.density); });
 });
 document.querySelectorAll(".density-opt").forEach((btn) => {
   btn.addEventListener("click", (e) => { e.stopPropagation(); applyThemeAndDensity(state.surface, btn.dataset.density); });
 });
+
 if (chromiumCmdInput && window.location.protocol.startsWith("http")) {
   chromiumCmdInput.value = state.demoMode
     ? "google-chrome --app=https://agy-mcp.example.com/web"
     : `google-chrome --app=${window.location.origin}${window.location.pathname}`;
 }
-const pwaHttpWarn = document.getElementById("pwaHttpWarn");
-if (pwaHttpWarn && window.location.protocol === "http:" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
-  pwaHttpWarn.classList.remove("hidden");
-}
-if (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) {
-  const lbl = document.getElementById("appModeBtnLabel");
-  if (lbl) lbl.textContent = "App ✓";
-}
+
 window.addEventListener("beforeinstallprompt", (e) => {
   e.preventDefault();
   deferredPwaPrompt = e;
   if (pwaInstallPromptBtn) pwaInstallPromptBtn.classList.remove("hidden");
 });
+
 const triggerInstall = async () => {
   if (!deferredPwaPrompt) return false;
   deferredPwaPrompt.prompt();
@@ -342,53 +528,60 @@ const triggerInstall = async () => {
   deferredPwaPrompt = null;
   return true;
 };
-if (appModeBtn && appModePopover) {
-  appModeBtn.addEventListener("click", async (e) => {
-    e.stopPropagation();
-    if (await triggerInstall()) return;
-    appModePopover.classList.toggle("hidden");
-    stylePopover.classList.add("hidden");
-  });
-}
+
 if (pwaInstallPromptBtn) {
   pwaInstallPromptBtn.addEventListener("click", async () => {
-    if (await triggerInstall()) { pwaInstallPromptBtn.classList.add("hidden"); appModePopover.classList.add("hidden"); }
+    if (await triggerInstall()) { pwaInstallPromptBtn.classList.add("hidden"); if (settingsPopover) settingsPopover.classList.add("hidden"); }
   });
 }
+
 if (copyChromiumCmdBtn && chromiumCmdInput) {
   copyChromiumCmdBtn.addEventListener("click", () => copyTextWithFeedback(copyChromiumCmdBtn, chromiumCmdInput.value, "Copy", 1500));
 }
+
 if ("serviceWorker" in navigator && window.location.protocol.startsWith("http")) {
   const basePrefix = window.location.pathname.replace(/\/web\/?$/, "");
   navigator.serviceWorker.register(basePrefix + "/web/sw.js", { scope: basePrefix ? (basePrefix + "/") : "/" }).catch(() => {});
 }
+
 document.addEventListener("click", (e) => {
-  if (styleMenuWrap && !styleMenuWrap.contains(e.target)) { stylePopover.classList.add("hidden"); styleMenuBtn.setAttribute("aria-expanded", "false"); }
-  if (appModeWrap && !appModeWrap.contains(e.target) && appModePopover) appModePopover.classList.add("hidden");
+  if (settingsMenuWrap && !settingsMenuWrap.contains(e.target) && settingsPopover) {
+    settingsPopover.classList.add("hidden");
+    if (settingsMenuBtn) settingsMenuBtn.setAttribute("aria-expanded", "false");
+  }
 });
+
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") { stylePopover.classList.add("hidden"); styleMenuBtn.setAttribute("aria-expanded", "false"); if (appModePopover) appModePopover.classList.add("hidden"); }
+  if (e.key === "Escape" && settingsPopover) {
+    settingsPopover.classList.add("hidden");
+    if (settingsMenuBtn) settingsMenuBtn.setAttribute("aria-expanded", "false");
+  }
 });
+
 function clearSensitiveView() {
   state.bundle = null; state.soloModel = ""; state.soloSubagent = ""; state.soloProject = "";
   if (typeof lastHierarchyBundle !== "undefined") lastHierarchyBundle = null;
-  ["hierarchyProjectList", "heatmapGrid", "modelLegendGrid", "subagentLegendGrid", "velocityLineSvg", "subagentAreaSvg", "workspaceAreaSvg"].forEach((id) => {
+  ["hierarchyProjectList", "heatmapGrid", "modelTabularLegendBody", "subagentTabularLegendBody", "velocityLineSvg", "subagentAreaSvg", "workspaceAreaSvg"].forEach((id) => {
     const el = document.getElementById(id); if (el) el.innerHTML = "";
   });
   const dlg = document.getElementById("uploadDialog"); if (dlg && dlg.open) dlg.close();
 }
+
 document.getElementById("unlockForm").addEventListener("submit", (e) => {
   e.preventDefault();
   state.demoMode = false; localStorage.removeItem("nexus_demo_mode");
   state.passphrase = document.getElementById("passInput").value.trim();
   fetchStats(state.period);
 });
+
 document.getElementById("previewDemoBtn").addEventListener("click", () => {
   state.demoMode = true; localStorage.setItem("nexus_demo_mode", "1");
   document.getElementById("authOverlay").classList.add("hidden");
-  document.getElementById("dashboardMain").classList.remove("hidden");
+  const targetMain = state.surfaceView === "workspace" ? document.getElementById("workspaceMain") : document.getElementById("dashboardMain");
+  if (targetMain) targetMain.classList.remove("hidden");
   fetchStats(state.period);
 });
+
 document.getElementById("lockBtn").addEventListener("click", () => {
   localStorage.removeItem("nexus_passphrase"); sessionStorage.removeItem("nexus_passphrase"); localStorage.removeItem("nexus_demo_mode");
   state.passphrase = ""; state.demoMode = false;
@@ -396,5 +589,9 @@ document.getElementById("lockBtn").addEventListener("click", () => {
   document.getElementById("passInput").value = "";
   document.getElementById("authOverlay").classList.remove("hidden");
   document.getElementById("dashboardMain").classList.add("hidden");
+  const wsMain = document.getElementById("workspaceMain");
+  if (wsMain) wsMain.classList.add("hidden");
 });
+
 if (state.passphrase || state.demoMode) fetchStats(state.period);
+if (window.location.hash === "#workspace") switchSurface("workspace");

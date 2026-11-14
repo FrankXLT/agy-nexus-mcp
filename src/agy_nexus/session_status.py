@@ -126,32 +126,184 @@ def check_context_exceeded(conv_id: str, brain_dir: Path = AGY_BRAIN_DIR) -> boo
     except Exception:
         return False
 
+def check_uncommitted_work(ws_path: str) -> bool:
+    """Check if the workspace git working tree has uncommitted changes (git status --porcelain)."""
+    if not ws_path or not Path(ws_path).is_dir():
+        return False
+    try:
+        import subprocess
+        proc = subprocess.run(
+            ["git", "-c", "safe.directory=*", "status", "--porcelain"],
+            cwd=ws_path, capture_output=True, text=True, timeout=3, check=False,
+        )
+        return bool(proc.stdout.strip())
+    except Exception:
+        return False
+
+
+def count_open_task_items(conv_id: str, brain_dir: Path = AGY_BRAIN_DIR) -> int:
+    """Count unchecked / in-progress task items (- [ ] or - [/]) in session brain task.md."""
+    if not conv_id:
+        return 0
+    t_file = brain_dir / conv_id / "task.md"
+    if not t_file.is_file():
+        return 0
+    try:
+        count = 0
+        with open(t_file, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                s = line.strip()
+                if s.startswith(("- [ ]", "- [/]")):
+                    count += 1
+        return count
+    except Exception:
+        return 0
+
+
+def infer_continuity_intent(
+    research_markdown: str = "",
+    allow_chained_publish: bool = False,
+    is_clean_seam: bool = True,
+) -> str:
+    """Infer continuity intent ('closeout', 'continuation', 'new_topic') from handoff text and state."""
+    raw = (research_markdown or "").lower()
+    if allow_chained_publish or any(k in raw for k in ("closeout", "final publish", "release publish", "tag release")):
+        return "closeout"
+    if any(k in raw for k in ("v3.0.0", "new sprint", "phase 2", "next epic")) or re.search(r"\bv\d+\.\d+\.\d+\b", raw):
+        return "new_topic"
+    if is_clean_seam and (raw.startswith("#") or "handshake" in raw):
+        return "new_topic"
+    return "continuation"
+
+
+def evaluate_rollover_posture(
+    conv_id: str,
+    ws_path: str = "",
+    brain_dir: Path = AGY_BRAIN_DIR,
+    step_count: int = 0,
+    compaction_count: int | None = None,
+    context_exceeded: bool | None = None,
+    continuity: str = "auto",
+    research_markdown: str = "",
+    allow_chained_publish: bool = False,
+) -> dict[str, Any]:
+    """Evaluate continuity-aware rollover posture and decision based on step count, compactions, git status, and tasks.
+
+    Returns posture, should_rollover, rollover_guidance, has_uncommitted_work, open_task_items, is_clean_seam.
+    """
+    if step_count == 0 and conv_id and AGY_DB_FILE.is_file():
+        try:
+            con = sqlite3.connect(f"file:{AGY_DB_FILE}?mode=ro", uri=True)
+            row = con.execute("SELECT step_count FROM conversation_summaries WHERE conversation_id = ?", (conv_id,)).fetchone()
+            con.close()
+            if row:
+                step_count = int(row[0] or 0)
+        except Exception:
+            pass
+
+    compactions = compaction_count if compaction_count is not None else count_session_compactions(conv_id, brain_dir)
+    ctx_exceeded = context_exceeded if context_exceeded is not None else check_context_exceeded(conv_id, brain_dir)
+    has_uncommitted = check_uncommitted_work(ws_path)
+    open_tasks = count_open_task_items(conv_id, brain_dir)
+    is_clean_seam = (not has_uncommitted) and (open_tasks == 0)
+
+    # Threshold evaluation
+    if step_count >= 1150 or compactions >= 7 or ctx_exceeded:
+        posture = "HARD_ROLLOVER"
+        guidance = (
+            f"HARD_ROLLOVER (steps={step_count}, compactions={compactions}, exceeded={ctx_exceeded}): "
+            "Session reached safety ceilings. Mandatory rollover to a fresh session."
+        )
+    elif step_count >= 950:
+        posture = "CLOSEOUT_ONLY"
+        guidance = (
+            f"CLOSEOUT_ONLY ({step_count} steps, 950–1,149): Reserved strictly for closing out active release/publishing. "
+            "Rollover recommended for any new scope."
+        )
+    elif step_count >= 700:
+        posture = "HOLD_FOR_COMPLETION"
+        guidance = (
+            f"HOLD_FOR_COMPLETION ({step_count} steps, 700–949): Stay in current session to complete in-flight tasks, "
+            "then rollover upon seam completion."
+        )
+    elif step_count >= 320:
+        posture = "SEAM_AWARE"
+        guidance = (
+            f"SEAM_AWARE ({step_count} steps, 320–699): Stay for ongoing continuation/polish, "
+            "but roll over on new version, topic, or sprint jump."
+        )
+    else:
+        posture = "FRESH"
+        guidance = f"FRESH ({step_count} steps, 0–319): Optimal context headroom for continuation or new topics."
+
+    eff_continuity = continuity if continuity in ("continuation", "closeout", "new_topic") else infer_continuity_intent(research_markdown, allow_chained_publish, is_clean_seam)
+
+    if posture == "HARD_ROLLOVER":
+        should_rollover = True
+    elif eff_continuity == "new_topic":
+        should_rollover = step_count >= 320
+    elif eff_continuity == "continuation":
+        should_rollover = step_count >= 950
+    elif eff_continuity == "closeout":
+        should_rollover = step_count >= 1150
+    else:
+        should_rollover = step_count >= 950
+
+    return {
+        "conversation_id": conv_id,
+        "step_count": step_count,
+        "compaction_count": compactions,
+        "context_exceeded": ctx_exceeded,
+        "has_uncommitted_work": has_uncommitted,
+        "open_task_items": open_tasks,
+        "is_clean_seam": is_clean_seam,
+        "posture": posture,
+        "continuity": eff_continuity,
+        "should_rollover": should_rollover,
+        "rollover_guidance": guidance,
+    }
+
+
 def get_session_context_budget(step_count: int, context_exceeded: bool = False) -> str:
     """Classify session context budget into GREEN, AMBER, or ROLLOVER_RECOMMENDED."""
-    if step_count > 350 or context_exceeded:
-        return "ROLLOVER_RECOMMENDED (>350 steps or context exceeded)"
+    if step_count >= 320 or context_exceeded:
+        return "ROLLOVER_RECOMMENDED (>=320 steps or context exceeded)"
     if step_count >= 250:
-        return "AMBER (250-350 steps)"
+        return "AMBER (250-319 steps)"
     return "GREEN (<250 steps)"
 
-def get_session_telemetry(conv_id: str, brain_dir: Path = AGY_BRAIN_DIR, step_count: int = 0) -> dict[str, Any]:
-    """Retrieve compaction count, active step pacing, and health warning for a conversation."""
+
+def get_session_telemetry(conv_id: str, brain_dir: Path = AGY_BRAIN_DIR, step_count: int = 0, ws_path: str = "") -> dict[str, Any]:
+    """Retrieve compaction count, active step pacing, health warning, and rollover posture for a conversation."""
     if not conv_id:
         return {
             "compaction_count": 0, "avg_step_seconds": 0.0, "session_health_warning": "",
             "context_budget": "GREEN (<250 steps)", "context_exceeded": False,
+            "rollover_posture": "FRESH",
+            "rollover_guidance": "FRESH (0–319 steps): Optimal context headroom.",
         }
     tpath = brain_dir / conv_id / ".system_generated" / "logs" / "transcript.jsonl"
     avg_s, _, compactions = calculate_step_pacing(tpath)
     warning = generate_session_health_warning(step_count, compactions)
     ctx_exceeded = check_context_exceeded(conv_id, brain_dir)
     budget = get_session_context_budget(step_count, ctx_exceeded)
+    posture = evaluate_rollover_posture(
+        conv_id,
+        ws_path=ws_path,
+        brain_dir=brain_dir,
+        step_count=step_count,
+        compaction_count=compactions,
+        context_exceeded=ctx_exceeded,
+    )
     return {
         "compaction_count": compactions,
         "avg_step_seconds": avg_s,
         "session_health_warning": warning,
         "context_budget": budget,
         "context_exceeded": ctx_exceeded,
+        "rollover_posture": posture["posture"],
+        "rollover_guidance": posture["rollover_guidance"],
+        "rollover_info": posture,
     }
 
 def check_inflight_handoff_mutex(

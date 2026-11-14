@@ -393,13 +393,14 @@ def send_handoff_and_resume(
     session_identifier: str = "", session_title: str = "", project_name: str = "", repo_hint: str = "",
     workspace_path: str = "", handoff_id: str = "", supersede_handoff_id: str = "", append_to_existing: bool = False,
     enforce_modular_hygiene: bool = True, activate_skills: str = "", target_agent_role: str = "",
-    customization_edit_scope: str = "none", spoken_passphrase: str = "",
+    customization_edit_scope: str = "none", session_continuity: str = "auto", spoken_passphrase: str = "",
 ) -> str:
     """Stage a repo-prefixed Gemini handoff ticket (`<repo-slug>-01`, ...) or wake up Antigravity headlessly.
 
     - Default Write-Only Staging (`resume_headless=False`): Mints an unclaimed `<repo-slug>-NN` ticket in `STAGED` state so the user can say "Run handoff <repo-slug>-NN" in Antigravity IDE (`agy-praxis-mcp`).
     - Zero-Reupload Override (`RESUME_STAGED`): Pass `resume_headless=True`, `research_markdown="RESUME_STAGED"` (`handoff_id="<repo-slug>-NN"`) to promote a staged ticket to `IN_WORK` and wake up Antigravity.
     - Greenfield Project Guardrail (`create_new_project=True`): Non-existent `workspace_path`/`project_name` fails closed with `PROJECT_NOT_FOUND` unless `create_new_project=True` (provisions `projects/<slug>` + Antigravity Project on `default_branch`).
+    - Session Continuity (`session_continuity="auto"|"continuation"|"closeout"|"new_topic"`): Guides rollover threshold (new_topic rolls at >=320 steps; continuation holds to 950 steps; closeout holds to 1,150 steps).
     """
     caller_gave_ws, eff_project_arg = bool((workspace_path or "").strip()), (project_name or repo_hint).strip()
     if not is_unlocked(spoken_passphrase):
@@ -421,14 +422,26 @@ def send_handoff_and_resume(
 
     implicit_hid_repo = explicit_hid.rsplit("-", 1)[0] if (explicit_hid and not session_identifier and not workspace_path and not eff_project_arg) else ""
     resolved_conv_id, routing_reason, auto_rollover_from = "", "create_new_session", ""
-    if not create_new_session:
+    if not create_new_session and (resume_headless or session_identifier):
         resolved_conv_id, routing_reason = _resolve_target_session_for_handoff(session_identifier=session_identifier, workspace_path=workspace_path, project_name=eff_project_arg or implicit_hid_repo, session_title=session_title, activate_skills=activate_skills, research_markdown="" if is_resume_staged else raw_caller_body)
         if resolved_conv_id:
             tgt_st = _get_selected_session_quick_status(resolved_conv_id)
-            tgt_steps, tgt_exceeded = int(tgt_st.get("step_count") or 0), bool(tgt_st.get("context_exceeded") or check_context_exceeded(resolved_conv_id, cfg.AGY_BRAIN_DIR))
-            if tgt_steps >= 380 or tgt_exceeded:
+            tgt_ws = str(tgt_st.get("workspace_path") or workspace_path or "")
+            from agy_nexus.session_status import evaluate_rollover_posture
+            posture_info = evaluate_rollover_posture(
+                resolved_conv_id,
+                ws_path=tgt_ws,
+                brain_dir=cfg.AGY_BRAIN_DIR,
+                step_count=int(tgt_st.get("step_count") or 0),
+                compaction_count=int(tgt_st.get("compaction_count") or 0),
+                context_exceeded=bool(tgt_st.get("context_exceeded") or check_context_exceeded(resolved_conv_id, cfg.AGY_BRAIN_DIR)),
+                continuity=session_continuity,
+                research_markdown="" if is_resume_staged else raw_caller_body,
+                allow_chained_publish=allow_chained_publish,
+            )
+            if posture_info.get("should_rollover"):
                 auto_rollover_from, create_new_session, resolved_conv_id = resolved_conv_id, True, ""
-                routing_reason = f"auto_promoted_rollover_from_{auto_rollover_from[:8]} (steps={tgt_steps}, exceeded={tgt_exceeded})"
+                routing_reason = f"auto_promoted_rollover_from_{auto_rollover_from[:8]} ({posture_info['posture']}, steps={posture_info['step_count']}, continuity={posture_info.get('continuity')})"
 
     conv_id, body_clean, resumed_ticket_id, tk_pid = ("" if create_new_session else resolved_conv_id), raw_caller_body, "", ""
     rollover_ref_cid = conv_id or auto_rollover_from or (_resolve_session_identifier(session_identifier.strip()) if (create_new_session and session_identifier.strip() and not create_new_project) else "")

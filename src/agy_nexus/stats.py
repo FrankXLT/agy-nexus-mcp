@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -69,6 +69,7 @@ def build_nexus_stats_bundle(
     brain_dir: Path | None = None, db_file: Path | None = None, agy_config_dir: Path | None = None,
     bg_dir: Path | None = None, period: str = "last_90d", *, style: str = "default",
     data_dir: Path | None = None, config_dir: Path | None = None,
+    timeframe: str = "", horizon_mode: str = "", offset: int = 0, anchor_date: str = "",
 ) -> dict[str, Any]:
     """Build complete multi-window telemetry, heatmap, adaptive stacked series, canonical project hierarchy & ASCII reports."""
     base_data = data_dir or Path.home() / ".gemini/antigravity"
@@ -78,18 +79,88 @@ def build_nexus_stats_bundle(
     bg_dir = bg_dir or (base_data / "sidecar_data/ag-bridge-bg")
     now_loc = datetime.now(DISPLAY_TZ)
     today = now_loc.date()
-    pk = (period or "last_90d").strip().lower()
-    if pk in ("current_month", "this_month", "mtd"):
-        pk, start_d, end_d, p_label = "current_month", today.replace(day=1), today, f"This Month — MTD ({today.strftime('%b %Y')})"
-    elif pk == "last_month":
-        end_d = today.replace(day=1) - timedelta(days=1)
-        start_d, p_label = end_d.replace(day=1), f"Last Month ({end_d.strftime('%b %Y')})"
-    elif pk in ("last_year", "rolling_52w", "52w"):
-        pk, start_d, end_d, p_label = "last_year", today - timedelta(days=363), today, "Rolling 52 Weeks"
-    elif pk == "ytd":
-        start_d, end_d, p_label = today.replace(month=1, day=1), today, f"Year to Date ({today.year})"
+
+    anchor = today
+    if anchor_date:
+        try:
+            anchor = datetime.strptime(anchor_date.strip()[:10], "%Y-%m-%d").date()
+        except Exception:
+            anchor = today
+
+    pk_raw = (period or "last_90d").strip().lower()
+    if timeframe:
+        tf = timeframe.strip().lower()
+        hm = horizon_mode.strip().lower() if horizon_mode else "to_date"
+    elif pk_raw in ("current_month", "this_month", "mtd"):
+        tf, hm = "month", "to_date"
+    elif pk_raw == "last_month":
+        tf, hm, offset = "month", "to_date", -1
+    elif pk_raw in ("last_year", "rolling_52w", "52w"):
+        tf, hm = "year", "rolling"
+    elif pk_raw in ("ytd", "year"):
+        tf, hm = "year", "to_date"
+    elif pk_raw in ("quarter", "qtr"):
+        tf, hm = "quarter", "to_date"
     else:
-        pk, start_d, end_d, p_label = "last_90d", today - timedelta(days=89), today, "Rolling 90 Days"
+        tf, hm = "quarter", "rolling"
+
+    if hm not in ("to_date", "rolling"):
+        hm = "to_date"
+    if tf not in ("month", "quarter", "year"):
+        tf = "quarter"
+
+    # Compute start_d and end_d for the active window
+    if hm == "to_date":
+        if tf == "month":
+            m_idx = anchor.year * 12 + (anchor.month - 1) + int(offset)
+            tgt_year, tgt_month = m_idx // 12, (m_idx % 12) + 1
+            start_d = date(tgt_year, tgt_month, 1)
+            next_m_idx = m_idx + 1
+            next_first = date(next_m_idx // 12, (next_m_idx % 12) + 1, 1)
+            last_day = next_first - timedelta(days=1)
+            end_d = min(today, last_day) if (tgt_year == today.year and tgt_month == today.month) else last_day
+            p_label = f"{start_d.strftime('%b %Y')}" if (tgt_year != today.year or tgt_month != today.month) else f"This Month — MTD ({today.strftime('%b %Y')})"
+            pk = "current_month" if (tgt_year == today.year and tgt_month == today.month) else f"month_{tgt_year}_{tgt_month:02d}"
+        elif tf == "quarter":
+            q_cur = (anchor.month - 1) // 3
+            q_idx = anchor.year * 4 + q_cur + int(offset)
+            tgt_year, tgt_q = q_idx // 4, (q_idx % 4) + 1
+            start_month = (tgt_q - 1) * 3 + 1
+            start_d = date(tgt_year, start_month, 1)
+            end_month = start_month + 2
+            next_m = date(tgt_year + 1, 1, 1) if end_month == 12 else date(tgt_year, end_month + 1, 1)
+            last_day = next_m - timedelta(days=1)
+            is_cur_q = (tgt_year == today.year and (today.month - 1) // 3 + 1 == tgt_q)
+            end_d = min(today, last_day) if is_cur_q else last_day
+            p_label = f"Q{tgt_q} {tgt_year}"
+            pk = f"quarter_{tgt_year}_q{tgt_q}"
+        else:
+            tgt_year = anchor.year + int(offset)
+            start_d = date(tgt_year, 1, 1)
+            last_day = date(tgt_year, 12, 31)
+            end_d = min(today, last_day) if tgt_year == today.year else last_day
+            p_label = f"{tgt_year} (YTD)" if tgt_year == today.year else f"{tgt_year}"
+            pk = "ytd" if tgt_year == today.year else f"year_{tgt_year}"
+    else:
+        # Rolling
+        if tf == "month":
+            roll_end = min(today, anchor + timedelta(days=int(offset) * 30))
+            start_d = roll_end - timedelta(days=29)
+            end_d = roll_end
+            p_label = f"Rolling 30D ({start_d.strftime('%b %d')}–{end_d.strftime('%b %d')})"
+            pk = "month_rolling"
+        elif tf == "quarter":
+            roll_end = min(today, anchor + timedelta(days=int(offset) * 91))
+            start_d = roll_end - timedelta(days=90)
+            end_d = roll_end
+            p_label = "Rolling 90 Days" if int(offset) == 0 else f"Rolling 91D ({start_d.strftime('%b %d')}–{end_d.strftime('%b %d')})"
+            pk = "last_90d" if int(offset) == 0 else "quarter_rolling"
+        else:
+            roll_end = min(today, anchor + timedelta(days=int(offset) * 364))
+            start_d = roll_end - timedelta(days=363)
+            end_d = roll_end
+            p_label = "Rolling 52 Weeks" if int(offset) == 0 else f"Rolling 52W ({start_d.strftime('%b %d, %Y')}–{end_d.strftime('%b %d, %Y')})"
+            pk = "last_year" if int(offset) == 0 else "year_rolling"
 
     s_iso, e_iso = start_d.strftime("%Y-%m-%d"), end_d.strftime("%Y-%m-%d")
     quota_info = get_live_quota_and_pool_status(base_data, agy_config_dir)
@@ -250,8 +321,16 @@ def build_nexus_stats_bundle(
         if st_c >= peak["steps"]: peak = {"date": ds, "steps": st_c}
         cur += timedelta(days=1)
 
-    heat_start_d, heat_end_d = (start_d, ((today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1))) if pk == "current_month" else (start_d, end_d)
-    heat_start_d -= timedelta(days=heat_start_d.weekday())
+    if hm == "to_date":
+        ref_year = end_d.year
+        heat_cal_start = date(ref_year, 1, 1)
+        heat_cal_end = date(ref_year, 12, 31)
+    else:
+        heat_cal_end = end_d
+        heat_cal_start = heat_cal_end - timedelta(days=363)
+
+    heat_start_d = heat_cal_start - timedelta(days=heat_cal_start.weekday())
+    heat_end_d = heat_cal_end + timedelta(days=(6 - heat_cal_end.weekday()))
     global_nz = sorted(v for v in daily_steps.values() if v > 0)
     q1, q2, q3 = (global_nz[max(0, int(len(global_nz) * 0.25) - 1)], global_nz[max(0, int(len(global_nz) * 0.50) - 1)], global_nz[max(0, int(len(global_nz) * 0.75) - 1)]) if global_nz else (25, 100, 300)
     heatmap_series, h_cur = [], heat_start_d
@@ -259,7 +338,13 @@ def build_nexus_stats_bundle(
         ds, is_fut = h_cur.strftime("%Y-%m-%d"), h_cur > today
         st_c = 0 if is_fut else daily_steps.get(ds, 0)
         lvl = -1 if is_fut else (0 if st_c == 0 else (1 if st_c <= q1 else (2 if st_c <= q2 else (3 if st_c <= q3 else 4))))
-        heatmap_series.append({"date": ds, "weekday": h_cur.weekday(), "steps": st_c, "tools": 0 if is_fut else daily_tools.get(ds, 0), "tokens": 0 if is_fut else daily_tokens.get(ds, 0), "sessions": 0 if is_fut else len(daily_sessions.get(ds, set())), "level": lvl, "future": is_fut, "in_window": start_d <= h_cur <= end_d})
+        heatmap_series.append({
+            "date": ds, "weekday": h_cur.weekday(), "steps": st_c,
+            "tools": 0 if is_fut else daily_tools.get(ds, 0),
+            "tokens": 0 if is_fut else daily_tokens.get(ds, 0),
+            "sessions": 0 if is_fut else len(daily_sessions.get(ds, set())),
+            "level": lvl, "future": is_fut, "in_window": start_d <= h_cur <= end_d,
+        })
         h_cur += timedelta(days=1)
 
     act_d, act_w = max(1, active_days), max(1.0, max(1, active_days) / 7.0)
@@ -307,7 +392,12 @@ def build_nexus_stats_bundle(
     res_label = series_pkg["resolution"]
     bundle = {
         "server": "agy-nexus-mcp", "version": __version__, "generated_at": now_loc.isoformat(), "style": (style or "default").strip().lower(),
-        "period": {"key": pk, "label": p_label, "start_date": s_iso, "end_date": e_iso, "total_days": len([x for x in heatmap_series if x.get("in_window")]), "active_days": active_days, "resolution": res_label},
+        "period": {
+            "key": pk, "label": p_label, "start_date": s_iso, "end_date": e_iso,
+            "total_days": len([x for x in heatmap_series if x.get("in_window")]),
+            "active_days": active_days, "resolution": res_label,
+            "timeframe": tf, "horizon_mode": hm, "offset": int(offset), "anchor_date": anchor.strftime("%Y-%m-%d"),
+        },
         "kpis": kpis_obj, "summary": kpis_obj, "quota_and_pools": quota_info, "model_usage_vs_target": model_comp, "subagent_role_breakdown": subagent_roles,
         "subagent_list": subagent_list, "all_workspaces": all_ws_list, "top_workspaces": all_ws_list[:10],
         "velocity_series": series_pkg["velocity_series"], "model_series": series_pkg["model_series"],

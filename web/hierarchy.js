@@ -123,30 +123,33 @@ function renderProjectHandoffRow(h) {
   const st = String(h.status || "STAGED").toUpperCase();
   const isStaged = st === "STAGED";
   const isInWork = st === "IN_WORK";
-  const stCls = isStaged ? "staged" : (isInWork ? "in-work" : "superseded");
-  const stPillLbl = isStaged ? "◈ STAGED · UNCLAIMED" : (isInWork ? "▶ IN-WORK" : "⊘ SUPERSEDED");
+  const isCompleted = st === "COMPLETED";
+  const stCls = isStaged ? "staged" : (isInWork ? "in-work" : (isCompleted ? "completed" : "superseded"));
+  const stPillLbl = isStaged ? "◈ STAGED · UNCLAIMED" : (isInWork ? "▶ IN-WORK" : (isCompleted ? "✓ COMPLETED" : "⊘ SUPERSEDED"));
   const ownerCid = escapeHtmlSafe(h.claimed_by_conversation_id || h.target_conversation_id || "");
   const supBy = escapeHtmlSafe(h.superseded_by || "newer");
   const idColHtml = isStaged
     ? `<span class="hier-copy-inline hier-handoff-unclaimed mono" data-copy="${hid}" title="Unclaimed handoff — click to copy ticket ID ${hid}">${hid} · (unclaimed / new chat)</span>`
     : (isInWork
       ? `<span class="hier-copy-inline hier-uuid mono" data-copy="${ownerCid || hid}" title="Claimed in-work session">${ownerCid ? `→ ${ownerCid}` : `${hid} · active`}</span>`
-      : `<span class="hier-handoff-sup-note mono" title="Superseded by ${supBy}">→ ${supBy}</span>`);
+      : (isCompleted
+        ? `<span class="hier-copy-inline hier-uuid mono" data-copy="${ownerCid || hid}" title="Completed session">${ownerCid ? `✓ ${ownerCid}` : `${hid} · completed`}</span>`
+        : `<span class="hier-handoff-sup-note mono" title="Superseded by ${supBy}">→ ${supBy}</span>`));
   const rawWs = String(h.workspace_path || "");
   const wsFull = escapeHtmlSafe(rawWs || h.repo_slug || "(auto)");
   const wsShort = escapeHtmlSafe(rawWs ? formatShortWorkspace(rawWs) : (h.repo_slug || "(auto)"));
   const execLbl = escapeHtmlSafe(`${String(h.execution_mode || "plan").toUpperCase()}/${String(h.handoff_mode || "intent").toUpperCase()}`);
   const sizeKb = (Math.max(100, Number(h.chars_written || 0)) / 1024).toFixed(1) + " KB";
   const updated = escapeHtmlSafe(formatShortUpdated(h));
-  const actHtml = st === "SUPERSEDED"
+  const actHtml = (st === "SUPERSEDED" || isCompleted)
     ? `<span class="mono" style="color:var(--text-dim);font-size:10px;">—</span>`
     : `<button type="button" class="hier-claim-btn hier-copy-inline btn mono" data-copy="Run handoff ${hid}" title="Copy IDE prompt to claim ${hid} via agy-praxis-mcp">Copy Cmd</button>`;
 
-  return `<tr class="hier-handoff-row ${st === "SUPERSEDED" ? "is-superseded" : ""}">
+  return `<tr class="hier-handoff-row ${st === "SUPERSEDED" ? "is-superseded" : (isCompleted ? "is-completed" : "")}">
     <td><div class="sess-cell"><span class="hier-handoff-pill ${stCls} mono">${stPillLbl}</span><span class="hier-copy-inline hier-handoff-slug mono" data-copy="${hid}" title="Click to copy ticket slug ${hid}">${hid}</span><span class="hier-copy-inline hier-title-txt" data-copy="${title}" title="Click to copy handoff title">${title}</span></div></td>
     <td class="mono">${idColHtml}</td>
     <td class="mono"><span class="hier-copy-inline hier-ws" data-copy="${wsFull}" title="Workspace: ${wsFull}">${wsShort}</span></td>
-    <td class="mono"><span class="hier-mode-lbl ${isStaged ? "warn" : (isInWork ? "writer" : "")}">${execLbl}</span></td>
+    <td class="mono"><span class="hier-mode-lbl ${isStaged ? "warn" : (isInWork ? "writer" : (isCompleted ? "tag-ok" : ""))}">${execLbl}</span></td>
     <td class="mono num-col" title="Staged specification size">${sizeKb}</td>
     <td class="mono num-col hier-updated">${updated}</td>
     <td class="hier-act-cell">${actHtml}</td>
@@ -218,6 +221,46 @@ function bindHierarchyCardEvents(container) {
   });
 }
 
+function renderProjectSwatchStrip(bundle, surface, soloPid) {
+  const strip = document.getElementById("projectSwatchStrip");
+  if (!strip) return;
+  const ph = bundle && bundle.project_hierarchy;
+  if (!ph || !Array.isArray(ph.top_projects) || ph.top_projects.length === 0) {
+    strip.innerHTML = "";
+    strip.style.display = "none";
+    return;
+  }
+  strip.style.display = "flex";
+  const chips = [];
+  ph.top_projects.forEach((proj) => {
+    const pid = String(proj.project_id || "");
+    const pName = escapeHtmlSafe(proj.project_name || "Project");
+    const slotIdx = Number(proj.color_slot ?? 0);
+    const col = getProjectBaseColor(slotIdx, surface);
+    const share = Number(proj.share_pct || 0).toFixed(1);
+    const isSolo = soloPid === pid;
+    chips.push(`<span class="swatch-strip-chip mono ${isSolo ? "active" : ""}" data-pid="${escapeHtmlSafe(pid)}" title="Click to solo ${pName} on Plot 3"><span class="chip-swatch" style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${col.cap};"></span><span>${pName}</span><span style="opacity:0.75;">${share}%</span></span>`);
+  });
+  if (ph.other_projects) {
+    const op = ph.other_projects;
+    const isSolo = soloPid === "__other_projects__";
+    const slate = getProjectBaseColor(10, surface);
+    const share = Number(op.share_pct || 0).toFixed(1);
+    chips.push(`<span class="swatch-strip-chip mono ${isSolo ? "active" : ""}" data-pid="__other_projects__" title="Click to solo Other Projects on Plot 3"><span class="chip-swatch" style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${slate.cap};"></span><span>Other Projects</span><span style="opacity:0.75;">${share}%</span></span>`);
+  }
+  strip.innerHTML = chips.join("");
+  strip.querySelectorAll(".swatch-strip-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const targetPid = chip.getAttribute("data-pid") || "";
+      if (typeof state !== "undefined") {
+        state.soloProject = state.soloProject === targetPid ? "" : targetPid;
+        if (state.bundle && typeof renderAllTimePlots === "function") renderAllTimePlots(state.bundle);
+        renderHierarchyPanel(lastHierarchyBundle);
+      }
+    });
+  });
+}
+
 function renderHierarchyPanel(bundle) {
   lastHierarchyBundle = bundle;
   const container = document.getElementById("hierarchyProjectList");
@@ -230,6 +273,8 @@ function renderHierarchyPanel(bundle) {
   const metric = (typeof state !== "undefined" && state.metric) || "steps";
   const surface = (typeof state !== "undefined" && state.surface) || "obsidian";
   const soloPid = (typeof state !== "undefined" && state.soloProject) || "";
+
+  renderProjectSwatchStrip(bundle, surface, soloPid);
 
   const backupBadge = document.getElementById("hierarchyBackupBadge");
   if (backupBadge) {
@@ -281,7 +326,7 @@ function renderHierarchyPanel(bundle) {
   if (btnIdle) {
     btnIdle.classList.toggle("active", hierarchyShowIdle);
     btnIdle.classList.toggle("hidden", pureIdleCount === 0);
-    btnIdle.textContent = `+ Idle (${pureIdleCount})`;
+    btnIdle.textContent = `+ Dormant (${pureIdleCount})`;
   }
   if (expandBtn) expandBtn.textContent = hierarchyExpandAll ? "Collapse All" : "Expand All";
   if (clearSoloBtn) clearSoloBtn.classList.toggle("hidden", !soloPid);
@@ -330,7 +375,20 @@ function renderHierarchyPanel(bundle) {
     const autoOpenHandoff = stgCnt > 0 && !collapsedProjectIds.has(pid);
     const isOpen = hierarchyExpandAll || expandedProjectIds.has(pid) || autoOpenHandoff;
 
-    const handoffRows = proj.visibleHandoffs.map((h) => renderProjectHandoffRow(h)).join("");
+    const handoffList = Array.isArray(proj.visibleHandoffs) ? proj.visibleHandoffs : [];
+    const activeHandoffs = handoffList.filter((h) => h.status !== "COMPLETED");
+    const completedHandoffs = handoffList.filter((h) => h.status === "COMPLETED");
+    const handoffRows = activeHandoffs.map((h) => renderProjectHandoffRow(h)).join("");
+    let completedSectionHtml = "";
+    if (completedHandoffs.length > 0) {
+      const compRows = completedHandoffs.map((h) => renderProjectHandoffRow(h)).join("");
+      completedSectionHtml = `<tr class="hier-completed-row"><td colspan="7" style="padding:0;border-bottom:1px solid var(--border-grid);">
+        <details class="hier-completed-details" style="padding:4px 8px;">
+          <summary class="mono" style="cursor:pointer;color:var(--text-dim);font-size:11px;user-select:none;">▸ Completed Handoffs (${completedHandoffs.length})</summary>
+          <table class="table-clean hier-table" style="width:100%;margin-top:4px;"><tbody>${compRows}</tbody></table>
+        </details>
+      </td></tr>`;
+    }
     const sessRows = proj.visibleSessions.map((s) => renderProjectSessionRow(s, slotIdx, isIdleRow, isRollup, metric, surface)).join("");
     const soloBtnHtml = !isIdleRow ? `<button type="button" class="btn-solo mono ${isSolo ? "active" : ""}" data-solo-pid="${pEsc}" title="Solo this project on Plot 3">${isSolo ? "Solo ✓" : "Solo"}</button>` : "";
 
@@ -342,7 +400,7 @@ function renderHierarchyPanel(bundle) {
       <div class="hier-table-wrap" tabindex="0" role="region" aria-label="${pName} handoffs and sessions">
         <table class="table-clean hier-table">
           <thead><tr><th class="hier-col-sess">Session / Handoff (Shade + Title)</th><th class="mono hier-col-uuid">Session / Ticket ID</th><th class="mono hier-col-ws">Workspace</th><th class="mono hier-col-mode">Mode</th><th class="mono num-col hier-col-steps">${metric === "tokens" ? "Win Tok" : "Win Steps"}</th><th class="mono num-col hier-col-upd">Updated</th><th class="mono hier-col-act">Action</th></tr></thead>
-          <tbody>${handoffRows}${sessRows}</tbody>
+          <tbody>${handoffRows}${completedSectionHtml}${sessRows}</tbody>
         </table>
       </div>
     </details>`;

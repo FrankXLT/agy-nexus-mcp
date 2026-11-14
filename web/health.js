@@ -92,40 +92,88 @@ function renderCodeHealth(ch, installedVer) {
     serenaBadge.textContent = lspInstalled ? "PRAXIS + SERENA: READY" : "PRAXIS MCP: READY";
   }
 
+  // Watchlist & Exceptions Toggle Support
+  if (typeof window._hygieneFilterMode === "undefined") {
+    window._hygieneFilterMode = "watchlist";
+  }
+
+  const watchlistItems = mh.watchlist_and_exceptions || [];
+  const allModules = mh.modules || [];
+
+  const btnWatchlist = document.getElementById("hygieneWatchlistBtn");
+  const btnAll = document.getElementById("hygieneAllBtn");
+
+  if (btnWatchlist) {
+    btnWatchlist.textContent = `Watchlist & Exceptions (${watchlistItems.length})`;
+    btnWatchlist.classList.toggle("active", window._hygieneFilterMode === "watchlist");
+    btnWatchlist.onclick = () => {
+      window._hygieneFilterMode = "watchlist";
+      renderCodeHealth(ch, installedVer);
+    };
+  }
+
+  if (btnAll) {
+    btnAll.textContent = `All Modules (${allModules.length})`;
+    btnAll.classList.toggle("active", window._hygieneFilterMode === "all");
+    btnAll.onclick = () => {
+      window._hygieneFilterMode = "all";
+      renderCodeHealth(ch, installedVer);
+    };
+  }
+
   const tbody = document.getElementById("modulesTableBody");
   if (tbody) {
     tbody.innerHTML = "";
-    const mods = mh.modules || [];
-    mods.forEach((m) => {
-      const lines = Number(m.lines || 0);
-      let dot = "green";
-      let modStatusText = `Compliant (≤${targetL}L)`;
-      if (lines > ceilingL) {
-        dot = "slate";
-        modStatusText = `Violation (>${ceilingL}L)`;
-      } else if (lines > targetL) {
-        dot = "amber";
-        modStatusText = `Warning (${targetL + 1}-${ceilingL}L)`;
-      }
-      const margin = ceilingL - lines;
-      const marginText = margin >= 0 ? `+${margin} lines` : `${margin} lines`;
-      const marginColor = margin < 0 ? "#ef4444" : (margin <= 60 ? "#f59e0b" : "var(--text-secondary)");
-      const symCount = Number(m.symbols || 0);
-      const longFns = Number(m.long_functions || 0);
-      const polyHtml = longFns > 0
-        ? `<span style="color:#f59e0b">${symCount} syms (${longFns} >100L)</span>`
-        : `<span style="color:var(--text-secondary)">${symCount} syms · Clean</span>`;
+    const activeList = window._hygieneFilterMode === "watchlist" ? watchlistItems : allModules;
 
+    if (activeList.length === 0 && window._hygieneFilterMode === "watchlist") {
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td><strong class="mono">${m.name}</strong></td>
-        <td class="mono">${lines}</td>
-        <td><span style="display:inline-flex;align-items:center;gap:6px;"><span class="status-dot-6px ${dot}"></span><span>${modStatusText}</span></span></td>
-        <td>${polyHtml}</td>
-        <td class="mono" style="color:${marginColor}">${marginText}</td>
+        <td colspan="5" style="text-align:center;padding:18px;color:var(--text-dim);">
+          ✓ No exceptions or dirty files detected — all ${allModules.length} files conform to hygiene guidelines.
+          <button type="button" class="btn mono" style="margin-left:12px;" onclick="window._hygieneFilterMode='all';window.renderCodeHealth && window.renderCodeHealth(window._lastCodeHealth);">View All Clean Files</button>
+        </td>
       `;
       tbody.appendChild(tr);
-    });
+    } else {
+      activeList.forEach((m) => {
+        const lines = Number(m.lines || 0);
+        let dot = "green";
+        let modStatusText = `Compliant (≤${targetL}L)`;
+        if (lines > ceilingL) {
+          dot = "slate";
+          modStatusText = `Violation (>${ceilingL}L)`;
+        } else if (lines > targetL) {
+          dot = "amber";
+          modStatusText = `Warning (${targetL + 1}-${ceilingL}L)`;
+        }
+        const margin = ceilingL - lines;
+        const marginText = margin >= 0 ? `+${margin} lines` : `${margin} lines`;
+        const marginColor = margin < 0 ? "#ef4444" : (margin <= 60 ? "#f59e0b" : "var(--text-secondary)");
+        const symCount = Number(m.symbols || 0);
+        const longFns = Number(m.long_functions || 0);
+        const polyHtml = longFns > 0
+          ? `<span style="color:#f59e0b">${symCount} syms (${longFns} >100L)</span>`
+          : `<span style="color:var(--text-secondary)">${symCount} syms · Clean</span>`;
+
+        const dirtyBadge = m.git_dirty
+          ? `<span class="card-tag mono" style="margin-left:6px;font-size:9px;padding:1px 5px;background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.3);">DIRTY</span>`
+          : "";
+
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><strong class="mono">${m.name}</strong>${dirtyBadge}</td>
+          <td class="mono">${lines}</td>
+          <td><span style="display:inline-flex;align-items:center;gap:6px;"><span class="status-dot-6px ${dot}"></span><span>${modStatusText}</span></span></td>
+          <td>${polyHtml}</td>
+          <td class="mono" style="color:${marginColor}">${marginText}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+  }
+  if (typeof window !== "undefined") {
+    window._lastCodeHealth = ch;
   }
 }
 

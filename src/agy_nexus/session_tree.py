@@ -106,7 +106,7 @@ def _attach_handoffs_to_groups(
     inbox = list_handoff_tickets(eff_bg, include_superseded=True, limit=120)
     for t in inbox.get("tickets") or []:
         st = str(t.get("status") or "STAGED").upper()
-        if st not in ("STAGED", "IN_WORK", "SUPERSEDED"):
+        if st not in ("STAGED", "IN_WORK", "SUPERSEDED", "COMPLETED"):
             continue
         if active_only and st not in ("STAGED", "IN_WORK"):
             continue
@@ -142,7 +142,7 @@ def _attach_handoffs_to_groups(
                 "project_id": eff_pid, "project_name": t_pname,
                 "workspaces": list(projects_map.get(eff_pid, {}).get("workspace_paths") or ([t_ws] if t_ws else [])),
                 "shared_repo": False, "running_count": 0, "pinned_count": 0,
-                "staged_count": 0, "in_work_handoff_count": 0, "superseded_count": 0,
+                "staged_count": 0, "in_work_handoff_count": 0, "completed_count": 0, "superseded_count": 0,
                 "staged_handoffs": [], "sessions": [],
             },
         )
@@ -152,6 +152,8 @@ def _attach_handoffs_to_groups(
             pg["staged_count"] = int(pg.get("staged_count") or 0) + 1
         elif st == "IN_WORK":
             pg["in_work_handoff_count"] = int(pg.get("in_work_handoff_count") or 0) + 1
+        elif st == "COMPLETED":
+            pg["completed_count"] = int(pg.get("completed_count") or 0) + 1
         else:
             pg["superseded_count"] = int(pg.get("superseded_count") or 0) + 1
         pg.setdefault("staged_handoffs", []).append({
