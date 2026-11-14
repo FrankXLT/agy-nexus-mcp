@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import time
 from typing import Any
@@ -23,6 +24,8 @@ from agy_nexus.bucket_api import (
     get_session_file_payload,
     handle_bucket_api_request,
     rewrite_markdown_media_links,
+    scan_session_artifacts,
+    scan_session_uploads,
 )
 from agy_nexus.code_health import get_modular_hygiene_summary
 from agy_nexus.handoff_queue import (
@@ -39,6 +42,7 @@ from agy_nexus.session_status import (
     check_uncommitted_work,
     count_open_task_items,
     evaluate_rollover_posture,
+    get_session_context_budget,
     infer_continuity_intent,
 )
 from agy_nexus.stats import build_nexus_stats_bundle
@@ -271,3 +275,63 @@ def test_modular_hygiene_summary() -> None:
     assert "modules" in summary
     assert "watchlist_and_exceptions" in summary
     assert len(summary["modules"]) > 10
+
+
+def test_validate_conv_id_rejection_in_bucket_api() -> None:
+    """Verify validate_conv_id rejects path traversal across bucket APIs."""
+    bad_cid = "../etc/passwd"
+    b_res = get_session_bucket_payload(bad_cid)
+    assert b_res["ok"] is False
+    assert "invalid" in b_res["error"].lower()
+
+    status, f_res = get_session_file_payload(bad_cid, "test.txt")
+    assert status == 400
+    assert f_res["ok"] is False
+
+    assert scan_session_uploads(bad_cid) == []
+    assert scan_session_artifacts(bad_cid) == []
+
+
+def test_get_session_context_budget_thresholds() -> None:
+    """Verify get_session_context_budget uses the v3.0.0 posture scale."""
+    assert get_session_context_budget(0) == "GREEN (<500 steps)"
+    assert get_session_context_budget(499) == "GREEN (<500 steps)"
+    assert get_session_context_budget(500) == "AMBER (500-749 steps)"
+    assert get_session_context_budget(749) == "AMBER (500-749 steps)"
+    assert get_session_context_budget(750) == "ROLLOVER_RECOMMENDED (>=750 steps or context exceeded)"
+    assert get_session_context_budget(1200) == "ROLLOVER_RECOMMENDED (>=750 steps or context exceeded)"
+    assert get_session_context_budget(50, context_exceeded=True) == "ROLLOVER_RECOMMENDED (>=750 steps or context exceeded)"
+
+
+def test_markdown_renderer_js_image_link_and_sanitizer() -> None:
+    """Verify Node.js execution of markdown_renderer.js renders images before links and sanitizes dangerous HTML."""
+    js_test_code = """
+    const MarkdownRenderer = require('./web/markdown_renderer.js');
+    const mdImg = '![Alt Figure](https://example.com/fig.png)';
+    const outImg = MarkdownRenderer.renderMarkdown(mdImg);
+    if (!outImg.includes('<figure class="editorial-figure"><img src="https://example.com/fig.png"') || outImg.includes('!<a')) {
+      console.error('Image rendered as link instead of figure:', outImg);
+      process.exit(1);
+    }
+    const mdLink = '[Click Here](https://example.com/page)';
+    const outLink = MarkdownRenderer.renderMarkdown(mdLink);
+    if (!outLink.includes('<a href="https://example.com/page"') || !outLink.includes('Click Here')) {
+      console.error('Link rendering failed:', outLink);
+      process.exit(2);
+    }
+    const xss = '<img src=x onerror=alert(1)><iframe src="javascript:alert(2)"></iframe>';
+    const outSan = MarkdownRenderer.sanitizeHtml(xss);
+    if (outSan.includes('onerror') || outSan.includes('iframe') || outSan.includes('javascript:')) {
+      console.error('Sanitizer failed to strip XSS:', outSan);
+      process.exit(3);
+    }
+    const outRendered = MarkdownRenderer.renderMarkdown(xss);
+    if (outRendered.includes('onerror') || outRendered.includes('iframe') || outRendered.includes('javascript:')) {
+      console.error('Rendered Markdown failed to strip XSS:', outRendered);
+      process.exit(4);
+    }
+    console.log('OK');
+    """
+    res = subprocess.run(["node", "-e", js_test_code], capture_output=True, text=True)
+    assert res.returncode == 0, f"Node test failed: {res.stderr}"
+    assert "OK" in res.stdout

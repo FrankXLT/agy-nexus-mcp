@@ -266,11 +266,11 @@ def evaluate_rollover_posture(
 
 def get_session_context_budget(step_count: int, context_exceeded: bool = False) -> str:
     """Classify session context budget into GREEN, AMBER, or ROLLOVER_RECOMMENDED."""
-    if step_count >= 320 or context_exceeded:
-        return "ROLLOVER_RECOMMENDED (>=320 steps or context exceeded)"
-    if step_count >= 250:
-        return "AMBER (250-319 steps)"
-    return "GREEN (<250 steps)"
+    if step_count >= 750 or context_exceeded:
+        return "ROLLOVER_RECOMMENDED (>=750 steps or context exceeded)"
+    if step_count >= 500:
+        return "AMBER (500-749 steps)"
+    return "GREEN (<500 steps)"
 
 
 def get_session_telemetry(conv_id: str, brain_dir: Path = AGY_BRAIN_DIR, step_count: int = 0, ws_path: str = "") -> dict[str, Any]:
@@ -278,7 +278,7 @@ def get_session_telemetry(conv_id: str, brain_dir: Path = AGY_BRAIN_DIR, step_co
     if not conv_id:
         return {
             "compaction_count": 0, "avg_step_seconds": 0.0, "session_health_warning": "",
-            "context_budget": "GREEN (<250 steps)", "context_exceeded": False,
+            "context_budget": "GREEN (<500 steps)", "context_exceeded": False,
             "rollover_posture": "FRESH",
             "rollover_guidance": "FRESH (0–319 steps): Optimal context headroom.",
         }

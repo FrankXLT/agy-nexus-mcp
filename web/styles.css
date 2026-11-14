@@ -427,8 +427,47 @@ dialog#uploadDialog::backdrop { background: rgba(0, 0, 0, 0.65); backdrop-filter
 .visual-thumb-card { background: var(--bg-canvas); border: 1px solid var(--border-grid); border-radius: 6px; padding: 6px; display: flex; flex-direction: column; align-items: center; }
 .visual-thumb-img { width: 100%; height: 90px; object-fit: cover; border-radius: 4px; }
 .thumb-lbl { font-size: 10px; color: var(--text-dim); margin-top: 4px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; }
-.upload-batch-card { background: var(--bg-elevated); border: 1px solid var(--border-hairline); border-radius: 6px; padding: 10px; margin-bottom: 8px; }
-.batch-title { font-weight: 700; font-size: 11px; margin-bottom: 6px; }
+.upload-batch-card { background: var(--bg-elevated); border: 1px solid var(--border-hairline); border-radius: 6px; padding: 10px; margin-bottom: 8px; transition: border-color 0.2s, background 0.2s; }
+.upload-batch-card.highlight { border-color: var(--accent-focal); background: var(--accent-focal-dim); }
+.batch-card-hdr { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.batch-title { font-weight: 700; font-size: 11px; }
+.batch-actions { display: flex; gap: 6px; }
+.batch-actions .btn { font-size: 10px; padding: 2px 7px; border-radius: 4px; background: var(--bg-canvas); border: 1px solid var(--border-grid); color: var(--text-secondary); cursor: pointer; }
+.batch-actions .btn:hover { border-color: var(--accent-focal); color: var(--accent-focal); }
+.batch-thumbs-strip { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0; margin-bottom: 6px; }
+.batch-thumb-link { flex-shrink: 0; display: block; border-radius: 4px; border: 1px solid var(--border-grid); overflow: hidden; }
+.batch-thumb-img { width: 64px; height: 48px; object-fit: cover; display: block; }
 .batch-files { display: flex; flex-wrap: wrap; gap: 4px; }
 .batch-file-pill { display: inline-block; font-size: 10px; padding: 1px 6px; background: var(--bg-canvas); border: 1px solid var(--border-grid); border-radius: 4px; }
+
+/* Sub-Session Tree Branches */
+.tree-session-children { padding-left: 14px; margin: 4px 0 6px; border-left: 1px dashed var(--border-hairline); }
+.tree-sub-details { margin: 2px 0; }
+.tree-sub-hdr { font-size: 10px; color: var(--text-dim); cursor: pointer; display: flex; align-items: center; gap: 4px; padding: 3px 5px; border-radius: 4px; list-style: none; user-select: none; }
+.tree-sub-hdr::-webkit-details-marker { display: none; }
+.tree-sub-hdr:hover { color: var(--text-main); background: var(--bg-elevated); }
+.tree-sub-list { padding-left: 8px; margin: 2px 0; display: flex; flex-direction: column; gap: 2px; }
+.tree-sub-leaf { font-size: 10px; color: var(--text-secondary); display: flex; align-items: center; gap: 5px; padding: 3px 6px; border-radius: 4px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-sub-leaf:hover { background: var(--bg-elevated); color: var(--text-main); }
+.tree-sub-leaf.active { background: var(--accent-focal-dim); color: var(--accent-focal); font-weight: 600; }
+.tree-sub-leaf.empty { color: var(--text-dim); font-style: italic; cursor: default; }
+.leaf-icon { font-size: 10px; flex-shrink: 0; }
+.leaf-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Visual Handoffs Queue Board */
+.queue-board-wrapper { padding: 4px 0; }
+.queue-board-hdr { margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border-hairline); }
+.q-title { font-size: 14px; font-weight: 700; color: var(--accent-focal); }
+.q-subtitle { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+.queue-tickets-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.queue-ticket-card { background: var(--bg-elevated); border: 1px solid var(--border-grid); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 6px; font-size: 11px; }
+.queue-ticket-card:hover { border-color: var(--accent-focal); }
+.q-card-top { display: flex; justify-content: space-between; align-items: center; }
+.q-tid { color: var(--accent-cobalt); }
+.q-repo { color: var(--text-dim); font-size: 10px; }
+.q-card-title { font-weight: 600; color: var(--text-main); line-height: 1.4; }
+.q-card-meta { font-size: 10px; color: var(--text-dim); }
+.q-card-actions { display: flex; gap: 6px; margin-top: 4px; }
+.q-card-actions .btn { font-size: 10px; padding: 3px 8px; border-radius: 4px; background: var(--bg-canvas); border: 1px solid var(--border-grid); color: var(--text-secondary); cursor: pointer; }
+.q-card-actions .btn:hover { border-color: var(--accent-focal); color: var(--accent-focal); }
 

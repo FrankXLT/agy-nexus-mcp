@@ -25,6 +25,7 @@ from agy_nexus.media import (
 )
 from agy_nexus.session_status import evaluate_rollover_posture
 from agy_nexus.session_tree import build_project_session_tree
+from agy_nexus.uploads import validate_conv_id
 
 
 def rewrite_markdown_media_links(
@@ -105,7 +106,7 @@ def rewrite_markdown_media_links(
 
 def scan_session_uploads(conv_id: str) -> list[dict[str, Any]]:
     """Scan scratch/uploads_YYYYMMDD_HHMMSS[_label] directories for a session."""
-    if not conv_id:
+    if not conv_id or not validate_conv_id(conv_id):
         return []
     scratch_dir = AGY_BRAIN_DIR / conv_id / "scratch"
     if not scratch_dir.is_dir():
@@ -121,6 +122,7 @@ def scan_session_uploads(conv_id: str) -> list[dict[str, Any]]:
         for sd in subdirs:
             folder_name = sd.name
             files_meta: list[dict[str, Any]] = []
+            signed_images: list[dict[str, str]] = []
             total_size = 0
             index_md_content = ""
             for item in sorted(sd.iterdir(), key=lambda p: p.name.lower()):
@@ -139,11 +141,19 @@ def scan_session_uploads(conv_id: str) -> list[dict[str, Any]]:
                     "is_image": is_img,
                     "thumbnail_url": thumb_url,
                 })
+                if is_img and thumb_url:
+                    signed_images.append({
+                        "name": item.name,
+                        "rel_path": rel,
+                        "signed_url": thumb_url,
+                    })
                 if item.name.upper() == "INDEX.MD":
                     try:
                         index_md_content = item.read_text(encoding="utf-8", errors="replace")[:4000]
                     except Exception:
                         pass
+            non_index_count = len([f for f in files_meta if f["name"].upper() != "INDEX.MD"])
+            app_prompt = f"Evaluate the {non_index_count} uploaded files in ~/.gemini/antigravity/brain/{conv_id}/scratch/{folder_name}/ (see INDEX.md for sequence order)."
             batches.append({
                 "folder_name": folder_name,
                 "created_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(sd.stat().st_mtime)),
@@ -151,6 +161,9 @@ def scan_session_uploads(conv_id: str) -> list[dict[str, Any]]:
                 "total_size": total_size,
                 "file_count": len(files_meta),
                 "files": files_meta,
+                "signed_images": signed_images,
+                "app_prompt": app_prompt,
+                "index_rel_path": f"scratch/{folder_name}/INDEX.md",
                 "index_preview": index_md_content,
             })
     except Exception:
@@ -160,7 +173,7 @@ def scan_session_uploads(conv_id: str) -> list[dict[str, Any]]:
 
 def scan_session_artifacts(conv_id: str) -> list[dict[str, Any]]:
     """Scan markdown artifacts and handoffs in session brain folder."""
-    if not conv_id:
+    if not conv_id or not validate_conv_id(conv_id):
         return []
     b_dir = AGY_BRAIN_DIR / conv_id
     if not b_dir.is_dir():
@@ -268,8 +281,8 @@ def build_workspace_tree_payload() -> dict[str, Any]:
 
 def get_session_bucket_payload(conv_id: str) -> dict[str, Any]:
     """Assemble session bucket data (uploads, artifacts, visual thumbnails, rollover posture)."""
-    if not conv_id:
-        return {"ok": False, "error": "Missing conversation_id"}
+    if not conv_id or not validate_conv_id(conv_id):
+        return {"ok": False, "error": "Missing or invalid conversation_id"}
 
     ws_map = SESSION_STATE.get("session_workspace_map") or {}
     ws_path = str(ws_map.get(conv_id) or SESSION_STATE.get("selected_workspace") or "")
@@ -304,8 +317,8 @@ def get_session_bucket_payload(conv_id: str) -> dict[str, Any]:
 
 def get_session_file_payload(conv_id: str, rel_path: str) -> tuple[int, dict[str, Any]]:
     """Safely fetch file content with path traversal guard and media link rewriting."""
-    if not conv_id or not rel_path:
-        return 400, {"ok": False, "error": "Missing conversation_id or rel_path"}
+    if not conv_id or not validate_conv_id(conv_id) or not rel_path:
+        return 400, {"ok": False, "error": "Missing or invalid conversation_id or rel_path"}
 
     clean_rel = rel_path.strip().lstrip("/")
     if ".." in Path(clean_rel).parts or is_sensitive_filename(clean_rel):
@@ -385,6 +398,14 @@ async def handle_bucket_api_request(
     m_bucket = re.search(r"/api/sessions/([^/]+)/bucket$", req_path)
     if m_bucket:
         cid = m_bucket.group(1).strip()
+        if not validate_conv_id(cid):
+            err_b = json.dumps({"ok": False, "error": "Invalid conversation_id"}).encode("utf-8")
+            await send({
+                "type": "http.response.start", "status": 400,
+                "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(err_b)).encode("ascii")), (b"cache-control", b"no-cache")],
+            })
+            await send({"type": "http.response.body", "body": err_b})
+            return
         payload = get_session_bucket_payload(cid)
         body_b = json.dumps(payload).encode("utf-8")
         await send({
@@ -398,6 +419,14 @@ async def handle_bucket_api_request(
     m_file = re.search(r"/api/sessions/([^/]+)/file$", req_path)
     if m_file:
         cid = m_file.group(1).strip()
+        if not validate_conv_id(cid):
+            err_b = json.dumps({"ok": False, "error": "Invalid conversation_id"}).encode("utf-8")
+            await send({
+                "type": "http.response.start", "status": 400,
+                "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(err_b)).encode("ascii")), (b"cache-control", b"no-cache")],
+            })
+            await send({"type": "http.response.body", "body": err_b})
+            return
         rel_path = ""
         for kv in raw_qs.split("&"):
             if kv.startswith("path="):

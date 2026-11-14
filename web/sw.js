@@ -1,4 +1,4 @@
-const CACHE_NAME = "agy-nexus-overwatch-v3.0.0";
+const CACHE_NAME = "agy-nexus-overwatch-v3.0.0-r1";
 const SHELL_ASSETS = [
   "/web",
   "/web/styles.css?v=3.0.0",

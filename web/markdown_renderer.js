@@ -21,18 +21,77 @@
       .replace(/'/g, "&#39;");
   }
 
+  const ALLOWED_TAGS = new Set([
+    "a", "abbr", "b", "bdi", "bdo", "blockquote", "br", "caption", "cite", "code",
+    "col", "colgroup", "dd", "del", "details", "dfn", "div", "dl", "dt", "em",
+    "figcaption", "figure", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "i", "img",
+    "ins", "kbd", "li", "mark", "ol", "p", "pre", "q", "rp", "rt", "ruby", "s",
+    "samp", "small", "span", "strong", "sub", "summary", "sup", "table", "tbody",
+    "td", "tfoot", "th", "thead", "time", "tr", "u", "ul", "var", "wbr"
+  ]);
+
+  const ALLOWED_ATTRS = new Set([
+    "href", "src", "alt", "title", "class", "id", "target", "rel", "loading",
+    "open", "data-copy", "aria-label", "aria-hidden", "colspan", "rowspan", "width", "height"
+  ]);
+
+  const DANGEROUS_PROTO_RE = /^(?:\s*javascript:|\s*vbscript:|\s*data:text\/html)/i;
+
   function sanitizeHtml(dirtyHtml) {
+    if (!dirtyHtml) return "";
     if (typeof window !== "undefined" && window.DOMPurify && typeof window.DOMPurify.sanitize === "function") {
       return window.DOMPurify.sanitize(dirtyHtml, {
         ADD_TAGS: ["summary", "details"],
         ADD_ATTR: ["target", "rel", "data-copy", "open"],
       });
     }
-    // Safe fallback: strip script tags and inline event handlers
+
+    if (typeof DOMParser !== "undefined") {
+      try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString("<!DOCTYPE html><body>" + dirtyHtml, "text/html");
+        const body = doc.body;
+
+        function cleanNode(node) {
+          if (!node) return;
+          const children = Array.from(node.childNodes);
+          for (const child of children) {
+            if (child.nodeType === 1) { // Element
+              const tag = child.tagName.toLowerCase();
+              if (!ALLOWED_TAGS.has(tag) || tag === "script" || tag === "iframe" || tag === "object" || tag === "embed") {
+                child.remove();
+                continue;
+              }
+              const attrs = Array.from(child.attributes);
+              for (const attr of attrs) {
+                const name = attr.name.toLowerCase();
+                const val = attr.value;
+                if (name.startsWith("on") || !ALLOWED_ATTRS.has(name)) {
+                  child.removeAttribute(attr.name);
+                } else if ((name === "href" || name === "src") && DANGEROUS_PROTO_RE.test(val)) {
+                  child.removeAttribute(attr.name);
+                }
+              }
+              cleanNode(child);
+            }
+          }
+        }
+
+        cleanNode(body);
+        return body.innerHTML;
+      } catch (e) {
+        // Fall through to regex fallback
+      }
+    }
+
     return dirtyHtml
-      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-      .replace(/ on\w+\s*=\s*["'][^"']*["']/gi, "")
-      .replace(/javascript:/gi, "");
+      .replace(/<(?:script|iframe|object|embed)\b[^<]*(?:(?!<\/(?:script|iframe|object|embed)>)<[^<]*)*<\/(?:script|iframe|object|embed)>/gi, "")
+      .replace(/<(?:script|iframe|object|embed)\b[^>]*>/gi, "")
+      .replace(/&lt;(?:script|iframe|object|embed)\b[\s\S]*?&lt;\/(?:script|iframe|object|embed)&gt;/gi, "")
+      .replace(/&lt;(?:script|iframe|object|embed)\b[\s\S]*?&gt;/gi, "")
+      .replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|&quot;[^&]*&quot;|&#39;[^&]*&#39;|[^\s>]+)/gi, "")
+      .replace(/(?:href|src)\s*=\s*["']?\s*(?:javascript:|vbscript:|data:text\/html)[^"'>\s]*/gi, "")
+      .replace(/(?:href|src)\s*=\s*&quot;\s*(?:javascript:|vbscript:|data:text\/html)[^&]*&quot;/gi, "");
   }
 
   function parseHandoffMetadata(mdText) {
@@ -75,39 +134,52 @@
   function parseInlineMarkdown(text) {
     if (!text) return "";
     let s = text;
+    const tokens = [];
 
-    // Inline code: `code`
+    // Step 1: Tokenize inline code: `code`
     s = s.replace(/`([^`]+)`/g, function (_, code) {
-      return `<code class="mono inline-code">${escapeHtml(code)}</code>`;
+      const idx = tokens.length;
+      tokens.push(`<code class="mono inline-code">${escapeHtml(code)}</code>`);
+      return `__MK_TOKEN_${idx}__`;
     });
 
-    // Links: [text](url)
-    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (_, label, url) {
+    // Step 2: Tokenize Images: ![alt](url) (BEFORE links!)
+    s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function (_, alt, url) {
+      const idx = tokens.length;
+      tokens.push(
+        `<figure class="editorial-figure"><img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" loading="lazy" class="editorial-img"/><figcaption>${escapeHtml(alt)}</figcaption></figure>`
+      );
+      return `__MK_TOKEN_${idx}__`;
+    });
+
+    // Step 3: Tokenize Links: (?<!!)\[([^\]]+)\]\(([^)]+)\)
+    s = s.replace(/(?<!!)\[([^\]]+)\]\(([^)]+)\)/g, function (_, label, url) {
+      const idx = tokens.length;
       const cleanUrl = url.trim();
       const isExternal = cleanUrl.startsWith("http://") || cleanUrl.startsWith("https://");
       const targetAttr = isExternal ? ' target="_blank" rel="noopener noreferrer"' : "";
-      return `<a href="${escapeHtml(cleanUrl)}" class="editorial-link"${targetAttr}>${parseInlineMarkdown(label)}</a>`;
+      tokens.push(`<a href="${escapeHtml(cleanUrl)}" class="editorial-link"${targetAttr}>${escapeHtml(label)}</a>`);
+      return `__MK_TOKEN_${idx}__`;
     });
 
-    // Images: ![alt](url)
-    s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function (_, alt, url) {
-      return `<figure class="editorial-figure"><img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" loading="lazy" class="editorial-img"/><figcaption>${escapeHtml(alt)}</figcaption></figure>`;
-    });
+    // Step 4: Escape remaining untrusted HTML characters
+    s = escapeHtml(s);
 
-    // Bold + Italic: ***text***
+    // Step 5: Format bold, italic, strikethrough, task badges
     s = s.replace(/\*\*\*([^*]+)\*\*\*/g, "<strong><em>$1</em></strong>");
-    // Bold: **text**
     s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-    // Italic: *text* or _text_
     s = s.replace(/\*([^*]+)\*/g, "<em>$1</em>");
     s = s.replace(/\b_([^_]+)_\b/g, "<em>$1</em>");
-    // Strikethrough: ~~text~~
     s = s.replace(/~~([^~]+)~~/g, "<del>$1</del>");
 
-    // Task Badges: [x], [/], [ ]
     s = s.replace(/\[x\]/gi, '<span class="task-badge task-done mono">✓ Done</span>');
     s = s.replace(/\[\/\]/g, '<span class="task-badge task-prog mono">▶ In-Progress</span>');
     s = s.replace(/\[ \]/g, '<span class="task-badge task-pending mono">○ Pending</span>');
+
+    // Step 6: Restore token placeholders
+    s = s.replace(/__MK_TOKEN_(\d+)__/g, function (_, idx) {
+      return tokens[Number(idx)] || "";
+    });
 
     return s;
   }
@@ -394,7 +466,9 @@
   }
 
   return {
+    renderMarkdown: renderMarkdownToEditorialHtml,
     renderMarkdownToEditorialHtml: renderMarkdownToEditorialHtml,
     createMarkdownViewer: createMarkdownViewer,
+    sanitizeHtml: sanitizeHtml,
   };
 });

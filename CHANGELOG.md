@@ -4,6 +4,37 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] — 2026-11-14
+
+### Added
+- **Overwatch Dashboard & Primary Surface Switcher (`web/index.html`, `web/styles.css`, `web/app.js`)**:
+  - Added primary topbar surface switcher toggling between **`Analytics`** (`#analytics`) and **`Workspace`** (`#workspace` with real-time unclaimed staged ticket badge).
+  - Implemented dynamic center horizon controls (`Month | Quarter | Year` · `To Date | Rolling` · `‹` `[Active Label]` `›` `Today` · `Steps | Tokens`) with date-offset stepper arithmetic and today snap.
+  - Consolidated Color Surface (`Obsidian`, `Dark Paper`, `Warm Paper`, `Pure White`), Compactness (`D1–D4`), PWA App Install, and Lock Bridge into a popover Settings menu (`#settingsPopover`).
+- **52-Week Muted Heatmap & Divisor-of-24 Adaptive Slot Binning (`src/agy_nexus/stats.py`, `src/agy_nexus/stats_series.py`, `web/charts.js`)**:
+  - Full 52-week heatmap invariant emitting 52–53 weeks (Jan 01–Dec 31 for `to_date`, 52 weeks ending on anchor for `rolling`), highlighting `in_window: true`, muting out-of-window activity (`0.26` opacity), and marking future calendar days as hollow cells with tightened 1.5px grid gaps.
+  - Emitted 1h base slots on `/web/api/stats` for Month and Quarter (`24h` for Year). Adaptive binning selects factors of 24h (`3h`/`4h` for Month, `8h`/`12h` for Quarter, `48h`/`72h` for Year) with zero bar gaps below 9px pitch.
+- **Compact Tabular Legends & Handoff Lifecycle Transitions (`web/app.js`, `web/hierarchy.js`, `src/agy_nexus/handoff_queue.py`)**:
+  - Replaced tall cards under Plots 1 & 2 with compact 24px-row borderless tabular legends (`[Swatch + Name] | Tier | Share vs Target micro-bar | Calls | Tokens | Avg | P95 | Peak`) with `+N inactive` collapse and click-to-solo.
+  - Added a 1-line clickable Project Swatch Strip beneath Plot 3 (`[■ google-nexus 27.8%] ...`) to solo project shades.
+  - Renamed filter pills to `Active & Attached`, `All in Period`, and `+ Dormant`.
+  - Added `reconcile_completed_tickets` to auto-transition claimed `IN_WORK` tickets to `COMPLETED` once their session finishes running or rolls over, collapsing completed tickets under `▸ Completed Handoffs (N)`.
+- **Rendered HTML Workspace Explorer & Quiet UI Editorial Reader (`src/agy_nexus/bucket_api.py`, `src/agy_nexus/web_routes.py`, `web/explorer.js`, `web/markdown_renderer.js`)**:
+  - Built Hierarchical Workspace Explorer with human-names-only left tree (`Visual Handoffs Queue` node + `Project Name -> Session Title -> Uploads / Artifacts`) and dual-area right pane.
+  - Added expandable sub-session child branches in left tree for `Uploads (N)` (listing date-stamped batches `📂 YYYY-MM-DD HH:MM · label (N)`) and `Artifacts & Handoffs (M)`.
+  - Implemented cross-project `Visual Handoffs Queue` board with 1-click `Copy Praxis Command` and `View Specification`.
+  - Upgraded upload batch cards with clickable 7-day image thumbnails, 1-click `Copy Evaluation Prompt`, and `Open INDEX.md`.
+  - Implemented Quiet UI Editorial HTML markdown reader with Tufte Booktabs, task check badges, GFM callouts, syntax-highlighted copy blocks, Mermaid diagrams, parsed handoff metadata banner, DOMParser-based XSS sanitization, and 3 view modes.
+  - Extended default media token expiration to 7 days (`604800s`) in `src/agy_nexus/media.py`.
+- **Continuity-Aware Rollover Engine (`src/agy_nexus/session_status.py`, `src/agy_nexus/handoff.py`)**:
+  - Added multi-metric continuity analyzer evaluating session step count, compactions, open task items, uncommitted git changes, and clean seams across 5 postures: `FRESH` (0–319), `SEAM_AWARE` (320–699), `HOLD_FOR_COMPLETION` (700–949), `CLOSEOUT_ONLY` (950–1149), and `HARD_ROLLOVER` (>=1150 or compactions>=7).
+  - Added `session_continuity: "auto" | "continue" | "new"` parameter to `send_handoff_and_resume` and updated legacy `get_session_context_budget()` thresholds to `GREEN (<500 steps)`, `AMBER (500-749 steps)`, and `ROLLOVER_RECOMMENDED (>=750 steps or context exceeded)`.
+- **Modular Architecture Refactoring (`src/agy_nexus/bucket_api.py`, `src/agy_nexus/web_routes.py`, `src/agy_nexus/code_health.py`)**:
+  - Extracted `bucket_api.py` (449L) and `web_routes.py` (229L) from `middleware.py`, keeping `middleware.py` at 407L.
+  - Added repository-wide modular hygiene scanner with `git status --porcelain` integration and a dedicated Watchlist & Exceptions view filter.
+
+---
+
 ## [2.9.0] — 2026-11-14
 
 ### Changed
