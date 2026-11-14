@@ -204,6 +204,7 @@ def record_handoff_ticket(
     rollover_from: str = "", execution_mode: str = "plan", handoff_mode: str = "intent",
     allow_chained_publish: bool = False, initial_status: str = "STAGED", claimed_by_conversation_id: str = "",
     job_id: str = "", supersede_handoff_id: str = "", append_to_existing: bool = False,
+    create_new_project: bool = False, default_branch: str = "",
 ) -> dict[str, Any]:
     """Atomically mint `<repo-slug>-NN` (or append), auto-supersede matching unclaimed tickets, and write file."""
     ts_iso = datetime.now(timezone.utc).isoformat()
@@ -218,8 +219,22 @@ def record_handoff_ticket(
         if append_to_existing:
             for ex in reversed(tickets):
                 if str(ex.get("status")) == "STAGED" and ex.get("repo_slug") == clean_slug and (not sup_target or ex.get("handoff_id") == sup_target):
-                    _write_mode_600(Path(str(ex.get("handoff_file") or "")), full_markdown)
+                    t_path = Path(str(ex.get("handoff_file") or ""))
+                    ex_txt = t_path.read_text(encoding="utf-8", errors="replace") if t_path.is_file() else ""
+                    if "<!-- END_USER_HANDOFF_BODY -->" in ex_txt and "<!-- BEGIN_USER_HANDOFF_BODY -->" in full_markdown:
+                        i_end = ex_txt.rindex("<!-- END_USER_HANDOFF_BODY -->")
+                        m_nb = re.search(r"<!-- BEGIN_USER_HANDOFF_BODY -->([\s\S]*?)<!-- END_USER_HANDOFF_BODY -->", full_markdown)
+                        nb = m_nb.group(1).strip() if m_nb else full_markdown
+                        _write_mode_600(t_path, f"{ex_txt[:i_end].rstrip()}\n\n---\n<!-- Appended: {ts_iso} -->\n\n{nb}\n{ex_txt[i_end:].rstrip()}\n")
+                    else:
+                        _write_mode_600(t_path, f"{ex_txt.rstrip()}\n\n---\n<!-- Appended: {ts_iso} -->\n\n{full_markdown}\n" if ex_txt else full_markdown)
                     ex["chars_written"], ex["updated_at"] = int(ex.get("chars_written") or 0) + chars_written, ts_iso
+                    if project_id and not ex.get("project_id"):
+                        ex["project_id"] = project_id
+                    if create_new_project:
+                        ex["create_new_project"] = True
+                    if default_branch and (not ex.get("default_branch") or default_branch != "main"):
+                        ex["default_branch"] = str(default_branch)
                     if eff_status == "IN_WORK":
                         ex.update({"status": "IN_WORK", "claimed_at": ts_iso, "claimed_by_conversation_id": claimed_by_conversation_id or target_conversation_id, "job_id": job_id})
                     return _decorate_ticket(ex)
@@ -243,7 +258,8 @@ def record_handoff_ticket(
             "workspace_path": workspace_path, "target_conversation_id": target_conversation_id,
             "claimed_by_conversation_id": claimed_by_conversation_id or (target_conversation_id if eff_status == "IN_WORK" else ""),
             "rollover_from": rollover_from, "execution_mode": execution_mode, "handoff_mode": handoff_mode,
-            "allow_chained_publish": allow_chained_publish, "chars_written": chars_written, "handoff_file": str(ticket_file),
+            "allow_chained_publish": allow_chained_publish, "create_new_project": bool(create_new_project),
+            "default_branch": str(default_branch or ""), "chars_written": chars_written, "handoff_file": str(ticket_file),
             "job_id": job_id, "superseded_ids": superseded_ids, "superseded_by": "",
             "created_at": ts_iso, "updated_at": ts_iso, "claimed_at": ts_iso if eff_status == "IN_WORK" else "",
         }

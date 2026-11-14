@@ -74,7 +74,7 @@ def get_workspace_pillar_roots() -> list[Path]:
     """Return existing resolved workspace pillar directories (projects, workbooks, configuration) plus legacy dirs if present."""
     roots: list[Path] = []
     seen: set[Path] = set()
-    for candidate in [AGY_PROJECTS_DIR, AGY_WORKBOOKS_DIR, AGY_CONFIGURATION_DIR, AGY_GITLAB_DIR, AGY_GITLAB_DIR.parent / "github"]:
+    for candidate in [AGY_PROJECTS_DIR, AGY_WORKBOOKS_DIR, AGY_CONFIGURATION_DIR, AGY_GITLAB_DIR, AGY_GITLAB_DIR.parent / "github", Path.home() / "github"]:
         try:
             if candidate.is_dir():
                 res = candidate.resolve()
@@ -94,6 +94,7 @@ def get_umbrella_roots() -> set[Path]:
         AGY_CONFIGURATION_DIR.resolve(),
         AGY_GITLAB_DIR.resolve(),
         (AGY_GITLAB_DIR.parent / "github").resolve(),
+        (Path.home() / "github").resolve(),
         (AGY_DATA_DIR / "worktrees").resolve(),
     }
 

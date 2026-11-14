@@ -45,49 +45,120 @@ def _default_nexus_repo_dir() -> Path:
     return standalone if standalone.is_dir() else get_antigravity_config_repo()
 
 
-def _resolve_workspace_str(ws_input: str) -> str:
-    """Resolve short repo names, case-insensitive project names, or URIs to a canonical authorized workspace path."""
-    static_ws_roots = tuple(
-        (set(get_workspace_pillar_roots()) | {(AGY_DATA_DIR / "worktrees").resolve(), AGY_CONFIG_DIR.resolve()})
-        - {Path("/").resolve(), Path.home().resolve()}
+def _pillar_root_map() -> dict[str, Path]:
+    proj_base = cfg.AGY_PROJECTS_DIR if (cfg.AGY_PROJECTS_DIR.is_dir() or cfg.AGY_WORKSPACE_DIR.is_dir()) else cfg.AGY_GITLAB_DIR
+    return {
+        "projects": proj_base,
+        "workbooks": cfg.AGY_WORKBOOKS_DIR,
+        "configuration": cfg.AGY_CONFIGURATION_DIR,
+    }
+
+
+def _allowed_project_bases(pillars: dict[str, Path], home_roots: set[Path]) -> tuple[set[Path], set[Path]]:
+    raw_bases = (
+        *pillars.values(),
+        *get_workspace_pillar_roots(),
+        cfg.AGY_GITLAB_DIR,
+        cfg.AGY_GITLAB_DIR.parent / "github",
+        Path.home() / "github",
+        cfg.AGY_DATA_DIR / "worktrees",
     )
+    resolved_home = {h.resolve() for h in home_roots} | {Path("/")}
+    umbrella_res = {u.resolve() for u in get_umbrella_roots()} | resolved_home
+    bases_res = {Path(os.path.abspath(str(r))).resolve() for r in raw_bases} - resolved_home
+    return bases_res, umbrella_res
+
+
+def normalize_pillar_target_path(raw_input: str) -> tuple[str, str, bool]:
+    """Normalize shorthand ('projects/foo', '~/projects/foo', bare 'foo', or canonical pillar paths) to (abs_path, slug, exists_on_disk). Rejects symlinks/paths outside allowed roots with ('', '', False)."""
+    cleaned = re.sub(r"^file://", "", (raw_input or "").strip()).rstrip("/")
+    if not cleaned or any(pt in (".", "..") for pt in cleaned.split("/")):
+        return "", "", False
+    home_abs = Path(os.path.abspath(str(Path.home())))
+    exp_str = os.path.expanduser(cleaned)
+    pillars = _pillar_root_map()
+    ws_owner_home = Path(os.path.abspath(str(cfg.AGY_WORKSPACE_DIR.parent)))
+    home_roots = {home_abs, ws_owner_home} - {Path("/")}
+    allowed_bases, umbrella_res = _allowed_project_bases(pillars, home_roots)
+
+    def _validated(cand_path: Path, slug_override: str = "") -> tuple[str, str, bool]:
+        res_p = Path(os.path.abspath(str(cand_path))).resolve()
+        if res_p in umbrella_res:
+            return "", "", False
+        if any(res_p != base and res_p.is_relative_to(base) for base in allowed_bases):
+            return str(res_p), (slug_override or res_p.name).lower(), res_p.is_dir()
+        return "", "", False
+
+    if not Path(exp_str).is_absolute():
+        parts = [pt for pt in cleaned.strip("/").split("/") if pt]
+        if len(parts) == 2 and parts[0].lower() in pillars:
+            return _validated(pillars[parts[0].lower()] / parts[1], parts[1])
+        if len(parts) == 1:
+            slug = parts[0]
+            for host_dir in get_workspace_pillar_roots():
+                if host_dir.is_dir():
+                    for entry in host_dir.iterdir():
+                        if entry.is_dir() and entry.name.lower() == slug.lower():
+                            v_path, v_slug, v_ok = _validated(entry, entry.name)
+                            if v_path:
+                                return v_path, v_slug, v_ok
+            return _validated(pillars["projects"] / slug, slug)
+        return "", "", False
+
+    abs_p = Path(os.path.abspath(exp_str))
+    if abs_p.parent and Path(os.path.abspath(str(abs_p.parent.parent))) in home_roots and abs_p.parent.name.lower() in pillars:
+        return _validated(pillars[abs_p.parent.name.lower()] / abs_p.name, abs_p.name)
+
+    pkg_root = Path(__file__).resolve().parents[2].resolve()
+    res_abs = abs_p.resolve()
+    if res_abs == pkg_root or (pkg_root != Path("/") and res_abs.is_relative_to(pkg_root)):
+        return str(res_abs), res_abs.name.lower(), res_abs.is_dir()
+    return _validated(abs_p)
+
+
+def _slugify_exact(val: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", (val or "").strip().lower()).strip("-")
+
+
+def _resolve_workspace_str(ws_input: str) -> str:
+    """Resolve short repo names, exact project names, pillar shorthands, or URIs without fuzzy substring fallback to agy-nexus-mcp."""
     raw = re.sub(r"^file://", "", (ws_input or "").strip()).rstrip("/")
     if not raw:
-        raw = SESSION_STATE.get("selected_workspace") or str(_default_nexus_repo_dir())
-    p = Path(raw)
-    if (
-        p.is_absolute()
-        and p.is_dir()
-        and p.resolve() not in get_umbrella_roots()
-        and any(p.resolve() == r or p.resolve().is_relative_to(r) for r in static_ws_roots)
-    ):
-        return str(p.resolve())
-    target_name = p.name if p.is_absolute() else raw.strip("/")
-    for host_dir in get_workspace_pillar_roots():
-        if host_dir.is_dir() and target_name and ".." not in Path(target_name).parts:
-            exact_p = (host_dir / target_name).resolve()
-            if exact_p.is_dir() and exact_p.is_relative_to(host_dir.resolve()):
-                return str(exact_p)
-            for entry in host_dir.iterdir():
-                if entry.is_dir() and entry.name.lower() == target_name.lower():
-                    return str(entry.resolve())
-    projects_map = _load_projects_map()
-    q_lower = target_name.lower()
-    for pid, pinfo in projects_map.items():
+        return SESSION_STATE.get("selected_workspace") or str(_default_nexus_repo_dir())
+    norm_path, norm_slug, exists_disk = normalize_pillar_target_path(raw)
+    if exists_disk and norm_path:
+        return norm_path
+    exp_abs = Path(os.path.abspath(os.path.expanduser(raw)))
+    if exp_abs.is_dir() and exp_abs.resolve() == cfg.AGY_CONFIG_DIR.resolve():
+        return str(exp_abs.resolve())
+    if "/" in raw:
+        return norm_path
+
+    q_lower = (norm_slug or raw.strip("/")).lower()
+    if q_lower == "ag-bridge-mcp":
+        return str(_default_nexus_repo_dir().resolve())
+    q_slug = _slugify_exact(q_lower)
+    for pid, pinfo in _load_projects_map().items():
         pname = str(pinfo.get("name") or "").lower()
-        p_paths = pinfo.get("workspace_paths") or []
-        if q_lower and (q_lower == pid.lower() or q_lower == pname or q_lower in pname) and p_paths:
-            cand_p = Path(str(p_paths[0]))
-            if not cand_p.is_absolute() or (cand_p.is_dir() and any(cand_p.resolve().is_relative_to(r) for r in static_ws_roots)):
-                return str(cand_p.resolve()) if cand_p.is_dir() else str(p_paths[0])
-    wt_root = AGY_DATA_DIR / "worktrees"
-    if wt_root.is_dir() and target_name:
+        p_paths = [str(x) for x in (pinfo.get("workspace_paths") or []) if x]
+        if not q_lower or not p_paths:
+            continue
+        for pp in p_paths:
+            if Path(pp).name.lower() == q_lower:
+                cp = Path(pp)
+                return str(cp.resolve()) if cp.is_dir() else pp
+        if q_lower in (pid.lower(), pname) or (q_slug and _slugify_exact(pname) == q_slug):
+            cp0 = Path(p_paths[0])
+            return str(cp0.resolve()) if cp0.is_dir() else p_paths[0]
+
+    wt_root = cfg.AGY_DATA_DIR / "worktrees"
+    if wt_root.is_dir() and q_lower:
         for proj_wt in wt_root.iterdir():
             if proj_wt.is_dir() and proj_wt.name.lower() == q_lower:
                 sub_wts = sorted([d for d in proj_wt.iterdir() if d.is_dir()], key=lambda x: x.stat().st_mtime, reverse=True)
                 if sub_wts:
                     return str(sub_wts[0].resolve())
-    return str(_default_nexus_repo_dir().resolve()) if p.is_absolute() else raw
+    return norm_path or raw
 
 
 def _should_probe_customization(spec: str) -> bool:
@@ -362,7 +433,7 @@ def _resolve_and_read_files(
 def _host_git_inspect(
     ws_path: str, target_branch: str = "HEAD", include_untracked: bool = True, summary_only: bool = False, file_path: str = ""
 ) -> dict[str, Any]:
-    """Fallback to agy-incident-bridge host git-inspect when a workspace or worktree parent .git lives on the host."""
+    """Fallback to agy-host-bridge git-inspect when a workspace or worktree parent .git lives on the host."""
     try:
         payload = {"action": "git-inspect", "workspace_path": ws_path, "target_branch": target_branch, "include_untracked": include_untracked, "summary_only": summary_only, "file_path": file_path}
         req = urllib.request.Request(cfg.AGY_HOST_BRIDGE_URL, data=json.dumps(payload).encode("utf-8"), headers=cfg.get_host_bridge_headers(), method="POST")

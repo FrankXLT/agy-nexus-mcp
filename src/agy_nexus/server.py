@@ -105,7 +105,22 @@ def build_nexus_http_app(path_secret: str, polyglot_token: str = "", praxis_toke
 
 
 def run_self_test() -> int:
-    """Run automated verification of deadbolt, normalization, session listing, stats engine, Polyglot index, and FastMCP app routes."""
+    """Run automated verification in an isolated STATE_FILE sandbox without mutating live session_state.json."""
+    import copy
+    orig_state_file = cfg.STATE_FILE
+    orig_session_state = copy.deepcopy(cfg.SESSION_STATE)
+    with tempfile.TemporaryDirectory() as tmp_state_dir:
+        cfg.STATE_FILE = Path(tmp_state_dir) / "session_state.json"
+        try:
+            return _run_self_test_body()
+        finally:
+            cfg.STATE_FILE = orig_state_file
+            cfg.SESSION_STATE.clear()
+            cfg.SESSION_STATE.update(orig_session_state)
+
+
+def _run_self_test_body() -> int:
+    """Execute full self-test suite across deadbolt, SQLite, telemetry, Polyglot, handoff queue, and Host Bridge."""
     print(f"[*] Running agy-nexus-mcp v{__version__} automated self-test...")
 
     # 1. Normalization & Passphrase Verification

@@ -401,11 +401,17 @@ def test_7_dual_review_security_and_invariants() -> None:
 
 
 if __name__ == "__main__":
-    test_version_and_modular_budget()
-    test_polyglot_incremental_sha256_index()
-    test_1b_visual_fidelity_and_zoom_warning()
-    test_2a_2b_3a_3b_4_virtual_uris_slices_and_sessions()
-    test_5a_5b_handoff_modes_unwrap_and_nexus_routing()
-    test_6_streamable_http_405_and_polyglot_zero_trust_lan_guard()
-    test_7_dual_review_security_and_invariants()
+    _orig_state = cfg.STATE_FILE
+    with tempfile.TemporaryDirectory() as _tmp_state:
+        cfg.STATE_FILE = Path(_tmp_state) / "session_state.json"
+        try:
+            test_version_and_modular_budget()
+            test_polyglot_incremental_sha256_index()
+            test_1b_visual_fidelity_and_zoom_warning()
+            test_2a_2b_3a_3b_4_virtual_uris_slices_and_sessions()
+            test_5a_5b_handoff_modes_unwrap_and_nexus_routing()
+            test_6_streamable_http_405_and_polyglot_zero_trust_lan_guard()
+            test_7_dual_review_security_and_invariants()
+        finally:
+            cfg.STATE_FILE = _orig_state
     print("[✓] All v2.8.0 bridge & agy-praxis-mcp regression tests PASSED!")

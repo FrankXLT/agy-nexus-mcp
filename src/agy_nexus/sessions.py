@@ -8,6 +8,7 @@ import re
 import sqlite3
 import time
 from typing import Any
+import agy_nexus.config as cfg
 from agy_nexus.config import (
     AGY_BG_DIR,
     AGY_BRAIN_DIR,
@@ -37,7 +38,7 @@ def pick_primary_workspace_uri(clean_uris: list[str], title: str = "", project_i
     """Pick deterministic primary workspace path from multi-root session URIs without hijacking unrelated titles like 'Google Nexus'."""
     if not clean_uris:
         return ""
-    nexus_repo = (AGY_PROJECTS_DIR / "agy-nexus-mcp") if (AGY_PROJECTS_DIR / "agy-nexus-mcp").is_dir() else (AGY_GITLAB_DIR / "agy-nexus-mcp")
+    nexus_repo = (cfg.AGY_PROJECTS_DIR / "agy-nexus-mcp") if (cfg.AGY_PROJECTS_DIR / "agy-nexus-mcp").is_dir() else (cfg.AGY_GITLAB_DIR / "agy-nexus-mcp")
     is_nexus_proj = project_id == NEXUS_PROJECT_ID and nexus_repo.is_dir()
     if len(clean_uris) > 1 and (is_nexus_proj or any(k in (title or "").lower() for k in NEXUS_TITLE_KEYWORDS)):
         for suffix in ("/agy-nexus-mcp", "/antigravity-config"):
@@ -52,9 +53,9 @@ def pick_primary_workspace_uri(clean_uris: list[str], title: str = "", project_i
 
 
 def _load_projects_map() -> dict[str, dict[str, Any]]:
-    """Read Antigravity project JSON files from AGY_CONFIG_DIR/projects."""
+    """Read Antigravity project JSON files from cfg.AGY_CONFIG_DIR/projects."""
     proj_map: dict[str, dict[str, Any]] = {}
-    proj_dir = AGY_CONFIG_DIR / "projects"
+    proj_dir = cfg.AGY_CONFIG_DIR / "projects"
     if not proj_dir.is_dir():
         return proj_map
     for pfile in sorted(proj_dir.glob("*.json")):
@@ -100,7 +101,7 @@ def resolve_canonical_project_for_workspace(ws_path: str, project_hint: str = ""
                     alt_ws = str(cand)
                     break
             if not alt_ws:
-                alt_ws = str((AGY_GITLAB_DIR / slug).resolve())
+                alt_ws = str((cfg.AGY_GITLAB_DIR / slug).resolve())
 
     hint_lower = hint_clean.lower()
     if ws_clean:
@@ -133,6 +134,109 @@ def resolve_canonical_project_for_workspace(ws_path: str, project_hint: str = ""
     return "", hint_clean
 
 
+def _parse_task_checklist(task_path: Path) -> tuple[str, dict[str, int]]:
+    """Parse task.md checklist counts and preview line."""
+    task_preview = ""
+    task_counts = {"unchecked": 0, "in_progress": 0, "completed": 0}
+    if not task_path.is_file():
+        return task_preview, task_counts
+    try:
+        task_text = task_path.read_text(encoding="utf-8", errors="replace")
+        for line in task_text.splitlines():
+            line_s = line.strip()
+            if line_s.startswith(("- [ ]", "* [ ]")):
+                task_counts["unchecked"] += 1
+                if not task_preview:
+                    task_preview = line_s
+            elif line_s.startswith(("- [/]", "* [/]")):
+                task_counts["in_progress"] += 1
+                if not task_preview:
+                    task_preview = line_s
+            elif line_s.startswith(("- [x]", "* [x]")):
+                task_counts["completed"] += 1
+        if not task_preview and task_text:
+            content_lines = [l.strip() for l in task_text.splitlines() if l.strip() and not l.strip().startswith("#")]
+            task_preview = " | ".join(content_lines[:2])
+    except Exception:
+        pass
+    return task_preview, task_counts
+
+
+def _derive_session_live_status(
+    killed: bool,
+    db_status: str,
+    not_fully_idle: bool,
+    transcript_path: Path,
+    task_counts: dict[str, int],
+) -> str:
+    """Derive live session status from SQLite flags, transcript mtime, and task checklist."""
+    if killed:
+        return "KILLED"
+    if db_status == "CASCADE_RUN_STATUS_RUNNING" or not_fully_idle:
+        if transcript_path.is_file():
+            try:
+                if (time.time() - transcript_path.stat().st_mtime) > 300:
+                    return "STALLED_WAITING_APPROVAL"
+            except Exception:
+                pass
+        return "RUNNING"
+    if task_counts["in_progress"] > 0:
+        return "RUNNING"
+    if task_counts["completed"] > 0 and task_counts["unchecked"] == 0:
+        return "COMPLETED"
+    return "IDLE"
+
+
+def _matches_status_filter(sf: str, live_status: str) -> bool:
+    """Return True when live_status satisfies a flexible status_filter token."""
+    if sf in ("STALLED", "STALLED_WAITING_APPROVAL", "WAITING"):
+        return live_status == "STALLED_WAITING_APPROVAL"
+    if sf in ("RUNNING", "ACTIVE"):
+        return live_status in ("RUNNING", "STALLED_WAITING_APPROVAL")
+    if sf in ("COMPLETED", "DONE"):
+        return live_status == "COMPLETED"
+    if sf == "IDLE":
+        return live_status in ("IDLE", "COMPLETED")
+    return sf in live_status
+
+
+def _scan_fallback_brain_sessions(limit: int) -> list[dict[str, Any]]:
+    """Fallback brain directory scan ONLY if SQLite DB could not be queried."""
+    results: list[dict[str, Any]] = []
+    if not cfg.AGY_BRAIN_DIR.is_dir():
+        return results
+    idx_counter = 1
+    for session_dir in sorted(cfg.AGY_BRAIN_DIR.iterdir(), key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True):
+        if not session_dir.is_dir() or session_dir.name.startswith("."):
+            continue
+        conv_id = session_dir.name
+        task_path = session_dir / "task.md"
+        task_preview = ""
+        if task_path.is_file():
+            try:
+                task_preview = task_path.read_text(encoding="utf-8", errors="replace")[:200]
+            except Exception:
+                pass
+        idx_str = str(idx_counter)
+        SESSION_STATE["session_index_map"][idx_str] = conv_id
+        results.append({
+            "index": idx_str,
+            "conversation_id": conv_id,
+            "title": conv_id,
+            "workspace_path": str(cfg.AGY_PROJECTS_DIR if cfg.AGY_PROJECTS_DIR.is_dir() else cfg.AGY_GITLAB_DIR),
+            "workspace_uris": [],
+            "status": "IDLE",
+            "step_count": 0,
+            "last_updated": datetime.fromtimestamp(session_dir.stat().st_mtime, tz=timezone.utc).isoformat(),
+            "has_gui_lock": False,
+            "task_preview": task_preview,
+        })
+        idx_counter += 1
+        if len(results) >= limit:
+            break
+    return results
+
+
 def _list_saved_sessions_internal(
     limit: int = 15,
     status_filter: str = "ALL",
@@ -146,9 +250,9 @@ def _list_saved_sessions_internal(
         SESSION_STATE["session_index_map"].clear()
     projects_map = _load_projects_map()
     db_queried_ok = False
-    if AGY_DB_FILE.is_file():
+    if cfg.AGY_DB_FILE.is_file():
         try:
-            con = sqlite3.connect(f"file:{AGY_DB_FILE}?mode=ro", uri=True)
+            con = sqlite3.connect(f"file:{cfg.AGY_DB_FILE}?mode=ro", uri=True)
             try:
                 cur = con.cursor()
                 query = """
@@ -165,19 +269,13 @@ def _list_saved_sessions_internal(
             db_queried_ok = True
             idx_counter = 1
             for row in rows:
-                conv_id = str(row[0] or "")
-                title = str(row[1] or "Untitled Conversation")
-                step_count = int(row[3] or 0)
-                last_modified = str(row[4] or "")
-                raw_uris = str(row[5] or "[]")
-                db_status = str(row[6] or "")
-                not_fully_idle = bool(row[7])
-                killed = bool(row[8])
+                conv_id, title = str(row[0] or ""), str(row[1] or "Untitled Conversation")
+                step_count, last_modified = int(row[3] or 0), str(row[4] or "")
+                raw_uris, db_status = str(row[5] or "[]"), str(row[6] or "")
+                not_fully_idle, killed = bool(row[7]), bool(row[8])
                 project_id = str(row[10] or "")
                 project_name = projects_map.get(project_id, {}).get("name", project_id)
-                workspace_path = ""
-                workspace_uris_list: list[str] = []
-                clean_uris: list[str] = []
+                workspace_path, workspace_uris_list, clean_uris = "", [], []
                 try:
                     workspace_uris_list = json.loads(raw_uris) if raw_uris else []
                     if workspace_uris_list and isinstance(workspace_uris_list, list):
@@ -189,79 +287,18 @@ def _list_saved_sessions_internal(
                     p_paths = projects_map[project_id].get("workspace_paths", [])
                     if p_paths:
                         workspace_path = p_paths[0]
-                        if not clean_uris:
-                            clean_uris = list(p_paths)
+                        clean_uris = clean_uris or list(p_paths)
                 SESSION_STATE["session_workspace_map"][conv_id] = workspace_path
                 SESSION_STATE["session_workspace_uris_map"][conv_id] = clean_uris or ([workspace_path] if workspace_path else [])
                 SESSION_STATE["session_project_map"][conv_id] = project_id
                 SESSION_STATE["session_title_map"][conv_id] = title
-                has_gui_lock = (AGY_PRESENCE_DIR / f"{conv_id}.lock").exists()
-                logs_dir = AGY_BRAIN_DIR / conv_id / ".system_generated" / "logs"
-                transcript_path = (
-                    logs_dir / "transcript_full.jsonl"
-                    if (logs_dir / "transcript_full.jsonl").is_file()
-                    else logs_dir / "transcript.jsonl"
-                )
-                task_path = AGY_BRAIN_DIR / conv_id / "task.md"
-                task_preview = ""
-                task_counts = {"unchecked": 0, "in_progress": 0, "completed": 0}
-                if task_path.is_file():
-                    try:
-                        task_text = task_path.read_text(encoding="utf-8", errors="replace")
-                        for line in task_text.splitlines():
-                            line_s = line.strip()
-                            if line_s.startswith(("- [ ]", "* [ ]")):
-                                task_counts["unchecked"] += 1
-                                if not task_preview:
-                                    task_preview = line_s
-                            elif line_s.startswith(("- [/]", "* [/]")):
-                                task_counts["in_progress"] += 1
-                                if not task_preview:
-                                    task_preview = line_s
-                            elif line_s.startswith(("- [x]", "* [x]")):
-                                task_counts["completed"] += 1
-                        if not task_preview and task_text:
-                            content_lines = [l.strip() for l in task_text.splitlines() if l.strip() and not l.strip().startswith("#")]
-                            task_preview = " | ".join(content_lines[:2])
-                    except Exception:
-                        pass
-                # Derive live status
-                live_status = "IDLE"
-                if killed:
-                    live_status = "KILLED"
-                elif db_status == "CASCADE_RUN_STATUS_RUNNING" or not_fully_idle:
-                    live_status = "RUNNING"
-                    if transcript_path.is_file():
-                        try:
-                            if (time.time() - transcript_path.stat().st_mtime) > 300:
-                                live_status = "STALLED_WAITING_APPROVAL"
-                        except Exception:
-                            pass
-                else:
-                    if task_counts["in_progress"] > 0:
-                        live_status = "RUNNING"
-                    elif task_counts["completed"] > 0 and task_counts["unchecked"] == 0:
-                        live_status = "COMPLETED"
-                    elif task_counts["unchecked"] > 0:
-                        live_status = "IDLE"
-                    else:
-                        live_status = "IDLE"
-                # Flexible status_filter matching
-                if not is_unfiltered:
-                    if sf in ("STALLED", "STALLED_WAITING_APPROVAL", "WAITING"):
-                        if live_status != "STALLED_WAITING_APPROVAL":
-                            continue
-                    elif sf in ("RUNNING", "ACTIVE"):
-                        if live_status not in ("RUNNING", "STALLED_WAITING_APPROVAL"):
-                            continue
-                    elif sf in ("COMPLETED", "DONE"):
-                        if live_status != "COMPLETED":
-                            continue
-                    elif sf == "IDLE":
-                        if live_status not in ("IDLE", "COMPLETED"):
-                            continue
-                    elif sf not in live_status:
-                        continue
+                has_gui_lock = (cfg.AGY_PRESENCE_DIR / f"{conv_id}.lock").exists()
+                logs_dir = cfg.AGY_BRAIN_DIR / conv_id / ".system_generated" / "logs"
+                transcript_path = logs_dir / ("transcript_full.jsonl" if (logs_dir / "transcript_full.jsonl").is_file() else "transcript.jsonl")
+                task_preview, task_counts = _parse_task_checklist(cfg.AGY_BRAIN_DIR / conv_id / "task.md")
+                live_status = _derive_session_live_status(killed, db_status, not_fully_idle, transcript_path, task_counts)
+                if not is_unfiltered and not _matches_status_filter(sf, live_status):
+                    continue
                 idx_str = str(idx_counter)
                 if is_unfiltered or idx_str not in SESSION_STATE["session_index_map"]:
                     SESSION_STATE["session_index_map"][idx_str] = conv_id
@@ -291,37 +328,8 @@ def _list_saved_sessions_internal(
                     break
         except Exception as e:
             results.append({"error": f"Failed to query conversation_summaries.db: {e}"})
-    # Fallback brain directory scan ONLY if SQLite DB could not be queried
-    if not db_queried_ok and not results and AGY_BRAIN_DIR.is_dir():
-        idx_counter = 1
-        for session_dir in sorted(AGY_BRAIN_DIR.iterdir(), key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True):
-            if not session_dir.is_dir() or session_dir.name.startswith("."):
-                continue
-            conv_id = session_dir.name
-            task_path = session_dir / "task.md"
-            task_preview = ""
-            if task_path.is_file():
-                try:
-                    task_preview = task_path.read_text(encoding="utf-8", errors="replace")[:200]
-                except Exception:
-                    pass
-            idx_str = str(idx_counter)
-            SESSION_STATE["session_index_map"][idx_str] = conv_id
-            results.append({
-                "index": idx_str,
-                "conversation_id": conv_id,
-                "title": conv_id,
-                "workspace_path": str(AGY_PROJECTS_DIR if AGY_PROJECTS_DIR.is_dir() else AGY_GITLAB_DIR),
-                "workspace_uris": [],
-                "status": "IDLE",
-                "step_count": 0,
-                "last_updated": datetime.fromtimestamp(session_dir.stat().st_mtime, tz=timezone.utc).isoformat(),
-                "has_gui_lock": False,
-                "task_preview": task_preview,
-            })
-            idx_counter += 1
-            if len(results) >= limit:
-                break
+    if not db_queried_ok and not results:
+        return _scan_fallback_brain_sessions(limit)
     return results
 
 from agy_nexus.session_status import _get_selected_session_quick_status  # noqa: E402

@@ -19,7 +19,8 @@ services:
       - AGY_DB_FILE=${HOME}/.gemini/antigravity/conversation_summaries.db
       - AGY_PRESENCE_DIR=${HOME}/.gemini/antigravity/presence
       - AGY_CONFIG_DIR=${HOME}/.gemini/config
-      - AGY_GITLAB_DIR=${HOME}/gitlab
+      - AGY_WORKSPACE_DIR=${HOME}/agentic_workspace
+      - AGY_GITLAB_DIR=${AGY_GITLAB_DIR:-}
       - AGY_BG_DIR=${HOME}/.gemini/antigravity/sidecar_data/ag-bridge-bg
       - AGY_HOST_BRIDGE_URL=${AGY_HOST_BRIDGE_URL:-http://host.docker.internal:8098/agentapi}
       - AG_BRIDGE_PUBLIC_URL=${AG_BRIDGE_PUBLIC_URL:-}
@@ -41,8 +42,10 @@ services:
       - ${HOME}/.config/ag-bridge-mcp:/config:ro
       - ${HOME}/.gemini/antigravity:${HOME}/.gemini/antigravity:rw
       - ${HOME}/.gemini/config:${HOME}/.gemini/config:ro
-      - ${HOME}/gitlab:${HOME}/gitlab:ro
-      - ${HOME}/github:${HOME}/github:ro
+      - ${HOME}/agentic_workspace:${HOME}/agentic_workspace:ro
+      # Optional legacy standalone repo roots (uncomment if used outside agentic_workspace):
+      # - ${HOME}/gitlab:${HOME}/gitlab:ro
+      # - ${HOME}/github:${HOME}/github:ro
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |

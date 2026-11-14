@@ -52,7 +52,8 @@ def load_bridge_env_file(env_file: str | Path | None = None) -> dict[str, str]:
                     k_clean = key.strip()
                     v_clean = val.strip().strip("'\"")
                     loaded[k_clean] = v_clean
-                    os.environ.setdefault(k_clean, v_clean)
+                    if k_clean and v_clean and not os.environ.get(k_clean):
+                        os.environ[k_clean] = v_clean
                 break
         except Exception:
             continue
@@ -150,6 +151,7 @@ def resolve_allowed_git_roots(
     candidates = [
         gitlab_dir.expanduser().resolve(),
         (gitlab_dir.parent / "github").resolve(),
+        (home_res / "github").resolve(),
         (data_dir.expanduser() / "worktrees").resolve(),
         (ws_base / "projects").resolve(),
         (ws_base / "workbooks").resolve(),
@@ -181,8 +183,8 @@ def sanitize_conv_id(raw_id: str | None) -> str:
 
 
 def guard_cli_positional(text: str | None) -> str:
-    """Ensure a positional CLI text argument never starts with '-' (agentapi does not use '--' sentinel)."""
-    cleaned = (text or "").strip()
+    """Ensure a positional CLI text argument never contains NUL bytes or starts with '-'."""
+    cleaned = (text or "").replace("\x00", "").strip()
     if cleaned.startswith("-"):
         return "\n" + cleaned
     return cleaned

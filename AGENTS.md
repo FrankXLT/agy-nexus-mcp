@@ -43,9 +43,12 @@ All server implementation code lives in `src/agy_nexus/`. The root `ag_bridge.py
 | `src/agy_nexus/tools_workspace.py` | ~313 | MCP tools: `ask_workspace_readonly`, `inspect_git_diff`, `get_visual_artifact` |
 | `src/agy_nexus/tools_media.py` | ~398 | MCP tool: `inspect_visual_artifacts` (`840px` 2-up WebP encoding within `< 20 KB` wire budget) |
 | `src/agy_nexus/tools_ops.py` | ~358 | MCP tools: `get_session_tree` (with policy-safe `include_stats=True`), `list_models_and_agents`, `manage_background_run` |
-| `src/agy_nexus/handoff.py` | ~345 | MCP tool: `send_handoff_and_resume` (repo-prefixed `<slug>-NN` staging, `RESUME_STAGED` repo isolation, same-repo writer guard, and headless wakeup) |
+| `src/agy_nexus/target_resolver.py` | ~223 | Fail-closed workspace/project resolver, 3-pillar path alias normalizer (`projects/<slug>`, `~/projects/<slug>`), and `create_new_project=True` greenfield guardrail |
+| `src/agy_nexus/handoff.py` | ~455 | MCP tool: `send_handoff_and_resume` (repo-prefixed `<slug>-NN` staging, `RESUME_STAGED` repo isolation, `PROJECT_NOT_FOUND` guardrail, and headless wakeup) |
 | `src/agy_nexus/middleware.py` | ~543 | `BridgeCompatMiddleware` (Streamable HTTP `405` spec handling, zero-trust LAN-only `/praxis/` + `/polyglot/` guard, multiplexed lifespan, `/web` PWA, `/web/media/`, `/health`) |
 | `src/agy_nexus/server.py` | ~484 | Dual-MCP (`Nexus` + `Praxis`) Starlette/Uvicorn builder, `anyio.to_thread.run_sync` sync-tool offload, `--self-test` runner, and `main()` CLI entrypoint |
+| `host_bridge/project_manager.py` | ~240 | Unified `:8098` Language Server discovery, `CreateProject` registration (`ANTIGRAVITY_PROJECT_ID`), and JSON-first `conversationId` extractor |
+| `host_bridge/agy_host_bridge.py` | ~295 | Unified authenticated `/agentapi` handler shared by `agy_host_bridge` and `agy-host-bridge.service` |
 
 ---
 

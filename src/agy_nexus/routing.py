@@ -19,13 +19,13 @@ from agy_nexus.config import (
     get_workspace_pillar_roots,
 )
 import agy_nexus.config as cfg
-from agy_nexus.handoff_queue import resolve_session_from_handoff_id
+from agy_nexus.handoff_queue import resolve_session_from_handoff_id, slugify_token
 from agy_nexus.sessions import (
     NEXUS_TITLE_KEYWORDS,
     _list_saved_sessions_internal,
     _load_projects_map,
 )
-from agy_nexus.workspace import _resolve_workspace_str
+from agy_nexus.workspace import _resolve_workspace_str, normalize_pillar_target_path
 
 def _resolve_session_identifier(ident_raw: str) -> str:
     """Resolve index ('1', '#1', 'latest'), handoff ID ('<repo>-01'), conversation UUID/prefix, title keyword, project name, or workspace URI to a conversation_id."""
@@ -72,23 +72,25 @@ def _session_matches_repo_hint(conv_id: str, repo_hint: str) -> bool:
     uris = SESSION_STATE.get("session_workspace_uris_map", {}).get(conv_id) or []
     ws = str(SESSION_STATE.get("session_workspace_map", {}).get(conv_id) or "")
     title = str(SESSION_STATE.get("session_title_map", {}).get(conv_id) or "").lower()
-    all_paths = [ws.lower()] + [str(u).lower() for u in uris if u]
+    all_paths = [p for p in ([ws.lower().rstrip("/")] + [str(u).lower().rstrip("/") for u in uris if u]) if p]
     for p in all_paths:
         if p.endswith("/" + rh) or f"/{rh}/" in p:
             return True
-    if rh in ("antigravity-config", "agy-nexus-mcp", "ag-bridge-mcp"):
-        if any(k in title for k in NEXUS_TITLE_KEYWORDS):
-            return True
-        if rh in ("agy-nexus-mcp", "ag-bridge-mcp") and any(
-            p.endswith("/antigravity-config") or "/antigravity-config/" in p for p in all_paths
-        ) and any(k in title for k in NEXUS_TITLE_KEYWORDS):
-            return True
+    if rh in ("agy-nexus-mcp", "ag-bridge-mcp") and any(
+        p.endswith("/antigravity-config") or "/antigravity-config/" in p for p in all_paths
+    ) and any(k in title for k in NEXUS_TITLE_KEYWORDS):
+        return True
+    umb_lower = {str(u).lower().rstrip("/") for u in cfg.get_umbrella_roots()}
+    if any(p not in umb_lower for p in all_paths):
+        return False
+    if rh in ("antigravity-config", "agy-nexus-mcp", "ag-bridge-mcp") and any(k in title for k in NEXUS_TITLE_KEYWORDS):
+        return True
     for pinfo in _load_projects_map().values():
         pname = str(pinfo.get("name") or "").lower()
-        p_paths = [str(x).lower() for x in (pinfo.get("workspace_paths") or [])]
-        if any(pp.endswith("/" + rh) or f"/{rh}/" in pp for pp in p_paths) and pname and pname in title:
+        p_paths = [str(x).lower().rstrip("/") for x in (pinfo.get("workspace_paths") or [])]
+        if any(pp.endswith("/" + rh) or f"/{rh}/" in pp for pp in p_paths) and pname and (pname == title or f"[{pname}]" in title):
             return True
-    return len(rh) >= 4 and bool(re.search(rf"\b{re.escape(rh)}\b", title))
+    return bool(re.search(rf"\[{re.escape(rh)}\]", title, re.I)) or title.startswith(f"{rh}:") or slugify_token(title, "", 36) == rh
 
 def _extract_handoff_repo_hint(
     workspace_path: str,
@@ -97,39 +99,71 @@ def _extract_handoff_repo_hint(
     activate_skills: str,
     research_markdown: str,
 ) -> str:
-    """Extract target repository name from handoff parameters, local git directories, or markdown."""
+    """Extract target repository slug from explicit arguments, pillar paths, or title/target headers without skill-keyword hijacking."""
+    del activate_skills  # Never infer target repo from activated global skill names
+    umb_abs = {Path(u).resolve() for u in cfg.get_umbrella_roots()}
     for explicit in (workspace_path, project_name):
-        clean_exp = (explicit or "").strip().rstrip("/")
-        if clean_exp:
-            resolved = _resolve_workspace_str(clean_exp)
-            if resolved:
-                return Path(resolved).name.lower()
-    md = f"{session_title or ''}\n{activate_skills or ''}\n{research_markdown or ''}"
-    for host_dir in get_workspace_pillar_roots():
-        host_re = re.escape(str(host_dir))
-        m_repo = re.search(rf"{host_re}/([a-zA-Z0-9._-]+)", md)
-        if m_repo:
+        clean_exp = re.sub(r"^file://", "", (explicit or "").strip()).rstrip("/")
+        if not clean_exp:
+            continue
+        resolved = _resolve_workspace_str(clean_exp)
+        if resolved and Path(resolved).is_dir() and Path(resolved).resolve() not in umb_abs:
+            return Path(resolved).name.lower()
+        _, norm_slug, _ = normalize_pillar_target_path(clean_exp)
+        if norm_slug:
+            return slugify_token(norm_slug, "", 36)
+        leaf = Path(clean_exp).name if "/" in clean_exp else clean_exp
+        tok = slugify_token(leaf, "", 36)
+        if tok:
+            return tok
+
+    md = f"{session_title or ''}\n{research_markdown or ''}"
+    file_ext_re = re.compile(r"\.(?:md|py|js|ts|tsx|jsx|json|ya?ml|toml|sql|sh|html|css|txt|env|lock|ini|cfg|xml|csv)$", re.I)
+    for host_dir in cfg.get_workspace_pillar_roots():
+        m_repo = re.search(rf"{re.escape(str(host_dir))}/([a-zA-Z0-9._-]+)", md)
+        if m_repo and not file_ext_re.search(m_repo.group(1)):
             return m_repo.group(1).lower()
-    ws_re = re.escape(str(AGY_WORKSPACE_DIR))
-    m_ws_repo = re.search(rf"{ws_re}/(?:projects|workbooks|configuration)/([a-zA-Z0-9._-]+)", md)
-    if m_ws_repo:
-        return m_ws_repo.group(1).lower()
-    if any(k in md.lower() for k in ("quiet-ui-skills", "quiet ui", "quiet-ui", "quiet-ui-diagrams", "visual-architecture-system")):
-        return "quiet-ui-skills"
-    if any(k in md.lower() for k in ("sidecars/ag-bridge-mcp", "ag_bridge.py", "ag_bridge_stats.py", "agy-nexus-stats", "agy-nexus-mcp", "agy-polyglot-mcp")):
+    for base_dir in {cfg.AGY_WORKSPACE_DIR, Path.home(), cfg.AGY_WORKSPACE_DIR.parent}:
+        b_str = str(base_dir).rstrip("/")
+        if b_str and b_str != "/":
+            m_ws = re.search(rf"{re.escape(b_str)}/(?:projects|workbooks|configuration)/([a-zA-Z0-9._-]+)", md)
+            if m_ws and not file_ext_re.search(m_ws.group(1)):
+                return m_ws.group(1).lower()
+    m_rel = re.search(
+        r"(?:(?:Target\s+(?:Workspace|Repo|Project)|Workspace|Repository|Directory)\s*[:=-]\s*[`'\"\s]*|(?:init|initialize|create|bootstrap)\s+(?:repo(?:sitory)?\s+|project\s+|workspace\s+)?[`'\"\s]*)(?:projects|workbooks|configuration)/([a-zA-Z0-9_-]+)(?![a-zA-Z0-9_./-])",
+        md[:1500],
+        re.I,
+    )
+    if m_rel:
+        return m_rel.group(1).lower()
+    for m_cand in re.finditer(r"(?:^|[\s`'\"(])(projects|workbooks|configuration)/([a-zA-Z0-9_-]+)(?=$|[\s`'\")/])", md, re.M):
+        p_dir = getattr(cfg, f"AGY_{m_cand.group(1).upper()}_DIR", None)
+        if isinstance(p_dir, Path) and (p_dir / m_cand.group(2)).is_dir():
+            return m_cand.group(2).lower()
+
+    target_hdrs = "\n".join(
+        m.group(1)
+        for m in re.finditer(r"(?:Target\s+(?:Workspace|Repo|Project)|Repository|Workspace)\s*[:=-]\s*([^\n]+)", md, re.I)
+    )
+    first_heading = ""
+    for ln in (research_markdown or "").splitlines():
+        if ln.strip().startswith("#"):
+            first_heading = ln.strip()
+            break
+    header_zone = f"{session_title or ''}\n{first_heading}\n{target_hdrs}"
+    if "sidecars/ag-bridge-mcp" in header_zone.lower():
         sidecar_dir = get_antigravity_config_repo() / "sidecars" / "ag-bridge-mcp"
-        if sidecar_dir.is_symlink():
-            return "agy-nexus-mcp"
-        return "antigravity-config"
+        return "agy-nexus-mcp" if sidecar_dir.is_symlink() else "antigravity-config"
+
     known_repos: list[str] = ["agy-nexus-mcp", "antigravity-config"]
-    for host_dir in get_workspace_pillar_roots():
+    for host_dir in cfg.get_workspace_pillar_roots():
         if host_dir.is_dir():
             known_repos.extend(d.name.lower() for d in host_dir.iterdir() if d.is_dir() and not d.name.startswith("."))
-    wt_root = AGY_DATA_DIR / "worktrees"
+    wt_root = cfg.AGY_DATA_DIR / "worktrees"
     if wt_root.is_dir():
         known_repos.extend(d.name.lower() for d in wt_root.iterdir() if d.is_dir() and not d.name.startswith("."))
     for known_repo in dict.fromkeys(known_repos):
-        if len(known_repo) >= 3 and re.search(rf"\b{re.escape(known_repo)}\b", md, re.I):
+        if len(known_repo) >= 3 and re.search(rf"\b{re.escape(known_repo)}\b", header_zone, re.I):
             return known_repo
     return ""
 

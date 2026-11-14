@@ -291,7 +291,13 @@ def test_dashboard_hierarchy_tree_includes_zero_session_staged_handoffs() -> Non
 
 
 if __name__ == "__main__":
-    test_repo_prefixed_incremental_queue_and_supersede()
-    test_ide_disambiguation_claim_and_cross_repo_resume_isolation()
-    test_dashboard_hierarchy_tree_includes_zero_session_staged_handoffs()
+    _orig_state = cfg.STATE_FILE
+    with tempfile.TemporaryDirectory() as _tmp_state:
+        cfg.STATE_FILE = Path(_tmp_state) / "session_state.json"
+        try:
+            test_repo_prefixed_incremental_queue_and_supersede()
+            test_ide_disambiguation_claim_and_cross_repo_resume_isolation()
+            test_dashboard_hierarchy_tree_includes_zero_session_staged_handoffs()
+        finally:
+            cfg.STATE_FILE = _orig_state
     print("[✓] All agy-praxis-mcp & repo-prefixed handoff queue tests PASSED!")
