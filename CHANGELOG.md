@@ -4,6 +4,22 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.0] — 2026-11-14
+
+### Changed
+- **Sequential Read-Only Governance & Multi-Hop Inspection (`config.py`, `tools_session.py`, `tools_workspace.py`, `tools_ops.py`, `hygiene.py`, `skills/agy-nexus-stats/SKILL.md`)**:
+  - Replaced the blanket one-tool-call-per-turn ban with Sequential Read-Only Governance (1 call at a time, up to 4 hops/turn), eliminating unnecessary multi-turn round-trips for read-only inspections while strictly prohibiting parallel simultaneous calls that cause UI confirmation card hangs.
+  - Updated FastMCP server instructions to clearly document sequential non-parallel execution rules, bundling best practices, and preserved hard stops on `send_handoff_and_resume` and `LOCKED_RESPONSE`.
+  - Removed `"STOP AND REPLY TO USER NOW: Do NOT chain a second MCP tool"` across read-only tool responses (`unlock_sessions`, `list_saved_sessions`, `load_session_into_gemini`, `ask_workspace_readonly`, `inspect_git_diff`, `get_session_tree`, `manage_background_run`, `list_models_and_agents`).
+  - Updated pagination hints in `slice_file_content` (`next_range_hint`) and `slice_git_diff` (`pagination_hint`) to permit sequential same-turn paging (`via a sequential follow-up call if needed—never in parallel`).
+
+### Fixed
+- **Cross-Repository Slot Isolation & Guardrails (`routing.py`, `tools_workspace.py`, `tools_media.py`)**:
+  - Fixed a slot-isolation bug where calling `ask_workspace_readonly` or `inspect_visual_artifacts` with an explicit `workspace` but no `session_identifier` inherited `selected_session` and clobbered that session's `active_contexts` slot and `session_workspace_map` with the foreign workspace.
+  - Implemented `_session_matches_workspace()` to verify whether `selected_session`'s canonical workspace/URIs match the target workspace; if they differ, `conv_id` is cleared to `""` for that ad-hoc read so unrelated running sessions are never mutated.
+
+---
+
 ## [2.8.0] — 2026-11-13
 
 ### Added

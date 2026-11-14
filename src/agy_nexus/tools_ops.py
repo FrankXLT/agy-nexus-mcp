@@ -90,13 +90,12 @@ def get_session_tree(
         "ok": True,
         "action": "get_session_tree_with_stats" if include_stats else "get_session_tree",
         "assistant_guidance": (
-            "STOP AND REPLY TO USER NOW: Do NOT chain a second MCP tool after a successful response (all data is already included below). "
-            "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly(question='Stats', file_subpath='telemetry:stats') or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'. "
-            + (
-                "Render ascii_mobile_report inside a fenced ```text block first (plus ascii_tree if session hierarchy was requested)."
+            (
+                "Display ascii_mobile_report inside a fenced ```text block first (plus ascii_tree if session hierarchy was requested). "
                 if include_stats
-                else "Render ascii_tree verbatim inside a fenced ```text block so the user can copy untruncated session_id and workspace values."
+                else "Display ascii_tree verbatim inside a fenced ```text block so the user can copy untruncated session_id and workspace values. "
             )
+            + "Sequential read-only follow-up calls (e.g. load_session_into_gemini or ask_workspace_readonly) are permitted (one call at a time, never in parallel)."
         ),
         **stats_extra,
         **tree_bundle,
@@ -130,10 +129,9 @@ def manage_background_run(
         return _compact_json({
             "ok": True, "action": action_clean,
             "assistant_guidance": (
-                "STOP AND REPLY TO USER NOW: Display ascii_tree verbatim inside a fenced ```text code block first "
+                "Display ascii_tree verbatim inside a fenced ```text code block first "
                 "so the user can copy untruncated session_id and workspace values. "
-                "Do NOT chain a second MCP tool after a successful response (all data is already included below). "
-                "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'."
+                "Sequential read-only follow-up calls are permitted (one call at a time, never in parallel)."
             ),
             **tree_bundle,
         })
@@ -142,9 +140,8 @@ def manage_background_run(
         return _compact_json({
             "ok": True, "action": "export_notebook",
             "assistant_guidance": (
-                "STOP AND REPLY TO USER NOW: Session walkthrough.md and implementation_plan.md artifacts have been exported with SHA-256 deduplication. "
-                "Do NOT chain a second MCP tool after a successful response (all data is already included below). "
-                "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'."
+                "Session walkthrough.md and implementation_plan.md artifacts have been exported with SHA-256 deduplication. "
+                "Sequential read-only follow-up calls are permitted (one call at a time, never in parallel)."
             ),
             **export_res,
         })
@@ -155,9 +152,8 @@ def manage_background_run(
         return _compact_json({
             "ok": True, "action": "stats",
             "assistant_guidance": (
-                "STOP AND REPLY TO USER NOW: Display ascii_mobile_report inside a fenced ```text code block first followed by a concise 3-bullet summary of Google 20x Pool share, Partner Weekly Pacing vs Target, and Top Projects. "
-                "Do NOT chain a second MCP tool after a successful response (all data is already included below). "
-                "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'."
+                "Display ascii_mobile_report inside a fenced ```text code block first followed by a concise 3-bullet summary of Google 20x Pool share, Partner Weekly Pacing vs Target, and Top Projects. "
+                "Sequential read-only follow-up calls are permitted (one call at a time, never in parallel)."
             ),
             **compact_bundle,
         })
@@ -165,9 +161,8 @@ def manage_background_run(
         return _compact_json({
             "ok": True, "action": "telemetry",
             "assistant_guidance": (
-                "STOP AND REPLY TO USER NOW with the wire telemetry and quota summary below. "
-                "Do NOT chain a second MCP tool after a successful response (all data is already included below). "
-                "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'."
+                "Wire telemetry and quota summary retrieved below. "
+                "Sequential read-only follow-up calls are permitted (one call at a time, never in parallel)."
             ),
             "wire_telemetry": get_wire_telemetry_summary(AGY_BG_DIR, limit=25),
             "quota_and_pools": get_live_quota_and_pool_status(AGY_DATA_DIR, AGY_CONFIG_DIR),
@@ -228,9 +223,8 @@ def manage_background_run(
         return json.dumps({
             "ok": True, "conversation_id": conv_id, "job_id": safe_job_id,
             "assistant_guidance": (
-                "STOP AND REPLY TO USER NOW with the transcript tail below. "
-                "Do NOT chain a second MCP tool after a successful response (all data is already included below). "
-                "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'."
+                "Transcript tail retrieved below. "
+                "Sequential read-only follow-up calls are permitted (one call at a time, never in parallel)."
             ),
             "pending_approval": pending_app, "tail_lines_count": len(parsed_tail), "transcript_tail": parsed_tail,
         }, indent=2)
@@ -246,9 +240,9 @@ def manage_background_run(
     return _compact_json({
         "ok": True, "action": "status", "conversation_id": conv_id, "job_id": safe_job_id,
         "assistant_guidance": (
-            "STOP AND REPLY TO USER NOW: Do NOT chain a second MCP tool after a successful response (all data is already included below). "
-            "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'. "
-            "If the user asked for stats, display ascii_mobile_report inside a ```text block now; otherwise report the job/session status."
+            "Job and session status retrieved below. "
+            "If the user asked for stats, display ascii_mobile_report inside a ```text block now; otherwise report the job/session status. "
+            "Sequential read-only follow-up calls are permitted (one call at a time, never in parallel)."
         ),
         "ascii_mobile_report": stats_fallback.get("ascii_mobile_report", ""),
         "quota_and_pools": stats_fallback.get("quota_and_pools", {}),
@@ -325,8 +319,8 @@ def list_models_and_agents(
     out_payload: dict[str, Any] = {
         "ok": True, "status": "OK",
         "assistant_guidance": (
-            "STOP AND REPLY TO USER NOW: Do NOT chain a second MCP tool after a successful response (all data is already included below). "
-            "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'."
+            "Agents, skills, rules, and model quota inventory retrieved successfully. "
+            "You may synthesize your response directly, or issue a sequential read-only follow-up call (e.g. inspect_name or ask_workspace_readonly, one call at a time, up to 4 sequential hops/turn—never in parallel)."
         ),
         "active_profile": active_profile, "quota_and_pools": quota_status,
         "customization_scope_policy": CUSTOMIZATION_SCOPE_POLICY, "session_customization_scope": session_scope,

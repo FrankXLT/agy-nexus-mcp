@@ -5,8 +5,11 @@ agy_nexus.routing — Deterministic Session Identifier & Cross-Project Handoff R
 
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
 import re
+import sqlite3
 
 from agy_nexus.config import (
     AGY_BRAIN_DIR,
@@ -91,6 +94,70 @@ def _session_matches_repo_hint(conv_id: str, repo_hint: str) -> bool:
         if any(pp.endswith("/" + rh) or f"/{rh}/" in pp for pp in p_paths) and pname and (pname == title or f"[{pname}]" in title):
             return True
     return bool(re.search(rf"\[{re.escape(rh)}\]", title, re.I)) or title.startswith(f"{rh}:") or slugify_token(title, "", 36) == rh
+ 
+def _session_matches_workspace(conv_id: str, ws: Path | str) -> bool:
+    """Return True if conv_id's active slot, session state, or DB metadata matches the target workspace ws."""
+    if not conv_id or not ws:
+        return False
+    try:
+        ws_p = Path(ws).resolve()
+    except Exception:
+        ws_p = Path(os.path.abspath(str(ws)))
+
+    contexts = SESSION_STATE.get("active_contexts") or {}
+    slot = contexts.get(conv_id, {}) if isinstance(contexts, dict) else {}
+    cands: list[str] = []
+    uris: list[str] = []
+
+    for k in ("workspace",):
+        v = slot.get(k)
+        if v:
+            cands.append(str(v))
+    w_map = SESSION_STATE.get("session_workspace_map") or {}
+    if conv_id in w_map and w_map[conv_id]:
+        cands.append(str(w_map[conv_id]))
+    if conv_id == SESSION_STATE.get("selected_session") and SESSION_STATE.get("selected_workspace"):
+        cands.append(str(SESSION_STATE["selected_workspace"]))
+
+    u_slot = slot.get("workspace_uris") or []
+    if isinstance(u_slot, list):
+        uris.extend(str(u) for u in u_slot if u)
+    u_map = SESSION_STATE.get("session_workspace_uris_map") or {}
+    if conv_id in u_map and isinstance(u_map[conv_id], list):
+        uris.extend(str(u) for u in u_map[conv_id] if u)
+    if conv_id == SESSION_STATE.get("selected_session") and SESSION_STATE.get("selected_workspace_uris"):
+        uris.extend(str(u) for u in SESSION_STATE["selected_workspace_uris"] if u)
+
+    for c in (*cands, *uris):
+        try:
+            cp = Path(c).resolve()
+            if cp == ws_p or cp.name.lower() == ws_p.name.lower():
+                return True
+        except Exception:
+            if str(c).rstrip("/").endswith("/" + ws_p.name) or os.path.basename(str(c)).lower() == ws_p.name.lower():
+                return True
+
+    if _session_matches_repo_hint(conv_id, ws_p.name):
+        return True
+
+    if cfg.AGY_DB_FILE.is_file():
+        try:
+            con = sqlite3.connect(f"file:{cfg.AGY_DB_FILE}?mode=ro", uri=True)
+            try:
+                row = con.execute("SELECT workspace_uris FROM conversation_summaries WHERE conversation_id = ?", (conv_id,)).fetchone()
+                if row and row[0]:
+                    db_uris = json.loads(row[0])
+                    if isinstance(db_uris, list):
+                        for u in db_uris:
+                            cp = Path(re.sub(r"^file://", "", str(u))).resolve()
+                            if cp == ws_p or cp.name.lower() == ws_p.name.lower():
+                                return True
+            finally:
+                con.close()
+        except Exception:
+            pass
+
+    return False
 
 def _extract_handoff_repo_hint(
     workspace_path: str,

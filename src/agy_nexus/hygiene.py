@@ -168,7 +168,7 @@ def slice_file_content(
         next_en = min(total_lines, next_st + 499)
         result["next_range_hint"] = (
             f"Showing lines {st}-{actual_end} of {total_lines}. "
-            f"Pass start_line={next_st}, end_line={next_en} (or file_subpath='{clean_path}:{next_st}-{next_en}') in a subsequent turn if needed (do NOT call a second tool in this turn)."
+            f"Pass start_line={next_st}, end_line={next_en} (or file_subpath='{clean_path}:{next_st}-{next_en}') via a sequential follow-up call if needed—never in parallel."
         )
     if ENFORCE_MODULAR_HYGIENE and total_lines > HARD_MAX_FILE_LINES:
         result["modularity_advisory"] = (
@@ -220,7 +220,7 @@ def slice_git_diff(
     if end_offset < total_chars:
         res["pagination_hint"] = (
             f"Showing diff chars {safe_offset}-{end_offset} of {total_chars}. "
-            f"Pass offset_chars={end_offset} (or start_line/end_line) to read the next page, or pass file_path='<subpath>'."
+            f"Pass offset_chars={end_offset} (or start_line/end_line) via a sequential follow-up call if needed—never in parallel—or pass file_path='<subpath>'."
         )
     return res
 

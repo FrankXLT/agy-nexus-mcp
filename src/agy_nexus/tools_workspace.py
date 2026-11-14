@@ -26,7 +26,7 @@ from agy_nexus.config import (
 )
 from agy_nexus.polyglot_outline import build_file_outline
 from agy_nexus.hygiene import MAX_DIFF_CHARS, MAX_FILE_CHARS, MAX_TOTAL_FILE_CHARS, slice_git_diff
-from agy_nexus.routing import _resolve_session_identifier
+from agy_nexus.routing import _resolve_session_identifier, _session_matches_workspace
 from agy_nexus.search import _get_configured_mcp_servers, _search_workspaces_and_history
 from agy_nexus.sessions import _get_selected_session_quick_status
 from agy_nexus.workflows import inspect_multi_repo_drift
@@ -52,6 +52,10 @@ def _resolve_pinned_context(session_identifier: str = "", workspace: str = "", t
     ws = Path(ws_str)
     if not ws.is_dir() and not (AGY_DATA_DIR / "worktrees" / ws.name).is_dir():
         ws = AGY_PROJECTS_DIR if AGY_PROJECTS_DIR.is_dir() else AGY_GITLAB_DIR
+    if workspace.strip() and not session_identifier.strip() and conv_id:
+        if not _session_matches_workspace(conv_id, ws):
+            conv_id = ""
+            extra_uris = []
     if is_pinned_call:
         SESSION_STATE["pinned_calls"] = int(SESSION_STATE.get("pinned_calls") or 0) + 1
         if conv_id:
@@ -146,10 +150,9 @@ def ask_workspace_readonly(
         "conversation_id": conv_id,
         "workspace": auto_ws or str(ws),
         "assistant_guidance": (
-            "STOP AND REPLY TO USER NOW: Inspection complete. "
-            "Do NOT chain a second MCP tool after a successful response (selected_session_status, file_details, and code_search_matches are ALL included below). "
-            "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'. "
-            "Synthesize your analysis or answer the user's question directly."
+            "Inspection complete. All requested file details, code search matches, and session status are included below. "
+            "You may synthesize your analysis directly, or issue a sequential read-only follow-up call (e.g. paging lines or inspecting git diff, one call at a time, up to 4 sequential hops/turn—never in parallel). "
+            "If a tool call fails with permission_denied or an immediate error, you MAY automatically invoke load_session_into_gemini once as a same-turn fallback."
         ),
         "selected_session_status": _get_selected_session_quick_status(conv_id),
         "file_details": file_result,
@@ -220,6 +223,7 @@ def inspect_git_diff(
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
     raw_override = workspace_override.strip()
+    conv_id = _resolve_session_identifier(session_identifier.strip()) if session_identifier.strip() else str(SESSION_STATE.get("selected_session") or "")
     if raw_override.upper() in ("ALL", "*", "ALL_REPOS") or "," in raw_override or ";" in raw_override:
         drift_bundle = inspect_multi_repo_drift(
             gitlab_dir=AGY_GITLAB_DIR,
@@ -229,14 +233,13 @@ def inspect_git_diff(
         )
         return _compact_json({
             "assistant_guidance": (
-                "STOP AND REPLY TO USER NOW: Multi-repository drift audit completed in a single turn. "
-                "Do NOT chain a second MCP tool after a successful response (all data is already included below). "
-                "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'."
+                "Multi-repository drift audit completed in a single turn (all branch, status, and drift details included below). "
+                "Synthesize your report directly, or issue a sequential read-only follow-up call (one call at a time, never in parallel)."
             ),
-            "selected_session_status": _get_selected_session_quick_status(),
+            "selected_session_status": _get_selected_session_quick_status(conv_id),
             **drift_bundle,
         })
-    pinned_cid, pinned_ws, _ = _resolve_pinned_context(session_identifier, raw_override, tool_name="inspect_git_diff")
+    conv_id, pinned_ws, _ = _resolve_pinned_context(session_identifier, raw_override, tool_name="inspect_git_diff")
     ws_str = str(pinned_ws) if (session_identifier.strip() or raw_override) else _resolve_workspace_str(raw_override)
     ws = Path(ws_str)
     umbrella_roots = get_umbrella_roots()
@@ -296,8 +299,8 @@ def inspect_git_diff(
                     )
                     return _compact_json({
                         "ok": True, "workspace": str(ws_res),
-                        "assistant_guidance": "STOP AND REPLY TO USER NOW: Git diff retrieved. Do NOT chain a second MCP tool after a successful response.",
-                        "selected_session_status": _get_selected_session_quick_status(),
+                        "assistant_guidance": "Git diff retrieved. Synthesize your report directly, or issue a sequential read-only follow-up call (one call at a time, never in parallel).",
+                        "selected_session_status": _get_selected_session_quick_status(conv_id),
                         "configured_mcp_servers": configured_mcps, "branch": current_branch,
                         "current_branch": current_branch, "status_short": status_proc.stdout.strip(),
                         "diff_stat": stat_proc.stdout.strip(), "untracked_files": untracked_files,
@@ -314,8 +317,8 @@ def inspect_git_diff(
         )
         return _compact_json({
             "ok": True, "workspace": host_res.get("workspace", ws_str),
-            "assistant_guidance": "STOP AND REPLY TO USER NOW: Host git inspection complete. Do NOT chain a second MCP tool after a successful response.",
-            "selected_session_status": _get_selected_session_quick_status(),
+            "assistant_guidance": "Host git inspection complete. Synthesize your report directly, or issue a sequential read-only follow-up call (one call at a time, never in parallel).",
+            "selected_session_status": _get_selected_session_quick_status(conv_id),
             "configured_mcp_servers": configured_mcps, "branch": br, "current_branch": br,
             "status_short": host_res.get("status_short", ""), "diff_stat": host_res.get("diff_stat", ""),
             "untracked_files": host_res.get("untracked_files", []), "target_branch": safe_branch, **diff_meta,

@@ -41,7 +41,7 @@ from agy_nexus.media import (
     ALLOWED_MEDIA_EXTENSIONS, discover_visual_artifacts, get_public_base_url,
     record_verified_public_origin, sign_media_url,
 )
-from agy_nexus.routing import _resolve_session_identifier
+from agy_nexus.routing import _resolve_session_identifier, _session_matches_workspace
 from agy_nexus.workspace import _resolve_workspace_str
 
 MAX_SOURCE_IMAGE_BYTES = 45 * 1024 * 1024
@@ -297,6 +297,9 @@ def inspect_visual_artifacts(
         (AGY_DATA_DIR / "worktrees").resolve(),
     )
     ws_ok = ws_path.is_dir() and _is_strict_child(ws_path, allowed_ws_roots)
+    if workspace.strip() and not session_identifier.strip() and conv_id:
+        if not _session_matches_workspace(conv_id, ws_path):
+            conv_id = ""
     if conv_id:
         pin_session_context(conv_id, workspace=str(ws_path.resolve()) if ws_ok else "", mode="PINNED (VISION)", last_tool="inspect_visual_artifacts", set_default=False)
 

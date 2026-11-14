@@ -90,10 +90,9 @@ def unlock_sessions(spoken_passphrase: str, search_query: str = "", style: str =
         "ok": True, "locked": False,
         "message": "Deadbolt unlocked. Session list and live telemetry stats retrieved successfully.",
         "assistant_guidance": (
-            "STOP AND REPLY TO USER NOW: Deadbolt unlocked and live telemetry stats retrieved. "
-            "Do NOT chain a second MCP tool after a successful response (all data is already included). "
-            "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'. "
-            "If the user asked for stats, display ascii_mobile_report inside a ```text block now; otherwise present the active sessions."
+            "Deadbolt unlocked and live telemetry stats retrieved successfully. "
+            "If the user asked for stats, display ascii_mobile_report inside a ```text block now; otherwise present the active sessions. "
+            "Sequential read-only follow-up calls (e.g. load_session_into_gemini or ask_workspace_readonly) are permitted (one call at a time, up to 4 hops/turn—never in parallel)."
         ),
         "ttl_seconds": TTL_SECONDS, "selected_session": sel_id,
         "selected_session_title": SESSION_STATE["session_title_map"].get(sel_id, ""),
@@ -143,10 +142,8 @@ def list_saved_sessions(
     out_obj: dict[str, Any] = {
         "ok": True,
         "assistant_guidance": (
-            "STOP AND REPLY TO USER NOW: Sessions listed above. "
-            "Do NOT chain a second MCP tool after a successful response (task previews and top_session_detail are already included below). "
-            "However, if a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a same-turn fallback without asking the user to reply 'Go'. "
-            "Present the conversations and ask the user which session to inspect or resume."
+            "Sessions listed above (task previews and top_session_detail included below). "
+            "Present the conversations and ask the user which session to inspect or resume, or issue a sequential read-only follow-up call (e.g. load_session_into_gemini, one call at a time, never in parallel) if further inspection is needed."
         ),
         "count": len(sessions), "available_projects": list(projects_map.values()),
         "top_session_detail": top_detail, "sessions": sessions,
@@ -160,7 +157,7 @@ def list_saved_sessions(
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "", include_files: str = "") -> str:
     """Primary tool for session 'Check-in' and full context loading in a single call (live execution_status, git_summary, visual_artifacts with 30-min signed /web/media/ links, task.md, implementation_plan.md, walkthrough.md, and recent untruncated transcript turns).
-    IMPORTANT: This is the designated tool for checking in on running or completed Antigravity sessions. Because execution_status and git_summary are already included in this response, do NOT chain another tool after a successful response. If latest_assistant_response is compacted for the <20 KB wire ceiling, pass file_subpath='transcript:latest' (with start_line/end_line) to ask_workspace_readonly to page the full untruncated response.
+    IMPORTANT: This is the designated tool for checking in on running or completed Antigravity sessions. Execution_status and git_summary are already included in this response. If latest_assistant_response is compacted for the <20 KB wire ceiling, pass file_subpath='transcript:latest' (with start_line/end_line) to ask_workspace_readonly via a sequential follow-up call (never in parallel) to page the full untruncated response.
     """
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
@@ -228,6 +225,7 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
     project_name = projects_map.get(project_id, {}).get("name") or resolved_pname or project_id
     if not workspace:
         workspace = str(AGY_PROJECTS_DIR if AGY_PROJECTS_DIR.is_dir() else AGY_GITLAB_DIR)
+    db_status_info["workspace_path"] = workspace
     SESSION_STATE["pinned_calls"] = int(SESSION_STATE.get("pinned_calls") or 0) + 1
     pin_session_context(
         conv_id, title=conv_title, project_id=project_id, project_name=project_name,
@@ -312,8 +310,8 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
         "conversation_id": conv_id, "title": conv_title, "project_id": project_id,
         "project_name": project_name, "workspace_path": workspace,
         "assistant_guidance": (
-            "STOP AND REPLY TO USER NOW: Session context loaded successfully. "
-            "Do NOT chain extra text tools after a successful response unless paging a truncated transcript via ask_workspace_readonly(file_subpath='transcript:latest', start_line=..., end_line=...). "
+            "Session context loaded successfully. "
+            "Synthesize your analysis or proceed with sequential read-only follow-up calls (e.g. paging a truncated transcript via ask_workspace_readonly(file_subpath='transcript:latest', start_line=..., end_line=...) or exploring code, one call at a time, never in parallel). "
             "Note: Hosted Gemini Web/Mobile strips binary MCP ImageContent blocks; share signed_url links with the user or let Antigravity inspect images locally."
         ),
         "project_hygiene_standards": MODULAR_HYGIENE_STANDARDS, "execution_status": db_status_info,
