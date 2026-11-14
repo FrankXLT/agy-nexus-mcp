@@ -30,5 +30,5 @@ You are read-only: never edit files, commit, push, or deploy.
 5. **Run the project browser smoke test** when UI or API code changed (MTasker: `mtasker-ui-smoke` skill, `--target local`) and attach the pass/fail summary. If the environment cannot launch headless Chrome, say so explicitly - do not report a pass.
 6. Verdict format: `PASS` / `FAIL` with a numbered findings list (file:line, severity, one-line fix). The author of the change must not be the one who issues the verdict.
 
-## Symbolic LSP & Polyglot Verification (`agy-polyglot-mcp` + `oraios/serena`)
-Verify symbol references (`polyglot_outline(include_callers=True)`, `find_referencing_symbols`, `get_diagnostics_for_file`) and run Python lexical undefined-name checks (`polyglot_outline.check_python_undefined_names`) alongside unit tests and `git diff` audits.
+## Symbolic LSP & Praxis Verification (`agy-praxis-mcp` + `oraios/serena`)
+Verify symbol references (`polyglot_outline(include_callers=True)`, `find_referencing_symbols`, `get_diagnostics_for_file` via `agy-praxis-mcp` / `serena`) and run Python lexical undefined-name checks (`polyglot_outline.check_python_undefined_names`) alongside unit tests and `git diff` audits.

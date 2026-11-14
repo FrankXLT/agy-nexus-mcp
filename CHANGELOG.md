@@ -4,6 +4,23 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.0] — 2026-11-13
+
+### Added
+- **Internal Workstation MCP Doorway Renamed & Expanded to `agy-praxis-mcp` (`tools_praxis.py`, `tools_polyglot.py`, `middleware.py`, `server.py`, `config.py`)**:
+  - Paired **Nexus** (external cloud bridge for Google Gemini) with **Praxis** (`FastMCP("agy-praxis-mcp")`), the zero-trust LAN/localhost execution doorway mounted at `/praxis/{PRAXIS_MCP_TOKEN}/mcp` (plus `agy-praxis-mcp --stdio`) while maintaining zero-downtime backward compatibility on `/polyglot/{POLYGLOT_MCP_TOKEN}/mcp`.
+  - Expanded the local doorway to 6 tools: `polyglot_map`, `polyglot_search`, `polyglot_outline`, `praxis_handoff_inbox`, `praxis_claim_handoff`, and `praxis_update_handoff`, plus `praxis:map|search|handoffs` virtual URIs.
+- **Repo-Prefixed Incremental Handoff Queue & Lifecycle Tracking (`handoff_queue.py`, `handoff.py`, `routing.py`)**:
+  - Replaced single-file global staging overwrite (`latest_gemini_handoff.md`) with `fcntl.flock`-guarded repo-prefixed monotonic tickets (`<repo-slug>-01`, `<repo-slug>-02`, ...) in `sidecar_data/ag-bridge-bg/staged_handoffs/`.
+  - Implemented explicit **`STAGED`** *(unclaimed / new chat)*, **`IN_WORK`** *(claimed by IDE `conversation_id` or woken headlessly)*, **`SUPERSEDED`** *(auto-marked when re-staging the same repo + topic while unclaimed)*, and **`COMPLETED`** lifecycle states.
+  - Added IDE disambiguation (`AMBIGUOUS_MULTIPLE_STAGED` when 2+ unclaimed tickets match a workspace vs. auto-claim when 1 matches), strict cross-repo `RESUME_STAGED` isolation (`NO_STAGED_HANDOFF_FOR_REPO`), and `_resolve_session_identifier("<repo-slug>-NN")` resolution to claimed IDE sessions.
+- **Dashboard Hierarchical Tree Handoff Integration (`session_tree.py`, `stats_series.py`, `web/hierarchy.js`, `web/styles.css`, `web/demo_data.js`)**:
+  - Surfaced `STAGED`, `IN_WORK`, and `SUPERSEDED` handoff rows and header count badges (`◈ STAGED`, `▶ IN-WORK`, `⊘ SUPERSEDED`) directly inside the Row 5 **Project $\rightarrow$ Chat $\rightarrow$ Session Hierarchical Tree** (`#hierarchyProjectList`) and 76-col ASCII tree—auto-promoting and expanding brand-new zero-session projects with unclaimed handoffs.
+- **Unified 4-Surface Perceptual Color System & Multi-Hue Sequential Heatmap (`web/palettes.js`, `web/styles.css`, `web/charts.js`, `web/index.html`)**:
+  - Replaced green/blue-clustered plot colors and the clashing GitHub-green heatmap with `PRAXIS_MASTER_SLOTS`—a uniform 10-hue alternating Cool $\leftrightarrow$ Warm perceptual OKLCH palette shared across Model, Subagent, and Project plots, paired with a polarity-aware 4-stop multi-hue sequential heatmap (`--heat-0..4`) tuned for **Obsidian**, **Dark Paper**, **Warm Paper**, and **Pure White**.
+
+---
+
 ## [2.7.0] — 2026-11-11
 
 ### Security

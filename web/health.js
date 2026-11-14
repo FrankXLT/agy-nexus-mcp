@@ -1,6 +1,6 @@
-// Code Health, Polyglot Semantic Index & Modular Hygiene UI Renderer for /web Overwatch Dashboard (v2.7.0)
+// Code Health, Praxis Semantic Index & Modular Hygiene UI Renderer for /web Overwatch Dashboard (v2.8.0)
 function renderCodeHealth(ch, installedVer) {
-  installedVer = installedVer || "2.7.0";
+  installedVer = installedVer || "2.8.0";
   let dotClass = "cyan";
   const status = (ch && ch.version && ch.version.status) || "staged_locally";
   if (status === "up_to_date") dotClass = "green";
@@ -72,10 +72,10 @@ function renderCodeHealth(ch, installedVer) {
 
   const lspInstalled = Boolean(ch.local_lsp && (ch.local_lsp.installed || ch.local_lsp.available || ch.local_lsp.status === "ready"));
   const kpiLsp = document.getElementById("kpiLspStatus");
-  if (kpiLsp) kpiLsp.textContent = lspInstalled ? "Polyglot + Serena" : "Polyglot MCP Ready";
+  if (kpiLsp) kpiLsp.textContent = lspInstalled ? "Praxis + Serena" : "Praxis MCP Ready";
 
   const kpiLspSub = document.getElementById("kpiLspSub");
-  if (kpiLspSub) kpiLspSub.textContent = lspInstalled ? "agy-polyglot-mcp + Serena LSP" : "agy-polyglot-mcp incremental SHA-256";
+  if (kpiLspSub) kpiLspSub.textContent = lspInstalled ? "agy-praxis-mcp + Serena LSP" : "agy-praxis-mcp incremental SHA-256";
 
   const ceilBadge = document.getElementById("codeHealthCeilingBadge");
   if (ceilBadge) {
@@ -89,7 +89,7 @@ function renderCodeHealth(ch, installedVer) {
 
   const serenaBadge = document.getElementById("codeHealthSerenaBadge");
   if (serenaBadge) {
-    serenaBadge.textContent = lspInstalled ? "POLYGLOT + SERENA: READY" : "POLYGLOT MCP: READY";
+    serenaBadge.textContent = lspInstalled ? "PRAXIS + SERENA: READY" : "PRAXIS MCP: READY";
   }
 
   const tbody = document.getElementById("modulesTableBody");

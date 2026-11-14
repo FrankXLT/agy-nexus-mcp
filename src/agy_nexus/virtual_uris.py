@@ -253,7 +253,7 @@ def resolve_virtual_uri_entry(
 ) -> dict[str, Any] | None:
     """Resolve `transcript:*`, `telemetry:*`, or `polyglot:*` virtual URIs into sliced file payloads."""
     cleaned = raw_sub.strip()
-    m = re.match(r"^(transcript|telemetry|polyglot):(.*)$", cleaned, flags=re.IGNORECASE)
+    m = re.match(r"^(transcript|telemetry|polyglot|praxis):(.*)$", cleaned, flags=re.IGNORECASE)
     if not m:
         return None
     scheme = m.group(1).lower()
@@ -273,18 +273,30 @@ def resolve_virtual_uri_entry(
         text, src_path = _resolve_telemetry_virtual(rest_clean, session_dir)
         if not text:
             return {"requested": raw_sub, "error": src_path}
+    elif rest_clean.lower().startswith("handoff"):
+        import agy_nexus.config as cfg
+        from agy_nexus.handoff_queue import list_handoff_tickets
+        sub_arg = rest_clean.split(":", 1)[1].strip() if ":" in rest_clean else ""
+        if sub_arg.lower() in ("all", "*"):
+            res = list_handoff_tickets(cfg.AGY_BG_DIR, limit=30)
+        elif sub_arg:
+            res = list_handoff_tickets(cfg.AGY_BG_DIR, repo_slug=sub_arg, limit=30)
+        else:
+            res = list_handoff_tickets(cfg.AGY_BG_DIR, workspace=str(ws), limit=30)
+        text = json.dumps(res, indent=2)
+        src_path = f"virtual://praxis/handoffs/{sub_arg or ws.name}"
     else:
         from agy_nexus.polyglot_index import polyglot_repo_map, polyglot_symbol_search
         if rest_clean.lower().startswith("search:"):
             q = rest_clean.split(":", 1)[1].strip()
             res = polyglot_symbol_search(q, workspace=str(ws), limit=30)
             text = json.dumps(res, indent=2)
-            src_path = f"virtual://polyglot/search/{q}"
+            src_path = f"virtual://{scheme}/search/{q}"
         else:
             pfx = rest_clean.split(":", 1)[1].strip() if rest_clean.lower().startswith("map:") else ("" if rest_clean.lower() in ("", "map") else rest_clean)
             res = polyglot_repo_map(workspace=str(ws), path_prefix=pfx, limit=120)
             text = str(res.get("formatted_map") or json.dumps(res, indent=2))
-            src_path = f"virtual://polyglot/map/{pfx}"
+            src_path = f"virtual://{scheme}/map/{pfx}"
 
     use_in_start = 0 if (scheme == "transcript" and re.match(r"^(?:step|turn):\d+$", rest_raw, flags=re.I)) else in_start
     use_in_center = 0 if (scheme == "transcript" and re.match(r"^(?:step|turn):\d+$", rest_raw, flags=re.I)) else in_center

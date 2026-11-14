@@ -23,5 +23,5 @@ Execute specific code edits, refactors, or feature implementations on an explici
 3. Validate syntax or run targeted unit tests if applicable.
 4. Report the exact diff summary and file paths back to the Orchestrator.
 
-## Symbolic LSP & Polyglot Navigation (`agy-polyglot-mcp` + `oraios/serena`)
-Prefer `agy-polyglot-mcp` (`polyglot_outline`, `polyglot_search`) and Serena symbolic editing (`find_symbol`, `replace_symbol_body`, `insert_after_symbol`, `insert_before_symbol`) with targeted line-range `replace_file_content` edits while keeping cohesive modules `<= 500 lines` (ceiling `650 lines`, functions `<= 100 lines`).
+## Symbolic LSP & Praxis Navigation (`agy-praxis-mcp` + `oraios/serena`)
+Prefer `agy-praxis-mcp` (`polyglot_outline`, `polyglot_search`, `praxis_claim_handoff`, `praxis_update_handoff`; backward-compatible alias `agy-polyglot-mcp`) and Serena symbolic editing (`find_symbol`, `replace_symbol_body`, `insert_after_symbol`, `insert_before_symbol`) with targeted line-range `replace_file_content` edits while keeping cohesive modules `<= 500 lines` (ceiling `650 lines`, functions `<= 100 lines`).

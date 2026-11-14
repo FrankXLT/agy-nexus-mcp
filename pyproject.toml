@@ -1,7 +1,7 @@
 [project]
 name = "agy-nexus-mcp"
-version = "2.7.0"
-description = "AGY-NEXUS-MCP & AGY-POLYGLOT-MCP: Antigravity Mission Control, Unified Incremental Polyglot Semantic Index, Cross-Session FTS5 Memory, Dual-Pool Quota Overwatch & Chromium PWA Dashboard"
+version = "2.8.0"
+description = "AGY-NEXUS-MCP & AGY-PRAXIS-MCP: Antigravity Mission Control, Local IDE Praxis Doorway, Repo-Prefixed Handoff Queue, Polyglot Semantic Index & 4-Surface Overwatch Dashboard"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
@@ -23,6 +23,7 @@ dependencies = [
 
 [project.scripts]
 agy-nexus-mcp = "agy_nexus.server:main"
+agy-praxis-mcp = "agy_nexus.tools_praxis:main"
 agy-polyglot-mcp = "agy_nexus.tools_polyglot:main"
 ag-bridge = "ag_bridge:main"
 

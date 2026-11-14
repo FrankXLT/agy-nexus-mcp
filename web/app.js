@@ -1,4 +1,4 @@
-// AGY-NEXUS Overwatch — Dashboard Controller, 1-to-3 Column Combined Plot Legends & Controls (v2.7.0)
+// AGY-NEXUS Overwatch — Dashboard Controller, 1-to-3 Column Combined Plot Legends & Controls (v2.8.0)
 
 function renderModelPlotAndLegend(b, metric, surface) {
   const ms = b.model_series || {}, vs = b.velocity_series || {};
@@ -263,7 +263,7 @@ function renderDashboard(b) {
 
   renderAllTimePlots(b);
   if (typeof renderHierarchyPanel === "function") renderHierarchyPanel(b);
-  renderCodeHealth(b.code_health, b.version || "2.7.0");
+  renderCodeHealth(b.code_health, b.version || "2.8.0");
 }
 
 applyThemeAndDensity(state.surface, state.density);

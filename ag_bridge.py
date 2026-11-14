@@ -47,11 +47,15 @@ from agy_nexus.polyglot_index import (  # noqa: E402, F401
     polyglot_symbol_search,
     refresh_polyglot_index,
 )
-from agy_nexus.tools_polyglot import (  # noqa: E402, F401
+from agy_nexus.tools_praxis import (  # noqa: E402, F401
     polyglot_map,
-    polyglot_mcp,
     polyglot_outline,
     polyglot_search,
+    praxis_claim_handoff,
+    praxis_handoff_inbox,
+    praxis_mcp,
+    praxis_mcp as polyglot_mcp,
+    praxis_update_handoff,
 )
 from agy_nexus.handoff import _resolve_skill_directives, send_handoff_and_resume  # noqa: E402, F401
 from agy_nexus.uploads import handle_session_upload_request, list_scratch_upload_batches, save_scratch_upload_batch  # noqa: E402, F401

@@ -1,14 +1,14 @@
-const CACHE_NAME = "agy-nexus-overwatch-v2.7.0";
+const CACHE_NAME = "agy-nexus-overwatch-v2.8.0";
 const SHELL_ASSETS = [
   "/web",
-  "/web/styles.css?v=2.7.0",
-  "/web/palettes.js?v=2.7.0",
-  "/web/charts.js?v=2.7.0",
-  "/web/demo_data.js?v=2.7.0",
-  "/web/hierarchy.js?v=2.7.0",
-  "/web/uploads.js?v=2.7.0",
-  "/web/health.js?v=2.7.0",
-  "/web/app.js?v=2.7.0",
+  "/web/styles.css?v=2.8.0",
+  "/web/palettes.js?v=2.8.0",
+  "/web/charts.js?v=2.8.0",
+  "/web/demo_data.js?v=2.8.0",
+  "/web/hierarchy.js?v=2.8.0",
+  "/web/uploads.js?v=2.8.0",
+  "/web/health.js?v=2.8.0",
+  "/web/app.js?v=2.8.0",
   "/web/manifest.webmanifest",
   "/web/icon.svg",
   "/web/icon-192.png",

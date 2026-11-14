@@ -129,12 +129,22 @@ async def _multiplex_lifespan(app_a: Any, app_b: Any, scope: dict[str, Any], rec
 
 
 class BridgeCompatMiddleware:
-    """ASGI wrapper serving /web Overwatch dashboard, dual MCP routing, Streamable HTTP 405 compliance, and sanitized JSON-RPC telemetry."""
+    """ASGI wrapper serving /web Overwatch dashboard, dual Nexus + Praxis MCP routing, Streamable HTTP 405 compliance, and sanitized JSON-RPC telemetry."""
 
-    def __init__(self, app: Any, polyglot_app: Any = None, polyglot_token: str = "") -> None:
+    def __init__(
+        self,
+        app: Any,
+        polyglot_app: Any = None,
+        polyglot_token: str = "",
+        praxis_app: Any = None,
+        praxis_token: str = "",
+    ) -> None:
         self.app = app
-        self.polyglot_app = polyglot_app
-        self.polyglot_token = (polyglot_token or "").strip()
+        self.praxis_app = praxis_app if praxis_app is not None else polyglot_app
+        self.polyglot_app = self.praxis_app
+        self.praxis_token = (praxis_token or polyglot_token or "").strip()
+        self.polyglot_token = (polyglot_token or praxis_token or "").strip()
+        self.praxis_mount_path = f"/praxis/{self.praxis_token}/mcp" if self.praxis_token else "/praxis/mcp"
         self.web_dir = Path(__file__).resolve().parent.parent.parent / "web"
         self.web_html_path = self.web_dir / "index.html"
         self.pwa_assets = {
@@ -148,8 +158,8 @@ class BridgeCompatMiddleware:
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         scope_type = scope.get("type")
-        if scope_type == "lifespan" and self.polyglot_app is not None:
-            await _multiplex_lifespan(self.app, self.polyglot_app, scope, receive, send)
+        if scope_type == "lifespan" and self.praxis_app is not None:
+            await _multiplex_lifespan(self.app, self.praxis_app, scope, receive, send)
             return
         if scope_type != "http":
             await self.app(scope, receive, send)
@@ -168,9 +178,9 @@ class BridgeCompatMiddleware:
             await handle_webhook_sync_proxy(method, req_path, raw_qs, headers, receive, send)
             return
 
-        # Zero-Trust LAN/Localhost Guard for agy-polyglot-mcp (/polyglot/{POLYGLOT_MCP_TOKEN}/mcp)
+        # Zero-Trust LAN/Localhost Guard for agy-praxis-mcp (/praxis/{TOKEN}/mcp + legacy /polyglot/{TOKEN}/mcp alias)
         target_asgi_app = self.app
-        if req_path == "/polyglot" or req_path.startswith("/polyglot/"):
+        if req_path in ("/praxis", "/polyglot") or req_path.startswith("/praxis/") or req_path.startswith("/polyglot/"):
             client_ip = str((scope.get("client") or ("", 0))[0] or "")
             has_proxy_hdr = False
             host_val = ""
@@ -189,7 +199,7 @@ class BridgeCompatMiddleware:
                 parsed_origin = urllib.parse.urlparse(origin_val)
                 origin_ok = origin_val.lower() != "null" and _is_allowed_lan_host(parsed_origin.netloc)
             if has_proxy_hdr or not _is_allowed_lan_host(host_val) or not origin_ok or not _is_allowed_lan_client_ip(client_ip):
-                deny_b = b'{"ok":false,"error":"agy-polyglot-mcp is restricted to direct LAN/localhost IDE clients."}'
+                deny_b = b'{"ok":false,"error":"agy-praxis-mcp is restricted to direct LAN/localhost IDE clients."}'
                 await send({
                     "type": "http.response.start",
                     "status": 403,
@@ -201,16 +211,17 @@ class BridgeCompatMiddleware:
                     ],
                 })
                 await send({"type": "http.response.body", "body": deny_b})
-                print(f"[agy-polyglot] http={method} rpc=lan_guard_blocked tool=- status=403 bytes={len(deny_b)} ms=0", flush=True)
+                print(f"[agy-praxis] http={method} rpc=lan_guard_blocked tool=- status=403 bytes={len(deny_b)} ms=0", flush=True)
                 return
             parts = req_path.split("/")
+            cand_tok = parts[2].encode("utf-8") if len(parts) == 4 else b""
+            valid_tokens = [t.encode("utf-8") for t in {self.praxis_token, self.polyglot_token} if len(t) >= 32]
             token_valid = (
-                self.polyglot_app is not None
-                and len(self.polyglot_token) >= 32
+                self.praxis_app is not None
                 and len(parts) == 4
-                and parts[1] == "polyglot"
+                and parts[1] in ("praxis", "polyglot")
                 and parts[3] == "mcp"
-                and hmac.compare_digest(parts[2].encode("utf-8"), self.polyglot_token.encode("utf-8"))
+                and any(hmac.compare_digest(cand_tok, vt) for vt in valid_tokens)
             )
             if not token_valid:
                 nf_poly = b'{"ok":false,"error":"Not found"}'
@@ -221,7 +232,8 @@ class BridgeCompatMiddleware:
                 })
                 await send({"type": "http.response.body", "body": nf_poly})
                 return
-            target_asgi_app = self.polyglot_app
+            scope = {**scope, "path": self.praxis_mount_path, "raw_path": self.praxis_mount_path.encode("ascii")}
+            target_asgi_app = self.praxis_app
 
         # 0. Redirect bare root GET / -> /web
         if method == "GET" and req_path == "":
@@ -504,7 +516,7 @@ class BridgeCompatMiddleware:
                 rpc_summary["bytes"] = int(rpc_summary["bytes"]) + len(msg.get("body") or b"")
             await send(msg)
 
-        log_prefix = "[agy-polyglot]" if target_asgi_app is self.polyglot_app else "[agy-nexus]"
+        log_prefix = "[agy-praxis]" if target_asgi_app is self.praxis_app else "[agy-nexus]"
         try:
             await target_asgi_app(scope, wrapped_receive, wrapped_send)
         finally:
@@ -517,7 +529,7 @@ class BridgeCompatMiddleware:
                 "status": rpc_summary["status"],
                 "bytes": rpc_summary["bytes"],
                 "req_bytes": rpc_summary["req_bytes"],
-                "product": rpc_summary["product"] or ("agy-polyglot-mcp" if target_asgi_app is self.polyglot_app else ""),
+                "product": rpc_summary["product"] or ("agy-praxis-mcp" if target_asgi_app is self.praxis_app else ""),
                 "user_agent": rpc_summary["user_agent"],
                 "reported_tokens": rpc_summary["reported_tokens"],
                 "ms": elapsed_ms,

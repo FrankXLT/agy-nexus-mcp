@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Comprehensive regression suite for agy-nexus-mcp v2.7.0 & agy-polyglot-mcp."""
+"""Comprehensive regression suite for agy-nexus-mcp v2.8.0 & agy-praxis-mcp."""
 from __future__ import annotations
 
 import hashlib
@@ -45,7 +45,7 @@ from agy_nexus.workspace import _resolve_and_read_files
 
 
 def test_version_and_modular_budget() -> None:
-    assert agy_nexus.__version__ == "2.7.0"
+    assert agy_nexus.__version__ == "2.8.0"
     assert TARGET_FILE_LINES == 500
     assert HARD_MAX_FILE_LINES == 650
     assert not (SRC_DIR / "agy_nexus" / "ast_outline.py").exists(), "ast_outline.py must be removed"
@@ -233,39 +233,45 @@ def test_5a_5b_handoff_modes_unwrap_and_nexus_routing() -> None:
     phrase = "Handoff Test 2026!"
     expected_hash = hashlib.sha256(b"handofftest2026").hexdigest()
     orig_hash = cfg.PASS_HASH
+    orig_bg = cfg.AGY_BG_DIR
     dummy_cid = "22222222-3333-4444-5555-666666666666"
     sdir = cfg.AGY_BRAIN_DIR / dummy_cid
     sdir.mkdir(parents=True, exist_ok=True)
     cfg.PASS_HASH = expected_hash
-    try:
-        body_3800 = "# Autonomous Release Spec\n\n" + ("Detailed acceptance criterion line.\n" * 95)
-        assert len(body_3800) < 4500
-        staged = json.loads(
-            send_handoff_and_resume(
-                research_markdown=body_3800,
-                session_identifier=dummy_cid,
-                resume_headless=False,
-                spoken_passphrase=phrase,
+    with tempfile.TemporaryDirectory() as tmp_bg_str:
+        cfg.AGY_BG_DIR = Path(tmp_bg_str)
+        try:
+            body_3800 = "# Autonomous Release Spec\n\n" + ("Detailed acceptance criterion line.\n" * 95)
+            assert len(body_3800) < 4500
+            staged = json.loads(
+                send_handoff_and_resume(
+                    research_markdown=body_3800,
+                    session_identifier=dummy_cid,
+                    resume_headless=False,
+                    spoken_passphrase=phrase,
+                )
             )
-        )
-        assert staged["status"] == "STAGED_ONLY"
-        assert staged["execution_mode"] == "plan"
-        assert "size_warning" not in staged
+            assert staged["status"] == "STAGED_ONLY"
+            assert staged["execution_mode"] == "plan"
+            assert "handoff_id" in staged and staged["ticket_status"] == "STAGED"
+            assert "size_warning" not in staged
 
-        staged_file = Path(staged["handoff_file"])
-        raw_staged_disk = staged_file.read_text(encoding="utf-8")
-        unwrapped = _unwrap_staged_handoff_markdown(raw_staged_disk)
-        assert unwrapped == body_3800.strip()
-        assert "Mandatory 4-Step Execution Lifecycle" not in unwrapped
-    finally:
-        cfg.PASS_HASH = orig_hash
-        shutil.rmtree(sdir, ignore_errors=True)
+            staged_file = Path(staged["handoff_file"])
+            raw_staged_disk = staged_file.read_text(encoding="utf-8")
+            unwrapped = _unwrap_staged_handoff_markdown(raw_staged_disk)
+            assert unwrapped == body_3800.strip()
+            assert "Mandatory 4-Step Execution Lifecycle" not in unwrapped
+        finally:
+            cfg.AGY_BG_DIR = orig_bg
+            cfg.PASS_HASH = orig_hash
+            shutil.rmtree(sdir, ignore_errors=True)
 
 
 def test_6_streamable_http_405_and_polyglot_zero_trust_lan_guard() -> None:
     secret = "unit_test_secret_token_with_more_than_32_chars_abcdef"
     poly_tok = cfg.get_polyglot_mcp_token(secret)
-    app = build_nexus_http_app(secret, poly_tok)
+    praxis_tok = cfg.get_praxis_mcp_token(secret)
+    app = build_nexus_http_app(secret, poly_tok, praxis_tok)
 
     with TestClient(app) as client:
         # MCP Streamable HTTP Spec: 405 on GET / DELETE / HEAD to */mcp
@@ -274,13 +280,14 @@ def test_6_streamable_http_405_and_polyglot_zero_trust_lan_guard() -> None:
         assert "POST" in r_get.headers.get("allow", "")
         assert client.delete(f"/{secret}/mcp").status_code == 405
         assert client.options(f"/{secret}/mcp").status_code == 204
+        assert client.get(f"/praxis/{praxis_tok}/mcp").status_code == 405
         assert client.get(f"/polyglot/{poly_tok}/mcp").status_code == 405
 
         # Health & Web remain 200
         r_h = client.get("/health")
-        assert r_h.status_code == 200 and r_h.json()["version"] == "2.7.0"
+        assert r_h.status_code == 200 and r_h.json()["version"] == "2.8.0"
 
-        # Zero-Trust LAN Guard blocks reverse-proxied / public-domain / DNS-rebinding / cross-origin requests to /polyglot/*
+        # Zero-Trust LAN Guard blocks reverse-proxied / public-domain / DNS-rebinding / cross-origin requests to /praxis/* and /polyglot/*
         for bad_hdrs in (
             {"X-Forwarded-For": "198.51.100.7"},
             {"X-Real-IP": "198.51.100.7"},
@@ -290,24 +297,35 @@ def test_6_streamable_http_405_and_polyglot_zero_trust_lan_guard() -> None:
             {"Origin": "http://evil.example"},
             {"Origin": "null"},
         ):
-            r_deny = client.post(
-                f"/polyglot/{poly_tok}/mcp",
-                json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
-                headers=bad_hdrs,
-            )
-            assert r_deny.status_code == 403, f"Expected 403 for headers {bad_hdrs}, got {r_deny.status_code}"
+            for endpoint in (f"/praxis/{praxis_tok}/mcp", f"/polyglot/{poly_tok}/mcp"):
+                r_deny = client.post(
+                    endpoint,
+                    json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                    headers=bad_hdrs,
+                )
+                assert r_deny.status_code == 403, f"Expected 403 on {endpoint} for headers {bad_hdrs}, got {r_deny.status_code}"
 
         # Wrong token -> 404
+        assert client.post("/praxis/wrong_token/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).status_code == 404
         assert client.post("/polyglot/wrong_token/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).status_code == 404
 
-        # Direct LAN POST to agy-polyglot-mcp succeeds with zero deadbolt passphrase
-        r_tools = client.post(f"/polyglot/{poly_tok}/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
-        assert r_tools.status_code == 200
-        tool_names = {t["name"] for t in r_tools.json()["result"]["tools"]}
-        assert tool_names == {"polyglot_map", "polyglot_search", "polyglot_outline"}
+        expected_praxis_tools = {
+            "polyglot_map",
+            "polyglot_search",
+            "polyglot_outline",
+            "praxis_handoff_inbox",
+            "praxis_claim_handoff",
+            "praxis_update_handoff",
+        }
+        # Direct LAN POST to agy-praxis-mcp AND backward-compatible /polyglot/* succeeds with zero deadbolt passphrase
+        for endpoint in (f"/praxis/{praxis_tok}/mcp", f"/polyglot/{poly_tok}/mcp"):
+            r_tools = client.post(endpoint, json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+            assert r_tools.status_code == 200
+            tool_names = {t["name"] for t in r_tools.json()["result"]["tools"]}
+            assert tool_names == expected_praxis_tools
 
         r_call = client.post(
-            f"/polyglot/{poly_tok}/mcp",
+            f"/praxis/{praxis_tok}/mcp",
             json={
                 "jsonrpc": "2.0",
                 "id": 2,
@@ -353,29 +371,33 @@ def test_7_dual_review_security_and_invariants() -> None:
     )
     phrase = "Invariant Test 2026!"
     orig_hash = cfg.PASS_HASH
+    orig_bg = cfg.AGY_BG_DIR
     orig_post = handoff_mod._post_bridge
     cfg.PASS_HASH = hashlib.sha256(b"invarianttest2026").hexdigest()
-    try:
-        res_t = _resolve_and_read_files("transcript:latest", ws=PKG_ROOT, session_dir=sdir)
-        assert res_t.get("error") and "No conversational turns" in res_t["error"]
+    with tempfile.TemporaryDirectory() as tmp_bg_str:
+        cfg.AGY_BG_DIR = Path(tmp_bg_str)
+        try:
+            res_t = _resolve_and_read_files("transcript:latest", ws=PKG_ROOT, session_dir=sdir)
+            assert res_t.get("error") and "No conversational turns" in res_t["error"]
 
-        handoff_mod._post_bridge = lambda payload: {"ok": False, "error": "simulated_bridge_offline"}
-        failed_res = json.loads(
-            send_handoff_and_resume(
-                research_markdown="# Test Failed Wakeup\n\nBody.",
-                session_identifier=empty_cid,
-                resume_headless=True,
-                force_interrupt=True,
-                spoken_passphrase=phrase,
+            handoff_mod._post_bridge = lambda payload: {"ok": False, "error": "simulated_bridge_offline"}
+            failed_res = json.loads(
+                send_handoff_and_resume(
+                    research_markdown="# Test Failed Wakeup\n\nBody.",
+                    session_identifier=empty_cid,
+                    resume_headless=True,
+                    force_interrupt=True,
+                    spoken_passphrase=phrase,
+                )
             )
-        )
-        assert failed_res["ok"] is False
-        assert failed_res["status"] == "FAILED"
-        assert failed_res["resumed"] is False
-    finally:
-        handoff_mod._post_bridge = orig_post
-        cfg.PASS_HASH = orig_hash
-        shutil.rmtree(sdir, ignore_errors=True)
+            assert failed_res["ok"] is False
+            assert failed_res["status"] == "FAILED"
+            assert failed_res["resumed"] is False
+        finally:
+            cfg.AGY_BG_DIR = orig_bg
+            handoff_mod._post_bridge = orig_post
+            cfg.PASS_HASH = orig_hash
+            shutil.rmtree(sdir, ignore_errors=True)
 
 
 if __name__ == "__main__":
@@ -386,4 +408,4 @@ if __name__ == "__main__":
     test_5a_5b_handoff_modes_unwrap_and_nexus_routing()
     test_6_streamable_http_405_and_polyglot_zero_trust_lan_guard()
     test_7_dual_review_security_and_invariants()
-    print("[✓] All v2.7.0 bridge & agy-polyglot-mcp regression tests PASSED!")
+    print("[✓] All v2.8.0 bridge & agy-praxis-mcp regression tests PASSED!")

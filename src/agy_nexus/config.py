@@ -352,8 +352,16 @@ def get_host_bridge_token() -> str:
         return HOST_BRIDGE_TOKEN
     return hmac.new(PATH_SECRET.encode("utf-8"), b"agy-host-bridge-agentapi-v1", hashlib.sha256).hexdigest() if len(PATH_SECRET) >= 32 else ""
 
+def get_praxis_mcp_token(secret: str = "") -> str:
+    """Return explicit PRAXIS_MCP_TOKEN (or POLYGLOT_MCP_TOKEN fallback) or domain-separated HMAC-SHA256 derived from PATH_SECRET for local LAN IDE routing."""
+    explicit = (os.getenv("PRAXIS_MCP_TOKEN", "").strip() or os.getenv("POLYGLOT_MCP_TOKEN", "").strip())
+    if (not secret or secret == PATH_SECRET) and len(explicit) >= 32:
+        return explicit
+    seed = (secret or PATH_SECRET).strip()
+    return hmac.new(seed.encode("utf-8"), b"agy-praxis-mcp-v1", hashlib.sha256).hexdigest()[:48] if len(seed) >= 32 else ""
+
 def get_polyglot_mcp_token(secret: str = "") -> str:
-    """Return explicit POLYGLOT_MCP_TOKEN or domain-separated HMAC-SHA256 derived from PATH_SECRET for local LAN IDE routing."""
+    """Return explicit POLYGLOT_MCP_TOKEN or legacy domain-separated HMAC-SHA256 derived from PATH_SECRET."""
     explicit = os.getenv("POLYGLOT_MCP_TOKEN", "").strip()
     if (not secret or secret == PATH_SECRET) and len(explicit) >= 32:
         return explicit

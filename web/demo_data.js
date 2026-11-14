@@ -1,56 +1,55 @@
-// AGY-NEXUS Overwatch — Deterministic Multi-Window Demo Telemetry Generator (v2.7.0)
+// AGY-NEXUS Overwatch — Deterministic Multi-Window Demo Telemetry Generator (v2.8.0)
 
 const SAMPLE_CODE_HEALTH = {
   version: {
-    installed: "2.7.0",
-    remote: "v2.6.0",
+    installed: "2.8.0",
+    remote: "v2.7.0",
     status: "staged_locally",
-    status_label: "Staged Locally (v2.7.0 > v2.6.0)",
-    status_dot: "#38bdf8",
+    status_label: "Staged Locally (v2.8.0 > v2.7.0)",
+    status_dot: "#5496ff",
     repo: "github.com/FrankXLT/agy-nexus-mcp",
   },
   modular_hygiene: {
     target_lines: 500,
     ceiling_lines: 650,
-    total_modules: 31,
-    compliant_500: 29,
+    total_modules: 33,
+    compliant_500: 31,
     warning_501_650: 2,
     violations_over_650: 0,
-    compliant_300: 29,
+    compliant_300: 31,
     warning_301_400: 2,
     violations_over_400: 0,
     ceiling_pass: true,
-    total_lines: 9583,
-    total_symbols: 342,
-    long_functions_over_100: 3,
+    total_lines: 10140,
+    total_symbols: 368,
+    long_functions_over_100: 2,
     modules: [
       { name: "polyglot_outline.py", lines: 639, status: "warning", symbols: 15, long_functions: 1 },
-      { name: "middleware.py", lines: 530, status: "warning", symbols: 8, long_functions: 1 },
-      { name: "server.py", lines: 468, status: "compliant", symbols: 9, long_functions: 0 },
-      { name: "handoff.py", lines: 455, status: "compliant", symbols: 6, long_functions: 1 },
+      { name: "middleware.py", lines: 543, status: "warning", symbols: 8, long_functions: 1 },
+      { name: "server.py", lines: 483, status: "compliant", symbols: 9, long_functions: 0 },
+      { name: "handoff_queue.py", lines: 445, status: "compliant", symbols: 13, long_functions: 0 },
       { name: "polyglot_index.py", lines: 412, status: "compliant", symbols: 9, long_functions: 0 },
       { name: "tools_media.py", lines: 398, status: "compliant", symbols: 6, long_functions: 0 },
+      { name: "session_tree.py", lines: 372, status: "compliant", symbols: 6, long_functions: 0 },
       { name: "tools_session.py", lines: 371, status: "compliant", symbols: 5, long_functions: 0 },
       { name: "tools_ops.py", lines: 358, status: "compliant", symbols: 4, long_functions: 0 },
       { name: "workspace.py", lines: 357, status: "compliant", symbols: 6, long_functions: 0 },
-      { name: "inventory.py", lines: 349, status: "compliant", symbols: 10, long_functions: 0 },
+      { name: "handoff.py", lines: 345, status: "compliant", symbols: 8, long_functions: 0 },
       { name: "session_status.py", lines: 345, status: "compliant", symbols: 8, long_functions: 0 },
       { name: "stats.py", lines: 325, status: "compliant", symbols: 7, long_functions: 0 },
-      { name: "config.py", lines: 322, status: "compliant", symbols: 14, long_functions: 0 },
-      { name: "sessions.py", lines: 316, status: "compliant", symbols: 8, long_functions: 0 },
-      { name: "tools_workspace.py", lines: 313, status: "compliant", symbols: 5, long_functions: 0 },
-      { name: "virtual_uris.py", lines: 308, status: "compliant", symbols: 8, long_functions: 0 },
-      { name: "tools_polyglot.py", lines: 93, status: "compliant", symbols: 5, long_functions: 0 },
+      { name: "config.py", lines: 332, status: "compliant", symbols: 15, long_functions: 0 },
+      { name: "tools_praxis.py", lines: 164, status: "compliant", symbols: 7, long_functions: 0 },
+      { name: "tools_polyglot.py", lines: 19, status: "compliant", symbols: 1, long_functions: 0 },
     ],
   },
-  polyglot_health: { indexed_files: 74, total_symbols: 342, long_functions_over_100: 3 },
-  ast_integrity: { clean: true, undefined_count: 0, undefined_names: 0, scanned_files: 31, flagged_modules: 0, total_symbols: 342, details: {} },
-  local_lsp: { engine: "polyglot+serena", installed: true, available: true, version: "v2.7.0", status: "ready" },
+  polyglot_health: { indexed_files: 78, total_symbols: 368, long_functions_over_100: 2 },
+  ast_integrity: { clean: true, undefined_count: 0, undefined_names: 0, scanned_files: 33, flagged_modules: 0, total_symbols: 368, details: {} },
+  local_lsp: { engine: "praxis+serena", installed: true, available: true, version: "v2.8.0", status: "ready" },
 };
 
 const DEMO_PROJECTS_CATALOG = [
   { id: "p-nexus-mesh", name: "NexusMesh ANMS (Network Telemetry)", repo: "nexus-mesh-telemetry", chats: ["Canvas Node Optimization & Redis", "Dynamic Device Graph", "SNMP Poller Tuning", "RRD Export Bridge"] },
-  { id: "p-core-gitops", name: "Core Infrastructure & Container GitOps", repo: "agy-nexus-mcp", chats: ["Antigravity MCP v2.7 & Polyglot Engine", "agy-polyglot-mcp LAN Endpoint", "Host Bridge Zero-Trust", "Scratch Upload Modal", "3-2-1 Bundle Cron"] },
+  { id: "p-core-gitops", name: "Core Infrastructure & Container GitOps", repo: "agy-nexus-mcp", chats: ["AGY-Praxis MCP v2.8 & Handoff Queue", "Perceptual OKLCH Palette & Heatmap", "Host Bridge Zero-Trust", "Scratch Upload Modal", "3-2-1 Bundle Cron"] },
   { id: "p-auto-edge", name: "Automation & Edge Security GitOps", repo: "automation-gitops", chats: ["Surveillance 4AM Daily Refinement", "Mobile Wall Panel Redesign", "Presence Sensor Debounce"] },
   { id: "p-chronos", name: "chronos-board", repo: "chronos-board", chats: ["Phase 1 Sprints & Counter-Events", "Sunburst & Chord Legend", "Time-Block Sync"] },
   { id: "p-qdsp", name: "quantum-dsp-workbench", repo: "quantum-dsp-workbench", chats: ["[QDSP-Core] Chief Architect", "[QDSP-Learn-RF] Data Comms", "[QDSP-Portal] Shell UI"] },
@@ -190,6 +189,66 @@ function generateDemoBundle(periodKey) {
   });
 
   const top_projects = builtProjs.slice(0, 10);
+  const nexusMeshProj = top_projects.find((p) => p.project_id === "p-nexus-mesh");
+  if (nexusMeshProj && nexusMeshProj.sessions[0]) {
+    nexusMeshProj.staged_count = 0;
+    nexusMeshProj.in_work_handoff_count = 1;
+    nexusMeshProj.superseded_count = 0;
+    nexusMeshProj.staged_handoffs = [{
+      handoff_id: "nexus-mesh-telemetry-01", repo_slug: "nexus-mesh-telemetry",
+      title: "Canvas Node Optimization & Redis Pipeline", status: "IN_WORK",
+      execution_mode: "auto", handoff_mode: "intent",
+      workspace_path: "/home/dev/workspaces/nexus-mesh-telemetry",
+      claimed_by_conversation_id: nexusMeshProj.sessions[0].conversation_id,
+      chars_written: 4820, relative_age: "14m ago",
+    }];
+  }
+  const coreGitopsProj = top_projects.find((p) => p.project_id === "p-core-gitops");
+  if (coreGitopsProj) {
+    coreGitopsProj.staged_count = 1;
+    coreGitopsProj.in_work_handoff_count = 0;
+    coreGitopsProj.superseded_count = 1;
+    coreGitopsProj.staged_handoffs = [
+      {
+        handoff_id: "agy-nexus-mcp-02", repo_slug: "agy-nexus-mcp",
+        title: "Unified Perceptual OKLCH Heatmap & Praxis Doorway", status: "STAGED",
+        execution_mode: "plan", handoff_mode: "intent",
+        workspace_path: "/home/dev/workspaces/agy-nexus-mcp",
+        chars_written: 6410, relative_age: "4m ago",
+      },
+      {
+        handoff_id: "agy-nexus-mcp-01", repo_slug: "agy-nexus-mcp",
+        title: "Initial Polyglot Doorway Rename Draft", status: "SUPERSEDED",
+        superseded_by: "agy-nexus-mcp-02", execution_mode: "plan", handoff_mode: "intent",
+        workspace_path: "/home/dev/workspaces/agy-nexus-mcp",
+        chars_written: 3120, relative_age: "28m ago",
+      },
+    ];
+  }
+  const idle_projects = [{
+    project_id: "ws:quiet-ui-skills", project_name: "quiet-ui-skills",
+    is_rollup: false, color_slot: -1, running_count: 0, pinned_count: 0,
+    staged_count: 1, in_work_handoff_count: 0, superseded_count: 1,
+    window_steps: 0, window_tokens: 0, share_pct: 0,
+    steps_series: new Array(nBins).fill(0), tokens_series: new Array(nBins).fill(0),
+    sessions: [],
+    staged_handoffs: [
+      {
+        handoff_id: "quiet-ui-skills-02", repo_slug: "quiet-ui-skills",
+        title: "4-Surface Multi-Hue Sequential Heatmap Spec", status: "STAGED",
+        execution_mode: "plan", handoff_mode: "research",
+        workspace_path: "/home/dev/workspaces/quiet-ui-skills",
+        chars_written: 5280, relative_age: "2m ago",
+      },
+      {
+        handoff_id: "quiet-ui-skills-01", repo_slug: "quiet-ui-skills",
+        title: "Tableau-10 Palette Exploration", status: "SUPERSEDED",
+        superseded_by: "quiet-ui-skills-02", execution_mode: "plan", handoff_mode: "research",
+        workspace_path: "/home/dev/workspaces/quiet-ui-skills",
+        chars_written: 2890, relative_age: "19m ago",
+      },
+    ],
+  }];
   let other_projects = null;
   if (builtProjs.length > 10) {
     const ovf = builtProjs.slice(10);
@@ -260,7 +319,7 @@ function generateDemoBundle(periodKey) {
 
   return {
     server: "agy-nexus-mcp",
-    version: "2.7.0",
+    version: "2.8.0",
     period: { key: pk, label: cfg.label, resolution: cfg.res, active_days: heatmap_series.filter((d) => d.steps > 0).length, total_days: cfg.days },
     kpis: { total_conversations: builtProjs.reduce((a, p) => a + p.sessions.length, 0), total_subagents_spawned: 148, window_steps: totWinSteps, period_steps: totWinSteps, window_tool_calls: Math.round(totWinSteps * 0.51), window_tokens: totWinToks, active_days: heatmap_series.filter((d) => d.steps > 0).length },
     quota_and_pools: { active_tier_profile: "ultra-20x", pools: { google: { status: "HEALTHY" }, claude: { status: "HEALTHY" } }, partner_weekly_pacing: { day_of_week_index: 3, daily_target_pct: 14.28, recommended_cumulative_ceiling_pct: 42.8 } },
@@ -270,12 +329,12 @@ function generateDemoBundle(periodKey) {
     velocity_series: { dates, step_hours: cfg.stepH, values: velSteps, token_values: velToks, resolution: cfg.res },
     model_series: { keys: mKeys, dates, step_hours: cfg.stepH, layers: modLayers, token_layers: modTokLayers, resolution: cfg.res },
     subagent_series: { keys: subRoles.map((r) => r[0]), dates, step_hours: cfg.stepH, layers: subLayers, token_layers: subTokLayers, resolution: cfg.res },
-    project_hierarchy: { dates, step_hours: cfg.stepH, resolution: cfg.res, active_projects_count: builtProjs.length, idle_projects_count: 0, top_projects, other_projects, idle_projects: [] },
+    project_hierarchy: { dates, step_hours: cfg.stepH, resolution: cfg.res, active_projects_count: builtProjs.length, idle_projects_count: 1, top_projects, other_projects, idle_projects },
     heatmap_series,
     wire_telemetry: { total_recorded_calls: 184, avg_kb: 9.8, max_kb: 18.9, total_mcp_tokens: 412800, budget_compliance_pct: 100.0, by_product: { "Gemini Mobile": { calls: 112 }, "Gemini Web / Cloud MCP": { calls: 72 } } },
     routing_telemetry: { active_slots: 3, pinned_calls: 18, auto_resolved_calls: 7 },
     backup_321: { ok: true, short_sha: "55d0304", shas_match: true, age: "1h ago" },
-    project_session_tree: { ascii_tree: "AGY-NEXUS // DEMO PROJECT -> CHAT -> SESSION ID HIERARCHY\n[PROJECT 1] NexusMesh ANMS\n  └─ [#1] Canvas Node Optimization & Redis" },
+    project_session_tree: { ascii_tree: "AGY-NEXUS // DEMO PROJECT -> CHAT -> SESSION ID HIERARCHY\n[PROJECT 1] NexusMesh ANMS\n  ├─ [HANDOFF nexus-mesh-telemetry-01] IN-WORK -> claimed\n  └─ [#1] Canvas Node Optimization & Redis\n[PROJECT 2] Core Infrastructure & Container GitOps\n  ├─ [HANDOFF agy-nexus-mcp-02] STAGED (unclaimed / new chat)\n  └─ [#2] AGY-Praxis MCP v2.8 & Handoff Queue\n[PROJECT 3] quiet-ui-skills (0 sessions · 1 staged)\n  └─ [HANDOFF quiet-ui-skills-02] STAGED (unclaimed / new chat)" },
     code_health: JSON.parse(JSON.stringify(SAMPLE_CODE_HEALTH)),
   };
 }

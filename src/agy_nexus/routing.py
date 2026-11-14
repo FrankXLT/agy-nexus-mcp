@@ -18,6 +18,8 @@ from agy_nexus.config import (
     get_antigravity_config_repo,
     get_workspace_pillar_roots,
 )
+import agy_nexus.config as cfg
+from agy_nexus.handoff_queue import resolve_session_from_handoff_id
 from agy_nexus.sessions import (
     NEXUS_TITLE_KEYWORDS,
     _list_saved_sessions_internal,
@@ -26,22 +28,25 @@ from agy_nexus.sessions import (
 from agy_nexus.workspace import _resolve_workspace_str
 
 def _resolve_session_identifier(ident_raw: str) -> str:
-    """Resolve index ('1', '#1', 'latest'), conversation UUID/prefix, title keyword, project name, or workspace URI to a conversation_id."""
+    """Resolve index ('1', '#1', 'latest'), handoff ID ('<repo>-01'), conversation UUID/prefix, title keyword, project name, or workspace URI to a conversation_id."""
     ident = (ident_raw or "").strip()
     if not ident or ident.lower() in ("latest", "current", "active", "recent", "top", "last"):
         ident = "1"
+    handoff_conv = resolve_session_from_handoff_id(cfg.AGY_BG_DIR, ident)
+    if handoff_conv and (cfg.AGY_BRAIN_DIR / handoff_conv).is_dir():
+        return handoff_conv
     ident_num = re.sub(r"^(?:session|index|item|#)\s*", "", ident, flags=re.I).strip()
     conv_id = SESSION_STATE["session_index_map"].get(ident_num) or SESSION_STATE["session_index_map"].get(ident, "")
-    if conv_id and (AGY_BRAIN_DIR / conv_id).is_dir():
+    if conv_id and (cfg.AGY_BRAIN_DIR / conv_id).is_dir():
         return conv_id
 
     candidate_id = re.sub(r"[^a-zA-Z0-9_-]", "", ident)
-    if candidate_id and len(candidate_id) >= 32 and (AGY_BRAIN_DIR / candidate_id).is_dir():
+    if candidate_id and len(candidate_id) >= 32 and (cfg.AGY_BRAIN_DIR / candidate_id).is_dir():
         return candidate_id
 
     sessions = _list_saved_sessions_internal(limit=25, status_filter="ALL", include_subagents=False)
     conv_id = SESSION_STATE["session_index_map"].get(ident_num) or SESSION_STATE["session_index_map"].get(ident, "")
-    if conv_id and (AGY_BRAIN_DIR / conv_id).is_dir():
+    if conv_id and (cfg.AGY_BRAIN_DIR / conv_id).is_dir():
         return conv_id
 
     ident_lower = ident.lower()
@@ -57,7 +62,7 @@ def _resolve_session_identifier(ident_raw: str) -> str:
             or ident_lower in all_uris
         ):
             return sid
-    return candidate_id if (candidate_id and (AGY_BRAIN_DIR / candidate_id).is_dir()) else ""
+    return candidate_id if (candidate_id and (cfg.AGY_BRAIN_DIR / candidate_id).is_dir()) else ""
 
 def _session_matches_repo_hint(conv_id: str, repo_hint: str) -> bool:
     """Return True if conv_id's workspace_uris, workspace_path, project mapping, or title matches repo_hint."""
@@ -141,7 +146,7 @@ def _resolve_target_session_for_handoff(
     if ident_clean:
         ident_num = re.sub(r"^(?:session|index|item|#)\s*", "", ident_clean, flags=re.I).strip()
         cached_conv = SESSION_STATE["session_index_map"].get(ident_num) or SESSION_STATE["session_index_map"].get(ident_clean, "")
-        if cached_conv and (AGY_BRAIN_DIR / cached_conv).is_dir():
+        if cached_conv and (cfg.AGY_BRAIN_DIR / cached_conv).is_dir():
             SESSION_STATE["selected_session"] = cached_conv
             SESSION_STATE["selected_workspace"] = SESSION_STATE["session_workspace_map"].get(cached_conv, "")
             SESSION_STATE["selected_workspace_uris"] = SESSION_STATE["session_workspace_uris_map"].get(cached_conv, [])
@@ -180,9 +185,11 @@ def _resolve_target_session_for_handoff(
                 SESSION_STATE["selected_project"] = SESSION_STATE["session_project_map"].get(sid, "")
                 _save_session_state()
                 return sid, f"auto_matched_repo:{repo_hint} ({prev_note})"
+        # Brand-new repo with zero matching sessions: do NOT hijack an unrelated session!
+        return "", f"new_repo_unclaimed:{repo_hint}"
 
-    # 3. Fallback to current_conv or #1 most recently modified session
-    if current_conv and (AGY_BRAIN_DIR / current_conv).is_dir():
+    # 3. Fallback to current_conv or #1 most recently modified session (only when no repo_hint was specified)
+    if current_conv and (cfg.AGY_BRAIN_DIR / current_conv).is_dir():
         return current_conv, "selected_session"
     if sessions:
         top_id = str(sessions[0].get("conversation_id") or "")

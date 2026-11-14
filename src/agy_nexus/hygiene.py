@@ -28,7 +28,7 @@ MODULAR_HYGIENE_STANDARDS: dict[str, Any] = {
     "target_lines_per_file": f"100-{TARGET_FILE_LINES} lines (functions <= 100 lines)",
     "hard_split_ceiling_lines": HARD_MAX_FILE_LINES,
     "core_principles": [
-        f"Keep source files cohesive up to {TARGET_FILE_LINES} lines (hard split ceiling at {HARD_MAX_FILE_LINES} lines, functions <= 100 lines); use Polyglot semantic outlines (`agy-polyglot-mcp` / `outline:<path>`) to isolate exact line spans without micro-file sprawl.",
+        f"Keep source files cohesive up to {TARGET_FILE_LINES} lines (hard split ceiling at {HARD_MAX_FILE_LINES} lines, functions <= 100 lines); use Polyglot semantic outlines (`agy-praxis-mcp` / `outline:<path>`) to isolate exact line spans without micro-file sprawl.",
         "Decompose by cohesive domain capability (e.g., config, models/types, db/repository, services, routes/handlers, utils) with clean public interfaces and zero circular imports—never fragment cohesive modules into tiny files.",
         "Maintain strict root-directory hygiene: keep only project manifests (README.md, pyproject.toml/package.json, docker-compose.yml, .env.example, .gitignore) in the repository root; place code in src/ (or package dir), tests in tests/, and operational scripts in scripts/. Store temporary notes and scratch files strictly in the session brain directory (~/.gemini/antigravity/brain/<conv_id>/scratch/), NEVER in a repo-root scratch/ directory that could shadow handoff files.",
         f"When modifying a legacy file that already exceeds {HARD_MAX_FILE_LINES} lines, extract newly added subsystems into a cohesive companion module (<= {TARGET_FILE_LINES} lines) rather than growing the monolith.",
@@ -37,10 +37,10 @@ MODULAR_HYGIENE_STANDARDS: dict[str, Any] = {
 
 MODULAR_HYGIENE_MARKDOWN_BLOCK = f"""
 ---
-## Mandatory Modular Architecture, Polyglot Navigation & File Hygiene Standard
+## Mandatory Modular Architecture, Praxis/Polyglot Navigation & File Hygiene Standard
 When standing up or modifying this project, enforce the following rules automatically:
 1. **Verified Facts vs. Hypotheses Checklist**: Label any unverified assumption as a hypothesis; verify live state, configs, and schemas before mutating code.
-2. **Polyglot-First Navigation & File Budget (`<= {TARGET_FILE_LINES} lines` Target, `{HARD_MAX_FILE_LINES} lines` Hard Ceiling, Functions `<= 100 lines`)**: Use `agy-polyglot-mcp` (`polyglot_map`, `polyglot_search`, `polyglot_outline`) to locate exact `Lstart-Lend` spans first rather than creating micro-file sprawl. Keep cohesive modules `<= {TARGET_FILE_LINES}` lines (`<= {HARD_MAX_FILE_LINES}` ceiling) and individual functions `<= 100` lines.
+2. **Polyglot-First Navigation & File Budget (`<= {TARGET_FILE_LINES} lines` Target, `{HARD_MAX_FILE_LINES} lines` Hard Ceiling, Functions `<= 100 lines`)**: Use `agy-praxis-mcp` (`polyglot_map`, `polyglot_search`, `polyglot_outline`) to locate exact `Lstart-Lend` spans first rather than creating micro-file sprawl. Keep cohesive modules `<= {TARGET_FILE_LINES}` lines (`<= {HARD_MAX_FILE_LINES}` ceiling) and individual functions `<= 100` lines.
 3. **Cohesive Domain Decomposition**: Group code by domain responsibility (`config`, `models`, `repository`, `services`, `routes`, `utils`) with zero circular dependencies.
 4. **Root-Directory Hygiene & Scratch File Isolation**: Keep the repo root clean (manifests only; code in `src/`, tests in `tests/`, scripts in `scripts/`). Store temporary scratch scripts/notes strictly in the session brain directory (`~/.gemini/antigravity/brain/<conv_id>/scratch/`), NEVER in a repo-root `scratch/` directory that could shadow handoff files.
 """

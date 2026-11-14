@@ -1,11 +1,11 @@
-// AGY-NEXUS Overwatch — LibreNMS / RRDTool Stacked Bar Engine, Adaptive DPI Binning & Foreground Axes (v2.7.0)
+// AGY-NEXUS Overwatch — LibreNMS / RRDTool Stacked Bar Engine, Adaptive DPI Binning & Foreground Axes (v2.8.0)
 
 const THEME_META = {
-  "obsidian":   { label: "Obsidian",   bg: "#0b0d10", border: "#10b981", themeColor: "#101318" },
+  "obsidian":   { label: "Obsidian",   bg: "#0b0d10", border: "#28d0bc", themeColor: "#101318" },
   "dark-paper": { label: "Dark Paper", bg: "#21201c", border: "#ede8df", themeColor: "#1c1b18" },
-  "warm-paper": { label: "Warm Paper", bg: "#f6f4f0", border: "#525a65", themeColor: "#edeae4" },
-  "white":      { label: "Pure White", bg: "#ffffff", border: "#0f172a", themeColor: "#ffffff" },
-  "pure-white": { label: "Pure White", bg: "#ffffff", border: "#0f172a", themeColor: "#ffffff" },
+  "warm-paper": { label: "Warm Paper", bg: "#f6f4f0", border: "#1d5bd6", themeColor: "#edeae4" },
+  "white":      { label: "Pure White", bg: "#ffffff", border: "#1d5bd6", themeColor: "#ffffff" },
+  "pure-white": { label: "Pure White", bg: "#ffffff", border: "#1d5bd6", themeColor: "#ffffff" },
 };
 const VALID_DENSITIES = ["D1", "D2", "D3", "D4"];
 const VALID_PERIODS = ["current_month", "last_month", "last_90d", "last_year"];

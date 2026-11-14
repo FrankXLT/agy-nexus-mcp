@@ -1,54 +1,48 @@
-// AGY-NEXUS Overwatch — LibreNMS / RRDTool-Aligned Color Palettes & Coupled Lightness + Hue Session Shaders (v2.7.0)
+// AGY-NEXUS Overwatch — Unified 10-Hue Perceptual OKLCH Color System & Session Shaders (v2.8.0)
 
-const MODEL_PALETTE = {
-  carbon:         { label: "Gemini 4 Carbon",        short: "Carbon 4",    role: "Main / Apex",  light: "#15803d", dark: "#22c55e" },
-  argon_pro:      { label: "Gemini 4 Argon",         short: "Argon 4 Pro", role: "Deep / Pro",   light: "#1d4ed8", dark: "#3b82f6" },
-  flash:          { label: "Gemini 3.8 Flash",       short: "Flash 3.8",   role: "Fast Tier",    light: "#0e7490", dark: "#06b6d4" },
-  claude_partner: { label: "Claude Sonnet/Opus 5.5", short: "Claude 5.5",  role: "Partner 1x",   light: "#b45309", dark: "#f59e0b" },
-  gpt_oss:        { label: "GPT-OSS 120B",           short: "GPT-OSS 120", role: "Failover",     light: "#be123c", dark: "#fb7185" },
-};
-
-const SUBAGENT_ROLE_PALETTE = {
-  "flash-surgeon":     { light: "#0f766e", dark: "#14b8a6" },
-  "flash-auditor":     { light: "#0284c7", dark: "#38bdf8" },
-  "flash-scout":       { light: "#4d7c0f", dark: "#84cc16" },
-  "argon-sentinel":    { light: "#6d28d9", dark: "#a78bfa" },
-  "argon-surgeon":     { light: "#1d4ed8", dark: "#60a5fa" },
-  "argon-architect":   { light: "#4338ca", dark: "#818cf8" },
-  "research":          { light: "#15803d", dark: "#22c55e" },
-  "self":              { light: "#166534", dark: "#4ade80" },
-  "claude-specialist": { light: "#c2410c", dark: "#fb923c" },
-  "claude-sentinel":   { light: "#b45309", dark: "#f59e0b" },
-  "pool-failover":     { light: "#be123c", dark: "#fb7185" },
-  "other-subagents":   { light: "#64748b", dark: "#94a3b8" },
-};
-
-const SUBAGENT_FALLBACK_SLOTS = [
-  { light: "#0f766e", dark: "#14b8a6" },
-  { light: "#0284c7", dark: "#38bdf8" },
-  { light: "#6d28d9", dark: "#a78bfa" },
-  { light: "#1d4ed8", dark: "#60a5fa" },
-  { light: "#4d7c0f", dark: "#84cc16" },
-  { light: "#15803d", dark: "#22c55e" },
-  { light: "#c2410c", dark: "#fb923c" },
-  { light: "#be185d", dark: "#ec4899" },
-];
-
-// 10-Slot RRD-Nexus Chromatic Project Base Palette (Zero Grays) + Exclusive Roll-Up Slate (#10)
-const PROJECT_RRD_PALETTE = [
-  { name: "Forest Emerald",       light: "#15803d", dark: "#22c55e" },
-  { name: "Deep Cobalt",          light: "#1d4ed8", dark: "#3b82f6" },
-  { name: "RRD Olive-Chartreuse", light: "#65a30d", dark: "#84cc16" },
-  { name: "RRD Aubergine",        light: "#7e22ce", dark: "#a855f7" },
-  { name: "Ocean Cerulean",       light: "#0284c7", dark: "#38bdf8" },
-  { name: "Signal Ochre",         light: "#d97706", dark: "#f59e0b" },
-  { name: "Abyssal Teal",         light: "#0f766e", dark: "#14b8a6" },
-  { name: "Mulberry Rose",        light: "#be185d", dark: "#ec4899" },
-  { name: "RRD Indigo",           light: "#4338ca", dark: "#818cf8" },
-  { name: "Burnt Copper",         light: "#c2410c", dark: "#fb923c" },
+// Master 10-Slot Perceptual Palette (Alternating Cool <-> Warm >=95 deg apart; calibrated for Light & Dark surfaces)
+const PRAXIS_MASTER_SLOTS = [
+  { key: "cobalt",     name: "Ultramarine Cobalt",  light: "#1d5bd6", dark: "#5496ff" },
+  { key: "vermilion",  name: "Vermilion Tangerine", light: "#d94e14", dark: "#ff8538" },
+  { key: "viridian",   name: "Viridian Teal",       light: "#0b8478", dark: "#28d0bc" },
+  { key: "crimson",    name: "Crimson Rose",        light: "#d41e47", dark: "#ff5c7c" },
+  { key: "gold",       name: "Imperial Gold",       light: "#b87a08", dark: "#f5be33" },
+  { key: "amethyst",   name: "Royal Amethyst",      light: "#7331e0", dark: "#b37bff" },
+  { key: "emerald",    name: "Botanical Emerald",   light: "#1b8a42", dark: "#46dc7d" },
+  { key: "magenta",    name: "Orchid Magenta",      light: "#b81d80", dark: "#f46ec0" },
+  { key: "cerulean",   name: "Cerulean Sky",        light: "#0373b5", dark: "#38bdf8" },
+  { key: "terracotta", name: "Copper Terracotta",   light: "#9e3f14", dark: "#e8955b" },
 ];
 
 const OTHER_PROJECTS_SLATE = { name: "Other Projects", light: "#64748b", dark: "#94a3b8" };
+
+// Unified Model Palette: Google Pool = Cool Triad (Cobalt / Amethyst / Viridian), Partner Pool = Warm Duo (Vermilion / Crimson)
+const MODEL_PALETTE = {
+  carbon:         { label: "Gemini 4 Carbon",        short: "Carbon 4",    role: "Main / Apex",  light: "#1d5bd6", dark: "#5496ff" },
+  argon_pro:      { label: "Gemini 4 Argon",         short: "Argon 4 Pro", role: "Deep / Pro",   light: "#7331e0", dark: "#b37bff" },
+  flash:          { label: "Gemini 3.8 Flash",       short: "Flash 3.8",   role: "Fast Tier",    light: "#0b8478", dark: "#28d0bc" },
+  claude_partner: { label: "Claude Sonnet/Opus 5.5", short: "Claude 5.5",  role: "Partner 1x",   light: "#d94e14", dark: "#ff8538" },
+  gpt_oss:        { label: "GPT-OSS 120B",           short: "GPT-OSS 120", role: "Failover",     light: "#d41e47", dark: "#ff5c7c" },
+};
+
+// Unified Subagent Palette: Drawn from the exact same 10 master perceptual tokens so Plots 1-3 share one visual language
+const SUBAGENT_ROLE_PALETTE = {
+  "flash-surgeon":     { light: "#0b8478", dark: "#28d0bc" },
+  "flash-auditor":     { light: "#0373b5", dark: "#38bdf8" },
+  "flash-scout":       { light: "#1b8a42", dark: "#46dc7d" },
+  "argon-sentinel":    { light: "#7331e0", dark: "#b37bff" },
+  "argon-surgeon":     { light: "#1d5bd6", dark: "#5496ff" },
+  "argon-architect":   { light: "#b81d80", dark: "#f46ec0" },
+  "research":          { light: "#9e3f14", dark: "#e8955b" },
+  "self":              { light: "#b87a08", dark: "#f5be33" },
+  "claude-specialist": { light: "#d94e14", dark: "#ff8538" },
+  "claude-sentinel":   { light: "#b87a08", dark: "#f5be33" },
+  "pool-failover":     { light: "#d41e47", dark: "#ff5c7c" },
+  "other-subagents":   { light: "#64748b", dark: "#94a3b8" },
+};
+
+const SUBAGENT_FALLBACK_SLOTS = PRAXIS_MASTER_SLOTS.map((s) => ({ light: s.light, dark: s.dark }));
+const PROJECT_RRD_PALETTE = PRAXIS_MASTER_SLOTS;
 
 function escapeHtmlSafe(val) {
   return String(val ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -60,7 +54,7 @@ function isLightSurfaceMode(surface) {
 }
 
 function hexToHsl(hex) {
-  const raw = String(hex || "#22c55e").replace("#", "");
+  const raw = String(hex || "#5496ff").replace("#", "");
   const r = parseInt(raw.slice(0, 2), 16) / 255;
   const g = parseInt(raw.slice(2, 4), 16) / 255;
   const b = parseInt(raw.slice(4, 6), 16) / 255;
@@ -101,8 +95,8 @@ function hslToHex(h, s, l) {
 function makeCapStroke(fillHex, surface) {
   const hsl = hexToHsl(fillHex);
   const light = isLightSurfaceMode(surface);
-  const capL = light ? Math.max(18, hsl.l - 10) : Math.min(84, hsl.l + 11);
-  return hslToHex(hsl.h, Math.min(95, hsl.s + 4), capL);
+  const capL = light ? Math.max(16, hsl.l - 11) : Math.min(86, hsl.l + 12);
+  return hslToHex(hsl.h, Math.min(96, hsl.s + 5), capL);
 }
 
 function getModelColor(modelKey, surface) {
@@ -130,9 +124,9 @@ function getProjectBaseColor(slotIdx, surface) {
 }
 
 /**
- * Derive distinct per-session shades within a project's RRD base color family.
- * Uses coupled Lightness stepping (interleaved so adjacent stacked sessions have >=14% L contrast)
- * plus bounded +/-5 deg micro-hue separation across multi-session passes while keeping Saturation >=46%.
+ * Derive distinct per-session shades within a project's base hue family.
+ * Interleaves Lightness steps (>=15% L contrast between adjacent stacked sessions)
+ * with +/-5 deg micro-hue shift while preserving vibrant chroma (>=50% S).
  */
 function deriveSessionShade(slotIdx, shadeIdx, shadeCount, surface) {
   const base = getProjectBaseColor(slotIdx, surface);
@@ -144,24 +138,23 @@ function deriveSessionShade(slotIdx, shadeIdx, shadeCount, surface) {
   const k = Math.min(12, Math.max(2, Number(shadeCount || 2)));
   const idx = Math.max(0, Math.min(k - 1, Number(shadeIdx || 0)));
 
-  // Interleave lightness steps so adjacent stacked bars (idx and idx+1) never blend together
   const passIdx = Math.floor(idx / 4);
   const hueOffsets = [0, 5, -5];
-  const microHue = k <= 4 ? (idx % 2 === 1 ? 3 : 0) : (hueOffsets[passIdx % 3] || 0);
+  const microHue = k <= 4 ? (idx % 2 === 1 ? 4 : 0) : (hueOffsets[passIdx % 3] || 0);
 
   let targetL;
   let targetS;
   if (k <= 4) {
-    const t = idx / Math.max(1, k - 1);
-    targetL = light ? (31 + t * 33) : (38 + t * 32);
-    targetS = Math.max(48, hsl.s * (1 - 0.12 * t));
+    const ladder4Dark = [44, 63, 53, 72];
+    const ladder4Light = [32, 50, 41, 60];
+    targetL = (light ? ladder4Light : ladder4Dark)[idx];
+    targetS = Math.max(52, hsl.s * (1 - 0.08 * idx));
   } else {
-    // Interleaved high/low lightness ladder across up to 12 sessions
-    const ladderDark = [36, 55, 44, 66, 39, 60, 49, 71, 34, 53, 46, 68];
-    const ladderLight = [29, 48, 37, 59, 32, 52, 42, 65, 27, 45, 39, 62];
+    const ladderDark = [38, 57, 47, 67, 42, 62, 51, 72, 36, 55, 45, 69];
+    const ladderLight = [28, 47, 37, 58, 32, 52, 42, 63, 26, 45, 35, 60];
     targetL = (light ? ladderLight : ladderDark)[idx % 12];
-    const normT = (targetL - 28) / 44;
-    targetS = Math.max(46, hsl.s * (1 - 0.14 * normT));
+    const normT = (targetL - 26) / 46;
+    targetS = Math.max(50, hsl.s * (1 - 0.12 * normT));
   }
 
   const fill = hslToHex(hsl.h + microHue, targetS, targetL);

@@ -27,8 +27,8 @@ from agy_nexus.config import (
     AGY_BG_DIR, AGY_BRAIN_DIR, AGY_CONFIG_DIR, AGY_DATA_DIR, AGY_DB_FILE, AGY_GITLAB_DIR,
     AGY_PROJECTS_DIR, AGY_WORKSPACE_DIR, BIND_HOST, BIND_PORT, PASS_HASH, PATH_SECRET,
     SESSION_STATE, TTL_SECONDS, get_antigravity_config_repo, get_polyglot_mcp_token,
-    get_workspace_pillar_roots, is_unlocked, normalize_phrase, verify_passphrase,
-    mcp,
+    get_praxis_mcp_token, get_workspace_pillar_roots, is_unlocked, normalize_phrase,
+    verify_passphrase, mcp,
 )
 import agy_nexus.handoff  # noqa: F401
 from agy_nexus.media import discover_visual_artifacts, sign_media_url, verify_and_resolve_media
@@ -39,7 +39,8 @@ from agy_nexus.sessions import _list_saved_sessions_internal, _load_projects_map
 from agy_nexus.stats import build_nexus_stats_bundle
 from agy_nexus.tools_media import run_multimodal_media_self_test
 import agy_nexus.tools_ops  # noqa: F401
-from agy_nexus.tools_polyglot import polyglot_mcp
+import agy_nexus.tools_polyglot  # noqa: F401
+from agy_nexus.tools_praxis import praxis_mcp
 import agy_nexus.tools_session  # noqa: F401
 import agy_nexus.tools_workspace  # noqa: F401
 from agy_nexus.workflows import export_notebook_bundle, inspect_multi_repo_drift
@@ -75,11 +76,12 @@ def _offload_sync_mcp_tools(mcp_server: Any) -> int:
     return wrapped_count
 
 
-def build_nexus_http_app(path_secret: str, polyglot_token: str = "") -> BridgeCompatMiddleware:
-    """Construct the dual-MCP stateless Streamable HTTP ASGI application."""
+def build_nexus_http_app(path_secret: str, polyglot_token: str = "", praxis_token: str = "") -> BridgeCompatMiddleware:
+    """Construct the dual-MCP (Nexus + Praxis) stateless Streamable HTTP ASGI application."""
     _offload_sync_mcp_tools(mcp)
-    _offload_sync_mcp_tools(polyglot_mcp)
-    eff_poly_tok = (polyglot_token or get_polyglot_mcp_token(path_secret)).strip()
+    _offload_sync_mcp_tools(praxis_mcp)
+    eff_praxis_tok = (praxis_token or get_praxis_mcp_token(path_secret) or polyglot_token).strip()
+    eff_poly_tok = (polyglot_token or get_polyglot_mcp_token(path_secret) or eff_praxis_tok).strip()
     raw_app = mcp.http_app(
         path=f"/{path_secret}/mcp",
         transport="http",
@@ -87,14 +89,19 @@ def build_nexus_http_app(path_secret: str, polyglot_token: str = "") -> BridgeCo
         json_response=True,
         host_origin_protection=False,
     )
-    poly_app = polyglot_mcp.http_app(
-        path=f"/polyglot/{eff_poly_tok}/mcp",
+    praxis_app = praxis_mcp.http_app(
+        path=f"/praxis/{eff_praxis_tok}/mcp",
         transport="http",
         stateless_http=True,
         json_response=True,
         host_origin_protection=False,
     )
-    return BridgeCompatMiddleware(raw_app, polyglot_app=poly_app, polyglot_token=eff_poly_tok)
+    return BridgeCompatMiddleware(
+        raw_app,
+        praxis_app=praxis_app,
+        praxis_token=eff_praxis_tok,
+        polyglot_token=eff_poly_tok,
+    )
 
 
 def run_self_test() -> int:
@@ -143,19 +150,23 @@ def run_self_test() -> int:
     assert classify_model_key("MODEL_PLACEHOLDER_M427") == "carbon", "Expected M427 to classify as carbon"
     print(f"  [+] Telemetry & Activity Heatmap engine ({stats_bundle['summary']['period_steps']} steps indexed): PASS")
 
-    # 5. FastMCP Stateless JSON Route Generation, 405 Spec Compliance, Dual Polyglot Mount, /web HTML & JS Syntax Check
+    # 5. FastMCP Stateless JSON Route Generation, 405 Spec Compliance, Dual Praxis+Polyglot Mount, /web HTML & JS Syntax Check
     test_secret = "test_path_secret_at_least_32_characters_long_12345"
+    test_praxis_tok = get_praxis_mcp_token(test_secret)
     test_poly_tok = get_polyglot_mcp_token(test_secret)
-    app = build_nexus_http_app(test_secret, test_poly_tok)
+    app = build_nexus_http_app(test_secret, polyglot_token=test_poly_tok, praxis_token=test_praxis_tok)
     assert app is not None and app.web_html_path.is_file(), "Failed generating Starlette HTTP app or missing web/index.html"
     from starlette.testclient import TestClient
     with TestClient(app) as tc:
-        assert tc.get(f"/{test_secret}/mcp").status_code == 405, "Expected 405 on GET /{secret}/mcp"
-        assert tc.delete(f"/{test_secret}/mcp").status_code == 405, "Expected 405 on DELETE /{secret}/mcp"
+        assert tc.get(f"/{test_secret}/mcp").status_code == 405 and tc.delete(f"/{test_secret}/mcp").status_code == 405
         assert tc.get("/health").status_code == 200, "Expected 200 on GET /health"
+        assert tc.post(f"/praxis/{test_praxis_tok}/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, headers={"X-Forwarded-For": "203.0.113.9"}).status_code == 403
         assert tc.post(f"/polyglot/{test_poly_tok}/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, headers={"X-Forwarded-For": "203.0.113.9"}).status_code == 403
+        r_praxis = tc.post(f"/praxis/{test_praxis_tok}/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
         r_poly = tc.post(f"/polyglot/{test_poly_tok}/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
-        assert r_poly.status_code == 200 and len(r_poly.json()["result"]["tools"]) == 3, f"agy-polyglot-mcp tools/list failed: {r_poly.text}"
+        praxis_tools = [t["name"] for t in r_praxis.json()["result"]["tools"]]
+        assert r_praxis.status_code == 200 and r_poly.status_code == 200 and len(praxis_tools) == 6, f"agy-praxis-mcp tools/list failed: {praxis_tools}"
+        assert "praxis_claim_handoff" in praxis_tools and "polyglot_map" in praxis_tools
         r_nex = tc.post(f"/{test_secret}/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
         nex_tools = [t["name"] for t in r_nex.json()["result"]["tools"]]
         assert r_nex.status_code == 200 and len(nex_tools) == 11, f"agy-nexus-mcp expected 11 tools, got {len(nex_tools)}: {nex_tools}"
@@ -167,12 +178,11 @@ def run_self_test() -> int:
         js_text = js_path.read_text(encoding="utf-8")
         for ln_no, ln in enumerate(js_text.splitlines(), 1):
             if "//" in ln and "http://" not in ln and "https://" not in ln:
-                comment_part = ln.split("//", 1)[1]
-                assert not re.search(r"\}\s*$", comment_part), f"Commented closing brace in web/{js_name}:{ln_no}"
+                assert not re.search(r"\}\s*$", ln.split("//", 1)[1]), f"Commented closing brace in web/{js_name}:{ln_no}"
         if node_bin:
             proc = subprocess.run([node_bin, "--check", str(js_path)], capture_output=True, text=True, timeout=10, check=False)
             assert proc.returncode == 0, f"JS syntax error in web/{js_name}: {proc.stderr}"
-    print("  [+] FastMCP stateless HTTP 405 spec compliance, agy-polyglot-mcp mount, /web & JS syntax check: PASS")
+    print("  [+] FastMCP stateless HTTP 405 spec compliance, agy-praxis-mcp (+ /polyglot/) mount, /web & JS syntax check: PASS")
 
     # 6. Multi-Repo Drift Audit & Notebook Export Deduplication
     drift_res = inspect_multi_repo_drift(AGY_GITLAB_DIR, AGY_DATA_DIR, workspace_override="ALL")
@@ -342,103 +352,103 @@ def run_self_test() -> int:
         batches = list_scratch_upload_batches(dummy_cid, brain_dir=AGY_BRAIN_DIR)
         assert len(batches) == 2, f"Expected 2 distinct collision-free batches, got {len(batches)}"
 
-        staged_raw = send_handoff_and_resume(
-            research_markdown="# Self Test Staging\nStaged markdown body.",
-            session_identifier=dummy_cid,
-            spoken_passphrase=test_phrase,
-            resume_headless=False,
-        )
-        staged_obj = json.loads(staged_raw)
-        assert staged_obj.get("ok") is True and staged_obj.get("status") == "STAGED_ONLY" and staged_obj.get("resumed") is False
-        assert "Do you understand the risk" in staged_obj.get("assistant_guidance", "")
-        staged_file = dummy_dir / "scratch" / "gemini_research_handoff.md"
-        assert staged_file.is_file() and "Staged markdown body." in staged_file.read_text(encoding="utf-8")
-
-        repo_root = Path(__file__).resolve().parents[2]
-        if str(repo_root) not in sys.path:
-            sys.path.insert(0, str(repo_root))
-        from http.server import ThreadingHTTPServer
-        import threading
-        import urllib.error
-        import urllib.request
-        import host_bridge.agy_host_bridge as hb_mod
-        from host_bridge.bridge_security import (
-            DEFAULT_BIND_HOST,
-            derive_bridge_token,
-            guard_cli_positional,
-            is_client_ip_allowed,
-            resolve_allowed_git_roots,
-            sanitize_conv_id,
-            sanitize_git_ref,
-        )
-
-        assert DEFAULT_BIND_HOST == "127.0.0.1", f"Expected 127.0.0.1 default bind, got {DEFAULT_BIND_HOST}"
-        assert is_client_ip_allowed("127.0.0.1") and is_client_ip_allowed("172.18.0.5")
-        assert not is_client_ip_allowed("192.168.1.99") and not is_client_ip_allowed("192.168.31.143")
-        assert Path.home().resolve() not in resolve_allowed_git_roots(AGY_GITLAB_DIR, AGY_DATA_DIR, AGY_WORKSPACE_DIR)
-        assert sanitize_git_ref("--output=/tmp/pwn") == "output/tmp/pwn"
-        assert sanitize_conv_id("--csrf_token") == "csrf_token" and guard_cli_positional("--help").startswith("\n")
-
-        orig_bridge_url, orig_path_sec, orig_hb_tok = cfg.AGY_HOST_BRIDGE_URL, cfg.PATH_SECRET, cfg.HOST_BRIDGE_TOKEN
-        cfg.PATH_SECRET, cfg.HOST_BRIDGE_TOKEN = test_secret, ""
-        expected_bridge_tok = derive_bridge_token(path_secret=test_secret, explicit_token="")
-        hb_mod.BRIDGE_TOKEN_OVERRIDE = expected_bridge_tok
-        hb_mod.HostBridgeHandler.quiet_logs = True
-        hb_srv = ThreadingHTTPServer(("127.0.0.1", 0), hb_mod.HostBridgeHandler)
-        hb_thread = threading.Thread(target=hb_srv.serve_forever, daemon=True)
-        hb_thread.start()
-        hb_url = f"http://127.0.0.1:{hb_srv.server_port}/agentapi"
-        cfg.AGY_HOST_BRIDGE_URL = hb_url
+        orig_bg_dir = cfg.AGY_BG_DIR
+        tmp_bg_obj = tempfile.TemporaryDirectory()
+        cfg.AGY_BG_DIR = Path(tmp_bg_obj.name)
         try:
-            def _hb_call(body_obj: dict, hdrs: dict[str, str]) -> tuple[int, dict]:
-                req_hb = urllib.request.Request(hb_url, data=json.dumps(body_obj).encode("utf-8"), headers=hdrs, method="POST")
-                try:
-                    with urllib.request.urlopen(req_hb, timeout=5) as r_hb:
-                        return r_hb.status, json.loads(r_hb.read().decode("utf-8"))
-                except urllib.error.HTTPError as e_hb:
-                    return e_hb.code, json.loads(e_hb.read().decode("utf-8"))
-
-            assert _hb_call({"action": "discover"}, {"Content-Type": "application/json"})[0] == 401, "Expected 401 without X-Bridge-Token"
-            assert _hb_call({"action": "discover"}, {"Content-Type": "application/json", "X-Bridge-Token": "wrong_token_" + "0" * 40})[0] == 401
-            assert _hb_call({"action": "discover"}, {"Content-Type": "application/json", "X-Bridge-Token": expected_bridge_tok, "Origin": "https://evil.example"})[0] == 403
-            st_home, body_home = _hb_call({"action": "git-inspect", "workspace_path": str(Path.home())}, cfg.get_host_bridge_headers())
-            assert st_home == 200 and body_home.get("ok") is False and "outside allowed roots" in str(body_home.get("error", ""))
-            st_nc, body_nc = _hb_call({"action": "new-conversation", "prompt": "hi", "workspace_path": str(Path.home())}, cfg.get_host_bridge_headers())
-            assert st_nc == 200 and body_nc.get("ok") is False and "outside allowed roots" in str(body_nc.get("error", ""))
-            st_git, body_git = _hb_call({"action": "git-inspect", "workspace_path": str(get_antigravity_config_repo()), "summary_only": True}, cfg.get_host_bridge_headers())
-            assert st_git == 200 and body_git.get("ok") is True, f"Authenticated git-inspect failed: {body_git}"
-
-            captured_payloads: list[dict] = []
-            def _mock_handler(p: dict) -> dict:
-                captured_payloads.append(p)
-                return {"ok": True, "returncode": 0, "conversation_id": p.get("conversation_id", dummy_cid)}
-
-            hb_mod.MOCK_ACTION_HANDLER = _mock_handler
-            res_override_raw = send_handoff_and_resume(
-                research_markdown="RESUME_STAGED",
+            staged_raw = send_handoff_and_resume(
+                research_markdown="# Self Test Staging\nStaged markdown body.",
                 session_identifier=dummy_cid,
                 spoken_passphrase=test_phrase,
-                resume_headless=True,
-                allow_chained_publish=True,
-                force_interrupt=True,
+                resume_headless=False,
             )
-            res_override = json.loads(res_override_raw)
-            assert "Staged markdown body." in staged_file.read_text(encoding="utf-8")
-            assert res_override.get("ok") is True and res_override.get("write_mode") == "read_staged"
-            assert res_override.get("execution_mode") == "fast", f"Expected auto->fast on chained headless publish, got {res_override.get('execution_mode')}"
-            assert captured_payloads and "<!-- Handshake Gemini Research Handoff -->" not in captured_payloads[0].get("prompt", ""), "RESUME_STAGED double-wrapped header!"
+            staged_obj = json.loads(staged_raw)
+            assert staged_obj.get("ok") is True and staged_obj.get("status") == "STAGED_ONLY" and staged_obj.get("resumed") is False
+            assert str(staged_obj.get("handoff_id", "")).endswith("-01") and staged_obj.get("handoff_status") == "STAGED"
+            assert "Do you understand the risk" in staged_obj.get("assistant_guidance", "")
+            staged_file = dummy_dir / "scratch" / "gemini_research_handoff.md"
+            assert staged_file.is_file() and "Staged markdown body." in staged_file.read_text(encoding="utf-8")
+
+            repo_root = Path(__file__).resolve().parents[2]
+            if str(repo_root) not in sys.path:
+                sys.path.insert(0, str(repo_root))
+            from http.server import ThreadingHTTPServer
+            import threading
+            import urllib.error
+            import urllib.request
+            import host_bridge.agy_host_bridge as hb_mod
+            from host_bridge.bridge_security import (
+                DEFAULT_BIND_HOST, derive_bridge_token, guard_cli_positional, is_client_ip_allowed,
+                resolve_allowed_git_roots, sanitize_conv_id, sanitize_git_ref,
+            )
+
+            assert DEFAULT_BIND_HOST == "127.0.0.1" and is_client_ip_allowed("127.0.0.1") and is_client_ip_allowed("172.18.0.5")
+            assert not is_client_ip_allowed("198.51.100.99") and not is_client_ip_allowed("203.0.113.42")
+            assert Path.home().resolve() not in resolve_allowed_git_roots(AGY_GITLAB_DIR, AGY_DATA_DIR, AGY_WORKSPACE_DIR)
+            assert sanitize_git_ref("--output=/tmp/pwn") == "output/tmp/pwn"
+            assert sanitize_conv_id("--csrf_token") == "csrf_token" and guard_cli_positional("--help").startswith("\n")
+
+            orig_bridge_url, orig_path_sec, orig_hb_tok = cfg.AGY_HOST_BRIDGE_URL, cfg.PATH_SECRET, cfg.HOST_BRIDGE_TOKEN
+            cfg.PATH_SECRET, cfg.HOST_BRIDGE_TOKEN = test_secret, ""
+            expected_bridge_tok = derive_bridge_token(path_secret=test_secret, explicit_token="")
+            hb_mod.BRIDGE_TOKEN_OVERRIDE = expected_bridge_tok
+            hb_mod.HostBridgeHandler.quiet_logs = True
+            hb_srv = ThreadingHTTPServer(("127.0.0.1", 0), hb_mod.HostBridgeHandler)
+            hb_thread = threading.Thread(target=hb_srv.serve_forever, daemon=True)
+            hb_thread.start()
+            hb_url = f"http://127.0.0.1:{hb_srv.server_port}/agentapi"
+            cfg.AGY_HOST_BRIDGE_URL = hb_url
+            try:
+                def _hb_call(body_obj: dict, hdrs: dict[str, str]) -> tuple[int, dict]:
+                    req_hb = urllib.request.Request(hb_url, data=json.dumps(body_obj).encode("utf-8"), headers=hdrs, method="POST")
+                    try:
+                        with urllib.request.urlopen(req_hb, timeout=5) as r_hb:
+                            return r_hb.status, json.loads(r_hb.read().decode("utf-8"))
+                    except urllib.error.HTTPError as e_hb:
+                        return e_hb.code, json.loads(e_hb.read().decode("utf-8"))
+
+                assert _hb_call({"action": "discover"}, {"Content-Type": "application/json"})[0] == 401
+                assert _hb_call({"action": "discover"}, {"Content-Type": "application/json", "X-Bridge-Token": "wrong_token_" + "0" * 40})[0] == 401
+                assert _hb_call({"action": "discover"}, {"Content-Type": "application/json", "X-Bridge-Token": expected_bridge_tok, "Origin": "https://evil.example"})[0] == 403
+                st_home, body_home = _hb_call({"action": "git-inspect", "workspace_path": str(Path.home())}, cfg.get_host_bridge_headers())
+                assert st_home == 200 and body_home.get("ok") is False and "outside allowed roots" in str(body_home.get("error", ""))
+                st_nc, body_nc = _hb_call({"action": "new-conversation", "prompt": "hi", "workspace_path": str(Path.home())}, cfg.get_host_bridge_headers())
+                assert st_nc == 200 and body_nc.get("ok") is False and "outside allowed roots" in str(body_nc.get("error", ""))
+                st_git, body_git = _hb_call({"action": "git-inspect", "workspace_path": str(get_antigravity_config_repo()), "summary_only": True}, cfg.get_host_bridge_headers())
+                assert st_git == 200 and body_git.get("ok") is True, f"Authenticated git-inspect failed: {body_git}"
+
+                captured_payloads: list[dict] = []
+                def _mock_handler(p: dict) -> dict:
+                    captured_payloads.append(p)
+                    return {"ok": True, "returncode": 0, "conversation_id": p.get("conversation_id", dummy_cid)}
+
+                hb_mod.MOCK_ACTION_HANDLER = _mock_handler
+                res_override_raw = send_handoff_and_resume(
+                    research_markdown="RESUME_STAGED",
+                    session_identifier=dummy_cid,
+                    spoken_passphrase=test_phrase,
+                    resume_headless=True,
+                    allow_chained_publish=True,
+                    force_interrupt=True,
+                )
+                res_override = json.loads(res_override_raw)
+                assert "Staged markdown body." in staged_file.read_text(encoding="utf-8")
+                assert res_override.get("ok") is True and res_override.get("write_mode") == "read_staged" and res_override.get("handoff_status") == "IN_WORK"
+                assert res_override.get("execution_mode") == "fast", f"Expected auto->fast on chained headless publish, got {res_override.get('execution_mode')}"
+                assert captured_payloads and "<!-- Handshake Gemini Research Handoff -->" not in captured_payloads[0].get("prompt", ""), "RESUME_STAGED double-wrapped header!"
+            finally:
+                hb_mod.MOCK_ACTION_HANDLER = None
+                hb_mod.BRIDGE_TOKEN_OVERRIDE = ""
+                hb_srv.shutdown()
+                hb_srv.server_close()
+                cfg.AGY_HOST_BRIDGE_URL, cfg.PATH_SECRET, cfg.HOST_BRIDGE_TOKEN = orig_bridge_url, orig_path_sec, orig_hb_tok
         finally:
-            hb_mod.MOCK_ACTION_HANDLER = None
-            hb_mod.BRIDGE_TOKEN_OVERRIDE = ""
-            hb_srv.shutdown()
-            hb_srv.server_close()
-            cfg.AGY_HOST_BRIDGE_URL, cfg.PATH_SECRET, cfg.HOST_BRIDGE_TOKEN = orig_bridge_url, orig_path_sec, orig_hb_tok
+            cfg.AGY_BG_DIR = orig_bg_dir
+            tmp_bg_obj.cleanup()
     finally:
         cfg.PASS_HASH = orig_hash
         shutil.rmtree(dummy_dir, ignore_errors=True)
-        for job_p in AGY_BG_DIR.glob(f"*{dummy_cid}*"):
-            job_p.unlink(missing_ok=True)
-    print("  [+] Context Exceeded Immunity, Timestamped Upload Batches & Two-Step Headless Override Gate: PASS")
+    print("  [+] Context Exceeded Immunity, Repo-Prefixed Handoff Queue & Two-Step Headless Override Gate: PASS")
     print("  [+] Host Bridge CWE-306 & CWE-88 Zero-Trust Auth, Loopback Default, CIDR & Root Sandbox: PASS")
     run_multimodal_media_self_test(test_phrase, expected_hash)
     print("  [+] Public Media Origin Resolution & <20 KB Multimodal WebP ImageContent MCP Endpoint: PASS")
@@ -456,23 +466,17 @@ def main() -> None:
     if len(PASS_HASH) != 64:
         sys.exit("FATAL: PASS_HASH must be a 64-character SHA-256 hex string. Run init_secrets.py to configure.")
 
+    praxis_tok = get_praxis_mcp_token(PATH_SECRET)
     poly_tok = get_polyglot_mcp_token(PATH_SECRET)
     print(f"[*] Starting agy-nexus-mcp v{__version__} on {BIND_HOST}:{BIND_PORT} (stateless_http=True, json_response=True)", flush=True)
     print(
         f"[*] Nexus MCP: /{PATH_SECRET[:6]}...{PATH_SECRET[-4:]}/mcp | "
-        f"Polyglot MCP (LAN-only): /polyglot/{poly_tok[:6]}...{poly_tok[-4:]}/mcp | "
+        f"Praxis MCP (LAN-only): /praxis/{praxis_tok[:6]}...{praxis_tok[-4:]}/mcp (+ /polyglot/ compat) | "
         f"Web Overwatch: /{PATH_SECRET[:6]}...{PATH_SECRET[-4:]}/web",
         flush=True,
     )
-    app = build_nexus_http_app(PATH_SECRET, poly_tok)
-    uvicorn.run(
-        app,
-        host=BIND_HOST,
-        port=BIND_PORT,
-        log_level="info",
-        access_log=False,
-        timeout_keep_alive=65,
-    )
+    app = build_nexus_http_app(PATH_SECRET, polyglot_token=poly_tok, praxis_token=praxis_tok)
+    uvicorn.run(app, host=BIND_HOST, port=BIND_PORT, log_level="info", access_log=False, timeout_keep_alive=65)
 
 
 if __name__ == "__main__":

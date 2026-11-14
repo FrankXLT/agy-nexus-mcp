@@ -17,10 +17,34 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+import hmac
+
+
 def normalize_phrase(phrase: str) -> str:
     """Strip punctuation, spaces, and casing, then return SHA-256 hex digest."""
     clean = re.sub(r"[^a-z0-9]", "", (phrase or "").lower())
     return hashlib.sha256(clean.encode("utf-8")).hexdigest()
+
+
+def _derive_praxis_token(path_secret: str) -> str:
+    """Derive deterministic 192-bit local agy-praxis-mcp doorway token."""
+    return hmac.new(path_secret.encode("utf-8"), b"agy-praxis-mcp-v1", hashlib.sha256).hexdigest()[:48]
+
+
+def _read_saved_secrets(env_path: Path) -> dict[str, str]:
+    """Read existing URL/token fields when --keep-existing-urls is requested."""
+    out: dict[str, str] = {}
+    if not env_path.is_file():
+        return out
+    try:
+        for raw in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            for key in ("SUBDOMAIN_HASH", "PATH_SECRET", "HOST_BRIDGE_TOKEN", "AG_BRIDGE_DOMAIN", "AG_BRIDGE_PUBLIC_URL"):
+                if line.startswith(f"{key}="):
+                    out[key] = line.split("=", 1)[1].strip().strip("'\"")
+    except Exception:
+        pass
+    return out
 
 
 def main() -> None:
@@ -36,26 +60,16 @@ def main() -> None:
     parser.add_argument("--max-file-chars", type=int, default=15000, help="Max characters returned per file slice (default: 15000)")
     parser.add_argument("--max-diff-chars", type=int, default=15000, help="Max characters returned per git diff page (default: 15000)")
     parser.add_argument("--enforce-modular", default="true", help="Enforce <=500 line modular architecture standard (default: true)")
-    parser.add_argument(
-        "--keep-existing-urls",
-        action="store_true",
-        help="Retain existing SUBDOMAIN_HASH and PATH_SECRET when rotating passphrase",
-    )
-    parser.add_argument(
-        "--quiet",
-        action="store_true",
-        help="Do not print generated secret tokens to stdout (only print masked confirmation)",
-    )
+    parser.add_argument("--keep-existing-urls", action="store_true", help="Retain existing SUBDOMAIN_HASH and PATH_SECRET when rotating passphrase")
+    parser.add_argument("--quiet", action="store_true", help="Do not print generated secret tokens to stdout (only print masked confirmation)")
     args = parser.parse_args()
 
     env_path = Path(args.env_file).expanduser().resolve()
-
     passphrase = args.passphrase
     if not passphrase:
         if sys.stdin.isatty():
             passphrase = getpass.getpass("Enter spoken voice passphrase for Antigravity deadbolt: ")
-            confirm = getpass.getpass("Confirm voice passphrase: ")
-            if passphrase != confirm:
+            if passphrase != getpass.getpass("Confirm voice passphrase: "):
                 sys.exit("Error: Passphrases did not match.")
         else:
             sys.exit("Error: --passphrase required when stdin is not an interactive terminal.")
@@ -63,38 +77,14 @@ def main() -> None:
     passphrase = passphrase.strip()
     if not passphrase:
         sys.exit("Error: Passphrase cannot be empty.")
-
     pass_hash = normalize_phrase(passphrase)
 
-    subdomain_hash = ""
-    path_secret = ""
-    host_bridge_token = ""
-    saved_domain = ""
-    saved_public_url = ""
-
-    if args.keep_existing_urls and env_path.is_file():
-        try:
-            for line in env_path.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if line.startswith("SUBDOMAIN_HASH="):
-                    subdomain_hash = line.split("=", 1)[1].strip().strip("'\"")
-                elif line.startswith("PATH_SECRET="):
-                    path_secret = line.split("=", 1)[1].strip().strip("'\"")
-                elif line.startswith("HOST_BRIDGE_TOKEN="):
-                    host_bridge_token = line.split("=", 1)[1].strip().strip("'\"")
-                elif line.startswith("AG_BRIDGE_DOMAIN="):
-                    saved_domain = line.split("=", 1)[1].strip().strip("'\"")
-                elif line.startswith("AG_BRIDGE_PUBLIC_URL="):
-                    saved_public_url = line.split("=", 1)[1].strip().strip("'\"")
-        except Exception:
-            pass
-
-    if not subdomain_hash:
-        subdomain_hash = secrets.token_hex(6)       # 12 hex characters
-    if not path_secret:
-        path_secret = secrets.token_hex(24)         # 48 hex characters (192 bits)
-    if not host_bridge_token:
-        host_bridge_token = secrets.token_hex(32)   # 64 hex characters (256 bits)
+    saved = _read_saved_secrets(env_path) if args.keep_existing_urls else {}
+    subdomain_hash = saved.get("SUBDOMAIN_HASH") or secrets.token_hex(6)
+    path_secret = saved.get("PATH_SECRET") or secrets.token_hex(24)
+    host_bridge_token = saved.get("HOST_BRIDGE_TOKEN") or secrets.token_hex(32)
+    saved_domain = saved.get("AG_BRIDGE_DOMAIN", "")
+    saved_public_url = saved.get("AG_BRIDGE_PUBLIC_URL", "")
 
     eff_domain = (args.domain if args.domain != "example.com" or not saved_domain else saved_domain).strip()
     if not re.fullmatch(r"[A-Za-z0-9.-]+", eff_domain):
@@ -105,6 +95,8 @@ def main() -> None:
 
     env_path.parent.mkdir(parents=True, exist_ok=True)
     full_url = f"https://ag-{subdomain_hash}.{eff_domain}/{path_secret}/mcp"
+    praxis_tok = _derive_praxis_token(path_secret)
+    praxis_url = f"http://127.0.0.1:8765/praxis/{praxis_tok}/mcp"
 
     ts = datetime.now(timezone.utc).isoformat()
     content = (
@@ -144,15 +136,17 @@ def main() -> None:
         print(f"[+] Secrets file initialized at {env_path} (mode 0600)")
         print(f"[+] Subdomain prefix: ag-{subdomain_hash[:4]}...{subdomain_hash[-4:]}.{args.domain}")
         print(f"[+] Capability path: /{path_secret[:6]}...{path_secret[-4:]}/mcp")
+        print(f"[+] Praxis IDE path: /praxis/{praxis_tok[:6]}...{praxis_tok[-4:]}/mcp")
         print(f"[+] Deadbolt SHA-256: {pass_hash[:8]}...{pass_hash[-6:]}")
         return
 
     print("\n" + "=" * 70)
-    print(" agy-nexus-mcp Configuration & Secrets Initialized ")
+    print(" agy-nexus-mcp & agy-praxis-mcp Secrets Initialized ")
     print("=" * 70)
     print(f"[+] Secrets File:    {env_path} (mode: 600)")
     print(f"[+] Subdomain:       ag-{subdomain_hash}.{args.domain}")
-    print(f"[+] Endpoint URL:    {full_url}")
+    print(f"[+] Nexus Cloud URL: {full_url}")
+    print(f"[+] Praxis LAN URL:  {praxis_url}")
     print(f"[+] Deadbolt Hash:   {pass_hash[:12]}...{pass_hash[-8:]}")
     print(f"[+] Deadbolt TTL:    {args.ttl}s")
     print(f"[+] File Slice Cap:  {args.max_file_chars} chars (line-range pagination enabled)")
