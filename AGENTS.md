@@ -6,49 +6,71 @@ Any AI coding assistant (Google Antigravity, Gemini CLI, Claude Code, Cursor, or
 
 ---
 
-## 1. Modular Package Architecture (`src/agy_nexus/`)
+## 1. Modular Package Architecture (`src/agy_nexus/`, `host_bridge/`, `web/`)
 
-All server implementation code lives in `src/agy_nexus/`. The root `ag_bridge.py` file is a **51-line backward-compatible entrypoint shim** that prepends `src/` to `sys.path` and re-exports public symbols so existing Docker Compose, `systemd`, and CLI invocations continue to work without breaking changes.
+All server implementation code lives in `src/agy_nexus/`. The root `ag_bridge.py` file is a **75-line backward-compatible entrypoint shim** that prepends `src/` to `sys.path` and re-exports public symbols so existing Docker Compose, `systemd`, and CLI invocations continue to work without breaking changes.
 
-### Module Responsibilities
+### Backend & Host Bridge Module Responsibilities
 
 | Module | Lines | Responsibility |
 | :--- | :---: | :--- |
-| `src/agy_nexus/config.py` | ~332 | Environment/secrets loading (`secrets.env`), `PRAXIS_MCP_TOKEN` + legacy `POLYGLOT_MCP_TOKEN` derivation, SHA-256 voice passphrase normalization, sliding-TTL Deadbolt gate, `fcntl.flock` atomic keyed `active_contexts` slots, and `FastMCP` initialization |
-| `src/agy_nexus/hygiene.py` | ~276 | `< 20 KB` progressive wire compaction, centralized `is_sensitive_filename()` filter, line-range file slicing (`slice_file_content`), diff pagination (`paginate_diff`), and `<= 500L` (`650L` ceiling) modular auditing |
+| `src/agy_nexus/config.py` | ~387 | Environment/secrets loading (`secrets.env`), `PRAXIS_MCP_TOKEN` + legacy `POLYGLOT_MCP_TOKEN` derivation, SHA-256 voice passphrase normalization, sliding-TTL Deadbolt gate, `fcntl.flock` atomic keyed `active_contexts` slots, Sequential Read-Only Governance instructions, and `FastMCP` initialization |
+| `src/agy_nexus/hygiene.py` | ~269 | `< 20 KB` progressive wire compaction, centralized `is_sensitive_filename()` filter, line-range file slicing (`slice_file_content`), diff pagination (`slice_git_diff`), and `<= 500L` (`650L` ceiling) modular auditing |
 | `src/agy_nexus/polyglot_outline.py` | ~639 | Unified multi-language Polyglot semantic outliner (`.py`, `.js/.ts/.tsx`, `.vue`, `.md`, `.json/.jsonc`, `.yaml`, `.go`, `.rs`, `.sh`, `.sql`, `.html/.css`) with `Lstart-Lend` spans, 1-liner summaries, YAML scalar redaction, and `>100L` function warnings |
-| `src/agy_nexus/polyglot_index.py` | ~412 | Incremental `(mtime_ns, size)` + `sha256` per-workspace JSON semantic index (`0700`/`0600` permissions) powering `polyglot_map`, `polyglot_search`, and `polyglot_outline` |
-| `src/agy_nexus/handoff_queue.py` | ~445 | `fcntl.flock` atomic repo-prefixed incremental handoff queue (`<repo-slug>-01`, `<repo-slug>-02`...) with `STAGED`, `IN_WORK`, `SUPERSEDED`, and `COMPLETED` lifecycle states and IDE disambiguation |
-| `src/agy_nexus/tools_praxis.py` | ~164 | Deadbolt-free local `FastMCP("agy-praxis-mcp")` internal workstation doorway (`polyglot_map`, `polyglot_search`, `polyglot_outline`, `praxis_handoff_inbox`, `praxis_claim_handoff`, `praxis_update_handoff`), `--stdio` entrypoint, and `--self-test` |
-| `src/agy_nexus/tools_polyglot.py` | ~19 | Backward-compatible re-export shim aliasing `praxis_mcp` as `polyglot_mcp` for existing CLI and import consumers |
-| `src/agy_nexus/virtual_uris.py` | ~318 | Virtual URI dispatcher for `brain:<subpath>`, `transcript:latest|turn|step`, `praxis:map|search|handoffs` (`polyglot:map|search`), and policy-safe `telemetry:stats|quota|wire|export_notebook` |
-| `src/agy_nexus/inventory.py` | ~349 | Antigravity IDE config scanner (`agents/`, `skills/`, `plugins/`, `profiles/`), guarded customization file resolver, MCP server discovery, and workspace enumeration |
+| `src/agy_nexus/polyglot_index.py` | ~426 | Incremental `(mtime_ns, size)` + `sha256` per-workspace JSON semantic index (`0700`/`0600` permissions) powering `polyglot_map`, `polyglot_search`, and `polyglot_outline` |
+| `src/agy_nexus/handoff_queue.py` | ~538 | `fcntl.flock` atomic repo-prefixed incremental handoff queue (`<repo-slug>-01`, `<repo-slug>-02`...) with `STAGED`, `IN_WORK`, `SUPERSEDED`, and `COMPLETED` lifecycle states, automatic completion reconciliation, and IDE disambiguation |
+| `src/agy_nexus/tools_praxis.py` | ~167 | Deadbolt-free local `FastMCP("agy-praxis-mcp")` internal workstation doorway (`polyglot_map`, `polyglot_search`, `polyglot_outline`, `praxis_handoff_inbox`, `praxis_claim_handoff`, `praxis_update_handoff`), `--stdio` entrypoint, and `--self-test` |
+| `src/agy_nexus/tools_polyglot.py` | ~18 | Backward-compatible re-export shim aliasing `praxis_mcp` as `polyglot_mcp` for existing CLI and import consumers |
+| `src/agy_nexus/virtual_uris.py` | ~320 | Virtual URI dispatcher for `brain:<subpath>`, `transcript:latest|turn|step`, `praxis:map|search|handoffs` (`polyglot:map|search`), and policy-safe `telemetry:stats|quota|wire|export_notebook` |
+| `src/agy_nexus/inventory.py` | ~361 | Antigravity IDE config scanner (`agents/`, `skills/`, `plugins/`, `profiles/`), guarded customization file resolver, MCP server discovery, and workspace enumeration |
 | `src/agy_nexus/telemetry_scanner.py` | ~305 | Local-timezone transcript JSONL scanner (`transcript.jsonl`), activity heatmap aggregator, client surface classifier, and per-model token attribution |
-| `src/agy_nexus/ascii_default.py` | ~296 | `72-col` standard (`style="default"`) and `40-col` mobile (`style="quick"`) Unicode block (`░▒▓█`) ASCII telemetry renderers |
+| `src/agy_nexus/ascii_default.py` | ~297 | `72-col` standard (`style="default"`) and `40-col` mobile (`style="quick"`) Unicode block (`░▒▓█`) ASCII telemetry renderers |
 | `src/agy_nexus/ascii_rich.py` | ~181 | `76-col` widescreen box-drawn ASCII telemetry rig (`style="rich"`) |
-| `src/agy_nexus/session_tree.py` | ~372 | 76-column copy-ready ASCII `Project -> Chat -> Session ID` + `[HANDOFF <slug>-NN]` hierarchy builder, parallel slot telemetry, and 3-2-1 backup manifest reader |
-| `src/agy_nexus/session_status.py` | ~345 | Session health warnings, compaction tracking, context rollover budget, and in-flight handoff mutex |
-| `src/agy_nexus/code_health.py` | ~266 | Cached GitHub release comparator (`installed` vs `remote`), `<= 500L` (`650L` ceiling) modular hygiene scanner, and Polyglot symbol health aggregator |
-| `src/agy_nexus/stats_series.py` | ~252 | Sub-daily (`1h`/`2h`/`6h`/`24h`) stacked model, subagent, and project velocity + staged handoff hierarchy series builder |
-| `src/agy_nexus/stats.py` | ~325 | Unified telemetry builder (`build_nexus_stats_bundle`) combining Dual-Pool quota pacing, locked sub-daily series, session hierarchy, and 3-tier ASCII views |
-| `src/agy_nexus/workflows.py` | ~291 | Cross-app workflow implementations (`inspect_multi_repo_drift`, `export_notebook_bundle` with `dry_run` preview, quarantine handoff staging) |
-| `src/agy_nexus/media.py` | ~253 | Ephemeral 30-minute HMAC-SHA256 `/web/media/` signer, verified public HTTPS origin resolver, and visual artifact discovery |
+| `src/agy_nexus/session_tree.py` | ~322 | 76-column copy-ready ASCII `Project -> Chat -> Session ID` + `[HANDOFF <slug>-NN]` hierarchy builder, parallel slot telemetry, and 3-2-1 backup manifest reader |
+| `src/agy_nexus/session_status.py` | ~454 | Session health warnings, compaction tracking, 5-posture continuity-aware rollover evaluator (`FRESH`, `SEAM_AWARE`, `HOLD_FOR_COMPLETION`, `CLOSEOUT_ONLY`, `HARD_ROLLOVER`), and in-flight handoff mutex |
+| `src/agy_nexus/retirement.py` | ~177 | Terminal session closeout & in-place retirement manifest (`RETIRED.json`), prior-session baton extractor, closeout step-cap exemption, and job-first 1-tap `Yes` `suggested_actions` engine |
+| `src/agy_nexus/code_health.py` | ~317 | Cached GitHub release comparator (`installed` vs `remote`), `<= 500L` (`650L` ceiling) modular hygiene scanner, and Polyglot symbol health aggregator |
+| `src/agy_nexus/stats_series.py` | ~276 | `1h` adaptive base slot grids (`24h` for yearly), stacked model/subagent/project velocity series, and canonical Top-10 project-to-session hierarchy bands |
+| `src/agy_nexus/stats.py` | ~415 | Unified telemetry builder (`build_nexus_stats_bundle`) combining Dual-Pool quota pacing, 52-week muted calendar matrix, sub-daily series, and 3-tier ASCII views |
+| `src/agy_nexus/workflows.py` | ~303 | Cross-app workflow implementations (`inspect_multi_repo_drift`, `export_notebook_bundle` with `dry_run` preview & SHA-256 deduplication, quarantine handoff staging) |
+| `src/agy_nexus/media.py` | ~311 | 7-day (`604800s`) HMAC-SHA256 `/web/media/` signer, canonical PWA deep-link builder (`workspace_url`), verified public HTTPS origin resolver, and visual artifact discovery |
+| `src/agy_nexus/bucket_api.py` | ~548 | Hierarchical 2-Pane Workspace tree (`build_workspace_tree_payload`), session bucket inventory, Markdown media link rewriter, and traversal-guarded streaming `.zip` archiver (`build_session_zip`) |
+| `src/agy_nexus/web_routes.py` | ~230 | Static PWA asset server (`PWA_ASSETS`, `GET`/`HEAD` support), `/web/media/` verification handler, and `/web/api/*` telemetry, bucket, file, and `.zip` routes |
 | `src/agy_nexus/uploads.py` | ~255 | Session scratch batch upload receiver (`POST /web/api/sessions/<conv_id>/upload`), `INDEX.md` generator, and file-size/type validator |
-| `src/agy_nexus/webhook_proxy.py` | ~83 | GitHub $\rightarrow$ GitLab webhook proxy handler |
-| `src/agy_nexus/sessions.py` | ~316 | Read-only SQLite `conversation_summaries.db` indexer, `NEXUS_PROJECT_ID` workspace mapper, status classifier, and concurrent writer detector |
-| `src/agy_nexus/routing.py` | ~201 | Authenticated Host Companion (`:8098`) RPC caller, `<repo-slug>-NN` session resolver, Dual-Pool quota router (`quota-router.sh`), and skill keyword router |
-| `src/agy_nexus/search.py` | ~304 | Monotonic wall-clock bounded multi-repo `git grep` scanner, Tier-0 pinned session `transcript_full.jsonl` + `brain/` search, and SQLite FTS5 search |
-| `src/agy_nexus/workspace.py` | ~357 | 3-Tier Smart Path Resolver (`_resolve_and_read_files`), virtual URI router, git diff/status helper, and background job monitor |
-| `src/agy_nexus/tools_session.py` | ~371 | MCP tools: `unlock_sessions`, `lock_bridge`, `list_saved_sessions`, `load_session_into_gemini` |
-| `src/agy_nexus/tools_workspace.py` | ~313 | MCP tools: `ask_workspace_readonly`, `inspect_git_diff`, `get_visual_artifact` |
-| `src/agy_nexus/tools_media.py` | ~398 | MCP tool: `inspect_visual_artifacts` (`840px` 2-up WebP encoding within `< 20 KB` wire budget) |
-| `src/agy_nexus/tools_ops.py` | ~358 | MCP tools: `get_session_tree` (with policy-safe `include_stats=True`), `list_models_and_agents`, `manage_background_run` |
-| `src/agy_nexus/target_resolver.py` | ~223 | Fail-closed workspace/project resolver, 3-pillar path alias normalizer (`projects/<slug>`, `~/projects/<slug>`), and `create_new_project=True` greenfield guardrail |
-| `src/agy_nexus/handoff.py` | ~455 | MCP tool: `send_handoff_and_resume` (repo-prefixed `<slug>-NN` staging, `RESUME_STAGED` repo isolation, `PROJECT_NOT_FOUND` guardrail, and headless wakeup) |
-| `src/agy_nexus/middleware.py` | ~543 | `BridgeCompatMiddleware` (Streamable HTTP `405` spec handling, zero-trust LAN-only `/praxis/` + `/polyglot/` guard, multiplexed lifespan, `/web` PWA, `/web/media/`, `/health`) |
-| `src/agy_nexus/server.py` | ~484 | Dual-MCP (`Nexus` + `Praxis`) Starlette/Uvicorn builder, `anyio.to_thread.run_sync` sync-tool offload, `--self-test` runner, and `main()` CLI entrypoint |
-| `host_bridge/project_manager.py` | ~240 | Unified `:8098` Language Server discovery, `CreateProject` registration (`ANTIGRAVITY_PROJECT_ID`), and JSON-first `conversationId` extractor |
-| `host_bridge/agy_host_bridge.py` | ~295 | Unified authenticated `/agentapi` handler shared by `agy_host_bridge` and `agy-host-bridge.service` |
+| `src/agy_nexus/webhook_proxy.py` | ~83 | Signed GitHub $\rightarrow$ GitLab webhook reverse-proxy handler (`/github-webhook-sync`) |
+| `src/agy_nexus/sessions.py` | ~335 | Read-only SQLite `conversation_summaries.db` indexer, canonical project mapper, status classifier, and concurrent writer detector |
+| `src/agy_nexus/routing.py` | ~304 | Authenticated Host Companion (`:8098`) RPC caller, `<repo-slug>-NN` session resolver, cross-repo slot isolation (`_session_matches_workspace`), and Dual-Pool quota router |
+| `src/agy_nexus/search.py` | ~311 | Monotonic wall-clock bounded multi-repo `git grep` scanner, Tier-0 pinned session `transcript_full.jsonl` + `brain/` search, and SQLite FTS5 search |
+| `src/agy_nexus/workspace.py` | ~477 | 3-Tier Smart Path Resolver (`_resolve_and_read_files`), 3-pillar path normalizer, virtual URI router, and git diff/status helper |
+| `src/agy_nexus/tools_session.py` | ~370 | MCP tools: `unlock_sessions`, `lock_bridge`, `list_saved_sessions`, `load_session_into_gemini` |
+| `src/agy_nexus/tools_workspace.py` | ~326 | MCP tools: `ask_workspace_readonly`, `inspect_git_diff` |
+| `src/agy_nexus/tools_media.py` | ~426 | MCP tool: `inspect_visual_artifacts` (`840px` 2-up WebP encoding within `< 20 KB` wire budget + 7-day signed links) |
+| `src/agy_nexus/tools_ops.py` | ~353 | MCP tools: `get_session_tree` (with policy-safe `include_stats=True`), `list_models_and_agents`, `manage_background_run` |
+| `src/agy_nexus/target_resolver.py` | ~335 | Fail-closed workspace/project resolver, 3-pillar path alias normalizer (`projects/<slug>`, `~/projects/<slug>`), and `create_new_project=True` greenfield guardrail |
+| `src/agy_nexus/handoff.py` | ~488 | MCP tool: `send_handoff_and_resume` (repo-prefixed `<slug>-NN` staging, `RESUME_STAGED` repo isolation, `session_continuity` & `retire_session` closeout, and headless wakeup) |
+| `src/agy_nexus/middleware.py` | ~407 | `BridgeCompatMiddleware` (Streamable HTTP `405` spec handling, zero-trust LAN-only `/praxis/` + `/polyglot/` guard, multiplexed lifespan, `/web` PWA routing, `/health`) |
+| `src/agy_nexus/server.py` | ~498 | Dual-MCP (`Nexus` + `Praxis`) Starlette/Uvicorn builder, `anyio.to_thread.run_sync` sync-tool offload, `--self-test` runner, and `main()` CLI entrypoint |
+| `host_bridge/project_manager.py` | ~356 | Unified `:8098` Language Server discovery, `CreateProject` registration (`ANTIGRAVITY_PROJECT_ID`), and JSON-first `conversationId` extractor |
+| `host_bridge/agy_host_bridge.py` | ~298 | Unified authenticated `/agentapi` handler shared by `agy_host_bridge` and `agy-host-bridge.service` |
+| `host_bridge/bridge_security.py` | ~198 | Constant-time `X-Bridge-Token` auth, peer CIDR allowlist, anti-CSRF envelope checks, and `git-inspect` workspace sandboxing |
+
+### Frontend Overwatch & Workspace Shell (`web/`)
+
+| File | Lines | Responsibility |
+| :--- | :---: | :--- |
+| `web/index.html` | ~460 | Unified 42px Studio Topbar (`Analytics` \| `Workspace`), KPI & chart containers, 2-Pane Workspace shell, Settings popover, Upload & Lightbox dialogs |
+| `web/styles.css` | ~620 | 4 surface themes (`Obsidian`, `Dark Paper`, `Warm Paper`, `Pure White`), shared `D1–D4` density tokens, single-hue `#2563eb` heatmap ramp, and responsive Desktop/Foldable/Mobile layout rules |
+| `web/app.js` | ~649 | Dashboard controller, surface switcher, compact borderless tabular legends, 52w/26w heatmap renderer, PWA deep-link handler, and Settings menu |
+| `web/explorer.js` | ~416 | 2-Pane Workspace Explorer (collapsible `240px <-> 38px <-> 0px` Zen sidebar, `overview` / `batch` / `doc` / `queue` stages, inline drag/paste uploader, and Lightbox) |
+| `web/gallery_select.js` | ~257 | Multi-Select Visual Gallery state, Shift+Click range, rubber-band marquee, Web Share API v2 (`shareToGemini`), `<canvas>` Contact Sheet, and bulk `.zip` / PNG downloads |
+| `web/markdown_renderer.js` | ~482 | Quiet UI Editorial HTML Markdown renderer (Tufte Booktabs, GFM callouts, SVG/Mermaid diagrams, handoff metadata banner, and DOMParser XSS sanitizer) |
+| `web/hierarchy.js` | ~430 | Plot 3 stacked project/session bands, 1-line Project Swatch Strip, and Hierarchy tree with 8-char Session ID pills & `<slug>-NN` handoff rows |
+| `web/charts.js` | ~421 | Divisor-of-24h adaptive DPI slot binning (`3h`/`4h`/`8h`/`12h`/`48h`), stacked SVG bar renderer, and URL query state sync |
+| `web/demo_data.js` | ~450 | Deterministic depersonalized `?demo=1` generator for both Analytics (52w calendar + 36-module hygiene) and 2-Pane Workspace Explorer |
+| `web/uploads.js` | ~249 | Modal drag-and-drop batch file uploader & evaluator prompt copier |
+| `web/health.js` | ~185 | Row 6 Code Health, Praxis Semantic Index & Modular Hygiene watchlist renderer |
+| `web/palettes.js` | ~174 | Perceptual 10-hue OKLCH project palette & session shade generator |
+| `web/sw.js` | ~64 | Root-scoped network-first Service Worker (`SHELL_ASSETS` & `SHELL_NAMES`) |
 
 ---
 
@@ -72,7 +94,7 @@ All server implementation code lives in `src/agy_nexus/`. The root `ag_bridge.py
    - Every `agy-nexus-mcp` tool that reads or mutates session/workspace state **must** check `if not is_unlocked() and not try_inline_unlock(spoken_passphrase): return LOCKED_RESPONSE`.
    - The local `agy-praxis-mcp` doorway (`/praxis/{PRAXIS_MCP_TOKEN}/mcp` and legacy `/polyglot/{POLYGLOT_MCP_TOKEN}/mcp`) **must** enforce constant-time token verification (`hmac.compare_digest`) and immediately reject (`403`) any request carrying reverse-proxy headers, browser `Origin` headers, public `Host` domains, or non-private client IPs.
 3. **Path Traversal & Sensitive File Protection**:
-   - All file and repository paths resolved by `workspace.py`, `search.py`, and `polyglot_index.py` **must** be canonicalized via `Path.resolve()`, checked with `.is_relative_to(ws_path)`, and filtered through `is_sensitive_filename()`.
+   - All file, archive, and repository paths resolved by `workspace.py`, `search.py`, `bucket_api.py`, `uploads.py`, and `polyglot_index.py` **must** be canonicalized via `Path.resolve()`, checked with `.is_relative_to(...)`, and filtered through `is_sensitive_filename()`.
 4. **Strict Depersonalization**:
    - Never commit personal hostnames, private LAN IPs, real domains, or local username paths into the repository. Use generic placeholders (`your-domain.example.com`, `/home/dev/...`).
 
@@ -97,14 +119,17 @@ The `agents/` directory contains ready-to-use subagent definitions (`~/.gemini/c
 
 ## 5. Verification & Self-Test Commands
 
-Before committing any change, run the automated self-test suite:
+Before committing any change, run both the `pytest` regression suites (`50+` unit & integration checks) and the built-in self-test runners:
 
 ```bash
+uv run --with pytest --with pytest-asyncio pytest
 python3 ag_bridge.py --self-test
+python3 -m agy_nexus.tools_praxis --self-test
 ```
 
-Or via `uv`:
+Or standalone via `uv`:
 
 ```bash
 uv run --no-project --with fastmcp --with uvicorn --with starlette --with pydantic --with psutil python3 ag_bridge.py --self-test
 ```
+

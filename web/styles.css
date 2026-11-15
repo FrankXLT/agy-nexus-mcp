@@ -10,9 +10,9 @@
 [data-density="D3"] { --pad-shell: 12px; --pad-card: 10px; --grid-gap: 9px; --card-pad: 10px; --tree-w: 220px; --cell-pad: 5px 4px; --chart-h: 184px; --hero-size: 21px; --base-font: 12px; }
 [data-density="D4"] { --pad-shell: 8px; --pad-card: 7px; --grid-gap: 6px; --card-pad: 7px; --tree-w: 200px; --cell-pad: 3px 3px; --chart-h: 156px; --hero-size: 18px; --base-font: 11px; }
 
-html { scrollbar-gutter: stable; }
+html { scrollbar-gutter: stable; overflow-x: clip; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: var(--bg-canvas); color: var(--text-main); font-family: var(--font-sans); font-size: var(--base-font); line-height: 1.45; -webkit-font-smoothing: antialiased; padding-bottom: 48px; }
+body { background: var(--bg-canvas); color: var(--text-main); font-family: var(--font-sans); font-size: var(--base-font); line-height: 1.45; -webkit-font-smoothing: antialiased; padding-bottom: 48px; overflow-x: clip; }
 .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 /* Top Navigation Bar & Segmented Metric Toggle */

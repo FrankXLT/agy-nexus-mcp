@@ -177,17 +177,20 @@ def test_cross_repo_slot_isolation_in_inspect_visual_artifacts(monkeypatch: pyte
 
 def test_real_workspace_cross_repo_slot_isolation() -> None:
     """Verify slot isolation with real existing project workspaces on disk."""
-    ws_nexus = Path("/home/FrankXLT/agentic_workspace/projects/agy-nexus-mcp")
-    ws_oa = Path("/home/FrankXLT/agentic_workspace/projects/oaworkbench-workspace")
-    if not (ws_nexus.is_dir() and ws_oa.is_dir()):
-        pytest.skip("Real project workspaces not present")
+    ws_nexus = Path(__file__).resolve().parents[1]
+    ws_sibling = next(
+        (p for p in sorted(ws_nexus.parent.iterdir()) if p.is_dir() and p != ws_nexus and not p.name.startswith(".")),
+        None,
+    )
+    if ws_sibling is None or not ws_nexus.is_dir():
+        pytest.skip("Sibling project workspace not present")
 
-    conv_oa = "conv-real-oa-test"
+    conv_sib = "conv-real-sibling-test"
     pin_session_context(
-        conv_oa,
-        title="OA Workbench Task",
-        workspace=str(ws_oa),
-        workspace_uris=[str(ws_oa)],
+        conv_sib,
+        title="Sibling Workspace Task",
+        workspace=str(ws_sibling),
+        workspace_uris=[str(ws_sibling)],
         set_default=True,
     )
 
@@ -200,8 +203,8 @@ def test_real_workspace_cross_repo_slot_isolation() -> None:
     assert resolved_ws.resolve() == ws_nexus.resolve()
 
     # Slot must be preserved
-    assert SESSION_STATE["active_contexts"][conv_oa]["workspace"] == str(ws_oa)
-    assert SESSION_STATE["session_workspace_map"][conv_oa] == str(ws_oa)
+    assert SESSION_STATE["active_contexts"][conv_sib]["workspace"] == str(ws_sibling)
+    assert SESSION_STATE["session_workspace_map"][conv_sib] == str(ws_sibling)
 
 
 def test_readonly_tools_guidance_strings() -> None:

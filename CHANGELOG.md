@@ -27,11 +27,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Added `workspace_url` to visual artifacts and updated PWA manifest with `handle_links: "preferred"` and `launch_handler`.
   - Deep link handler in PWA supporting authenticated direct jump and unauthenticated in-app media viewer fallback with unlock button.
 - **In-Place Terminal Session Closeout & Deterministic 5-Phase Suggested Actions (`src/agy_nexus/retirement.py`, `src/agy_nexus/handoff.py`, `src/agy_nexus/session_status.py`, `src/agy_nexus/config.py`)**:
-  - Extracted `src/agy_nexus/retirement.py` (212L <= 220L) providing terminal session retirement (`RETIRED.json`), cleanup directives (`git worktree prune`), and closeout step-cap exemption.
-  - Added `retire_session: bool = False` to `send_handoff_and_resume` (slimmed to 85L <= 95L).
-  - Deterministic 5-phase `suggested_actions` protocol integrated into FastMCP instructions and `/web#workspace` RETIRED posture badge.
+  - Extracted `src/agy_nexus/retirement.py` (177L <= 220L) providing terminal session retirement (`RETIRED.json`), prior-session baton extraction, cleanup directives (`git worktree prune`), and closeout step-cap exemption (`session_continuity="closeout"`).
+  - Added `retire_session: bool = False` to `send_handoff_and_resume` (85L <= 95L).
+  - Job-first 1-tap `Yes` `suggested_actions` transitions (`ready_to_run`, `in_flight`, `ready_to_ship`) integrated into FastMCP instructions and `/web#workspace` `RETIRED` posture badge.
 
 ### Fixed
+- **PWA Asset Registry, Responsive Topbar, Foldable KPI Grid & Hierarchy Polish (`src/agy_nexus/web_routes.py`, `web/styles.css`, `web/app.js`, `web/explorer.js`, `web/hierarchy.js`)**:
+  - Added `"gallery_select.js"` and HTTP `HEAD` support to `PWA_ASSETS` in `web_routes.py` plus an automated `index.html` $\leftrightarrow$ `PWA_ASSETS` / `sw.js` `SHELL_NAMES` parity test (`test_pwa_assets_and_shell_names_integrity`).
+  - Prevented vertical button wrapping in `.topbar`, hid navigation controls while `#authOverlay` is locked, enforced a single-row primary mobile topbar (`<= 780px`), and preserved 4-across KPI cards on unfolded foldables (`>= 781px`).
+  - Wired `26w | 53w` heatmap buttons to re-render immediately, sliced `26w` at clean Monday boundaries without clipping `Mon–Sun` labels, replaced raw 36-char UUIDs in Hierarchy rows with compact 8-char click-to-copy pills, and synchronized `#navWorkspaceBadge` with active staged/in-work tickets.
 - **Markdown & Breadcrumb Bug Fixes (`web/markdown_renderer.js`, `src/agy_nexus/bucket_api.py`)**:
   - Fixed `__MK_TOKEN_N__` token leak in markdown links wrapping inline code via multi-pass token restoration.
   - Stripped HTML metadata comments (`<!--[\s\S]*?-->`) in Editorial HTML view mode.

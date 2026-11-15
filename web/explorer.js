@@ -101,6 +101,11 @@
     const viewer = document.getElementById("workspaceContentViewer");
     if (!viewer) return;
     viewer.innerHTML = `<div class="viewer-loading mono">Loading ${escapeHtmlSafe(expState.selectedFileName)}...</div>`;
+    if (typeof state !== "undefined" && state.demoMode && window.DEMO_DOC_FILES?.[relPath]) {
+      const docMd = window.DEMO_DOC_FILES[relPath];
+      expState.selectedFileSize = docMd.length; expState.rawFileContent = docMd; expState.renderedHtmlContent = docMd;
+      renderDocViewerContent(viewer); renderSessionHeader(); return;
+    }
     try {
       const qPath = encodeURIComponent(relPath.includes("staged_handoffs/") ? relPath.slice(relPath.indexOf("staged_handoffs/")) : relPath);
       const cid = isQueue ? (expState.selectedSessionId || expState.treeData?.selected_session || "00000000-0000-0000-0000-000000000000") : expState.selectedSessionId;

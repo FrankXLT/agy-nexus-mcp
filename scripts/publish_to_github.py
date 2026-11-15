@@ -88,7 +88,7 @@ def _read_package_version(src_root: Path) -> str:
         m = re.search(r'^version\s*=\s*"([^"]+)"', pyproject.read_text(encoding="utf-8"), re.M)
         if m:
             return m.group(1).strip()
-    return "2.7.0"
+    return "3.1.0"
 
 
 def _extract_changelog_section(src_root: Path, version: str) -> str:
@@ -108,7 +108,7 @@ def main() -> int:
     parser.add_argument("--repo", default="agy-nexus-mcp", help="Target GitHub repository name (default: agy-nexus-mcp)")
     parser.add_argument(
         "--description",
-        default="Streamable HTTP MCP server, Chromium PWA dashboard, and 3-tier ASCII telemetry connecting Google Gemini to Antigravity IDE.",
+        default="Streamable HTTP MCP server, Unified 2-Pane Workspace & Analytics PWA, local Praxis MCP doorway, and 3-tier ASCII telemetry connecting Google Gemini to Antigravity IDE.",
         help="GitHub repository description",
     )
     parser.add_argument("--private", action="store_true", help="Create the GitHub repository as private (default: public)")
@@ -231,7 +231,7 @@ def main() -> int:
             print(f"[✓] Branch main on https://github.com/{gh_login}/{repo_name} is already up to date.")
 
     if not args.no_release:
-        rel_title = args.release_title.strip() or f"{tag_name} — Unified Incremental Polyglot MCP, Virtual URIs, Zero-Trust Host Bridge & Modular v2.7 Architecture"
+        rel_title = args.release_title.strip() or f"{tag_name} — Unified 42px Studio Shell, 2-Pane Workspace Explorer, Multi-Select Gallery & In-Place Session Closeout"
         rel_body = _extract_changelog_section(src_root, pkg_version)
         st_existing, existing_rel = _github_api("GET", f"/repos/{gh_login}/{repo_name}/releases/tags/{tag_name}", token)
         if st_existing == 200 and existing_rel.get("id"):

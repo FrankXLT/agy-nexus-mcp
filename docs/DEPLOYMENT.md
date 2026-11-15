@@ -16,10 +16,11 @@ python3 scripts/init_secrets.py --domain <your-domain>
 ```
 You'll be prompted for a passphrase. The script writes `~/.config/ag-bridge-mcp/secrets.env` with:
 - `SUBDOMAIN_HASH`: 12-character random subdomain (used as `ag-{SUBDOMAIN_HASH}`)
-- `AG_BRIDGE_DOMAIN` & `AG_BRIDGE_PUBLIC_URL`: Public `https://` origin (`https://ag-{SUBDOMAIN_HASH}.<your-domain>`, origin-only without `PATH_SECRET`) used when generating signed `/web/media/` links
-- `PATH_SECRET`: 48-character random URL path
-- `PASS_HASH`: SHA-256 hash of your normalized passphrase
+- `AG_BRIDGE_DOMAIN` & `AG_BRIDGE_PUBLIC_URL`: Public `https://` origin (`https://ag-{SUBDOMAIN_HASH}.<your-domain>`, origin-only without `PATH_SECRET`) used when generating 7-day signed `/web/media/` and PWA deep links
+- `PATH_SECRET`: 48-character random URL path (`192 bits`)
+- `PASS_HASH`: SHA-256 hash of your voice-normalized passphrase
 - `HOST_BRIDGE_TOKEN`: 64-character shared secret authenticating local `agy-host-bridge` `/agentapi` RPCs
+- `PRAXIS_MCP_TOKEN` *(optional override; defaults deterministically to `HMAC-SHA256(PATH_SECRET, "agy-praxis-mcp-v1")[:48]`, alongside legacy `POLYGLOT_MCP_TOKEN`)*
 - `TTL_SECONDS`: `7200` (2-hour inactivity lock timer)
 - `BIND_HOST`: `0.0.0.0` (MCP server port `8765`)
 - `HOST_BRIDGE_BIND_HOST`: `127.0.0.1` (loopback-only host companion port `8098`; set to `172.17.0.1` on Linux if running `ag-bridge-mcp` inside Docker bridge networking)
@@ -33,7 +34,7 @@ python3 scripts/init_secrets.py --keep-existing-urls
 
 ## 2. Start the Host Companion Service (`agy-host-bridge.service`)
 
-`agy-nexus-mcp` reads your chats and git repositories directly, and uses an authenticated loopback companion service on `127.0.0.1:8098` whenever it needs to wake up an Antigravity session (`agentapi send-message` / `new-conversation`) or inspect worktree git state on the host. Every `POST /agentapi` call requires `X-Bridge-Token` from `~/.config/ag-bridge-mcp/secrets.env`.
+`agy-nexus-mcp` reads your chats and git repositories directly, and uses an authenticated loopback companion service on `127.0.0.1:8098` whenever it needs to wake up an Antigravity session (`agentapi send-message` / `new-conversation`), register a greenfield project (`CreateProject`), or inspect worktree git state on the host. Every `POST /agentapi` call requires `X-Bridge-Token` from `~/.config/ag-bridge-mcp/secrets.env`.
 
 Install and start the user service:
 ```bash
@@ -47,7 +48,7 @@ Verify liveness and authenticated `discover` access (unauthenticated requests re
 curl -s http://127.0.0.1:8098/health
 
 # Authenticated /agentapi check using HOST_BRIDGE_TOKEN from secrets.env:
- BRIDGE_TOK=$(grep '^HOST_BRIDGE_TOKEN=' ~/.config/ag-bridge-mcp/secrets.env | cut -d= -f2)
+BRIDGE_TOK=$(grep '^HOST_BRIDGE_TOKEN=' ~/.config/ag-bridge-mcp/secrets.env | cut -d= -f2)
 curl -s -X POST http://127.0.0.1:8098/agentapi \
   -H "Content-Type: application/json" \
   -H "X-Bridge-Token: ${BRIDGE_TOK}" \
@@ -70,7 +71,7 @@ Expected output:
 Deploy using `docker-compose.yml`:
 - `~/.config/ag-bridge-mcp` $\rightarrow$ `/config:ro`
 - `~/.gemini/antigravity` $\rightarrow$ `/home/<user>/.gemini/antigravity:rw`
-- `~/agentic_workspace` $\rightarrow$ `/home/<user>/agentic_workspace:ro` (and/or legacy `~/gitlab` $\rightarrow$ `/home/<user>/gitlab:ro`)
+- `~/agentic_workspace` $\rightarrow$ `/home/<user>/agentic_workspace:ro` (3-pillar layout: `projects/`, `devops/`, `ideation/`, plus optional legacy `~/gitlab:ro`)
 - `~/.gemini/config` $\rightarrow$ `/home/<user>/.gemini/config:ro`
 - Port: `8765:8765`
 
@@ -119,7 +120,7 @@ Create an `A` or `CNAME` record for `ag-{SUBDOMAIN_HASH}.<your-domain>` pointing
 
 ---
 
-## 5. Connect Google Gemini & Open the `/web` Dashboard
+## 5. Connect Google Gemini, Local `agy-praxis-mcp` & the `/web` Studio App
 
 ### Connect in Google Gemini
 1. Open Google Gemini (`gemini.google.com`) $\rightarrow$ **Settings** $\rightarrow$ **Connected Apps** $\rightarrow$ **Add Custom MCP Server**.
@@ -129,26 +130,26 @@ Create an `A` or `CNAME` record for `ag-{SUBDOMAIN_HASH}.<your-domain>` pointing
    - **Transport**: `Streamable HTTP / SSE`
 3. Save and confirm the status shows **Connected**.
 
-### Connect `agy-polyglot-mcp` in Local Antigravity IDE (LAN-Only, Deadbolt-Free)
-`agy-nexus-mcp` (`v2.7.0+`) also exposes a paired, deadbolt-free local MCP server (`agy-polyglot-mcp`) for Antigravity IDE agents (`polyglot_map`, `polyglot_search`, `polyglot_outline`) backed by an incremental SHA-256 JSON semantic outline cache. For security, `/polyglot/*` rejects any request carrying reverse-proxy headers (`X-Forwarded-For`, `CF-Connecting-IP`, etc.), browser `Origin` headers, or public `Host` domains with `403 Forbidden`.
+### Connect `agy-praxis-mcp` in Local Antigravity IDE (LAN-Only, Deadbolt-Free)
+`agy-nexus-mcp` (`v2.8.0+` / `v3.1.0`) exposes a paired, deadbolt-free local workstation MCP doorway (**`agy-praxis-mcp`**, 6 tools: `polyglot_map`, `polyglot_search`, `polyglot_outline`, `praxis_handoff_inbox`, `praxis_claim_handoff`, `praxis_update_handoff`) backed by an incremental SHA-256 semantic outline index and `<repo-slug>-NN` handoff queue. For security, `/praxis/*` (and the backward-compatible `/polyglot/*` alias) immediately rejects any request carrying reverse-proxy headers (`X-Forwarded-For`, `CF-Connecting-IP`, etc.), browser `Origin` headers, or public `Host` domains with `403 Forbidden`.
 
 Register it in `~/.gemini/config/mcp_config.json` (and `~/.gemini/antigravity/mcp_config.json` if used on your workstation):
 ```json
 {
   "mcpServers": {
-    "agy-polyglot-mcp": {
-      "serverUrl": "http://<host>.lan:8765/polyglot/<POLYGLOT_MCP_TOKEN>/mcp"
+    "agy-praxis-mcp": {
+      "serverUrl": "http://<host>.lan:8765/praxis/<PRAXIS_MCP_TOKEN>/mcp"
     }
   }
 }
 ```
-*(By default, `<POLYGLOT_MCP_TOKEN>` is derived deterministically via `HMAC-SHA256(PATH_SECRET, "agy-polyglot-mcp-v1")[:48]`, or you can set an explicit `>=32`-char `POLYGLOT_MCP_TOKEN` in `secrets.env`. You can also run `agy-polyglot-mcp --stdio` directly as a local stdio MCP server.)*
+*(By default, `<PRAXIS_MCP_TOKEN>` is derived deterministically via `HMAC-SHA256(PATH_SECRET, "agy-praxis-mcp-v1")[:48]`, and `init_secrets.py` prints the ready-to-paste `serverUrl`. You can also run `python3 -m agy_nexus.tools_praxis --stdio` directly as a local stdio MCP server.)*
 
-### Open the Web Dashboard & Install as a Chromium Standalone App (PWA)
-- **Local Network (HTTP)**: `http://<host>.lan:8765/web` (append `?demo=1` for depersonalized sample telemetry)
+### Open the Unified `/web` Studio Shell & Install as a Chromium App (PWA)
+- **Local Network (HTTP)**: `http://<host>.lan:8765/web` (append `?demo=1` for depersonalized Analytics & Workspace preview data, or `#workspace` to open the 2-Pane Workspace Explorer directly)
 - **Secret Path (HTTPS)**: `https://ag-{SUBDOMAIN_HASH}.<your-domain>/{PATH_SECRET}/web`
-- **Dedicated Dashboard Hostname (HTTPS — Recommended for Mobile/Desktop PWA Install)**:
-  - Because Chromium browsers require a trusted `https://` origin (or `http://localhost`) to enable native PWA installation (`beforeinstallprompt`) and Service Workers (`/web/sw.js`), you can optionally create a dedicated SSL proxy host in Nginx Proxy Manager (for example, `https://agy-mcp.<your-domain>`) forwarding to `http://<host>.lan:8765` with the following **Advanced** Nginx snippet to allow `/` and `/web/*` while keeping `/mcp` isolated on your secret subdomain and `/polyglot/*` strictly off the public proxy:
+- **Dedicated Dashboard Hostname (HTTPS — Recommended for Mobile/Desktop PWA Install & Deep Links)**:
+  - Because Chromium browsers require a trusted `https://` origin (or `http://localhost`) to enable native PWA installation (`beforeinstallprompt`), link capturing (`handle_links: "preferred"`), and Service Workers (`/web/sw.js`), you can optionally create a dedicated SSL proxy host in Nginx Proxy Manager (for example, `https://agy-mcp.<your-domain>`) forwarding to `http://<host>.lan:8765` with the following **Advanced** Nginx snippet to allow `/` and `/web/*` (including `/web/api/*` and `/web/media/*`) while keeping `/mcp` isolated on your secret subdomain and `/praxis/*` strictly off the public proxy:
     ```nginx
     if ($request_method !~ ^(GET|HEAD|POST|OPTIONS)$) {
         return 405;
@@ -158,15 +159,16 @@ Register it in `~/.gemini/config/mcp_config.json` (and `~/.gemini/antigravity/mc
     }
     proxy_buffering off;
     ```
-  - **Install on Android / iOS / Desktop Chrome**: Open `https://agy-mcp.<your-domain>/web` and click the top-bar **App** button (or Chrome's **⋮ → Add to Home screen / Install page as app…**).
+  - **Install on Android / iOS / Desktop Chrome**: Open `https://agy-mcp.<your-domain>/web`, open the top-right **Settings (`⚙`)** popover, and click **Install App** (or use Chrome's **⋮ → Add to Home screen / Install page as app…**).
   - **Linux / macOS / Windows Workstation `--app` Mode**: Launch a frameless Chromium window directly from your terminal or desktop launcher:
     ```bash
-    google-chrome --app="https://agy-mcp.<your-domain>/web" --class="AGYNexusOverwatch" --window-size=1420,960
+    google-chrome --app="https://agy-mcp.<your-domain>/web" --class="AGYNexusOverwatch" --window-size=1440,960
     ```
 
-### Cloud & Mobile Screenshot Inspection (`inspect_visual_artifacts`)
-- **Public Signed Media URLs**: Signed `/web/media/{token}/{filename}` links automatically resolve your public `https://` origin via `AG_BRIDGE_PUBLIC_URL`, `SUBDOMAIN_HASH + AG_BRIDGE_DOMAIN`, or your `secrets.env` Connected Apps header—stripping any path component so `PATH_SECRET` is never embedded in media URLs and mobile clients never receive private `.lan` links.
-- **High-Detail WebP Delivery (`< 20 KB` Wire Budget)**: `inspect_visual_artifacts(targets="#01", session_identifier="...", region="full"|"top"|"middle"|"bottom")` compresses 1–2 up WebP `ImageContent` crops (`max_edge=840px`, `min_quality=58`) strictly under `12.2 KB` raw (`<= 18.5 KB` JSON-RPC wire payload) for MCP clients that render binary `ImageContent`, while warning when `>2` full frames are requested at once. *(Note: Hosted Gemini `custom_mcp` adapters currently strip binary `ImageContent` blocks; inspect uploaded images directly via local Antigravity or signed HTTPS `/web/media/` links.)*
+### Cloud & Mobile Screenshot Inspection (`inspect_visual_artifacts` & Multi-Select Gallery)
+- **7-Day Signed Media & Canonical PWA Deep Links**: Signed `/web/media/{exp}/{sig}/{scope}/{filename}` URLs (`604800s` / 7-day TTL) and `workspace_url` deep links automatically resolve your verified public `https://` origin (rejecting 12-hex container hostnames and private `.lan` addresses, tolerating trailing query strings such as `?hl=en-US`, and stripping `PATH_SECRET` so route secrets are never embedded in media URLs).
+- **Multi-Select Workspace Gallery**: Inside `/web#workspace`, select multiple session screenshots or upload batches via checkboxes, `Shift+Click`, or rubber-band marquee to share directly via **Web Share API v2**, copy a **`<canvas>` Contact Sheet** to clipboard, or download a traversal-guarded **streaming `.zip` archive** (`POST /web/api/sessions/{conv_id}/download-zip`).
+- **High-Detail WebP Delivery (`< 20 KB` Wire Budget)**: `inspect_visual_artifacts(session_identifier="...", artifact_filter="...", max_images=2)` compresses 1–2 up WebP `ImageContent` previews (`max_edge=840px`) strictly under `< 20 KB` JSON-RPC wire payloads alongside 7-day HTTPS inspection links.
 
 ---
 
@@ -201,13 +203,14 @@ journalctl --user -u ag-bridge.service -f
 
 ## 7. Automated Test Suite
 
-Run the built-in self-tests and end-to-end suites anytime to verify all 11 `agy-nexus-mcp` tools, all 3 `agy-polyglot-mcp` tools, `405` Streamable HTTP compliance, passphrase locking, virtual URIs, and git diff pagination:
+Run the `pytest` unit/regression suites (`50+` checks), built-in self-tests, and end-to-end permutation runner anytime to verify all 11 `agy-nexus-mcp` tools, all 6 `agy-praxis-mcp` tools, `PWA_ASSETS` parity, `405` Streamable HTTP compliance, passphrase locking, virtual URIs, and git diff pagination:
 ```bash
+uv run --with pytest --with pytest-asyncio pytest
 python3 ag_bridge.py --self-test
-python3 -m agy_nexus.tools_polyglot --self-test
-python3 tests/test_v261_bridge_fixes.py
+python3 -m agy_nexus.tools_praxis --self-test
 
 AG_BRIDGE_URL="http://127.0.0.1:8765/${PATH_SECRET}/mcp" \
 AG_BRIDGE_PASSPHRASE="<your passphrase>" \
 uv run python3 tests/run_permutation_suite.py
 ```
+

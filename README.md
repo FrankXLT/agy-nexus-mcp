@@ -1,53 +1,72 @@
-# `agy-nexus-mcp` — Connect Google Gemini to Your Antigravity IDE, Projects & Usage Dashboard (`v2.7.0`)
+# `agy-nexus-mcp` — Connect Google Gemini to Your Antigravity IDE, 2-Pane Workspace & Usage Studio (`v3.1.0`)
 
-`agy-nexus-mcp` is a self-hosted Model Context Protocol (MCP) server that connects **Google Gemini** (on the web or mobile app) directly to your local **Google Antigravity IDE / CLI** workstation, paired with **`agy-polyglot-mcp`** — a deadbolt-free, LAN-only semantic repository index & code outliner for local Antigravity agents.
+`agy-nexus-mcp` is a self-hosted **Dual-Doorway Model Context Protocol (MCP)** server that connects **Google Gemini** (on Web, Mobile, and Tasks) directly to your local **Google Antigravity IDE / CLI** workstation—paired with **`agy-praxis-mcp`** (a deadbolt-free, LAN-only semantic codebase index & `<repo-slug>-NN` handoff inbox for local Antigravity agents) and a **Unified `42px` Chromium Studio Web App (`/web`)** combining live **Analytics** and a **2-Pane Session Workspace Explorer**.
 
-From your phone or browser, you can check on running coding sessions, inspect a copy-ready **76-column Project $\rightarrow$ Chat $\rightarrow$ Session ID hierarchy**, see what a paused session is waiting for, search and read local repository files with **parallel session isolation** and **incremental SHA-256 Polyglot semantic outlines**, inspect screenshots/visual artifacts via signed HTTPS URLs, send research plans straight into the right project chat, view **three-tier ASCII usage stats** in chat, or open the **installable Chromium Web App (`/web`)** for live charts and model quota tracking.
+From your phone or browser, you can monitor running coding sessions, inspect a copy-ready **76-column Project $\rightarrow$ Chat $\rightarrow$ Session ID hierarchy**, browse session Markdown plans in an **Editorial HTML Reader**, multi-select screenshots to **share directly back into Gemini** (via Web Share API, 1-click `<canvas>` Contact Sheet, or `.zip` bundle), stage repo-prefixed `<repo-slug>-NN` handoffs with **continuity-aware rollover & in-place session retirement**, or view **three-tier ASCII telemetry** directly in chat.
 
 ---
 
-## Live `/web` Dashboard & Installable Chromium App
+## Live `/web` Unified Studio App (`Analytics` + 2-Pane `Workspace`)
 
-![AGY-NEXUS Overwatch Desktop Dashboard — True Mon–Sun Calendar Heatmap, Sub-Daily Stacked Area Charts, Token Telemetry, Project Hierarchy & Polyglot Code Health](docs/assets/dashboard-desktop.png)
+### 1. `Analytics` Surface — Muted `Mon–Sun` Calendar Matrix, Adaptive Sub-Daily Stacked Bars & Code Health
+
+![AGY-NEXUS v3.1.0 Analytics Surface — 42px Studio Topbar, Foldable KPIs, Single-Hue 52-Week Mon–Sun Calendar Matrix, Sub-Daily Stacked Bar Charts, Session Hierarchy & 36-Module Code Health](docs/assets/dashboard-desktop.png)
+
+### 2. `Workspace` Surface — 2-Pane Session Explorer, Editorial Reader & Multi-Select Visual Gallery
+
+![AGY-NEXUS v3.1.0 2-Pane Workspace Explorer — Collapsible Project & Handoff Queue Tree, Editorial Document Cards, Inline Drag/Paste Uploader & Multi-Select Gallery with Sticky Bulk Action Bar](docs/assets/workspace-desktop.png)
 
 <details>
-<summary><strong>📱 View Mobile Layout (Centered <code>This Month — MTD</code> Calendar, Responsive Cards &amp; Session Hierarchy)</strong></summary>
+<summary><strong>📱 View Responsive Mobile Layouts (<code>390px</code> Portrait — Analytics <code>26w</code> Matrix &amp; 1-Row Mobile Workspace Explorer)</strong></summary>
 
 <br/>
 
-![AGY-NEXUS Overwatch Mobile Dashboard](docs/assets/dashboard-mobile.png)
+#### Mobile `Analytics` (`26w` Auto-Default Calendar Matrix & `2×2` Foldable KPIs)
+
+![AGY-NEXUS v3.1.0 Mobile Analytics View](docs/assets/dashboard-mobile.png)
+
+<br/>
+
+#### Mobile `Workspace` (1-Row `40px` Header, Session Bucket & Multi-Select Gallery)
+
+![AGY-NEXUS v3.1.0 Mobile Workspace View](docs/assets/workspace-mobile.png)
 
 </details>
 
 ---
 
-## Best Features & Advantages
+## Best Features & Advantages (`v3.1.0`)
 
-### 1. Control Parallel Coding Sessions Without Cross-Talk (`v2.7.0`)
-- **Parallel Session Isolation & Keyed Context Slots**: Multiple Gemini Web and Gemini Mobile tabs can work concurrently on different repositories and conversations without overwriting each other's active workspace (`session_identifier` and `workspace` pinning backed by `fcntl.flock` atomic state slots).
-- **Incremental SHA-256 Polyglot Index & Local `agy-polyglot-mcp` Server**: Maintains a per-workspace SHA-256 semantic outline index across Python, JS/TS, Vue, Markdown, JSON/JSONC, YAML, Go, Rust, Shell, SQL, HTML, and CSS—serving both remote Gemini (`polyglot:*` virtual URIs & `outline:`) and local Antigravity IDE (`polyglot_map`, `polyglot_search`, `polyglot_outline` at `/polyglot/{POLYGLOT_MCP_TOKEN}/mcp` with zero deadbolt overhead and strict LAN-only `403` proxy rejection).
-- **3-Tier Smart Path Resolver & Virtual URIs**: Read nested `brain:<subpath>` session artifacts, untruncated `transcript:latest` / `transcript:step:<N>` turns (from `transcript_full.jsonl`), and policy-safe `telemetry:stats` views in a single call.
+### 1. Dual-Doorway Parallel Isolation, `<repo-slug>-NN` Handoff Queue & Fail-Closed Routing
+- **Parallel Session Isolation & Keyed Context Slots**: Multiple Gemini Web and Gemini Mobile tabs work concurrently across different repositories and conversations without overwriting each other's active workspace (`session_identifier` and `workspace` pinning backed by `fcntl.flock` atomic state slots).
+- **`agy-praxis-mcp` Local IDE Doorway (`6` Tools)**: Exposes incremental SHA-256 Polyglot semantic indexing (`polyglot_map`, `polyglot_search`, `polyglot_outline` across 10+ languages) **plus** the repo-prefixed Gemini handoff queue (`praxis_handoff_inbox`, `praxis_claim_handoff`, `praxis_update_handoff`) at `/praxis/{PRAXIS_MCP_TOKEN}/mcp` (and legacy `/polyglot/` alias or `--stdio`) with zero deadbolt friction and strict LAN-only `403` proxy/Origin rejection.
+- **3-Pillar Fail-Closed Target Resolution (`target_resolver.py`)**: Resolves repositories across `projects/`, `devops/`, and `lab/` (`~/projects/<slug>` aliases supported), blocking silent fallback to umbrella roots with `status="PROJECT_NOT_FOUND"` unless `create_new_project=True` is explicitly approved.
+- **Repo-Prefixed Handoff Lifecycle (`handoff_queue.py`)**: Assigns sequential human-readable IDs (`agy-nexus-mcp-01`, `quiet-ui-skills-02`, ...) tracked atomically across `STAGED` $\rightarrow$ `IN_WORK` $\rightarrow$ `COMPLETED` / `SUPERSEDED`, with automatic disambiguation when multiple tickets are queued.
 - **Same-Repo Concurrent Writer Guard**: Detects when another Antigravity session is actively `RUNNING` on the same repository, labeling sessions as `MAIN WRITER`, `WORKTREE`, `SHARED (READ-ONLY)`, or `MAIN TREE` and recommending `use_worktree=True` before dispatching concurrent edits.
-- **76-Column Copy-Ready Session Hierarchy & Policy-Safe Stats (`get_session_tree`)**: Renders a complete `Project -> Chat -> Session ID -> Workspace -> Status` tree plus optional `include_stats=True` Dual-Pool Quota & Activity Heatmap bundles without triggering hosted `manage_*` verb policy blocks.
 
-### 2. Built for Reliability on Gemini Web & Mobile
-- **Strict Single-Call-Per-Turn Architecture**: Google Gemini's web and mobile confirmation cards can hang on `"Trying to connect..."` if an MCP server forces back-to-back tool calls in the same turn. Every tool in `agy-nexus-mcp` bundles the context you need into a single `< 20 KB` wire-budgeted turn.
-- **Autonomous Multi-File Research**: Reads up to 12 files (`14,000` chars per file, `< 19.2 KB` progressive wire compaction) or auto-reads the top 4 matching files from a `git grep` search in a single `ask_workspace_readonly` call, with targeted line-range slicing (`src/app.py:100-250`) and paged git diffs.
-- **Ephemeral HMAC-Signed Visual Artifact Links (`/web/media/`)**: Exposes repository PNG/WebP/SVG assets and Chrome DevTools screenshots via 30-minute HMAC-SHA256 signed URLs (`visual_artifacts` in `load_session_into_gemini` and `ask_workspace_readonly`) without blowing up JSON-RPC payloads.
-- **Voice-Friendly Passphrase Lock**: Protected by a randomized URL path plus an interactive passphrase lock (`unlock_sessions`). Strips punctuation and voice filler (like *"The passphrase is ..."*) so you can unlock it hands-free using Gemini Live or Mobile Voice.
+### 2. Built for Reliability on Gemini Web & Mobile (`v2.9.0` – `v3.1.0`)
+- **Sequential Read-Only Governance (`v2.9.0`)**: Gemini can execute up to **4 sequential (one-at-a-time, never parallel) read-only MCP calls** in a single user turn (e.g., `unlock_sessions` $\rightarrow$ `list_saved_sessions` $\rightarrow$ `load_session_into_gemini` $\rightarrow$ `ask_workspace_readonly`), while keeping mutating `send_handoff_and_resume` and `LOCKED_RESPONSE` strictly terminal so mobile/web confirmation cards never hang.
+- **Continuity-Aware Rollover (`v3.0.0`) & In-Place Terminal Closeout (`v3.1.0`)**:
+  - Classifies session context pressure into 5 tiers (`FRESH`, `SEAM_AWARE`, `HOLD_FOR_COMPLETION`, `CLOSEOUT_ONLY`, `HARD_ROLLOVER`) instead of forcing premature new-chat splits mid-verification.
+  - Supports **in-place closeout & retirement** (`session_continuity="closeout"`, `retire_session=True`), allowing mature sessions (`320–520` steps) to commit, push, clean up worktrees, and write an atomic `RETIRED.json` tombstone (`[■ RETIRED]`) in the **same** session without wasting tokens booting a new chat.
+  - **Job-First 1-Tap `"Yes"` Flow**: Every session load, handoff, and background poll returns concrete `suggested_actions` (`ready_to_run`, `in_flight`, `ready_to_ship`) so Gemini always prioritizes finishing active work before offering closeout, and a single `"Yes"` reply executes cleanly.
+- **7-Day HMAC-Signed `/web/media/` Links & Canonical `workspace_url` Deep Links**: Serves crisp adaptive WebP previews (`< 20 KB` wire budget) alongside 7-day (`604,800s`) HMAC-SHA256 signed `/web/media/` asset URLs (`GET` + `HEAD`) and signed `/web?s=...#workspace` deep links.
+- **Voice-Friendly Passphrase Deadbolt**: Protected by an unguessable URL path (`/{PATH_SECRET}/mcp`) plus an interactive passphrase deadbolt (`unlock_sessions`) that strips punctuation and voice filler (*"The passphrase is ..."*) for hands-free Gemini Live / Mobile Voice unlock.
 
-### 3. Installable Chromium App (PWA) & Visual Usage Dashboard (`/web`)
-- **One-Click Standalone App**: Open `/web` over HTTPS and click the top-bar **`App`** button to install the dashboard as a native-feeling **Chromium Standalone App** on desktop or mobile (or copy the `--app=` terminal launcher).
-- **Unified Project, Chat & Session Hierarchy Panel (`col-12`)**: Inspect every project, active/pinned slot, `SHARED REPO` badge, and 3-2-1 backup sync status (`3-2-1 SYNC: 55d0304 ✓`) with 1-click inline copy for `project_id`, `session_id`, chat title, and `workspace`.
-- **Locked X-Axes & Local-Timezone Sub-Daily Stacked Charts**: Activity velocity, subagent runs, and project token stacks are bucketed in local timezone and locked to the exact same X-axis window across **`This Month (MTD)`**, **`Last Month`**, **`Rolling 90 Days`**, and **`Rolling 52 Weeks`**.
-- **4 Themes & 4 Spacing Modes**: Choose between `Obsidian`, `Dark Paper`, `Warm Paper`, and `Pure White` themes alongside 4 compactness levels (`D1`–`D4`) in a single dropdown (or pass `?demo=1&theme=white` via URL).
+### 3. Unified `42px` Chromium Studio App (`/web` PWA): `Analytics` + 2-Pane `Workspace`
+- **Single-Tier `42px` Studio Shell & Settings (`⚙`) Popover**: Clean `[■ AGY-NEXUS • v3.1.0]` topbar with `Analytics | Workspace` surface switcher (and live staged-handoff count pill), foldable KPI strip (`▾`/`▸`), clean pre-unlock header, 1-row `40px` mobile Workspace bar, and a consolidated `⚙` popover housing **4 Themes** (`Obsidian`, `Dark Paper`, `Warm Paper`, `Pure White`), **4 Densities** (`D1`–`D4`), and **1-click Chromium Standalone PWA installation**.
+- **`Analytics` Surface**: Single-hue (`#2563eb`) 52w/26w `Mon–Sun` calendar heatmap with muted out-of-window cells (auto-defaulting to `26w` on narrow phones), adaptive sub-daily (`1h`–`24h`) stacked bar charts with borderless tabular legends, 1-line project swatch strip, 8-char Session ID pills, and 36-module Code Health table.
+- **`Workspace` Surface & Multi-Select Visual Gallery**:
+  - **3-State Collapsible Finder Tree**: Toggle between `240px` Expanded Tree, `38px` Icon Rail, and `0px` Zen Canvas (`◧` button or `[` shortcut) across the **Visual Handoffs Queue** and every project/session.
+  - **Quiet UI Editorial HTML Reader (`markdown_renderer.js`)**: Renders `task.md`, `implementation_plan.md`, `walkthrough.md`, and staged handoffs into clean, XSS-sanitized Editorial HTML with sticky TOC, GFM callouts, checklists, and Raw Markdown toggle.
+  - **Multi-Select Gallery (`gallery_select.js`)**: Select screenshots via click, `Shift+Click` range, or rubber-band marquee drag to reveal the sticky **Bulk Action Bar**—featuring **Web Share API Level 2 (`✦ Share to Gemini`)**, **1-Click `<canvas>` Contact Sheet (`Copy Sheet for Chat`)**, **Streaming `.zip` Download (`↓ ZIP`)**, and sequential PNG saves.
 
 ---
 
 ## How to Set It Up & Use It
 
-### Step 1: Run the Setup Script
-Clone the repository on your workstation and run the interactive setup script to generate your passphrase hash, secret URL path, and local service config:
+### Step 1: Run the Setup Script & Self-Tests
+Clone the repository on your workstation and run the interactive setup script to generate your passphrase hash, `PATH_SECRET`, `PRAXIS_MCP_TOKEN`, and `HOST_BRIDGE_TOKEN`:
 
 ```bash
 # Linux / macOS / WSL
@@ -57,219 +76,122 @@ Clone the repository on your workstation and run the interactive setup script to
 .\scripts\setup.ps1
 ```
 
-Or run the self-test and start the server directly with `uv` or Python:
+Or initialize secrets, run the automated test suites, and start the server directly:
 
 ```bash
 python3 scripts/init_secrets.py --passphrase "your-secret-passphrase"
 python3 ag_bridge.py --self-test
+python3 -m agy_nexus.tools_praxis --self-test
+pytest
 python3 ag_bridge.py
 ```
 
-*(See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for Docker Compose, reverse proxy, Cloudflare Tunnel, and 3-2-1 backup setup.)*
+*(See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for hardened Docker Compose, reverse proxy, Cloudflare Tunnel, 3-pillar workspace mounts, and 3-2-1 backup setup.)*
 
 ### Step 2: Connect Google Gemini & Local Antigravity IDE
-1. **Google Gemini (Web / Mobile)**: Open **Settings** $\rightarrow$ **Connected Apps** $\rightarrow$ **Add custom MCP server** and paste your secret endpoint URL:
+1. **Google Gemini (Web / Mobile / Tasks)**: Open **Settings** $\rightarrow$ **Connected Apps** $\rightarrow$ **Add custom MCP server** and paste your secret endpoint URL:
    `https://<your-subdomain>.<your-domain>/{PATH_SECRET}/mcp`
-2. **Local Antigravity IDE (`agy-polyglot-mcp`)**: Add the LAN-only Polyglot server to `~/.gemini/config/mcp_config.json` for zero-deadbolt incremental semantic indexing (`polyglot_map`, `polyglot_search`, `polyglot_outline`):
+2. **Local Antigravity IDE (`agy-praxis-mcp`)**: Add the LAN-only Praxis server to `~/.gemini/config/mcp_config.json` for zero-deadbolt incremental semantic indexing and `<repo-slug>-NN` handoff claiming (`/polyglot/<TOKEN>/mcp` also remains active as a backward-compatible alias):
    ```json
    {
      "mcpServers": {
-       "agy-polyglot-mcp": {
-         "serverUrl": "http://<host>.lan:8765/polyglot/<POLYGLOT_MCP_TOKEN>/mcp"
+       "agy-praxis-mcp": {
+         "serverUrl": "http://<host>.lan:8765/praxis/<PRAXIS_MCP_TOKEN>/mcp"
        }
      }
    }
    ```
-3. **Overwatch Dashboard**: Open your dashboard in any browser at:
-   `https://<your-dashboard-host>/web`
+3. **Unified Studio Web App (`/web`)**: Open your dashboard in any desktop or mobile browser (and click **`⚙` $\rightarrow$ Install App** for a standalone window):
+   `https://<your-dashboard-host>/web` *(or preview depersonalized demo mode locally at `http://127.0.0.1:8765/web?demo=1`)*
 
 ### Step 3: Everyday Prompts You Can Use in Gemini
-Once connected, just talk or type naturally in Gemini Web or Gemini Mobile:
-- **Unlock & check status**: *"Unlock Antigravity with passphrase [your phrase] and show me my active sessions."*
-- **View the Project & Session ID Tree**: *"Show me my session tree so I can copy the session ID and project ID."*
-- **Inspect a session in one shot**: *"Load session `quantum-dsp-workbench` and tell me what it's working on or waiting for."*
-- **Search & read code across parallel tabs**: *"Search `automation-gitops` for the compose healthcheck rules and read the matching files."*
-- **Audit uncommitted git changes**: *"Check git diff across all my repositories to see what hasn't been committed yet."*
-- **Send a plan back to Antigravity**: *"Send this implementation plan to my `quantum-dsp-workbench` session and wake it up in plan mode."*
-- **View ASCII stats in chat**: *"Show me my latest usage stats"* (or ask for `quick` mobile view or `rich` desktop view).
+Once connected, talk or type naturally in Gemini Web or Gemini Mobile:
+- **Unlock & inspect active work in one turn**: *"Unlock Antigravity with passphrase [your phrase], check my active sessions, and load `agy-nexus-mcp`."*
+- **View the Project & Session ID Tree**: *"Show me my session tree so I can see open `<repo>-NN` handoffs and copy session IDs."*
+- **Search & read code across parallel tabs**: *"Search `automation-gitops` for compose healthcheck rules and read the matching spans."*
+- **Stage or wake a `<repo-slug>-NN` handoff**: *"Stage this surgical audit plan to `quantum-dsp-workbench` with `allow_chained_publish=False` and wake it up."*
+- **Close out & retire a finished session in place**: *"Commit, push, and retire session `agy-nexus-mcp` in place now that verification passed."*
+- **View ASCII telemetry in chat**: *"Show me my latest usage stats"* (or ask for `quick` 40-col mobile view or `rich` 76-col widescreen view).
 
 ---
 
-## Project Manager Mode with Gemini High Task (formerly Spark) & The 3-Mode Workflow (`v2.7.0`)
+## Project Manager Mode with Gemini High Task & Job-First Lifecycle (`v3.1.0`)
 
-In `v2.7.0`, `agy-nexus-mcp` turns **Google Gemini High Task Mode** (formerly Gemini Spark) into an autonomous, proactive **Engineering Project Manager** for your Antigravity IDE workstation.
+`agy-nexus-mcp` turns **Google Gemini High Task Mode** into an autonomous, grounded **Engineering Project Manager** for your Antigravity IDE workstation:
 
-### Why Gemini High Task Mode Changes the Game
-Traditional LLM chat turns often struggle with multi-step MCP orchestration: models may guess unverified code, attempt to write complex diffs from memory, or freeze connections when chaining operations.
-
-With **Gemini High Task Mode**:
-1. **Extended Thinking & Systematic Decomposition**: High Task mode spends deliberate reasoning tokens mapping dependencies and reading codebase contracts before taking action.
-2. **Deterministic Multi-Step PM Sequencing**: Gemini autonomously executes the standard PM pipeline:
-   - **Step 1: Grounding & Scouting**: Reads target files and git status via `ask_workspace_readonly` or `load_session_into_gemini`.
-   - **Step 2: Staging & Preview**: Dispatches research handoffs with `allow_chained_publish=False`, forcing Antigravity to stage changes locally and capture visual/diff artifacts.
-   - **Step 3: Visual & Diff Verification**: Inspects rendered screenshots via signed `/web/media/` links and reviews `git diff`.
-   - **Step 4: Release Approval**: Only approves production deployment (`allow_chained_publish=True`, which promotes `execution_mode="auto"` to `"fast"`) once all verification gates are satisfied.
+1. **Sequential Read-Only Grounding (`<= 4` Hops/Turn)**: Gemini scouts live session state, cached Polyglot outlines, and git diffs sequentially in a single user turn before proposing changes.
+2. **Stage & Preview Gate (`allow_chained_publish=False`)**: Research handoffs stage `<repo-slug>-NN` tickets (`scratch/gemini_research_handoff.md`), wake Antigravity's 4-step subagent pipeline (`flash-scout` $\rightarrow$ `flash-surgeon`/`argon-surgeon` $\rightarrow$ `flash-auditor` $\rightarrow$ Visual Gate), and halt at local preview with 7-day signed `/web/media/` screenshots and a clickable `workspace_url`.
+3. **Job-First 1-Tap `"Yes"` Progression**:
+   - **`ready_to_run`** (staged unclaimed handoff waiting): Prompts to execute `<repo-slug>-NN` before anything else.
+   - **`in_flight`** (background agent running): Prompts to inspect live progress or tail logs without interrupting.
+   - **`ready_to_ship`** (all tasks verified & clean): Offers 1-tap **in-place closeout & retirement** (`session_continuity="closeout"`, `retire_session=True`, `allow_chained_publish=True`), writing `RETIRED.json` so retired sessions cannot be accidentally mutated later (`[RETIRED_SESSION_GUARD]`).
 
 ### The 3 Interaction Modes (`handoff_mode`)
-When dispatching handoffs via `send_handoff_and_resume()`, Gemini operates in one of three clearly defined modes:
 
 | Mode | Argument | Purpose & Behavior | Antigravity Subagent Execution |
 | :--- | :--- | :--- | :--- |
-| **Iterative Intent Briefs** | `handoff_mode="intent"` *(Default)* | Pass clean user requirements, UX flows, and acceptance criteria from ideation **without** guessing unverified code or CSS from memory. | Antigravity's local `flash-scout` maps the repo via `agy-polyglot-mcp`, while `flash-surgeon` / `argon-surgeon` and `flash-auditor` write and verify the code. |
-| **Visual & Artifact Critiques** | `handoff_mode="visual_critique"` | Translate uploaded UI screenshots and artifacts into grounded, actionable visual deltas. | Anchors critiques directly to existing component files and `quiet-ui` rules. |
-| **Grounded Surgical Audits** | `handoff_mode="surgical_audit"` | Provide exact line-level code or architecture fixes **only after** reading target files with read-only tools. | Antigravity performs surgical refactors (`<= 500 lines/file`, `650` ceiling) followed by unit/smoke test passes. |
-
-### The Mandatory 4-Step Subagent Execution Lifecycle & Two-Phase Preview Gate
-Every headless handoff automatically injects and enforces Antigravity's **4-Step Subagent Lifecycle**:
-1. **Scout (`flash-scout`)**: Queries `agy-polyglot-mcp` (`polyglot_map` / `polyglot_outline`) and attached `SKILL.md` contracts before code is touched.
-2. **Implement (`flash-surgeon` / `argon-surgeon`)**: Delegates cohesive modular edits (`<= 500 lines/file` target, hard ceiling `650 lines`, functions `<= 100 lines`) to subagents rather than soloing 10+ file edits in the parent context.
-3. **Audit (`flash-auditor`)**: Runs linters, unit tests, and smoke tests, verifying `git diff` before marking tasks complete (Rule 8.1: *no agent signs off on its own code alone*).
-4. **Visual & Preview Gate (`allow_chained_publish=False`)**: When UI files change, Antigravity captures mobile/desktop screenshots via Chrome DevTools and halts at local staging so Gemini and the user can inspect before release.
-
-### In-Flight Mutex & Session Compaction Telemetry
-- **In-Flight Mutex (`ALREADY_RUNNING`)**: If a session is already executing a background job started `< 300` seconds ago, `send_handoff_and_resume` returns `status="ALREADY_RUNNING"`, preventing duplicate planner wakeups and collision errors unless `force_interrupt=True` is explicitly passed.
-- **Compaction Ceiling Warning (`>1,500 Steps` / `>10 Compactions`)**: `load_session_into_gemini` and `list_saved_sessions` track `compaction_count` and `avg_step_seconds`, alerting when a conversation exceeds 1,500 steps or 10 compactions and advising rotation via `create_new_session=True` before context amnesia occurs.
+| **Iterative Intent Briefs** | `handoff_mode="intent"` *(Default)* | Pass clean user requirements, UX flows, and acceptance criteria **without** guessing unverified code or CSS from memory. | `flash-scout` maps the repo via `agy-praxis-mcp`; `flash-surgeon` / `argon-surgeon` and `flash-auditor` write and verify the code. |
+| **Visual & Artifact Critiques** | `handoff_mode="visual_critique"` | Translate `/web` gallery contact sheets and screenshots into grounded visual deltas. | Anchors critiques directly to component spans and `quiet-ui` visual contracts. |
+| **Grounded Surgical Audits** | `handoff_mode="surgical_audit"` | Provide exact line-level code or architecture fixes **only after** reading target files via read-only tools. | Performs surgical refactors (`<= 500L` target, `650L` ceiling) followed by `pytest` & independent auditor sign-off. |
 
 ---
 
 ## Copy-Ready 76-Column Project, Chat & Session Hierarchy (`get_session_tree`)
 
-Call `get_session_tree()` (or `manage_background_run(action="sessions")`) to render a copy-ready 76-column ASCII hierarchy grouping every conversation under its parent project with **untruncated** `project_id`, `session_id`, and `workspace` lines, parallel context slot counters, and 3-2-1 backup verification:
+Call `get_session_tree()` (or `manage_background_run(action="sessions")`) to render a copy-ready 76-column ASCII hierarchy grouping every conversation and staged `<repo-slug>-NN` handoff under its parent project with **untruncated** `project_id`, `session_id`, and `workspace` lines:
 
 ```text
 ╔══════════════════════════════════════════════════════════════════════════╗
 ║ AGY-NEXUS // PROJECT -> CHAT -> SESSION ID HIERARCHY (COPY-READY)        ║
 ╠══════════════════════════════════════════════════════════════════════════╣
-║ ACTIVE SLOTS: 5 | PINNED: 22 | AUTO-PATH: 6 | TTL: 119.5m                ║
-║ 3-2-1 BACKUP: 55d0304 (SYNCED ✓ · 2263.1 KB · 1h ago)                    ║
+║ ACTIVE SLOTS: 4 | PINNED: 18 | STAGED HANDOFFS: 2 | TTL: 119.5m          ║
+║ 3-2-1 BACKUP: 74b696b (SYNCED ✓ · 2418.4 KB · 14m ago)                   ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
 [PROJECT 1] Core Infrastructure & Container GitOps
   project_id : 491f269e-6a46-6930-b114-8a596add625a
-  workspaces : /home/dev/gitlab/container-gitops, /home/dev/gitlab/agy-nexus-config, /home/dev/gitlab/mesh-mesh-infra-ops, /home/dev/.gemini/antigravity/worktrees/container-gitops/prevent_container_flush_bug, /home/dev/.gemini/antigravity/worktrees/container-gitops/research_container_ldap_support
-  ├─ [#1] Antigravity MCP Integration
+  workspaces : /home/dev/agentic_workspace/projects/agy-nexus-mcp, /home/dev/agentic_workspace/devops/container-gitops
+  ├─ [HANDOFF agy-nexus-mcp-02] STAGED · surgical_audit · 4m ago
+  ├─ [#1] AGY-Nexus MCP v3.1.0 Unified Studio Shell
   │   session_id : 031d6672-9375-a94d-ee14-21e19d067ef5
-  │   workspace  : /home/dev/gitlab/agy-nexus-config
-  │   status     : [● RUNNING] · MAIN WRITER · 4,164 steps · 1m ago
-  ├─ [#20] Container Management & Repairs
-  │   session_id : 71bf3617-da78-cfad-ec6f-3034f1b76421
-  │   workspace  : /home/dev/.gemini/antigravity/worktrees/container-gitops/prevent_container_flush_bug
-  │   status     : [○ IDLE] · WORKTREE · 1,271 steps · 7d ago
-  └─ [#23] Container LDAP Support Research
-      session_id : 5d03d9c3-8668-71f0-2a26-ef9f993c4e1e
-      workspace  : /home/dev/.gemini/antigravity/worktrees/container-gitops/research_container_ldap_support
-      status     : [○ IDLE] · WORKTREE · 422 steps · 13d ago
+  │   workspace  : /home/dev/agentic_workspace/projects/agy-nexus-mcp
+  │   status     : [● RUNNING] · MAIN WRITER · SEAM_AWARE · 284 steps · 1m ago
+  └─ [#9] Release v3.0.0 Telemetry Closeout
+      session_id : 71bf3617-da78-cfad-ec6f-3034f1b76421
+      workspace  : /home/dev/agentic_workspace/projects/agy-nexus-mcp
+      status     : [■ RETIRED] · MAIN TREE · 412 steps · 2d ago
 
-[PROJECT 2] chronos-board
-  project_id : f45b9fc8-3341-770a-a5e9-6b51edd7d403
-  workspaces : /home/dev/chronos-board, /home/dev/.gemini/antigravity/worktrees/chronos-board/plan_sprint_one, /home/dev/.gemini/antigravity/worktrees/chronos-board/sunburst_chart_legend_slideout, /home/dev/.gemini/antigravity/worktrees/chronos-board/collect_phase_one_ux, /home/dev/.gemini/antigravity/worktrees/chronos-board/chronos-board_business_case
-  ├─ [#28] Project Infrastructure And Development Plan
-  │   session_id : 6cfff61b-3207-3d03-60ef-acd0ef2dadce
-  │   workspace  : /home/dev/chronos-board
-  │   status     : [● RUNNING] · MAIN WRITER · 5,592 steps · 17d ago
-  ├─ [#18] Phase 1 Sprints & Bugs
-  │   session_id : 96c5da58-741a-063a-b7fa-d45a5e38c0fe
-  │   workspace  : /home/dev/.gemini/antigravity/worktrees/chronos-board/plan_sprint_one
-  │   status     : [○ IDLE] · WORKTREE · 8,389 steps · 5d ago
-  └─ [#24] Sunburst And Chord Chart Refinement
-      session_id : fe94ac36-73db-ed55-54e8-2c2240a80c42
-      workspace  : /home/dev/.gemini/antigravity/worktrees/chronos-board/sunburst_chart_legend_slideout
-      status     : [○ IDLE] · WORKTREE · 1,026 steps · 14d ago
-
-[PROJECT 3] quantum-dsp-workbench [SHARED REPO]
+[PROJECT 2] quantum-dsp-workbench [SHARED REPO]
   project_id : e1676a6d-c5ba-1829-f129-86a6cea0e5bd
-  workspaces : /home/dev/gitlab/quantum-dsp-workbench
+  workspaces : /home/dev/agentic_workspace/projects/quantum-dsp-workbench
+  ├─ [HANDOFF quantum-dsp-workbench-01] IN_WORK -> b5e74c3c · 12m ago
   ├─ [#3] [QDSP-Portal] Landing Page & Platform Shell
   │   session_id : b5e74c3c-15dd-1552-8f4a-5ff63090b4db
-  │   workspace  : /home/dev/gitlab/quantum-dsp-workbench
-  │   status     : [◉ PINNED · IDLE] · MAIN TREE · 2,544 steps · 1h ago
-  ├─ [#4] [QDSP-Learn-RF] RF & DSP Data Communications
-  │   session_id : 859dbded-76ce-bd86-861c-8397545e55c8
-  │   workspace  : /home/dev/gitlab/quantum-dsp-workbench
-  │   status     : [◉ PINNED · IDLE] · PINNED (READ-ONLY) · 1,390 steps · 1h ago
-  └─ [#5] [QDSP-Core] Chief Architect & Audit Team
-      session_id : bc9fca12-1ee9-f0f5-c26f-66781c29ba51
-      workspace  : /home/dev/gitlab/quantum-dsp-workbench
-      status     : [○ COMPLETED] · MAIN TREE · 5,883 steps · 5h ago
-
-[PROJECT 4] Unscoped Workspace
-  project_id : unscoped-workspace
-  workspaces : /home/dev/gitlab
-  ├─ [#6] Anti-Slop Visual Architecture Engine Testing And Implementation
-  │   session_id : 882e8349-52d4-bee1-35bb-6e985a4150e8
-  │   workspace  : /home/dev/gitlab
-  │   status     : [◉ PINNED · IDLE] · PINNED (READ-ONLY) · 4,014 steps · 10h ago
-  └─ [#25] Antigravity Subagent Tasking Support
-      session_id : 8cf8341b-fd77-1af6-dd3f-39a63bfa11cc
-      workspace  : /home/dev/gitlab
-      status     : [○ IDLE] · MAIN TREE · 244 steps · 14d ago
-
-[PROJECT 5] mail-taxonomy-ai
-  project_id : 4f009432-b083-7ae1-fae3-74fc93ac6fd5
-  workspaces : /home/dev/gitlab/mail-taxonomy-ai
-  └─ [#2] Ideation of Features
-      session_id : 21e3d46d-c57e-82cb-02ce-ae50d3d6fd02
-      workspace  : /home/dev/gitlab/mail-taxonomy-ai
-      status     : [◉ PINNED · IDLE] · MAIN WRITER · 1,327 steps · 2m ago
-
-[PROJECT 6] NexusMesh ANMS (Network Telemetry Platform)
-  project_id : 17a366d5-ffca-a150-7130-7a36567ed847
-  workspaces : /home/dev/gitlab/nexus-mesh-telemetry, /home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/rearchitect_api_strategy_redis, /home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/optimize_canvas_generation_dynamic_devices, /home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/hide_single_node_devices
-  ├─ [#17] Redesigning Server Architecture And Strategy
-  │   session_id : 2b1f7c7d-8e70-44c1-450b-c981e059f7e3
-  │   workspace  : /home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/rearchitect_api_strategy_redis
-  │   status     : [○ COMPLETED] · WORKTREE · 1,959 steps · 4d ago
-  ├─ [#21] Canvas Node Optimization and Setup
-  │   session_id : 6ad3b743-488e-17f8-f998-698ceac4d64d
-  │   workspace  : /home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/optimize_canvas_generation_dynamic_devices
-  │   status     : [○ IDLE] · WORKTREE · 12,829 steps · 8d ago
-  └─ [#29] Filtering Single Unbounded Nodes
-      session_id : 8c40259a-ba02-976b-0fea-b595d0c72470
-      workspace  : /home/dev/.gemini/antigravity/worktrees/nexus-mesh-telemetry/hide_single_node_devices
-      status     : [○ IDLE] · WORKTREE · 707 steps · 21d ago
-
-[PROJECT 7] Automation & Edge Security GitOps
-  project_id : d9b08096-bed9-3429-4073-40913fd89752
-  workspaces : /home/dev/gitlab/automation-gitops, /home/dev/.gemini/antigravity/worktrees/automation-gitops/cam_grid_security_dashboard_migration, /home/dev/.gemini/antigravity/worktrees/automation-gitops/audit_home_automations, /home/dev/.gemini/antigravity/worktrees/automation-gitops/mobile_wall_panel_redesign, /home/dev/.gemini/antigravity/worktrees/automation-gitops/orbital_ember_rolls_11h46
-  ├─ [#7] Security Automation DevSecOps (& Audit Cron)
-  │   session_id : d7590de0-5a72-be58-b123-c77c1a76f1dd
-  │   workspace  : /home/dev/.gemini/antigravity/worktrees/automation-gitops/cam_grid_security_dashboard_migration
-  │   status     : [○ IDLE] · WORKTREE · 4,314 steps · 11h ago
-  ├─ [#8] Home Automation DevOps (& Audit Cron)
-  │   session_id : 11822340-57c1-2caf-e121-f55e3f0105db
-  │   workspace  : /home/dev/.gemini/antigravity/worktrees/automation-gitops/audit_home_automations
-  │   status     : [○ IDLE] · WORKTREE · 4,813 steps · 11h ago
-  └─ [#19] Mobile Automation Edge Dashboard Redesign
-      session_id : 8c12f68a-76d4-898d-c0ea-dca7246f244d
-      workspace  : /home/dev/.gemini/antigravity/worktrees/automation-gitops/mobile_wall_panel_redesign
-      status     : [○ IDLE] · WORKTREE · 1,249 steps · 6d ago
-
-[PROJECT 8] rf-signal-lab
-  project_id : 7068307a-2ee8-21cd-2002-85faad4ccbc9
-  workspaces : /home/dev/gitlab/rf-signal-lab
-  └─ [#22] RF Lab Edition 6
-      session_id : 13977fe1-0589-276b-fec0-ba77614900c9
-      workspace  : /home/dev/gitlab/rf-signal-lab
-      status     : [○ IDLE] · MAIN TREE · 5,097 steps · 8d ago
+  │   workspace  : /home/dev/agentic_workspace/projects/quantum-dsp-workbench
+  │   status     : [◉ PINNED · IDLE] · MAIN TREE · FRESH · 194 steps · 18m ago
+  └─ [#4] [QDSP-Learn-RF] RF & DSP Data Communications
+      session_id : 859dbded-76ce-bd86-861c-8397545e55c8
+      workspace  : /home/dev/agentic_workspace/projects/quantum-dsp-workbench
+      status     : [○ IDLE] · WORKTREE · 318 steps · 3h ago
 ```
 
 ---
 
 ## Three-Tier ASCII Usage Reports in Chat
 
-When you ask Gemini for your usage stats (`get_session_tree(include_stats=True, period="last_90d", style=...)` — or `manage_background_run(action="stats", ...)` in local/CLI clients), `agy-nexus-mcp` formats your live quota pools, `Mon–Sun` calendar heatmap, 8-hour activity curve, and project/subagent token breakdowns into one of **three plain-text layouts**:
+Ask Gemini for your usage stats (`get_session_tree(include_stats=True, period="last_90d", style=...)` or `manage_background_run(action="stats", ...)`) to render live Dual-Pool quota pacing, `Mon–Sun` calendar heatmaps, sub-daily curves, and workspace/subagent token breakdowns in **three plain-text layouts**:
 
 | Style | Width | Best For | What It Shows |
 | :--- | :---: | :--- | :--- |
-| **`style="default"`** | **72 cols** | Standard Desktop & Tablet Chat | Split summary header, 22-week `Mon–Sun` heatmap, 8-hour activity & project stack (`░▒▓█`), model quota bars (`┼`), Polyglot code-health summary, and full project & subagent tables. |
-| **`style="quick"`** | **`<= 40` cols** | Phone Screens (Portrait) | Fits strictly within 40 characters per line so it never wraps on mobile. Shows a 13-week heatmap, 8-hour pace curve, model quota bars, Polyglot health, and top projects/subagents. |
-| **`style="rich"`** | **76 cols** | Widescreen Desktop Chat | Full box-drawn dashboard (`v2.7.0`) with side-by-side quota and token panels, 13-week 3-character heatmap with a Peak Day card, 6-row 8-hour activity curve, Polyglot & Modular Code Health panel, and share gauges. |
+| **`style="default"`** | **72 cols** | Standard Desktop & Tablet Chat | Split summary header, 22-week `Mon–Sun` heatmap, 8-hour activity & project stack (`░▒▓█`), model quota bars (`┼`), Praxis/Polyglot health, and project & subagent tables. |
+| **`style="quick"`** | **`<= 40` cols** | Phone Screens (Portrait) | Fits strictly within 40 characters per line so it never wraps on mobile. Shows a 13-week heatmap, 8-hour pace curve, model quota bars, and top projects/subagents. |
+| **`style="rich"`** | **76 cols** | Widescreen Desktop Chat | Full box-drawn rig (`v3.1.0`) with side-by-side quota and token panels, 13-week 3-character heatmap with Peak Day card, 6-row 8-hour curve, and share gauges. |
 
 ### 1. `style="default"` (72-Column Standard Layout)
 
 ```text
 ════════════════════════════════════════╤═══════════════════════════════
-AGY-NEXUS // 90d (Nov 07 ◄── Aug 10)    ┆ EXTENDED TELEMETRY & AVERAGES 
+AGY-NEXUS // 90d (Nov 15 ◄── Aug 18)    ┆ EXTENDED TELEMETRY & AVERAGES 
 ════════════════════════════════════════╪═══════════════════════════════
 GOOGLE 20x : 100.0% [████████┼█] HEALTHY┆ 0x 429s | Ultra-20x (T:>=90%) 
 PARTNER 1x : 100.0% [░┼░░░░░░░░] ON PACE┆ 14.3% Wk Left | Lim <=14.3%/d 
@@ -288,43 +210,34 @@ Sat   ▓▓ ██ ██ ░░ ▒▒ ██ ██ ·· ·· ·· ·· ·· 
 Sun   ·· ▓▓ ██ ▓▓ ▓▓ ██ ▒▒ ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ··
 Vol   ▄▄ ██ ▆▆ ▃▃ ▄▄ ▆▆ ▃▃ ── ── ── ── ── ── ── ── ── ── ── ── ── ── ──
 ────────────────────────────────────────────────────────────────────────
-8H SUB-DAILY PACE (NOW ──► SEP 21)   [Avg: 1.6k/8h | Peak: 4.5k | ░▒▓█]
+8H SUB-DAILY PACE (NOW ──► SEP 29)   [Avg: 1.6k/8h | Peak: 4.5k | ░▒▓█]
 4.5k ╷                 ▄█ █                                            
 2.4k ┤█                █████  ▄                     ██  ▄      ▄▄      
 1.6k ┼██▄─────▄██─█▄──██████──█──────█───█─▄█──█─▄──██─██▄▄──▄─██──────
    0 ╵░▓▓ ▓▓▓▄█▒▓▓█▒▓▄███▒▒▒  ▒▄ ▒▄▄▄██▄ █▄██ ██▄██ ████▓▓▓ ▓▓▄▓▓▓▄  ▄ 
      └─▲────────────▲────────────▲────────────▲────────────▲──────────▲─
-      Nov 07       Oct 29       Oct 19       Oct 09       Sep 30     Sep
+      Nov 15       Nov 05       Oct 26       Oct 16       Oct 07     Sep
       Stack: [█] nexus-mesh-te (36%)  [▓] automation-gi (28%)  [▒] chron
 ────────────────────────────────────────────────────────────────────────
 MODEL QUOTA vs TARGET (┼ = Target Pin)      CALLS   EST TOK  DELTA  STAT
-Argon 4 Pro [████████████┼████▓░░]  83.3%   83,381    ~21.3M +18.3%  WAR
-Flash 3.8   [███▓░┼░░░░░░░░░░░░░░]  16.7%   16,707     ~3.7M  -8.3%  OK
+Carbon 4    [██████████░░┼░░░░░░░]  54.2%   54,240    ~14.1M  +4.2%  OK
+Argon 4 Pro [█████▓░░┼░░░░░░░░░░░]  29.1%   29,141     ~7.2M  -0.9%  OK
+Flash 3.8   [███▓░┼░░░░░░░░░░░░░░]  16.7%   16,707     ~3.7M  -3.3%  OK
 Claude 5.5  [░░┼░░░░░░░░░░░░░░░░░]   0.0%       12     ~4.1k  -8.0%  OK
-GPT-OSS 120 [▏░░░░░░░░░░░░░░░░░░░]   0.0%        0         0  -2.0%  OK
 ────────────────────────────────────────────────────────────────────────
-WORKSPACES (11)     CHATS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE
+WORKSPACES (8)      CHATS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE
 1. nexus-mesh-telem  10c  75,084     ~29.2M     621k    4.35M   36.0%
 2. automation-gitop  19c  57,456     ~18.7M     398k    2.79M   27.6%
 3. chronos-board      5c  40,110     ~16.5M     351k    2.46M   19.2%
 4. quantum-dsp-work  11c  10,298      ~3.7M      78k     548k    4.9%
-5. unassigned         7c   6,839      ~2.8M      59k     412k    3.3%
-6. rf-signal-lab      1c   5,701      ~2.0M      42k     294k    2.7%
-7. agy-nexus-config   1c   4,518      ~1.9M      40k     281k    2.2%
-8. container-gitops   7c   3,346      ~1.0M      22k     152k    1.6%
-9. edge-sensor-node   2c   2,691      ~1.0M      21k     150k    1.3%
-10. mail-taxonomy-a   1c   1,327      ~344k     7.3k      51k    0.6%
-11. orbital-optics    1c   1,126      ~294k     6.3k      44k    0.5%
+5. agy-nexus-mcp      6c   8,412      ~3.1M      66k     462k    4.1%
 ────────────────────────────────────────────────────────────────────────
-SUBAGENTS (8)        RUNS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE
+SUBAGENTS (6)        RUNS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE
 1. flash-surgeon    116r  21,746      ~8.9M     190k    1.33M   51.0%
 2. flash-auditor     78r   9,112      ~3.0M      64k     450k   21.4%
 3. argon-sentinel     3r   4,537      ~1.9M      41k     285k   10.6%
 4. argon-surgeon      2r   3,170      ~1.3M      28k     196k    7.4%
 5. flash-scout       20r   3,012      ~1.1M      24k     170k    7.1%
-6. research           5r     862      ~333k     7.1k      50k    2.0%
-7. argon-architect    2r     132     ~64.2k     1.4k     9.6k    0.3%
-8. claude-specialis   1r      31     ~16.3k      347     2.4k    0.1%
 ════════════════════════════════════════════════════════════════════════
 ```
 
@@ -332,7 +245,7 @@ SUBAGENTS (8)        RUNS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE
 
 ```text
 ════════════════════════════════════════
-AGY-NEXUS // 90d (Nov 07 ◄── Aug 10)
+AGY-NEXUS // 90d (Nov 15 ◄── Aug 18)
 ════════════════════════════════════════
 G-20x: 100% [████████┼█] OK | 0x 429s
 P-1x : 100% [░┼░░░░░░░░] OK | 14% WkLft
@@ -348,28 +261,11 @@ Fr ▓▓█▒░██······           │ Subs : 227r
 Sa ▓██░▒██······           │ Tok/d:1.65M
 Su ·▓█▓▓█▒······           │ Tok/w:11.5M
 ────────────────────────────────────────
-8H PACE & STACK (NOW──►OLD) Pk:3.7k
-3.7k╷█        █                      
-1.8k┤█   ▄▄ ▄ █     ▄ ▄       ▄  █   
-1.5k┼███▄██─█─█▄────█─██─▄─██▄█──█───
-   0╵░▓░▓█▓████▒▄ ▒▄█▄██▄█ ███▓▓▓▓▄▄ 
-────────────────────────────────────────
 MODEL QUOTA (┼=Target)  PCT   TOK   DLT
-Argon 4 [██████┼█▓░]  83% 21.3M  +18%
-Flash38 [██┼░░░░░░░]  17%  3.7M   -8%
+Carbon4 [█████┼░░░░]  54% 14.1M   +4%
+Argon 4 [███┼░░░░░░]  29%  7.2M   -1%
+Flash38 [██┼░░░░░░░]  17%  3.7M   -3%
 Claude5 [░┼░░░░░░░░]   0%  4.1k   -8%
-GPT-120 [▏░░░░░░░░░]   0%     0   -2%
-────────────────────────────────────────
-WORKSPACES & SUBS  TOK   TOK/D   TOK/WK
-nexus-mesh-telem 29.2M   621k   4.35M
-automation-gitop 18.7M   398k   2.79M
-chronos-board    16.5M   351k   2.46M
-quantum-dsp-work  3.7M    78k    548k
-unassigned        2.8M    59k    412k
-rf-signal-lab     2.0M    42k    294k
-*flash-surgeon    8.9M   190k   1.33M
-*flash-auditor    3.0M    64k    450k
-*argon-sentinel   1.9M    41k    285k
 ════════════════════════════════════════
 ```
 
@@ -377,8 +273,8 @@ rf-signal-lab     2.0M    42k    294k
 
 ```text
 ╔══════════════════════════════════════════════════════════════════════════╗
-║ ▄▀█ █▀▀ █▄█ ▄▄ █▄░█ █▀▀ ▀▄▀ █░█ █▀   v2.7.0 // RICH TELEMETRY RIG        ║
-║ █▀█ █▄█ ░█░ ░░ █░▀█ ██▄ █░█ █▄█ ▄█   WINDOW: 90d (Nov 07 ◄── Aug 10)     ║
+║ ▄▀█ █▀▀ █▄█ ▄▄ █▄░█ █▀▀ ▀▄▀ █░█ █▀   v3.1.0 // RICH TELEMETRY RIG        ║
+║ █▀█ █▄█ ░█░ ░░ █░▀█ ██▄ █░█ █▄█ ▄█   WINDOW: 90d (Nov 15 ◄── Aug 18)     ║
 ╠════════════════════════════════════╦═════════════════════════════════════╣
 ║ QUOTA POOLS & 429 COOLDOWNS        │ STEP & TOOL VELOCITY                ║
 ║ G-20x: 100.0% [████████┼█] OK      │ Total : 208,496 steps | 103,976 too ║
@@ -388,7 +284,7 @@ rf-signal-lab     2.0M    42k    294k
 ║ TOKEN BURN & ROLLING AVERAGES      │ MCP WIRE & CLIENT SURFACES          ║
 ║ Total : ~77.4M (~70.4M direct)     │ Wire  : 96% <20KB (avg 9.3/33.7KB)  ║
 ║ Daily : 1.65M tok/act-d            │ Calls : 200 MCP reqs (514k tok)     ║
-║ Weekly: 11.5M tok/wk               │ Client: Gemini Web (100% / 0 Mob)   ║
+║ Weekly: 11.5M tok/wk               │ Client: Gemini Web (84% / 16% Mob)  ║
 ╠════════════════════════════════════╩═════════════════════════════════════╣
 ║ DAILY ACTIVITY MATRIX (NOW: W01 ──► W13)     [·· 0  ░░ <1k  ▒▒ <4k  ██]  ║
 ║ Wk   W01 W02 W03 W04 W05 W06 W07 W08 W09 W10 W11 W12 W13  ┌─ PEAK DAY ─┐ ║
@@ -399,249 +295,160 @@ rf-signal-lab     2.0M    42k    294k
 ║ Fri  ▓▓▓ ▓▓▓ ███ ▒▒▒ ░░░ ███ ███ ··· ··· ··· ··· ··· ···  │ Avg:  4.4k │ ║
 ║ Sat  ▓▓▓ ███ ███ ░░░ ▒▒▒ ███ ███ ··· ··· ··· ··· ··· ···  │ Sub: 227r  │ ║
 ║ Sun  ··· ▓▓▓ ███ ▓▓▓ ▓▓▓ ███ ▒▒▒ ··· ··· ··· ··· ··· ···  └────────────┘ ║
-║ Vol  ▄▄▄ ███ ▆▆▆ ▃▃▃ ▄▄▄ ▆▆▆ ▃▃▃ ─── ─── ─── ─── ─── ───  PeakWk:45.0k   ║
-║ Steps 24k 45k 36k 20k 26k 38k 20k  ·   ·   ·   ·   ·   ·                 ║
-╠══════════════════════════════════════════════════════════════════════════╣
-║ 8H SUB-DAILY HORIZON CURVE & PROJECT STACK (NOW ──► SEP 21)              ║
-║ 3.8k ╷█        █   ▄   ▄ █                         ▄                     ║
-║ 3.0k ┤█        █   █   █ █                         █   ▄      █          ║
-║ 2.1k ┤█▄      ▄██  █   █ █       █  ▄         ▄    █  ██ ▄    ██         ║
-║ 1.4k ┼███─█───███──█───█─█───────█──█─────█───█────█─▄██▄█──▄─██──────   ║
-║  685 ┤███ ███ ███▄▄█▄ ▄████ █   ▄█  █  █▄ ██  ██▄  █▄█████ ▄█▄██▄        ║
-║    0 ╵░▓▓▄░▓▓▄█▓▓▓██▓▄█▒█▒▒ ▒▄▄▒▒█▒██▄▄█▓▄██ ▄███ ▄████▓█▓▄▓▓▓▓▓▓▄▄▄▄    ║
-║      └─▲───────────▲───────────▲───────────▲───────────▲───────────▲───  ║
-║       Nov 07      Oct 28      Oct 19      Oct 09      Sep 29      Sep 21 ║
-║       Stack: [█]nexus-mesh-t(36%)  [▓]automation-g(28%)  [▒]chronos-boar ║
-╠══════════════════════════════════════════════════════════════════════════╣
-║ MODEL QUOTA vs TARGET (┼ = Target Pin)       CALLS   EST TOK  DELTA STAT ║
-║ Argon 4 Pro [█████████████┼███▓░░░]  83.3%  83,381    ~21.3M +18.3%  WRN ║
-║ Flash 3.8   [████░┼░░░░░░░░░░░░░░░]  16.7%  16,707     ~3.7M  -8.3%  OK  ║
-║ Claude 5.5  [░░┼░░░░░░░░░░░░░░░░░░]   0.0%      12     ~4.1k  -8.0%  OK  ║
-║ GPT-OSS 120 [▏░░░░░░░░░░░░░░░░░░░░]   0.0%       0         0  -2.0%  OK  ║
-╠══════════════════════════════════════════════════════════════════════════╣
-║ WORKSPACES (11)    CHATS   STEPS  TOTAL TOK  TOK/DAY  TOK/WK SHARE GAUGE ║
-║ 1. nexus-mesh-tel  10c  75,084     ~29.2M     621k   4.35M ██░░░░ 36.0%  ║
-║ 2. automation-git  19c  57,456     ~18.7M     398k   2.79M █▍░░░░ 27.6%  ║
-║ 3. chronos-board    5c  40,110     ~16.5M     351k   2.46M █░░░░░ 19.2%  ║
-║ 4. quantum-dsp-wo  11c  10,298      ~3.7M      78k    548k ▍░░░░░  4.9%  ║
-║ 5. unassigned       7c   6,839      ~2.8M      59k    412k ░░░░░░  3.3%  ║
-║ 6. rf-signal-lab    1c   5,701      ~2.0M      42k    294k ░░░░░░  2.7%  ║
-║ 7. agy-nexus-conf   1c   4,518      ~1.9M      40k    281k ░░░░░░  2.2%  ║
-║ 8. container-gito   7c   3,346      ~1.0M      22k    152k ░░░░░░  1.6%  ║
-║ 9. edge-sensor-no   2c   2,691      ~1.0M      21k    150k ░░░░░░  1.3%  ║
-║ 10. mail-taxonomy   1c   1,327      ~344k     7.3k     51k ░░░░░░  0.6%  ║
-║ 11. orbital-optic   1c   1,126      ~294k     6.3k     44k ░░░░░░  0.5%  ║
-╟──────────────────────────────────────────────────────────────────────────╢
-║ SUBAGENTS (8)       RUNS   STEPS  TOTAL TOK  TOK/DAY  TOK/WK SHARE GAUGE ║
-║ 1. flash-surgeon  116r  21,746      ~8.9M     190k   1.33M ███░░░ 51.0%  ║
-║ 2. flash-auditor   78r   9,112      ~3.0M      64k    450k █▍░░░░ 21.4%  ║
-║ 3. argon-sentinel   3r   4,537      ~1.9M      41k    285k ▍░░░░░ 10.6%  ║
-║ 4. argon-surgeon    2r   3,170      ~1.3M      28k    196k ▍░░░░░  7.4%  ║
-║ 5. flash-scout     20r   3,012      ~1.1M      24k    170k ▍░░░░░  7.1%  ║
-║ 6. research         5r     862      ~333k     7.1k     50k ░░░░░░  2.0%  ║
-║ 7. argon-architec   2r     132     ~64.2k     1.4k    9.6k ░░░░░░  0.3%  ║
-║ 8. claude-special   1r      31     ~16.3k      347    2.4k ░░░░░░  0.1%  ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 ```
 
 ---
 
-## Advanced & Future Workflows: Pairing with Gemini Notebook & Gemini Tasks
+## Advanced Workflows: Gemini Notebook, Scheduled Gemini Tasks & Split-Trust
 
-When you combine `agy-nexus-mcp` with **Gemini Notebook** (formerly NotebookLM) and **Gemini Tasks** (formerly Spark), Gemini becomes a scheduled, citation-backed control center for your local Antigravity projects:
-
-### 1. Zero-Token Reference Lookup with Gemini Notebook
-Normally, if a local coding agent needs to check hardware manuals, API specs, RFCs, or large architecture docs, it spends local steps and model quota reading files.
-- **Pre-Flight Context Compression**: Store large reference manuals and specs in **Gemini Notebook**. Ask Gemini to pull the exact cited excerpts from your Notebook first, then send a concise `<= 4,500`-character brief into Antigravity via `send_handoff_and_resume`.
-- **Fast Handoffs**: Local agents skip broad file discovery and start coding immediately, while large Notebook briefs automatically write to `scratch/gemini_research_handoff.md` with a compact wakeup prompt so CLI handoffs never time out.
-
-### 2. Scheduled Automation with Gemini Tasks (Spark)
-Because Gemini Tasks supports recurring schedules, event triggers, Gemini Notebook, and custom MCP connectors, it can run unattended checks for your local projects:
-- **Morning Usage & Audio Briefings**: Schedule a morning Gemini Task to call `get_session_tree(include_stats=True, period="last_90d", style="default")`, combine your quota pacing with open tasks, and prepare a morning summary or Notebook Audio Overview.
-- **Single-Turn Multi-Repo Drift Audits**: A nightly Gemini Task can call `inspect_git_diff(workspace_override="ALL")` to scan all of your local Git repositories in one turn—flagging uncommitted changes, active branches, or paused sessions without hitting Gemini's single-tool-per-turn limit.
-- **Event-Driven Plan Staging**: When an important release note or alert arrives, a triggered Gemini Task can check impact against your Gemini Notebook docs and stage a `plan`-mode handoff (`resume_headless=False`) for you to review.
-
-### 3. Searchable Project Memory (`walkthrough.md` $\rightarrow$ Gemini Notebook Sync)
-Every completed Antigravity session produces an `implementation_plan.md` and `walkthrough.md` that normally sit isolated inside individual session UUID folders.
-- **Clean Notebook Exports**: Calling `manage_background_run(action="export_notebook")` (or via `telemetry:export_notebook` virtual URI) exports completed session plans and walkthroughs into human-named, dated Markdown files (`YYYY-MM-DD_<repo>_<title>_<id>.md`) inside `sidecar_data/ag-bridge-bg/notebook_exports/` (configurable via `AGY_NOTEBOOK_EXPORT_DIR`).
-- **SHA-256 Deduplication (Zero Re-Sync Loops)**: Before writing each file, `export_notebook` checks a SHA-256 hash of the content and skips unchanged sessions (`sync_state="unchanged"`), so syncing that folder to Google Drive and Gemini Notebook never causes duplicate uploads or sync loops.
-
-### 4. Split-Trust Lock Options for Unattended Scheduled Runs
-Because `agy-nexus-mcp` requires your interactive passphrase to unlock, a scheduled 6:00 AM Gemini Task would normally hit the lock screen unless you include the passphrase in the task prompt. If you want unattended scheduled tasks without storing your passphrase in a cloud prompt, you can enable two optional split-trust settings in `secrets.env`:
-- **`AG_BRIDGE_ALLOW_LOCKED_STATS=true`**: Allows `get_session_tree(include_stats=True)` and `manage_background_run(action="stats")` to return usage and quota summaries while locked—without exposing any code, file paths, or chat messages.
-- **`AG_BRIDGE_ALLOW_LOCKED_STAGING=true`**: Allows `send_handoff_and_resume(..., resume_headless=False)` while locked to save incoming research notes into a quarantine folder (`sidecar_data/ag-bridge-bg/quarantine_handoffs/`), keeping file reads and live execution strictly behind your passphrase.
-
-### 5. Unified Incremental Polyglot Engine, Virtual URIs & Local `agy-polyglot-mcp` (`v2.7.0`)
-To give both remote Gemini sessions and local Antigravity IDE agents fast, token-efficient structural navigation across every major language:
-- **Incremental SHA-256 Polyglot Index (`polyglot_outline.py` + `polyglot_index.py`)**:
-  - Maintains a thread-safe, SHA-256 cached structural index across **Python** (`.py` with 1-liner docstrings & signatures), **JavaScript/TypeScript** (`.js`, `.mjs`, `.ts`, `.tsx`, `.jsx`), **Go** (`.go`), **Rust** (`.rs`), **Shell** (`.sh`, `.bash`), **SQL** (`.sql`), **Markdown** (`.md`, `.mdx`), **JSON/JSONC** (`.json`, `.jsonc`), **YAML** (`.yaml`, `.yml`), and **HTML/CSS** (`.html`, `.css`).
-  - Pass `file_subpath="outline:<path>"` or `polyglot:map` / `polyglot:search:<query>` / `polyglot:outline:<path>` in `ask_workspace_readonly`—or let `ask_workspace_readonly` attach cached `L<start>-L<end>` outlines automatically whenever a file exceeds the `12 KB` wire cap.
-- **Virtual URI Paging (`virtual_uris.py`)**:
-  - Read untruncated `.pb` conversation turns (`transcript:<conv_id>:turn:latest` / `turn:<N>`), nested session artifacts (`brain:<conv_id>/scratch/...`), and policy-safe telemetry (`telemetry:stats`, `telemetry:session_status:<conv_id>`) directly through `ask_workspace_readonly`.
-- **Dedicated Local IDE MCP Surface (`agy-polyglot-mcp`)**:
-  - Exposes `polyglot_map`, `polyglot_search`, and `polyglot_outline` at `http://<lan-host>:8765/polyglot/${POLYGLOT_MCP_TOKEN}/mcp` (RFC1918/loopback LAN-only, zero passphrase deadbolt friction, proxy-header fail-closed), pairing cleanly with `oraios/serena` LSP symbolic editing.
-- **Automated Session Baton-Pass & Context Rollover (`handoff.py` & `session_status.py`)**:
-  - Tracks live `context_budget` (`GREEN (<250 steps)`, `AMBER (250-350 steps)`, `ROLLOVER_RECOMMENDED (>350 steps or context exceeded)`).
-  - When sessions reach `>= 380` steps or hit `"Context window exceeded"`, `send_handoff_and_resume` automatically promotes the request to `create_new_session=True` (`auto_rollover_from: <prev_id>`), extracts a compact **Prior Session Baton** (`task.md` state, `walkthrough.md` highlights, and `git status --short`), and prepends `## Prior Session Baton (<prev_id>)` so the fresh session resumes seamlessly with full architectural continuity.
-
-### 6. Installed vs. GitHub Published Release Telemetry & Polyglot Code-Health Metrics (`v2.7.0`)
-To maintain visibility across local staging and remote GitHub releases without blocking local responsiveness:
-- **Fast Cached GitHub Lookup with Graceful Offline Fallback**: Compares the installed bridge version (`v2.7.0`) against the latest GitHub tag or release on [`github.com/FrankXLT/agy-nexus-mcp`](https://github.com/FrankXLT/agy-nexus-mcp). Uses an asynchronous 1-hour TTL disk cache (`github_release_cache.json`) with a 2-second timeout and offline fallback, ensuring local rendering and ASCII status generation never stall.
-- **3 Explicit Version States**:
-  1. **Up to Date** (`installed == github_latest`): Green 6px status dot.
-  2. **Update Available** (`installed < github_latest`): Amber 6px status dot with target version.
-  3. **Staged Locally** (`installed > github_latest`): Cyan 6px status dot (e.g. running `v2.7.0` locally in Stage & Preview mode while GitHub release is at `v2.6.0`).
-- **Polyglot Index & Modular Hygiene Metrics**:
-  - Aggregates file line budgets across all modules (`<= 500L` target compliant, `501-650L` warning band, `> 650L` ceiling violations, and functions `<= 100L`) so cohesive subsystems stay modular without artificial micro-file sprawl.
-  - Reports live SHA-256 cached Polyglot symbol totals (`indexed_files`, `total_symbols`, `long_functions_over_100`) alongside `agy-polyglot-mcp + Serena` status across the `/web` Quiet UI dashboard (Row 6 Code Health table) and all three ASCII layouts (`quick`, `default`, `rich`).
+1. **Zero-Token Reference Lookup with Gemini Notebook**: Store large hardware manuals, RFCs, or API specs in Gemini Notebook, extract exact cited excerpts in Gemini, and dispatch a concise brief via `send_handoff_and_resume` so local agents start coding immediately without burning local context scanning PDFs.
+2. **Searchable Project Memory (`export_notebook` with `dry_run` Preview)**: Export completed session plans and walkthroughs into SHA-256 deduplicated Markdown files (`YYYY-MM-DD_<repo>_<title>_<id>.md`) via `manage_background_run(action="export_notebook")` (pass `dry_run=True` first to preview pending exports).
+3. **Scheduled Gemini Tasks & Split-Trust Lock Options**:
+   - **`AG_BRIDGE_ALLOW_LOCKED_STATS=true`**: Allows `get_session_tree(include_stats=True)` and `manage_background_run(action="stats")` to return policy-safe usage/quota summaries while locked without exposing code, paths, or chat messages.
+   - **`AG_BRIDGE_ALLOW_LOCKED_STAGING=true`**: Allows `send_handoff_and_resume(..., resume_headless=False)` while locked to stage incoming notes into `sidecar_data/ag-bridge-bg/quarantine_handoffs/`.
+   - **Single-Turn Multi-Repo Drift Audits**: Call `inspect_git_diff(workspace_override="ALL")` to audit uncommitted changes across every repository in one turn.
+4. **Virtual URI Dispatcher (`virtual_uris.py`)**: Read untruncated conversation turns (`transcript:<conv_id>:turn:latest`), nested session artifacts (`brain:<conv_id>/scratch/...`), Praxis/Polyglot maps (`praxis:map`, `praxis:handoffs`, `polyglot:search:<q>`), and policy-safe telemetry (`telemetry:stats`) directly via `ask_workspace_readonly`.
 
 ---
 
-## Available MCP Tools
+## Available MCP Tools (`17` Total Across Dual Doorways)
 
 ### 1. `agy-nexus-mcp` Remote & Mobile Bridge Surface (`11` Tools)
 
 | Tool | What It Does |
 | :--- | :--- |
-| `unlock_sessions(spoken_passphrase, search_query="")` | Verifies your passphrase, unlocks the server, and returns your numbered list of recent Antigravity chats (`1..N`) plus a live usage summary. |
-| `lock_bridge()` | Immediately locks the server and clears the active session selection. |
-| `list_saved_sessions(limit, status_filter, include_subagents)` | Lists recent Antigravity chats with live status (`RUNNING`, `STALLED_WAITING_APPROVAL`, `COMPLETED`, `IDLE`), waiting approval details, session health warnings (>1,500 steps / >10 compactions), project path, and task summary. |
-| `load_session_into_gemini(session_identifier, include_files)` | Opens a chat by number (`"1"`), `#2`, ID prefix, or title keyword in one shot and returns its `task.md`, `implementation_plan.md`, `walkthrough.md`, git status, signed `visual_artifacts`, session health diagnostics, and recent untruncated `.pb` messages (`<= 4,500` chars). |
-| `get_session_tree(active_only, project_filter, limit, include_stats, period, style)` | Renders the copy-ready 76-column ASCII `Project -> Chat -> Session ID -> Workspace -> Status` hierarchy with untruncated UUIDs, parallel context slots, 3-2-1 backup verification, and policy-safe `include_stats=True` three-tier ASCII usage telemetry. |
-| `ask_workspace_readonly(question, search_query, file_subpath, start_line, end_line, session_identifier, workspace)` | Searches code (parallel bounded `git grep` + live `.pb`/`brain/` search) or reads up to 12 files across the active/pinned project, supporting Virtual URIs (`transcript:`, `brain:`, `polyglot:`, `telemetry:`) and cached Polyglot outlines. |
-| `inspect_git_diff(target_branch, include_untracked, workspace_override, file_path, offset_chars, start_line, end_line, session_identifier, workspace)` | Shows the current branch, modified/untracked files, and git diff for a repo—or pass `workspace_override="ALL"` (or `"repo1,repo2"`) to audit all repositories in one turn. |
-| `inspect_visual_artifacts(session_identifier, artifact_filter, max_images, include_binary)` | Returns crisp adaptive WebP previews (`<= 960px` single / `<= 720px` 2-up / `<= 560px` 4-up) and 30-minute HMAC-SHA256 signed `/web/media/` HTTPS inspection links for session screenshots and `/web` uploads. |
-| `send_handoff_and_resume(research_markdown, resume_headless, execution_mode, session_identifier, workspace_path, project_name, activate_skills, target_agent_role, use_worktree, ...)` | Routes your research notes or plan to the right project session (`scratch/gemini_research_handoff.md`), supports idempotent `RESUME_STAGED` wakeup (`execution_mode="auto"`), 3 PM modes, in-flight mutex, concurrent same-repo writer guard, and wakes up Antigravity. |
-| `manage_background_run(action, job_id, tail_lines, period, style)` | Checks background session progress (`status`, `tail`, `stop`), renders the 76-column session hierarchy (`action="sessions"`), renders three-tier ASCII stats (`action="stats"`), or exports completed session plans/walkthroughs (`action="export_notebook"`). |
-| `list_models_and_agents(include_skills, include_rules, skill_scope_filter, inspect_name)` | Lists your configured Agent Roles, Skills, Rules, and pool quota settings, or reads a specific skill/rule file via `inspect_name`. |
+| `unlock_sessions(spoken_passphrase, search_query="")` | Verifies your voice/text passphrase, unlocks the sliding-TTL deadbolt, and returns numbered recent sessions (`1..N`) plus live usage telemetry. |
+| `lock_bridge()` | Immediately engages the deadbolt and clears unlocked session state. |
+| `list_saved_sessions(limit, status_filter, include_subagents)` | Lists recent Antigravity chats with live status (`RUNNING`, `STALLED_WAITING_APPROVAL`, `COMPLETED`, `IDLE`, `RETIRED`), continuity tier, project path, and summary. |
+| `load_session_into_gemini(session_identifier, include_files)` | Loads a chat by `#N`, `<repo-slug>-NN`, UUID prefix, or title keyword—returning `task.md`, `implementation_plan.md`, `walkthrough.md`, git status, 7-day signed `visual_artifacts`, `workspace_url`, continuity tier, and job-first `suggested_actions`. |
+| `get_session_tree(active_only, project_filter, limit, include_stats, period, style)` | Renders the copy-ready 76-column ASCII `Project -> Chat -> Session ID` + `[HANDOFF <slug>-NN]` hierarchy, 3-2-1 backup status, and optional `include_stats=True` three-tier ASCII telemetry. |
+| `ask_workspace_readonly(question, search_query, file_subpath, start_line, end_line, session_identifier, workspace)` | Searches code (bounded multi-repo `git grep` + live `transcript_full.jsonl`/`brain/` search) or reads up to 12 files with line slicing, Virtual URIs (`transcript:`, `brain:`, `praxis:`, `telemetry:`), and cached Polyglot outlines. |
+| `inspect_git_diff(target_branch, include_untracked, workspace_override, file_path, offset_chars, start_line, end_line, session_identifier, workspace)` | Inspects current branch, status, and paginated git diff for a repository—or pass `workspace_override="ALL"` to audit drift across all repositories in one call. |
+| `inspect_visual_artifacts(session_identifier, artifact_filter, max_images, include_binary)` | Encodes crisp adaptive WebP previews (`< 20 KB` wire budget) alongside 7-day HMAC-SHA256 signed `/web/media/` links and canonical `/web#workspace` deep links. |
+| `send_handoff_and_resume(research_markdown, resume_headless, execution_mode, session_identifier, workspace_path, project_name, create_new_project, session_continuity, retire_session, retirement_summary, ...)` | Stages repo-prefixed `<slug>-NN` handoffs, enforces fail-closed `PROJECT_NOT_FOUND` & `[RETIRED_SESSION_GUARD]` checks, handles `RESUME_STAGED`, continuity-aware rollover, in-place closeout/retirement (`RETIRED.json`), and wakes Antigravity. |
+| `manage_background_run(action, job_id, tail_lines, period, style, dry_run)` | Monitors background jobs (`status`, `tail`, `stop`), renders `sessions` or 3-tier `stats`, or exports SHA-256 deduplicated plans/walkthroughs (`export_notebook` with `dry_run` preview). |
+| `list_models_and_agents(include_skills, include_rules, skill_scope_filter, inspect_name)` | Lists configured Agent Roles, Skills, Rules, and Dual-Pool quota settings, or reads a specific skill/rule contract via `inspect_name`. |
 
-### 2. `agy-polyglot-mcp` Local Antigravity IDE Surface (`3` Tools — LAN-Only)
+### 2. `agy-praxis-mcp` Local Antigravity IDE Surface (`6` Tools — LAN-Only / `--stdio`)
 
 | Tool | What It Does |
 | :--- | :--- |
-| `polyglot_map(workspace="", subdir="", max_files=60)` | Returns an incremental SHA-256 cached structural map of files, line counts, and top-level symbols across a workspace or subdirectory. |
-| `polyglot_search(query, workspace="", kind="", limit=30)` | Searches indexed symbols, signatures, headings, and 1-liner docstrings across all supported languages with exact `L<start>-L<end>` spans. |
-| `polyglot_outline(file_path, workspace="")` | Returns the complete `L<start>-L<end>` symbol, signature, and docstring outline for a single source, config, or documentation file. |
+| `polyglot_map(workspace="", path_prefix="", limit=120, force_refresh=False)` | Builds or incrementally refreshes the SHA-256 Polyglot index for a workspace and returns its semantic file map, line counts, and top symbol spans. |
+| `polyglot_search(query, workspace="", kind="", limit=25, force_refresh=False)` | Searches indexed functions, classes, methods, headings, JSON/YAML keys, CSS rules, and 1-liner docstrings with exact `Lstart-Lend` slice hints. |
+| `polyglot_outline(file_subpath, workspace="", include_callers=False)` | Returns the complete `Lstart-Lend` structural outline, signatures, `>100L` function warnings, and 1-liner docstrings for a single file. |
+| `praxis_handoff_inbox(workspace="", status_filter="ALL", include_superseded=True, limit=25)` | Lists repo-prefixed Gemini handoffs (`<repo-slug>-01`, `<repo-slug>-02`, ...) across `STAGED`, `IN_WORK`, `SUPERSEDED`, and `COMPLETED` states. |
+| `praxis_claim_handoff(handoff_id="", workspace="", conversation_id="", force=False)` | Atomically claims a staged `<repo-slug>-NN` ticket for IDE execution (`STAGED` $\rightarrow$ `IN_WORK`), returning unwrapped `specification_markdown` (or disambiguating candidates). |
+| `praxis_update_handoff(handoff_id, status="COMPLETED", conversation_id="", notes="")` | Updates a handoff ticket's lifecycle state (`COMPLETED`, `IN_WORK`, `STAGED`, or `SUPERSEDED`). |
 
 ---
 
 ## Comparison with Typical Antigravity Bridges
 
-| Feature | Typical Community Bridges (`agy-bridge`, `gemini-antigravity-bridge`, `meridian`, `ag-local-bridge`) | `agy-nexus-mcp` (`v2.7.0`) |
+| Feature | Typical Community Bridges (`agy-bridge`, `meridian`, `ag-local-bridge`) | `agy-nexus-mcp` (`v3.1.0`) |
 | :--- | :--- | :--- |
-| **Connection Type** | Local `stdio` pipe, localhost proxy, or single-chat Telegram/WhatsApp bot | **Dual-Surface Streamable HTTP MCP** (`agy-nexus-mcp` for Gemini Web/Mobile/Tasks + LAN-only `agy-polyglot-mcp` for local Antigravity IDE) |
-| **Security** | None or static chat-ID allowlist | **Secret URL Path + Voice/Text Passphrase Deadbolt + HMAC-Authenticated Host Bridge (`CWE-306`/`CWE-88`)** |
-| **Parallel Multi-Chat Isolation** | Single active chat only; parallel tabs overwrite state | **Keyed Context Slots (`active_contexts`) + Authoritative SQLite Workspace Routing + Same-Repo Writer Guard** |
-| **Semantic Code Indexing** | Raw full-file reads or Python-only AST | **Incremental SHA-256 Polyglot Index** across 10+ languages + Virtual URIs (`transcript:`, `brain:`, `polyglot:`, `telemetry:`) |
-| **Web Dashboard & Chromium App** | None | **Installable Chromium Standalone App (`/web`)** with `Mon–Sun` Calendar Heatmap, Project/Chat/Session Hierarchy, Artifact Uploader, and 4h/8h Stacked Area Charts |
-| **Chat ASCII Usage & Tree Reports** | None | **Policy-Safe Three-Tier Monospace ASCII Telemetry** (`default` 72-col, `quick` 40-col mobile, `rich` 76-col desktop) + **76-Col Copy-Ready Session Tree** |
-| **Visual Artifact Inspection** | None | **30-Minute HMAC-SHA256 Signed `/web/media/` HTTPS Links + Adaptive WebP Previews** |
-| **Large File & Diff Handling** | Raw dumps that can hang cloud proxies | **Automatic `< 20 KB` Wire-Budgeted Responses** with offloaded threadpool tools, parallel bounded `git grep`, and paged diffs |
+| **Connection Architecture** | Local `stdio` pipe or single-chat Telegram/WhatsApp bot | **Dual-Doorway Streamable HTTP MCP** (`agy-nexus-mcp` for Gemini Web/Mobile/Tasks + LAN-only `agy-praxis-mcp` for local Antigravity IDE) |
+| **Zero-Trust Security** | None or static chat-ID allowlist | **5-Layer Defense**: Secret URL Path + Voice/Text Deadbolt + LAN-Only Praxis Gate + Sandboxed ZIP/File Readers + HMAC Host Bridge |
+| **Parallel Isolation & Routing** | Single active chat; parallel tabs overwrite state | **Keyed Context Slots (`active_contexts`) + Fail-Closed 3-Pillar Resolver + `<repo-slug>-NN` Atomic Queue + Writer Guard** |
+| **Session Lifecycle & Closeout** | Blind context overflows or manual chat juggling | **Continuity-Aware Rollover (`v3.0.0`) + In-Place Closeout & `RETIRED.json` Tombstones (`v3.1.0`) + Job-First 1-Tap `"Yes"` Flow** |
+| **Web Studio & Workspace App** | None | **Unified `42px` Chromium Studio PWA (`/web`)**: `Analytics` (52w/26w Heatmap & Stacked Bars) + **2-Pane `Workspace`** (Editorial Reader & Multi-Select Gallery) |
+| **Visual Artifact Round-Trip** | None | **7-Day HMAC-SHA256 Signed `/web/media/` Links + Web Share API v2 + 1-Click `<canvas>` Contact Sheet + Streaming `.zip` Export** |
+| **Chat ASCII Telemetry** | None | **Policy-Safe Three-Tier Monospace ASCII** (`default` 72-col, `quick` 40-col mobile, `rich` 76-col desktop) + **76-Col Session Tree** |
 
 ---
 
 ## Bundled 8-Agent Orthogonal Roster (`agents/`)
 
-`agy-nexus-mcp` ships with a ready-to-use set of subagent definitions in [`agents/`](agents/) (`flash-scout`, `argon-architect`, `flash-surgeon`, `argon-surgeon`, `flash-auditor`, `argon-sentinel`, `claude-specialist`, `claude-sentinel`).
-
-To install them into your local Antigravity IDE config:
+`agy-nexus-mcp` ships with ready-to-use subagent definitions in [`agents/`](agents/) (`flash-scout`, `argon-architect`, `flash-surgeon`, `argon-surgeon`, `flash-auditor`, `argon-sentinel`, `claude-specialist`, `claude-sentinel`).
 
 ```bash
 mkdir -p ~/.gemini/config/agents
 cp agents/*.md ~/.gemini/config/agents/
 ```
 
-As soon as Antigravity runs those subagents, their activity and token usage automatically appear in the `/web` dashboard and ASCII reports. See [`AGENTS.md`](AGENTS.md) and [`agents/README.md`](agents/README.md) for full details.
+Subagent runs and token share automatically appear in the `/web` Analytics surface and ASCII reports. See [`AGENTS.md`](AGENTS.md) and [`agents/README.md`](agents/README.md) for full details.
 
 ---
 
-## Repository Layout
+## Repository Layout (`v3.1.0`)
 
 ```text
 agy-nexus-mcp/
 ├── src/
-│   └── agy_nexus/                    # Cohesive modular Python package (<= 500L target, 650L ceiling)
-│       ├── __init__.py               # Package metadata (v2.7.0)
-│       ├── config.py                 # Secrets loader, SHA-256 deadbolt, POLYGLOT_MCP_TOKEN & keyed slots
-│       ├── hygiene.py                # <20 KB wire compaction, line-range slicer & diff paginator
-│       ├── polyglot_outline.py       # Universal 10+ language structural outliner (Py/JS/TS/Go/Rust/Sh/SQL/MD/JSON/YAML/HTML/CSS)
-│       ├── polyglot_index.py         # Incremental SHA-256 disk/memory workspace symbol cache & search
-│       ├── tools_polyglot.py         # Dedicated LAN-only agy-polyglot-mcp FastMCP server (3 IDE tools)
-│       ├── virtual_uris.py           # Virtual URI router (transcript:, brain:, telemetry:, polyglot:) & .pb turn parser
-│       ├── inventory.py              # Skills, Agent Roles, Rules & workspace discovery
-│       ├── telemetry_scanner.py      # Local-TZ transcript & SQLite step/token/subagent/workspace scanner
+│   └── agy_nexus/                    # 36 cohesive functional modules (<= 500L target, 650L ceiling)
+│       ├── __init__.py               # Package metadata (v3.1.0)
+│       ├── config.py                 # Secrets loader, SHA-256 deadbolt, PRAXIS_MCP_TOKEN & keyed slots
+│       ├── hygiene.py                # <20 KB wire compaction, sensitive file filter & diff paginator
+│       ├── polyglot_outline.py       # Multi-language semantic outliner (Py/JS/TS/Vue/Go/Rust/Sh/SQL/MD/JSON/YAML/HTML/CSS)
+│       ├── polyglot_index.py         # Incremental (mtime_ns, size) + SHA-256 workspace symbol cache
+│       ├── handoff_queue.py          # Atomic <repo-slug>-NN handoff queue (STAGED / IN_WORK / SUPERSEDED / COMPLETED)
+│       ├── tools_praxis.py           # Deadbolt-free local agy-praxis-mcp FastMCP server (6 IDE tools & --stdio)
+│       ├── tools_polyglot.py         # Backward-compatible polyglot_mcp re-export shim
+│       ├── virtual_uris.py           # Virtual URI dispatcher (brain:, transcript:, praxis:, polyglot:, telemetry:)
+│       ├── inventory.py              # Skills, Agent Roles, Rules, Plugins & 3-pillar workspace scanner
+│       ├── telemetry_scanner.py      # Local-TZ transcript JSONL heatmap, surface & token attribution scanner
 │       ├── ascii_default.py          # Tier 1 (72-col Default) & Tier 2 (40-col Quick) ASCII renderers
 │       ├── ascii_rich.py             # Tier 3 (76-col Rich Widescreen) ASCII renderer
-│       ├── session_tree.py           # 76-col ASCII Project -> Chat -> Session ID tree & 3-2-1 status
-│       ├── session_status.py         # Session health warnings, compaction tracking & in-flight mutex
-│       ├── code_health.py            # Release telemetry (installed vs. GitHub latest) & Polyglot modular health
-│       ├── stats.py                  # Usage stats, Mon–Sun heatmap, locked sub-daily series & ASCII router
-│       ├── stats_series.py           # Sub-daily 4h/8h time-series & model/project stack aggregator
-│       ├── workflows.py              # Gemini Notebook export, multi-repo drift audit & quarantine staging
-│       ├── media.py                  # Ephemeral HMAC-SHA256 /web/media/ visual artifact signer & resolver
-│       ├── uploads.py                # Authenticated /web drag-and-drop screenshot & file staging handler
+│       ├── session_tree.py           # 76-col ASCII Project -> Chat -> Session ID + [HANDOFF <slug>-NN] builder
+│       ├── session_status.py         # 5-tier continuity budget, compaction tracking & in-flight mutex
+│       ├── retirement.py             # Atomic RETIRED.json tombstones & [RETIRED_SESSION_GUARD] closeout helper
+│       ├── code_health.py            # Cached GitHub release comparator & <=500L/650L modular hygiene scanner
+│       ├── stats_series.py           # Adaptive 1h/2h/6h/24h stacked model, subagent & project series builder
+│       ├── stats.py                  # Unified Dual-Pool telemetry bundle & 3-tier ASCII router
+│       ├── workflows.py              # Multi-repo drift audit, dry_run Notebook export & quarantine staging
+│       ├── media.py                  # 7-day HMAC-SHA256 /web/media/ & canonical workspace_url signer
+│       ├── uploads.py                # Session scratch batch upload receiver & INDEX.md generator
+│       ├── bucket_api.py             # 2-Pane Workspace Explorer JSON APIs, raw file reader & streaming .zip exporter
+│       ├── web_routes.py             # Static /web PWA asset server (GET/HEAD), /web/media/ & API dispatcher
 │       ├── webhook_proxy.py          # GitHub -> GitLab webhook proxy handler
 │       ├── sessions.py               # Read-only SQLite session indexer & concurrent writer detector
-│       ├── routing.py                # Language Server (agentapi) bridge & quota failover router
-│       ├── search.py                 # Parallel bounded git grep scanner, live .pb/brain search & FTS5 search
+│       ├── routing.py                # Authenticated Host Companion (:8098) RPC & <repo-slug>-NN resolver
+│       ├── target_resolver.py        # Fail-closed 3-pillar workspace/project resolver & alias normalizer
+│       ├── search.py                 # Bounded multi-repo git grep, transcript_full.jsonl & SQLite FTS5 search
 │       ├── workspace.py              # 3-tier smart path resolver, git diff & background job monitor
-│       ├── tools_session.py          # MCP tools: unlock_sessions, lock_bridge, list/load sessions
+│       ├── tools_session.py          # MCP tools: unlock_sessions, lock_bridge, list/load sessions & suggested_actions
 │       ├── tools_workspace.py        # MCP tools: ask_workspace_readonly & inspect_git_diff
-│       ├── tools_media.py            # MCP tool: inspect_visual_artifacts & adaptive WebP encoder
+│       ├── tools_media.py            # MCP tool: inspect_visual_artifacts (adaptive WebP + 7-day signed links)
 │       ├── tools_ops.py              # MCP tools: get_session_tree, list_models_and_agents, manage_background_run
-│       ├── handoff.py                # MCP tool: send_handoff_and_resume, RESUME_STAGED unwrap & writer guard
-│       ├── middleware.py             # BridgeCompatMiddleware (/web PWA, /polyglot/ LAN gate, 405 MCP spec & lifespan)
-│       └── server.py                 # Dual-MCP Starlette/Uvicorn builder, threadpool wrapper & --self-test suite
-├── ag_bridge.py                      # Backward-compatible root entrypoint shim
+│       ├── handoff.py                # MCP tool: send_handoff_and_resume, continuity rollover & in-place retirement
+│       ├── middleware.py             # BridgeCompatMiddleware (405 MCP spec, LAN-only /praxis/ gate & lifespan)
+│       └── server.py                 # Dual-MCP Starlette/Uvicorn builder, threadpool offload & --self-test suite
+├── ag_bridge.py                      # Backward-compatible 51-line root entrypoint shim
 ├── web/
-│   ├── index.html                    # Responsive /web Overwatch shell (4 Themes × 4 Densities, v2.7.0)
-│   ├── styles.css                    # Dashboard theme tokens & responsive layout rules
+│   ├── index.html                    # Unified 42px Studio shell (Analytics + 2-Pane Workspace, v3.1.0)
+│   ├── styles.css                    # 4 Themes × 4 Densities tokens, responsive topbar & Explorer styles
 │   ├── palettes.js                   # Theme & series color palette definitions
-│   ├── demo_data.js                  # Depersonalized ?demo=1 preview dataset (v2.7.0)
-│   ├── charts.js                     # Mon–Sun Calendar Heatmap, 4h/8h Stacked Area SVGs & URL query state
-│   ├── hierarchy.js                  # Project, Chat & Session Hierarchy col-12 renderer & copy controls
-│   ├── health.js                     # Row 6 Code Health, Polyglot Index & Modular Hygiene table renderer
-│   ├── uploads.js                    # Drag-and-drop visual artifact & file staging UI controller
-│   ├── app.js                        # Dashboard state, live polling & Chromium PWA installer logic
+│   ├── demo_data.js                  # 100% depersonalized ?demo=1 Analytics & Workspace preview dataset
+│   ├── charts.js                     # Single-hue #2563eb Mon–Sun Heatmap & adaptive Stacked Bar SVGs
+│   ├── hierarchy.js                  # Project, Chat, Handoff & 8-char Session ID pill renderer
+│   ├── health.js                     # 36-module Code Health & Praxis/Polyglot hygiene table renderer
+│   ├── uploads.js                    # Inline drag/drop/paste batch uploader controller
+│   ├── markdown_renderer.js          # Sanitized Quiet UI Editorial HTML Reader, TOC & GFM callouts
+│   ├── gallery_select.js             # Multi-Select Gallery, marquee drag, Web Share v2 & <canvas> Contact Sheet
+│   ├── explorer.js                   # 2-Pane Workspace Explorer tree, sidebar states & session bucket loader
+│   ├── app.js                        # Studio state, surface switcher, foldable KPIs & Settings PWA popover
 │   ├── manifest.webmanifest          # Chromium Standalone Web App Manifest
-│   ├── sw.js                         # Root-scoped network-first Service Worker (v2.7.0)
-│   ├── icon.svg                      # Vector radar & heatmap app icon
-│   ├── icon-192.png                  # 192×192 RGBA PWA icon
-│   └── icon-512.png                  # 512×512 RGBA PWA icon
+│   ├── sw.js                         # Root-scoped network-first Service Worker
+│   └── icon.svg / icon-192 / 512.png # Vector & RGBA PWA icons
 ├── agents/                           # Bundled 8-Agent Orthogonal Roster templates (*.md)
-├── skills/
-│   └── agy-nexus-stats/
-│       └── SKILL.md                  # Policy-safe skill for rendering 3-tier ASCII & web stats in Gemini
+├── skills/agy-nexus-stats/SKILL.md   # Policy-safe skill for Sequential Governance, 3-tier ASCII & /web stats
 ├── docs/
-│   ├── DEPLOYMENT.md                 # Step-by-step setup, reverse proxy, Polyglot IDE MCP & HTTPS PWA guide
-│   └── assets/
-│       ├── dashboard-desktop.png     # Depersonalized desktop dashboard & Polyglot Code Health screenshot
-│       └── dashboard-mobile.png      # Depersonalized mobile dashboard screenshot
-├── host_bridge/
-│   ├── agy_host_bridge.py            # Loopback-only authenticated host daemon (:8098) for waking sessions
-│   └── bridge_security.py            # Constant-time bearer auth, workspace sandbox & '--' argv hardening
-├── scripts/
-│   ├── setup.sh                      # Interactive setup script (Linux / macOS / WSL)
-│   ├── setup.ps1                     # Interactive setup script (Windows PowerShell)
-│   ├── init_secrets.py               # Passphrase, PATH_SECRET, POLYGLOT_MCP_TOKEN & HOST_BRIDGE_TOKEN generator
-│   ├── publish_to_github.py          # Clean depersonalized GitHub publisher
-│   ├── backup_321_sync.py            # Automated 3-2-1 backup sync (GitHub + GitLab + verified .bundle)
-│   └── sync_repo.sh                  # Repo sync utility
-├── systemd/
-│   ├── ag-bridge.service             # Systemd user service for running ag_bridge.py on the host
-│   └── agy-host-bridge.service       # Systemd user service for the host companion daemon
-├── tests/
-│   ├── run_permutation_suite.py      # End-to-end automated MCP permutation test suite
-│   └── test_v261_bridge_fixes.py     # Unit & integration regression suite for v2.7.0 bridge & Polyglot engine
-├── AGENTS.md                         # AI coding assistant & multi-agent architecture guide
-├── CHANGELOG.md                      # Release history (v1.0.0 – v2.7.0)
-├── CONTRIBUTING.md                   # Contribution & modular hygiene guidelines (<= 500L target / 650L ceiling)
-├── SECURITY.md                       # Zero-trust 3-Layer Deadbolt, LAN-only Polyglot & host-bridge security policy
-├── LICENSE                           # GNU Affero General Public License v3.0 (AGPL-3.0-or-later)
-├── NOTICE                            # AGPLv3 Section 7 Attribution, Brand & Security-Integrity Terms
-├── docker-compose.yml                # Hardened Docker Compose manifest (init: true, mem_limit, AG_BRIDGE_PUBLIC_URL)
-├── pyproject.toml                    # Python package metadata (v2.7.0)
-└── requirements.txt                  # Python dependencies
+│   ├── DEPLOYMENT.md                 # Hardened Docker Compose, reverse proxy, Praxis MCP & HTTPS PWA guide
+│   └── assets/                       # High-DPI (2x) depersonalized documentation screenshots
+│       ├── dashboard-desktop.png     # Desktop Analytics (1440px @ 2x)
+│       ├── dashboard-mobile.png      # Mobile Analytics (390px @ 2x)
+│       ├── workspace-desktop.png     # Desktop 2-Pane Workspace & Multi-Select Gallery (1440px @ 2x)
+│       └── workspace-mobile.png      # Mobile Workspace & Multi-Select Gallery (390px @ 2x)
+├── host_bridge/                      # Loopback-only authenticated host daemon (:8098), CreateProject & security
+├── scripts/                          # setup.sh, setup.ps1, init_secrets.py, publish_to_github.py, backup_321_sync.py
+├── systemd/                          # ag-bridge.service & agy-host-bridge.service unit templates
+├── tests/                            # 7 automated pytest & end-to-end MCP regression suites (v2.6 – v3.1.0)
+├── AGENTS.md                         # AI coding assistant & multi-agent architecture guide (v3.1.0)
+├── CHANGELOG.md                      # Complete release history (v1.0.0 – v3.1.0)
+├── CONTRIBUTING.md                   # Contribution, PWA parity & <=500L/650L modular hygiene guidelines
+├── SECURITY.md                       # 5-Layer Zero-Trust Deadbolt, LAN-only Praxis & sandbox security policy
+├── LICENSE / NOTICE                  # GNU Affero General Public License v3.0 (AGPL-3.0-or-later) & Section 7 terms
+└── docker-compose.yml / pyproject.toml / requirements.txt
 ```
 
 ---
@@ -658,5 +465,5 @@ agy-nexus-mcp/
    - All copies, forks, and derivative works must preserve the copyright notices, license notices, and upstream attribution in [`NOTICE`](NOTICE) and in the `/web` and ASCII telemetry interfaces.
    - Modified versions must be clearly marked as modified and **may not** be advertised or misrepresented as the official original `agy-nexus-mcp` release.
 3. **Security-Integrity Disclosure (AGPLv3 §7(c) & §5(a))**:
-   - The voice-passphrase deadbolt (`PASS_HASH`), unguessable `PATH_SECRET` routing, path-traversal sandboxing, and read-only SQLite isolation are core security guarantees of `agy-nexus-mcp`.
+   - The voice-passphrase deadbolt (`PASS_HASH`), unguessable `PATH_SECRET` routing, LAN-only `agy-praxis-mcp` isolation, path-traversal sandboxing, and read-only SQLite isolation are core security guarantees of `agy-nexus-mcp`.
    - Any fork or derivative work that weakens, bypasses, or strips these security controls **must** prominently disclose that its security boundary has been removed or altered and may not present itself under the unmodified `agy-nexus-mcp` / `AGY-NEXUS` identity.
