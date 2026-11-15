@@ -1,4 +1,4 @@
-// AGY-NEXUS Overwatch — Multi-Select Gallery, Bulk ZIP, Web Share & Contact Sheet (v3.1.0)
+// AGY-NEXUS Overwatch — Multi-Select Gallery, Bulk ZIP, Web Share & Contact Sheet (v3.2.0)
 (function (root, factory) {
   if (typeof define === "function" && define.amd) {
     define([], factory);

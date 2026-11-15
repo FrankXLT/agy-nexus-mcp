@@ -253,7 +253,7 @@ def resolve_virtual_uri_entry(
 ) -> dict[str, Any] | None:
     """Resolve `transcript:*`, `telemetry:*`, or `polyglot:*` virtual URIs into sliced file payloads."""
     cleaned = raw_sub.strip()
-    m = re.match(r"^(transcript|telemetry|polyglot|praxis):(.*)$", cleaned, flags=re.IGNORECASE)
+    m = re.match(r"^(transcript|telemetry|polyglot|praxis|workflow):(.*)$", cleaned, flags=re.IGNORECASE)
     if not m:
         return None
     scheme = m.group(1).lower()
@@ -265,7 +265,16 @@ def resolve_virtual_uri_entry(
     elif in_center > 0 and scheme == "transcript" and not re.match(r"^(?:step|turn):\d+$", rest_raw, flags=re.I):
         rest_clean = re.sub(r":\d+$", "", rest_raw)
 
-    if scheme == "transcript":
+    if scheme == "workflow":
+        from agy_nexus.workflow_baseline import discover_project_workflows, format_workflow_baseline_for_wire
+        wf = discover_project_workflows(ws)
+        if wf.get("found"):
+            text = format_workflow_baseline_for_wire(wf, max_chars=per_file_cap)
+            src_path = f"virtual://workflow/{wf.get('source_file', 'baseline')}"
+        else:
+            text = f"No workflow baseline found in {ws} (checked docs/WORKFLOWS.md, docs/USE_CASES.md, SPEC.md, README.md)."
+            src_path = "virtual://workflow/not_found"
+    elif scheme == "transcript":
         text, src_path = _resolve_transcript_virtual(rest_clean, session_dir)
         if not text:
             return {"requested": raw_sub, "error": src_path}

@@ -4,6 +4,24 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] — 2026-11-15
+
+### Added
+- **Plain-Language Workflow Baselines & Handoff Quality Evaluator (`src/agy_nexus/workflow_baseline.py`, `src/agy_nexus/virtual_uris.py`, `src/agy_nexus/tools_session.py`, `docs/WORKFLOWS.md`)**:
+  - Extracted modular `src/agy_nexus/workflow_baseline.py` (211L <= 500L) providing `discover_project_workflows()`, `format_workflow_baseline_for_wire()`, `evaluate_handoff_quality()`, and `extract_user_intent_from_handoff()`.
+  - Added `workflow:baseline` virtual URI in `virtual_uris.py` for direct read-only inspection.
+  - Integrated plain-language `project_workflows` baseline into `load_session_into_gemini` and wire compaction (<20 KB budget).
+  - Authored authoritative `docs/WORKFLOWS.md` baseline documenting the 5 core user journeys (voice/mobile status queries, plain-language handoffs, multi-posture analytics, 2-pane workspace explorer, in-place retirement).
+- **Plain-Language Handoff Modes & Non-Blocking Quality Advisories (`src/agy_nexus/handoff.py`, `src/agy_nexus/config.py`)**:
+  - Replaced legacy modes (`intent`, `surgical_audit`, `visual_critique`) with 4 plain-language stage modes: `feature_update` (default), `new_project`, `bug_or_visual_fix`, `release_closeout` with backward-compatible alias mapping.
+  - Increased character limit warning threshold from 4,500 to 24,000 characters, ending the anti-pattern where Gemini was discouraged from providing rich user stories and context.
+  - Added non-blocking `handoff_advisory` soft-linting handoffs lacking `# User Goal` or `# Workflow` headings.
+  - Updated `FastMCP(instructions=...)` with plain-language, stage-specific rules.
+- **Session Continuity Intent Extraction & Ticket Auto-Reconciliation (`src/agy_nexus/retirement.py`, `src/agy_nexus/handoff_queue.py`)**:
+  - `extract_prior_session_baton` now extracts prior user goal and workflow context from `gemini_research_handoff.md` across session rollovers.
+  - `record_session_retirement` and `reconcile_completed_tickets` now auto-transition claimed `IN_WORK` and `STAGED` tickets to `COMPLETED` whenever a session's `RETIRED.json` manifest is written.
+  - Sanitized skill path directives in `inventory.py` to prevent instructing agents to `view_file` on `(unresolved: ...)` skill placeholders.
+
 ## [3.1.0] — 2026-11-15
 
 ### Added

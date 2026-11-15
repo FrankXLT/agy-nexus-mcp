@@ -430,16 +430,15 @@ def claim_handoff_for_ide(
         return {"ok": True, "status": "CLAIMED", "ticket": dec, "handoff_id": dec["handoff_id"], "copied_to_session_scratch": copied_to, "markdown": content}
 
 
-def reconcile_completed_tickets(bg_dir: Path, db_file: Path | None = None) -> list[str]:
-    """Auto-transition claimed IN_WORK tickets to COMPLETED once their session finishes running or rolls over."""
+def reconcile_completed_tickets(bg_dir: Path, db_file: Path | None = None, brain_dir: Path | None = None) -> list[str]:
+    """Auto-transition claimed IN_WORK/STAGED tickets to COMPLETED once their session finishes running, rolls over, or is retired."""
     eff_db = db_file or (Path.home() / ".gemini/antigravity/conversation_summaries.db")
-    if not eff_db.is_file():
-        return []
+    eff_brain = brain_dir or (Path.home() / ".gemini/antigravity/brain")
     completed_ids: list[str] = []
     ts_iso = datetime.now(timezone.utc).isoformat()
     try:
         import sqlite3
-        con = sqlite3.connect(f"file:{eff_db}?mode=ro", uri=True, timeout=2.0)
+        con = sqlite3.connect(f"file:{eff_db}?mode=ro", uri=True, timeout=2.0) if eff_db.is_file() else None
         try:
             with _locked_index(bg_dir) as (_, doc):
                 tickets = doc.get("tickets") or []
@@ -448,10 +447,17 @@ def reconcile_completed_tickets(bg_dir: Path, db_file: Path | None = None) -> li
                     for t in tickets if str(t.get("status") or "").upper() in ("IN_WORK", "STAGED") and t.get("claimed_by_conversation_id")
                 }
                 for t in tickets:
-                    if str(t.get("status") or "").upper() != "IN_WORK":
+                    st_val = str(t.get("status") or "").upper()
+                    if st_val not in ("IN_WORK", "STAGED"):
                         continue
                     cid = str(t.get("claimed_by_conversation_id") or t.get("target_conversation_id") or "").strip()
                     if not cid:
+                        continue
+                    if (eff_brain / cid / "RETIRED.json").is_file():
+                        t.update({"status": "COMPLETED", "completed_at": ts_iso, "updated_at": ts_iso})
+                        completed_ids.append(str(t.get("handoff_id")))
+                        continue
+                    if st_val != "IN_WORK" or not con:
                         continue
                     row = con.execute("SELECT status, not_fully_idle FROM conversation_summaries WHERE conversation_id = ?", (cid,)).fetchone()
                     if row:
@@ -463,7 +469,8 @@ def reconcile_completed_tickets(bg_dir: Path, db_file: Path | None = None) -> li
                             t.update({"status": "COMPLETED", "completed_at": ts_iso, "updated_at": ts_iso})
                             completed_ids.append(str(t.get("handoff_id")))
         finally:
-            con.close()
+            if con:
+                con.close()
     except Exception:
         pass
     return completed_ids

@@ -52,6 +52,12 @@ def record_session_retirement(
         payload.update(metadata)
     try:
         (sess_dir / "RETIRED.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        try:
+            from agy_nexus.config import AGY_BG_DIR
+            from agy_nexus.handoff_queue import reconcile_completed_tickets
+            reconcile_completed_tickets(AGY_BG_DIR, brain_dir=brain_dir or AGY_BRAIN_DIR)
+        except Exception:
+            pass
         return payload
     except Exception as e:
         return {"ok": False, "error": f"Failed writing RETIRED.json: {e}"}
@@ -124,6 +130,16 @@ def extract_prior_session_baton(
             w_text = w_file.read_text(encoding="utf-8", errors="replace")
             w_lines = [l.strip() for l in w_text.splitlines() if l.strip().startswith(("#", "### "))]
             parts.append(f"- **Prior Walkthrough Highlights**:\n" + ("\n".join(w_lines[:8]) if w_lines else w_text[:400]))
+        except Exception:
+            pass
+    h_file = p_dir / "scratch" / "gemini_research_handoff.md"
+    if h_file.is_file():
+        try:
+            from agy_nexus.workflow_baseline import extract_user_intent_from_handoff
+            h_text = h_file.read_text(encoding="utf-8", errors="replace")
+            intent_summary = extract_user_intent_from_handoff(h_text, max_chars=1200)
+            if intent_summary:
+                parts.append(f"- **Prior User Goal & Workflow Context**:\n{intent_summary}")
         except Exception:
             pass
     if ws_path and Path(ws_path).is_dir():

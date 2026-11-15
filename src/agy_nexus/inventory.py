@@ -344,8 +344,12 @@ def build_interjection_directive(
     if resolved_skills or resolved_agent or edit_scope in ("project", "global") or scope_warning:
         sections.append("\n---\n\n## Antigravity Skill, Agent Role & Customization Scope Directive\n")
         if resolved_skills:
-            sections.append("### Mandatory Activated Skills (Read Before Executing)")
-            sections.extend(f"- **`{sk['name']}`**: Read `{sk['path']}` via `view_file` and follow its instructions." for sk in resolved_skills)
+            valid_skills = [sk for sk in resolved_skills if not sk["path"].startswith("(unresolved:")]
+            unresolved_skills = [sk for sk in resolved_skills if sk["path"].startswith("(unresolved:")]
+            if valid_skills or unresolved_skills:
+                sections.append("### Mandatory Activated Skills (Read Before Executing)")
+                sections.extend(f"- **`{sk['name']}`**: Read `{sk['path']}` via `view_file` and follow its instructions." for sk in valid_skills)
+                sections.extend(f"- **`{sk['name']}`**: Active skill context (unresolved path on disk; proceed using project guidance)." for sk in unresolved_skills)
         if resolved_agent:
             sections.append(f"\n### Recommended Agent Role Dispatch\n- **Primary Role**: `{ag_clean}` (`{resolved_agent}`)")
         if scope_warning:

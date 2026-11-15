@@ -1,4 +1,4 @@
-// AGY-NEXUS Overwatch — 2-Pane Workspace Explorer & Stage Reader (v3.1.0)
+// AGY-NEXUS Overwatch — 2-Pane Workspace Explorer & Stage Reader (v3.2.0)
 (function (root, factory) {
   if (typeof define === "function" && define.amd) {
     define(["./markdown_renderer", "./gallery_select"], factory);

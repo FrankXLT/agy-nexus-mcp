@@ -52,6 +52,7 @@ from agy_nexus.sessions import (
 from agy_nexus.stats import build_nexus_stats_bundle, extract_pending_approval
 from agy_nexus.uploads import list_scratch_upload_batches
 from agy_nexus.virtual_uris import resolve_transcript_file
+from agy_nexus.workflow_baseline import discover_project_workflows, format_workflow_baseline_for_wire
 from agy_nexus.workspace import _collect_git_summary, _resolve_and_read_files
 
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
@@ -305,6 +306,13 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
     )
     visual_artifacts = discover_visual_artifacts(conv_id, workspace, limit=6)
     scratch_batches = list_scratch_upload_batches(conv_id, AGY_BRAIN_DIR)
+    wf_info = discover_project_workflows(ws_path)
+    project_workflows = {
+        "source_file": wf_info["source_file"],
+        "workflow_titles": wf_info.get("workflow_titles", []),
+        "summary": format_workflow_baseline_for_wire(wf_info, max_chars=1200),
+    } if wf_info.get("found") else {}
+
     payload: dict[str, Any] = {
         "ok": True, "status": "LOADED",
         "conversation_id": conv_id, "title": conv_title, "project_id": project_id,
@@ -325,6 +333,8 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
         "walkthrough": walk_content, "scratch_files": scratch_files,
         "recent_transcript_turns": recent_turns,
     }
+    if project_workflows:
+        payload["project_workflows"] = project_workflows
     if visual_artifacts or scratch_batches:
         payload["visual_inspection_hint"] = "Share signed_url HTTPS links for mobile viewing, or ask Antigravity to inspect uploaded batches under brain:scratch/uploads_.../INDEX.md."
     if included_files:
@@ -366,5 +376,10 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
                     if isinstance(fv, dict) and isinstance(fv.get("content"), str) and len(fv["content"]) > 2200:
                         fv["content"] = fv["content"][:2200] + "\n... [compacted for <20KB wire ceiling]"
                         fv["truncated"] = True
+            out_str = _compact_json(payload)
+        if len(out_str.encode("utf-8")) > 19200 and isinstance(payload.get("project_workflows"), dict):
+            pw_sum = str(payload["project_workflows"].get("summary") or "")
+            if len(pw_sum) > 600:
+                payload["project_workflows"]["summary"] = pw_sum[:600] + "\n... [compacted for <20KB wire ceiling]"
             out_str = _compact_json(payload)
     return out_str
