@@ -119,7 +119,7 @@ def build_nexus_stats_bundle(
             next_first = date(next_m_idx // 12, (next_m_idx % 12) + 1, 1)
             last_day = next_first - timedelta(days=1)
             end_d = min(today, last_day) if (tgt_year == today.year and tgt_month == today.month) else last_day
-            p_label = f"{start_d.strftime('%b %Y')}" if (tgt_year != today.year or tgt_month != today.month) else f"This Month — MTD ({today.strftime('%b %Y')})"
+            p_label = f"{start_d.strftime('%b %Y')}"
             pk = "current_month" if (tgt_year == today.year and tgt_month == today.month) else f"month_{tgt_year}_{tgt_month:02d}"
         elif tf == "quarter":
             q_cur = (anchor.month - 1) // 3
@@ -132,14 +132,14 @@ def build_nexus_stats_bundle(
             last_day = next_m - timedelta(days=1)
             is_cur_q = (tgt_year == today.year and (today.month - 1) // 3 + 1 == tgt_q)
             end_d = min(today, last_day) if is_cur_q else last_day
-            p_label = f"Q{tgt_q} {tgt_year}"
+            p_label = f"{tgt_year} Q{tgt_q}"
             pk = f"quarter_{tgt_year}_q{tgt_q}"
         else:
             tgt_year = anchor.year + int(offset)
             start_d = date(tgt_year, 1, 1)
             last_day = date(tgt_year, 12, 31)
             end_d = min(today, last_day) if tgt_year == today.year else last_day
-            p_label = f"{tgt_year} (YTD)" if tgt_year == today.year else f"{tgt_year}"
+            p_label = f"{tgt_year}"
             pk = "ytd" if tgt_year == today.year else f"year_{tgt_year}"
     else:
         # Rolling

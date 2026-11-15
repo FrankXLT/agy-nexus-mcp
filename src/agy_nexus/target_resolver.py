@@ -4,14 +4,18 @@ agy_nexus.target_resolver — Fail-Closed Workspace/Project Resolution & Greenfi
 """
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import re
 from typing import Any
+import urllib.request
 
 import agy_nexus.config as cfg
+from agy_nexus.config import get_antigravity_config_repo
 from agy_nexus.handoff_queue import normalize_repo_slug, slugify_token
-from agy_nexus.routing import _extract_handoff_repo_hint
+from agy_nexus.inventory import evaluate_session_customization_scope
+from agy_nexus.routing import _extract_handoff_repo_hint, _resolve_target_session_for_handoff, _session_matches_repo_hint
 from agy_nexus.session_status import _get_selected_session_quick_status
 from agy_nexus.sessions import _load_projects_map, resolve_canonical_project_for_workspace
 from agy_nexus.workspace import _resolve_workspace_str, normalize_pillar_target_path
@@ -261,3 +265,71 @@ def resolve_handoff_target(
         "default_branch": eff_branch,
         "force_new_session": force_new_session,
     }
+
+
+def apply_global_scope_isolation(
+    *, edit_scope_clean: str, active_ws: str, conv_id: str, create_new_session: bool, create_new_project: bool,
+    routing_reason: str, eff_ws: str, eff_pid: str, eff_pname: str, repo_slug: str,
+    session_title: str, activate_skills: str, body_clean: str,
+) -> tuple[str, bool, bool, str, str, str, str, str, str]:
+    """Isolate global config edits to antigravity-config repository session."""
+    if edit_scope_clean != "global":
+        return conv_id, create_new_session, create_new_project, routing_reason, eff_ws, active_ws, eff_pid, eff_pname, repo_slug
+    scope_check = evaluate_session_customization_scope(active_ws, cfg.AGY_CONFIG_DIR, cfg.AGY_GITLAB_DIR)
+    if scope_check["is_global_config_session"] or _session_matches_repo_hint(conv_id, "antigravity-config"):
+        return conv_id, create_new_session, create_new_project, routing_reason, eff_ws, active_ws, eff_pid, eff_pname, repo_slug
+    cfg_repo_str = str(get_antigravity_config_repo())
+    cfg_pid, cfg_pname = resolve_canonical_project_for_workspace(cfg_repo_str, "antigravity-config")
+    cfg_conv, cfg_reason = _resolve_target_session_for_handoff("", cfg_repo_str, "antigravity-config", session_title, activate_skills, body_clean)
+    if cfg_conv and _session_matches_repo_hint(cfg_conv, "antigravity-config"):
+        return cfg_conv, False, False, f"scope_isolation_routed_to_existing_config_session ({cfg_reason})", cfg_repo_str, cfg_repo_str, cfg_pid, (cfg_pname or "antigravity-config"), "antigravity-config"
+    return "", True, False, "scope_isolation_new_config_session", cfg_repo_str, cfg_repo_str, cfg_pid, (cfg_pname or "antigravity-config"), "antigravity-config"
+
+
+_USER_BODY_START = "<!-- BEGIN_USER_HANDOFF_BODY -->"
+_USER_BODY_END = "<!-- END_USER_HANDOFF_BODY -->"
+
+
+def extract_markdown_heading(md_text: str) -> str:
+    """Extract the first top-level Markdown heading for default session_title."""
+    for ln in (md_text or "").splitlines():
+        s = ln.strip()
+        if not s or s.startswith("<!--"):
+            continue
+        m = re.match(r"^#{1,2}\s+(.+)$", s)
+        if m:
+            cleaned = re.sub(r"[`*_~]+", "", m.group(1)).strip()
+            if cleaned:
+                return cleaned[:90]
+    return ""
+
+
+def unwrap_staged_handoff_markdown(staged_text: str) -> str:
+    """Extract pure user handoff markdown from an already-staged handoff file."""
+    txt = (staged_text or "").strip()
+    if not txt:
+        return ""
+    if _USER_BODY_START in txt and _USER_BODY_END in txt:
+        i0 = txt.index(_USER_BODY_START) + len(_USER_BODY_START)
+        i1 = txt.rindex(_USER_BODY_END)
+        if i1 >= i0:
+            return txt[i0:i1].strip()
+    txt = re.sub(r"^(?:<!--[^\n]*-->\s*\n)+", "", txt).lstrip()
+    txt = re.sub(r"^>\s*\[!IMPORTANT\]\s*\n(?:>[^\n]*\n)+\s*", "", txt).lstrip()
+    txt = re.sub(r"^## Prior Session Baton[\s\S]*?\n---\s*\n+", "", txt).lstrip()
+    txt = re.sub(r"\n---\s*\n+## Mandatory 4-Step Execution Lifecycle[\s\S]*$", "", txt).rstrip()
+    txt = re.sub(r"\n### Mandatory Modular Architecture[\s\S]*$", "", txt).rstrip()
+    txt = re.sub(r"\n---\s*\n+## Antigravity Skill, Agent Role & Customization Scope Directive[\s\S]*$", "", txt).rstrip()
+    return txt.strip()
+
+
+def post_host_bridge(payload: dict[str, Any]) -> dict[str, Any]:
+    """Execute authenticated POST to agy-host-bridge (:8098)."""
+    try:
+        req = urllib.request.Request(cfg.AGY_HOST_BRIDGE_URL, data=json.dumps(payload).encode("utf-8"), headers=cfg.get_host_bridge_headers(), method="POST")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8", errors="replace"))
+    except Exception as e:
+        return {"ok": False, "error": f"Failed reaching agy-host-bridge at {cfg.AGY_HOST_BRIDGE_URL}: {e}"}
+
+

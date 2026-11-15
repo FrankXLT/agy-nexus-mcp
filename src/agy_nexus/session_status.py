@@ -15,6 +15,12 @@ from agy_nexus.config import (
     AGY_DB_FILE,
     SESSION_STATE,
 )
+from agy_nexus.retirement import (
+    extract_prior_session_baton,
+    infer_continuity_intent,
+    is_closeout_intent,
+    is_session_retired,
+)
 
 def count_session_compactions(conv_id: str, brain_dir: Path = AGY_BRAIN_DIR) -> int:
     """Count context compaction events ('# Resuming from a compaction') in transcript.jsonl."""
@@ -160,21 +166,6 @@ def count_open_task_items(conv_id: str, brain_dir: Path = AGY_BRAIN_DIR) -> int:
         return 0
 
 
-def infer_continuity_intent(
-    research_markdown: str = "",
-    allow_chained_publish: bool = False,
-    is_clean_seam: bool = True,
-) -> str:
-    """Infer continuity intent ('closeout', 'continuation', 'new_topic') from handoff text and state."""
-    raw = (research_markdown or "").lower()
-    if allow_chained_publish or any(k in raw for k in ("closeout", "final publish", "release publish", "tag release")):
-        return "closeout"
-    if any(k in raw for k in ("v3.0.0", "new sprint", "phase 2", "next epic")) or re.search(r"\bv\d+\.\d+\.\d+\b", raw):
-        return "new_topic"
-    if is_clean_seam and (raw.startswith("#") or "handshake" in raw):
-        return "new_topic"
-    return "continuation"
-
 
 def evaluate_rollover_posture(
     conv_id: str,
@@ -186,10 +177,13 @@ def evaluate_rollover_posture(
     continuity: str = "auto",
     research_markdown: str = "",
     allow_chained_publish: bool = False,
+    retire_session: bool = False,
+    session_continuity: str = "",
 ) -> dict[str, Any]:
     """Evaluate continuity-aware rollover posture and decision based on step count, compactions, git status, and tasks.
 
-    Returns posture, should_rollover, rollover_guidance, has_uncommitted_work, open_task_items, is_clean_seam.
+    When continuity == 'closeout' or retire_session == True, step-count/compaction limits are exempted
+    so closeout tasks execute in-place inside the existing session (unless context_exceeded is True).
     """
     if step_count == 0 and conv_id and AGY_DB_FILE.is_file():
         try:
@@ -206,61 +200,77 @@ def evaluate_rollover_posture(
     has_uncommitted = check_uncommitted_work(ws_path)
     open_tasks = count_open_task_items(conv_id, brain_dir)
     is_clean_seam = (not has_uncommitted) and (open_tasks == 0)
+    retired = is_session_retired(conv_id, brain_dir)
 
-    # Threshold evaluation
+    req_continuity = session_continuity if session_continuity else continuity
+    is_close = retire_session or (req_continuity or "").strip().lower() == "closeout" or allow_chained_publish or is_closeout_intent(research_markdown, retire_session, req_continuity)
+    eff_continuity = "closeout" if is_close else (req_continuity if req_continuity in ("continuation", "new_topic") else infer_continuity_intent(research_markdown, allow_chained_publish, is_clean_seam))
+
+    if retired:
+        if eff_continuity != "closeout" and not retire_session:
+            return {
+                "conversation_id": conv_id, "step_count": step_count, "compaction_count": compactions,
+                "context_exceeded": ctx_exceeded, "has_uncommitted_work": has_uncommitted, "open_task_items": open_tasks,
+                "is_clean_seam": is_clean_seam, "posture": "RETIRED", "continuity": eff_continuity,
+                "should_rollover": True, "rollover_guidance": f"RETIRED ({step_count} steps): Session {conv_id[:8]} was retired. Fresh session started.",
+                "is_retired": True,
+            }
+        return {
+            "conversation_id": conv_id, "step_count": step_count, "compaction_count": compactions,
+            "context_exceeded": ctx_exceeded, "has_uncommitted_work": has_uncommitted, "open_task_items": open_tasks,
+            "is_clean_seam": is_clean_seam, "posture": "RETIRED", "continuity": "closeout",
+            "should_rollover": bool(ctx_exceeded), "rollover_guidance": f"RETIRED ({step_count} steps): In-place closeout verified.",
+            "is_retired": True,
+        }
+
+    # CRITICAL RULE: Closeout and retirement exemption
+    if eff_continuity == "closeout":
+        if ctx_exceeded:
+            posture = "HARD_ROLLOVER"
+            should_rollover = True
+            guidance = f"HARD_ROLLOVER (context exceeded during closeout): Mandatory rollover to fresh session."
+        else:
+            posture = "CLOSEOUT_IN_PLACE"
+            should_rollover = False
+            guidance = f"CLOSEOUT_IN_PLACE ({step_count} steps, {compactions} compactions): Terminal closeout executed in-place (step caps exempted)."
+        return {
+            "conversation_id": conv_id, "step_count": step_count, "compaction_count": compactions,
+            "context_exceeded": ctx_exceeded, "has_uncommitted_work": has_uncommitted, "open_task_items": open_tasks,
+            "is_clean_seam": is_clean_seam, "posture": posture, "continuity": "closeout",
+            "should_rollover": should_rollover, "rollover_guidance": guidance, "is_retired": False,
+        }
+
+    # Standard threshold evaluation
     if step_count >= 1150 or compactions >= 7 or ctx_exceeded:
         posture = "HARD_ROLLOVER"
-        guidance = (
-            f"HARD_ROLLOVER (steps={step_count}, compactions={compactions}, exceeded={ctx_exceeded}): "
-            "Session reached safety ceilings. Mandatory rollover to a fresh session."
-        )
-    elif step_count >= 950:
-        posture = "CLOSEOUT_ONLY"
-        guidance = (
-            f"CLOSEOUT_ONLY ({step_count} steps, 950–1,149): Reserved strictly for closing out active release/publishing. "
-            "Rollover recommended for any new scope."
-        )
-    elif step_count >= 700:
-        posture = "HOLD_FOR_COMPLETION"
-        guidance = (
-            f"HOLD_FOR_COMPLETION ({step_count} steps, 700–949): Stay in current session to complete in-flight tasks, "
-            "then rollover upon seam completion."
-        )
-    elif step_count >= 320:
-        posture = "SEAM_AWARE"
-        guidance = (
-            f"SEAM_AWARE ({step_count} steps, 320–699): Stay for ongoing continuation/polish, "
-            "but roll over on new version, topic, or sprint jump."
-        )
-    else:
-        posture = "FRESH"
-        guidance = f"FRESH ({step_count} steps, 0–319): Optimal context headroom for continuation or new topics."
-
-    eff_continuity = continuity if continuity in ("continuation", "closeout", "new_topic") else infer_continuity_intent(research_markdown, allow_chained_publish, is_clean_seam)
-
-    if posture == "HARD_ROLLOVER":
+        guidance = f"HARD_ROLLOVER (steps={step_count}, compactions={compactions}, exceeded={ctx_exceeded}): Mandatory rollover."
         should_rollover = True
     elif eff_continuity == "new_topic":
+        posture = "SEAM_AWARE" if step_count >= 320 else "FRESH"
+        guidance = f"SEAM_AWARE ({step_count} steps): New topic triggers rollover." if step_count >= 320 else f"FRESH ({step_count} steps): Optimal headroom."
         should_rollover = step_count >= 320
-    elif eff_continuity == "continuation":
-        should_rollover = step_count >= 950
-    elif eff_continuity == "closeout":
-        should_rollover = step_count >= 1150
+    elif step_count >= 950:
+        posture = "CLOSEOUT_ONLY"
+        guidance = f"CLOSEOUT_ONLY ({step_count} steps, 950–1,149): Reserved strictly for closing out active release/publishing."
+        should_rollover = True
+    elif step_count >= 700:
+        posture = "HOLD_FOR_COMPLETION"
+        guidance = f"HOLD_FOR_COMPLETION ({step_count} steps, 700–949): Stay to complete in-flight tasks."
+        should_rollover = False
+    elif step_count >= 320:
+        posture = "SEAM_AWARE"
+        guidance = f"SEAM_AWARE ({step_count} steps, 320–699): Stay for ongoing continuation."
+        should_rollover = False
     else:
-        should_rollover = step_count >= 950
+        posture = "FRESH"
+        guidance = f"FRESH ({step_count} steps, 0–319): Optimal context headroom."
+        should_rollover = False
 
     return {
-        "conversation_id": conv_id,
-        "step_count": step_count,
-        "compaction_count": compactions,
-        "context_exceeded": ctx_exceeded,
-        "has_uncommitted_work": has_uncommitted,
-        "open_task_items": open_tasks,
-        "is_clean_seam": is_clean_seam,
-        "posture": posture,
-        "continuity": eff_continuity,
-        "should_rollover": should_rollover,
-        "rollover_guidance": guidance,
+        "conversation_id": conv_id, "step_count": step_count, "compaction_count": compactions,
+        "context_exceeded": ctx_exceeded, "has_uncommitted_work": has_uncommitted, "open_task_items": open_tasks,
+        "is_clean_seam": is_clean_seam, "posture": posture, "continuity": eff_continuity,
+        "should_rollover": should_rollover, "rollover_guidance": guidance, "is_retired": False,
     }
 
 
@@ -416,59 +426,6 @@ def _get_selected_session_quick_status(target_conv_id: str = "") -> dict[str, An
     info.update(telem)
     return info
 
-def extract_prior_session_baton(
-    prev_conv_id: str, brain_dir: Path = AGY_BRAIN_DIR, ws_path: str = ""
-) -> str:
-    """Extract a compact Prior Session Baton from a previous session's brain folder and git status."""
-    if not prev_conv_id:
-        return ""
-    p_dir = brain_dir / prev_conv_id
-    if not p_dir.is_dir():
-        return ""
-
-    parts: list[str] = [
-        f"## Prior Session Baton ({prev_conv_id})",
-        f"- **Previous Session ID**: `{prev_conv_id}`",
-    ]
-
-    t_file = p_dir / "task.md"
-    if t_file.is_file():
-        try:
-            t_text = t_file.read_text(encoding="utf-8", errors="replace")
-            t_lines = [l.strip() for l in t_text.splitlines() if l.strip() and l.strip().startswith(("#", "- [x]", "- [/]", "- [ ]"))]
-            t_summary = "\n".join(t_lines[:16]) if t_lines else t_text[:500]
-            parts.append(f"- **Prior Task State**:\n{t_summary}")
-        except Exception:
-            pass
-
-    w_file = p_dir / "walkthrough.md"
-    if w_file.is_file():
-        try:
-            w_text = w_file.read_text(encoding="utf-8", errors="replace")
-            w_lines = [l.strip() for l in w_text.splitlines() if l.strip() and l.strip().startswith(("#", "### "))]
-            w_summary = "\n".join(w_lines[:8]) if w_lines else w_text[:400]
-            parts.append(f"- **Prior Walkthrough Highlights**:\n{w_summary}")
-        except Exception:
-            pass
-
-    git_st = ""
-    if ws_path and Path(ws_path).is_dir():
-        try:
-            import subprocess
-            proc = subprocess.run(
-                ["git", "-c", "safe.directory=*", "status", "--short"],
-                cwd=ws_path, capture_output=True, text=True, timeout=3, check=False,
-            )
-            git_st = proc.stdout.strip()
-        except Exception:
-            pass
-    if git_st:
-        st_lines = git_st.splitlines()
-        if len(st_lines) > 20:
-            git_st = "\n".join(st_lines[:20]) + f"\n... [{len(st_lines) - 20} more files]"
-        parts.append(f"- **Current Git Working Tree Status**:\n```text\n{git_st}\n```")
-
-    return "\n\n".join(parts) + "\n\n"
 
 def find_latest_session_for_workspace(ws_path: str, db_file: Path = AGY_DB_FILE) -> str:
     """Find the most recent conversation_id for a given workspace path."""

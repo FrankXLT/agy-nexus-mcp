@@ -137,6 +137,12 @@ def _decorate_ticket(t: dict[str, Any], now_utc: datetime | None = None) -> dict
         except Exception:
             age = ""
     out["relative_age"] = age
+    slug = str(out.get("slug") or "")
+    real_id = str(out.get("handoff_id") or out.get("ticket_id") or "")
+    if (not real_id or real_id == "ticket") and slug:
+        real_id = slug
+    out["handoff_id"] = real_id
+    out["ticket_id"] = real_id
     return out
 
 

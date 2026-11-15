@@ -34,6 +34,7 @@ PWA_ASSETS: dict[str, bytes] = {
     "app.js": b"application/javascript; charset=utf-8",
     "uploads.js": b"application/javascript; charset=utf-8",
     "explorer.js": b"application/javascript; charset=utf-8",
+    "gallery_select.js": b"application/javascript; charset=utf-8",
     "markdown_renderer.js": b"application/javascript; charset=utf-8",
     "manifest.webmanifest": b"application/manifest+json; charset=utf-8",
     "sw.js": b"application/javascript; charset=utf-8",
@@ -60,13 +61,13 @@ async def handle_web_request(
     t0 = time.time()
 
     # 1. Root redirect GET / -> /web
-    if method == "GET" and req_path == "":
+    if method in ("GET", "HEAD") and req_path == "":
         await send({"type": "http.response.start", "status": 302, "headers": [(b"location", b"/web"), (b"content-length", b"0")]})
         await send({"type": "http.response.body", "body": b""})
         return True
 
     # 2. Serve /web dashboard HTML
-    if method == "GET" and (req_path.endswith("/web") or req_path.endswith("/web/index.html")):
+    if method in ("GET", "HEAD") and (req_path.endswith("/web") or req_path.endswith("/web/index.html")):
         html_file = web_dir / "index.html"
         html_bytes = html_file.read_bytes() if html_file.is_file() else b"<h1>Dashboard not found</h1>"
         await send({
@@ -78,12 +79,12 @@ async def handle_web_request(
                 (b"cache-control", b"no-cache"),
             ],
         })
-        await send({"type": "http.response.body", "body": html_bytes})
-        print(f"[agy-nexus] http=GET rpc=web_ui tool=- status=200 bytes={len(html_bytes)} ms=1", flush=True)
+        await send({"type": "http.response.body", "body": b"" if method == "HEAD" else html_bytes})
+        print(f"[agy-nexus] http={method} rpc=web_ui tool=- status=200 bytes={len(html_bytes)} ms=1", flush=True)
         return True
 
     # 3. Serve PWA static assets & /web/media/
-    if method == "GET" and "/web/" in req_path and not req_path.endswith("/web/api/stats"):
+    if method in ("GET", "HEAD") and "/web/" in req_path and not req_path.endswith("/web/api/stats"):
         # Ephemeral Media route
         if "/web/media/" in req_path:
             target_file, mime_bytes, status_code, msg_text = verify_and_resolve_media(req_path)
@@ -103,14 +104,14 @@ async def handle_web_request(
                             (b"content-security-policy", b"default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox"),
                         ],
                     })
-                    await send({"type": "http.response.body", "body": media_bytes})
+                    await send({"type": "http.response.body", "body": b"" if method == "HEAD" else media_bytes})
                     return True
             err_b = json.dumps({"ok": False, "error": msg_text}).encode("utf-8")
             await send({
                 "type": "http.response.start", "status": status_code,
                 "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(err_b)).encode("ascii"))],
             })
-            await send({"type": "http.response.body", "body": err_b})
+            await send({"type": "http.response.body", "body": b"" if method == "HEAD" else err_b})
             return True
 
         asset_name = req_path.rsplit("/web/", 1)[-1]
@@ -127,7 +128,7 @@ async def handle_web_request(
                 if asset_name == "sw.js":
                     resp_hdrs.append((b"service-worker-allowed", b"/"))
                 await send({"type": "http.response.start", "status": 200, "headers": resp_hdrs})
-                await send({"type": "http.response.body", "body": asset_bytes})
+                await send({"type": "http.response.body", "body": b"" if method == "HEAD" else asset_bytes})
                 return True
 
         # Check if asset request that is not an API
@@ -137,7 +138,7 @@ async def handle_web_request(
                 "type": "http.response.start", "status": 404,
                 "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(nf_b)).encode("ascii")), (b"x-content-type-options", b"nosniff")],
             })
-            await send({"type": "http.response.body", "body": nf_b})
+            await send({"type": "http.response.body", "body": b"" if method == "HEAD" else nf_b})
             return True
 
     # 4. Workspace Tree & Session Bucket APIs

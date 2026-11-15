@@ -342,7 +342,12 @@ mcp = FastMCP(
         "2. ONE-SHOT BUNDLED SUPER-CALLS (GET ALL FILES & CONTEXT IN 1 CALL):\n"
         "- Do NOT call `list_saved_sessions` first when the user asks to inspect or load a session: call `load_session_into_gemini(session_identifier='1'|'latest'|<project_or_title_keyword>|<uuid>, include_files='path1,path2')` directly in 1 shot! It resolves `'1'`, `'latest'`, project names, or title keywords automatically and returns `task.md`, `implementation_plan.md`, `walkthrough.md`, `execution_status`, `git_summary`, `visual_artifacts`, and `included_files`.\n"
         "- When exploring code with `ask_workspace_readonly`, batch all needed files or virtual URIs in a single comma-separated `file_subpath='a.py,outline:b.py,transcript:latest,brain:scratch/notes.md'` (up to 12 items per call). Even if you only pass `question` / `search_query`, `ask_workspace_readonly` automatically searches the pinned session, Polyglot semantic index, and repository in that same single call!\n"
-        "3. PROJECT ROUTING & CONTINUITY: When calling `send_handoff_and_resume`, pass `session_identifier` (for existing sessions) or `project_name` and `workspace_path` (when `create_new_session=True`). Pass `session_continuity='auto'|'continuation'|'closeout'|'new_topic'` to guide rollover posture ('new_topic' rolls at >=320 steps; 'continuation' holds up to 950 steps; 'closeout' holds up to 1,150 steps)."
+        "3. PROJECT ROUTING & CONTINUITY: When calling `send_handoff_and_resume`, pass `session_identifier` (for existing sessions) or `project_name` and `workspace_path` (when `create_new_session=True`). Pass `session_continuity='auto'|'continuation'|'closeout'|'new_topic'` to guide rollover posture ('new_topic' rolls at >=320 steps; 'continuation' holds up to 950 steps; 'closeout' holds up to 1,150 steps).\n"
+        "4. JOB-FIRST SUGGESTED ACTION BUTTONS (MANDATORY GEMINI UI FORMATTING):\n"
+        "- Guide the user with native 1-tap options matching the tool's returned `suggested_actions`:\n"
+        "  * Ready to Run: 'Run these changes and update the live preview?' (Yes)\n"
+        "  * In-Flight (is_running=True): 'Check in on the build?' (Yes)\n"
+        "  * Ready to Ship: 'Ship <target> to GitHub?' (Yes — automatically handles cleanup and retirement behind the scenes)."
     ),
 )
 

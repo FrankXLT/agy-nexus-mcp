@@ -30,6 +30,7 @@ ALLOWED_MEDIA_EXTENSIONS: dict[str, bytes] = {
 MEDIA_TTL_SECONDS = int(os.getenv("AG_BRIDGE_MEDIA_TTL", "604800"))
 _VERIFIED_REQUEST_ORIGIN: str = ""
 _SAFE_HOST_RE = re.compile(r"^[A-Za-z0-9.-]+(?::\d{1,5})?$")
+_CONTAINER_HEX_RE = re.compile(r"^[0-9a-f]{12}(?:\.|$)", re.I)
 
 
 def _sanitize_public_origin(raw_url: str) -> str:
@@ -47,7 +48,12 @@ def _sanitize_public_origin(raw_url: str) -> str:
 
 
 def _is_public_hostname(h: str) -> bool:
+    """Check if hostname is public and reject Docker 12-hex container hostnames."""
     if not h or h in ("localhost", "host.docker.internal") or h.endswith((".lan", ".local", ".internal", ".home.arpa")):
+        return False
+    if h == "example.com" or h.endswith(".example.com"):
+        return False
+    if _CONTAINER_HEX_RE.search(h):
         return False
     try:
         return ipaddress.ip_address(h).is_global
@@ -58,8 +64,6 @@ def _is_public_hostname(h: str) -> bool:
 def record_verified_public_origin(headers: list[tuple[bytes, bytes]], client_ip: str = "") -> None:
     """Capture public https origin from a request already authenticated by capability PATH_SECRET."""
     global _VERIFIED_REQUEST_ORIGIN
-    if _VERIFIED_REQUEST_ORIGIN:
-        return
     xfh, host_hdr, proto_val = "", "", "https"
     for hk, hv in headers:
         kl = hk.lower()
@@ -78,8 +82,10 @@ def record_verified_public_origin(headers: list[tuple[bytes, bytes]], client_ip:
             trusted_proxy = False
     cand_host = (xfh or host_hdr) if trusted_proxy else host_hdr
     clean = _sanitize_public_origin(f"{proto_val if proto_val in ('https', 'http') else 'https'}://{cand_host}")
-    if clean and _is_public_hostname((urllib.parse.urlparse(clean).hostname or "").lower()):
-        _VERIFIED_REQUEST_ORIGIN = clean
+    if clean:
+        cand_h = (urllib.parse.urlparse(clean).hostname or "").lower()
+        if _is_public_hostname(cand_h):
+            _VERIFIED_REQUEST_ORIGIN = clean
 
 
 def get_public_base_url() -> str:
@@ -87,17 +93,21 @@ def get_public_base_url() -> str:
     explicit = _sanitize_public_origin(os.getenv("AG_BRIDGE_PUBLIC_URL", ""))
     if explicit:
         return explicit
+    if _VERIFIED_REQUEST_ORIGIN:
+        return _VERIFIED_REQUEST_ORIGIN
     sub_hash = os.getenv("SUBDOMAIN_HASH", "").strip()
     domain = os.getenv("AG_BRIDGE_DOMAIN", "").strip()
     if sub_hash and domain and domain.lower() != "example.com":
         built = _sanitize_public_origin(f"https://ag-{sub_hash}.{domain}")
         if built:
-            return built
+            h = (urllib.parse.urlparse(built).hostname or "").lower()
+            if _is_public_hostname(h):
+                return built
     derived = _sanitize_public_origin(os.getenv("_DERIVED_SECRETS_PUBLIC_URL", ""))
     if derived:
-        return derived
-    if _VERIFIED_REQUEST_ORIGIN:
-        return _VERIFIED_REQUEST_ORIGIN
+        h = (urllib.parse.urlparse(derived).hostname or "").lower()
+        if _is_public_hostname(h):
+            return derived
     parsed = urllib.parse.urlparse(cfg.AGY_HOST_BRIDGE_URL)
     host = parsed.hostname or "127.0.0.1"
     return f"http://{host}:{cfg.BIND_PORT}"
@@ -111,7 +121,13 @@ def compute_media_hmac(exp_ts: int, scope: str, rel_path: str, pass_hash: str | 
     return hmac.new(secret_hex.encode("utf-8"), msg, hashlib.sha256).hexdigest()[:32]
 
 
-def sign_media_url(scope: str, rel_path: str, ttl_seconds: int = MEDIA_TTL_SECONDS, exp_ts: int | None = None) -> str:
+def sign_media_url(
+    scope: str,
+    rel_path: str,
+    ttl_seconds: int = MEDIA_TTL_SECONDS,
+    exp_ts: int | None = None,
+    relative: bool = False,
+) -> str:
     """Generate a 30-minute HMAC-signed /web/media/<exp_ts>/<hmac_sig>/<scope>/<rel_path> URL."""
     exp_val = int(exp_ts) if exp_ts is not None else int(time.time()) + int(ttl_seconds)
     clean_rel = rel_path.lstrip("/")
@@ -119,6 +135,8 @@ def sign_media_url(scope: str, rel_path: str, ttl_seconds: int = MEDIA_TTL_SECON
     quoted_scope = urllib.parse.quote(scope, safe=":")
     quoted_rel = urllib.parse.quote(clean_rel, safe="/")
     path_part = f"/web/media/{exp_val}/{sig}/{quoted_scope}/{quoted_rel}"
+    if relative:
+        return path_part
     base = get_public_base_url()
     return f"{base}{path_part}" if base else path_part
 
@@ -154,9 +172,10 @@ def _resolve_scope_base_dir(scope: str) -> Path | None:
 
 def verify_and_resolve_media(req_path: str) -> tuple[Path | None, bytes, int, str]:
     """Verify HMAC signature, expiration, and path sandboxing for GET /web/media/<exp>/<sig>/<scope>/<rel_path>."""
-    if "/web/media/" not in req_path:
+    clean_req_path = req_path.split("?", 1)[0]
+    if "/web/media/" not in clean_req_path:
         return None, b"application/json", 404, "Not a media route."
-    tail = req_path.split("/web/media/", 1)[1].lstrip("/")
+    tail = clean_req_path.split("/web/media/", 1)[1].lstrip("/")
     parts = tail.split("/", 3)
     if len(parts) < 4:
         return None, b"application/json", 400, "Malformed media URL path."
@@ -196,7 +215,35 @@ def verify_and_resolve_media(req_path: str) -> tuple[Path | None, bytes, int, st
     return target, ALLOWED_MEDIA_EXTENSIONS[ext], 200, "OK"
 
 
-def discover_visual_artifacts(conv_id: str, workspace_path: str = "", limit: int = 15) -> list[dict[str, Any]]:
+def build_workspace_deep_link(
+    conv_id: str,
+    rel_path: str,
+    scope: str = "",
+    ttl_seconds: int = MEDIA_TTL_SECONDS,
+    exp_ts: int | None = None,
+) -> str:
+    """Generate https://<base>/web?view=workspace&session=<conv_id>&artifact=<rel_path>&t=<exp_ts>&sig=<hmac_sig>."""
+    exp_val = int(exp_ts) if exp_ts is not None else int(time.time()) + int(ttl_seconds)
+    clean_rel = rel_path.lstrip("/")
+    eff_scope = scope or (f"brain:{conv_id}" if conv_id else "")
+    sig = compute_media_hmac(exp_val, eff_scope, clean_rel)
+    base = get_public_base_url()
+    params = urllib.parse.urlencode({
+        "view": "workspace",
+        "session": conv_id,
+        "artifact": clean_rel,
+        "t": str(exp_val),
+        "sig": sig,
+    })
+    return f"{base}/web?{params}" if base else f"/web?{params}"
+
+
+def discover_visual_artifacts(
+    conv_id: str,
+    workspace_path: str = "",
+    limit: int = 15,
+    relative: bool = False,
+) -> list[dict[str, Any]]:
     """Scan session brain directory and active workspace for recent visual artifacts (.png/.jpg/.webp/.svg)."""
     candidates: list[tuple[float, dict[str, Any]]] = []
     seen_realpaths: set[str] = set()
@@ -226,17 +273,17 @@ def discover_visual_artifacts(conv_id: str, workspace_path: str = "", limit: int
                     seen_realpaths.add(rp)
                     st = entry.stat()
                     rel_str = str(entry.resolve().relative_to(base_dir.resolve())).replace("\\", "/")
-                    candidates.append((
-                        st.st_mtime,
-                        {
-                            "name": entry.name,
-                            "scope": scope,
-                            "rel_path": rel_str,
-                            "bytes": st.st_size,
-                            "modified_at": datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat(),
-                            "signed_url": sign_media_url(scope, rel_str),
-                        },
-                    ))
+                    item_dict: dict[str, Any] = {
+                        "name": entry.name,
+                        "scope": scope,
+                        "rel_path": rel_str,
+                        "bytes": st.st_size,
+                        "modified_at": datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat(),
+                        "signed_url": sign_media_url(scope, rel_str, relative=relative),
+                    }
+                    if safe_cid:
+                        item_dict["workspace_url"] = build_workspace_deep_link(safe_cid, rel_str, scope=scope)
+                    candidates.append((st.st_mtime, item_dict))
             except Exception:
                 continue
 

@@ -13,15 +13,16 @@
   <link rel="icon" type="image/svg+xml" href="/web/icon.svg" />
   <link rel="apple-touch-icon" href="/web/icon-192.png" />
   <title>AGY-NEXUS-MCP — Usage, Quota &amp; Project Activity Dashboard</title>
-  <link rel="stylesheet" href="/web/styles.css?v=3.0.0" />
+  <link rel="stylesheet" href="/web/styles.css?v=3.1.0b" />
 </head>
 <body>
   <!-- Top Navigation Bar -->
   <header class="topbar">
     <div class="brand">
+      <button type="button" class="btn btn-xs mono sidebar-toggle-btn hidden" id="sidebarToggleBtn" title="Toggle Tree (Ctrl+B)">◧</button>
       <span class="sq-dot"></span>
       <div>
-        <div class="brand-title mono">AGY-NEXUS-MCP <span class="version-tag" id="versionTag" title="Installed version"><span class="status-dot-6px cyan" id="versionDot"></span><span id="versionLabel">v3.0.0</span></span> <span style="font-weight:400;color:var(--text-dim)">// DASHBOARD</span></div>
+        <div class="brand-title mono">AGY-NEXUS <span class="version-tag" id="versionTag" title="Installed version"><span class="status-dot-6px cyan" id="versionDot"></span><span id="versionLabel">v3.1.0</span></span></div>
         <div class="brand-sub" id="subtitleStatus">Usage, Model Quotas, Subagents, Tokens &amp; Project Activity</div>
       </div>
       <!-- Primary Surface Switcher -->
@@ -31,9 +32,8 @@
       </div>
     </div>
 
-    <!-- Center Controls: Analytics vs Workspace -->
+    <!-- Center Controls: Analytics Controls -->
     <div class="controls-center">
-      <!-- Analytics Controls -->
       <div class="controls" id="analyticsControls">
         <!-- Timeframe Horizon -->
         <div class="horizon-toggle mono" role="group" aria-label="Timeframe horizon">
@@ -43,7 +43,7 @@
         </div>
         <!-- Horizon Mode -->
         <div class="mode-toggle mono" role="group" aria-label="Horizon mode">
-          <button type="button" class="tab-btn active" data-horizon="to_date">To Date</button>
+          <button type="button" class="tab-btn active" data-horizon="to_date">Current</button>
           <button type="button" class="tab-btn" data-horizon="rolling">Rolling</button>
         </div>
         <!-- Horizon Stepper -->
@@ -51,21 +51,13 @@
           <button type="button" class="btn nav-step-btn mono" id="stepPrevBtn" title="Step backward">‹</button>
           <span class="mono nav-horizon-label" id="horizonActiveLabel">This Month</span>
           <button type="button" class="btn nav-step-btn mono" id="stepNextBtn" title="Step forward" disabled>›</button>
-          <button type="button" class="btn nav-step-btn mono" id="stepTodayBtn" title="Return to current date">Today</button>
+          <button type="button" class="btn nav-step-btn mono" id="stepTodayBtn" title="Return to current date" style="display:none;">Today</button>
         </div>
         <!-- Steps / Tokens Metric Toggle -->
         <div class="metric-toggle mono" role="group" aria-label="Chart metric unit">
           <button type="button" class="metric-btn active" data-metric="steps" title="Plot stacked step volume">Steps</button>
           <button type="button" class="metric-btn" data-metric="tokens" title="Plot stacked token volume">Tokens</button>
         </div>
-      </div>
-
-      <!-- Workspace Controls (Hidden in Analytics mode) -->
-      <div class="controls hidden" id="workspaceControls">
-        <span class="ws-topbar-breadcrumb mono" id="wsTopbarBreadcrumb">Workspace Explorer</span>
-        <button type="button" class="tab-btn mono" id="quickUploadPill">Quick Upload</button>
-        <button type="button" class="tab-btn mono" id="visualHandoffsPill">Visual Handoffs</button>
-        <button type="button" class="tab-btn mono" id="sessionArtifactsPill">Session Artifacts</button>
       </div>
     </div>
 
@@ -201,12 +193,19 @@
 
     <!-- Row 2: Daily Activity Heatmap -->
     <section class="card col-12">
-      <div class="card-hdr">
+      <div class="card-hdr" style="flex-wrap:wrap;">
         <span class="card-label">Daily Activity Heatmap (Mon–Sun Calendar Matrix)</span>
-        <span class="card-tag mono" id="heatmapRangeTag">ROLLING 90 DAYS</span></div>
+        <div class="hdr-group">
+          <span class="card-tag mono" id="heatmapRangeTag">ROLLING 90 DAYS</span>
+          <div class="heat-weeks-toggle mono" id="heatWeeksToggle" role="group" aria-label="Heatmap weeks display">
+            <button type="button" class="tab-btn active" data-weeks="26">26w</button>
+            <button type="button" class="tab-btn" data-weeks="53">53w</button>
+          </div>
+        </div>
+      </div>
       <div class="heatmap-scroll">
         <div class="heatmap-matrix-wrap">
-          <div class="heatmap-dow-col mono" aria-hidden="true"><span></span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
+          <div class="heatmap-dow-col mono" aria-hidden="true"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
           <div class="heatmap-main-col">
             <div id="heatmapMonthsRow" class="heatmap-months-row mono"></div>
             <div id="heatmapGrid" class="heatmap-grid"></div></div>
@@ -352,10 +351,20 @@
     <div class="workspace-layout">
       <!-- Left Tree Pane -->
       <aside class="workspace-tree-pane" id="workspaceTreePane">
-        <div class="tree-search-bar">
-          <input type="text" id="workspaceTreeSearch" class="input-text mono" placeholder="Filter projects / sessions..." />
+        <!-- Slim Project Rail (38px width, visible when collapsed on >=780px) -->
+        <div class="workspace-slim-rail mono hidden" id="workspaceSlimRail">
+          <button type="button" class="slim-rail-btn mono" id="slimRailExpandBtn" title="Expand Tree (Ctrl+B)">»</button>
+          <button type="button" class="slim-rail-btn mono" id="slimRailQueueBtn" title="Visual Handoffs Queue">◈<span class="slim-q-badge mono" id="slimQueueBadge"></span></button>
+          <div class="slim-rail-projects" id="slimRailProjects"></div>
         </div>
-        <div class="tree-root-container" id="workspaceTreeRoot"></div>
+        <!-- Full Tree Pane (240px) -->
+        <div class="workspace-full-tree" id="workspaceFullTree">
+          <div class="tree-search-bar">
+            <input type="text" id="workspaceTreeSearch" class="input-text mono" placeholder="Filter projects / sessions..." />
+            <button type="button" class="btn btn-xs mono tree-collapse-btn" id="treeCollapseBtn" title="Collapse to rail (Ctrl+B)">«</button>
+          </div>
+          <div class="tree-root-container" id="workspaceTreeRoot"></div>
+        </div>
       </aside>
 
       <!-- Right Content Pane -->
@@ -365,42 +374,30 @@
           <span class="workspace-empty-hdr mono">Select a session from the left tree</span>
         </div>
 
-        <!-- Dual-Area Workspace Tabs -->
-        <div class="workspace-tabs-bar">
-          <div class="controls">
-            <button type="button" class="tab-btn active mono" id="wsPaneTabArtifacts">Artifacts &amp; Handoffs</button>
-            <button type="button" class="tab-btn mono" id="wsPaneTabUploads">Scratch &amp; Uploads</button>
-          </div>
-        </div>
-
-        <!-- Area 1: Artifacts & Handoffs View -->
-        <div class="workspace-area-view" id="workspaceAreaArtifacts">
-          <div class="artifacts-dual-layout">
-            <div class="artifacts-sidebar" id="workspaceArtifactsList"></div>
-            <div class="artifacts-viewer" id="workspaceContentViewer">
-              <div class="viewer-placeholder mono">Select an artifact or staged handoff to view rendered Editorial HTML</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Area 2: Uploads View -->
-        <div class="workspace-area-view hidden" id="workspaceAreaUploads">
-          <div class="upload-zone-panel">
-            <div class="upload-dropzone-large" id="workspaceUploadDropzone">
-              <div class="drop-icon">📁</div>
-              <div class="drop-title"><strong>Drag &amp; Drop Files or Paste (Ctrl+V)</strong></div>
-              <div class="drop-sub mono">Images, logs, source code, JSON, PDF (automatically hashed and saved to session scratch)</div>
-              <div class="upload-tag-row" style="margin-top:12px;display:flex;gap:8px;justify-content:center;">
-                <input type="text" id="uploadBatchTagInput" class="input-text mono" placeholder="Batch label (e.g. repro, assets)..." style="width:240px;" />
-              </div>
-              <div id="uploadStatusMsg" class="mono" style="margin-top:8px;font-size:11px;color:var(--text-dim);"></div>
-            </div>
-            <div id="workspaceUploadsGrid" class="workspace-uploads-grid" style="margin-top:16px;"></div>
-          </div>
+        <!-- Full-Width Stage (overview | batch | doc | queue) -->
+        <div class="workspace-stage" id="workspaceStage">
+          <div class="stage-placeholder mono">Select a session or handoff ticket from the left tree</div>
         </div>
       </section>
     </div>
   </main>
+
+  <!-- Lightbox Modal for Full-Size Visual Artifacts -->
+  <dialog id="lightboxModal" closedby="any" aria-labelledby="lightboxTitle">
+    <div class="lightbox-hdr">
+      <div class="lightbox-title-wrap">
+        <h3 id="lightboxTitle" class="lightbox-heading mono">Preview</h3>
+        <span id="lightboxMeta" class="lightbox-meta mono"></span>
+      </div>
+      <div class="lightbox-actions">
+        <button type="button" class="btn mono" id="lightboxCopyLinkBtn">Copy 7d Link</button>
+        <button type="button" class="btn-icon" id="lightboxCloseBtn" aria-label="Close">&times;</button>
+      </div>
+    </div>
+    <div class="lightbox-body">
+      <img id="lightboxImg" class="lightbox-img" src="" alt="Full preview" />
+    </div>
+  </dialog>
 
   <!-- Scratch Batch Upload Modal -->
   <dialog id="uploadDialog" closedby="any" aria-labelledby="uploadDialogTitle">
@@ -449,14 +446,15 @@
     </div>
   </dialog>
 
-  <script src="/web/palettes.js?v=3.0.0"></script>
-  <script src="/web/charts.js?v=3.0.0"></script>
-  <script src="/web/demo_data.js?v=3.0.0"></script>
-  <script src="/web/hierarchy.js?v=3.0.0"></script>
-  <script src="/web/markdown_renderer.js?v=3.0.0"></script>
-  <script src="/web/explorer.js?v=3.0.0"></script>
-  <script src="/web/uploads.js?v=3.0.0"></script>
-  <script src="/web/health.js?v=3.0.0"></script>
-  <script src="/web/app.js?v=3.0.0"></script>
+  <script src="/web/palettes.js?v=3.1.0b"></script>
+  <script src="/web/charts.js?v=3.1.0b"></script>
+  <script src="/web/demo_data.js?v=3.1.0b"></script>
+  <script src="/web/hierarchy.js?v=3.1.0b"></script>
+  <script src="/web/markdown_renderer.js?v=3.1.0b"></script>
+  <script src="/web/gallery_select.js?v=3.1.0b"></script>
+  <script src="/web/explorer.js?v=3.1.0b"></script>
+  <script src="/web/uploads.js?v=3.1.0b"></script>
+  <script src="/web/health.js?v=3.1.0b"></script>
+  <script src="/web/app.js?v=3.1.0b"></script>
 </body>
 </html>

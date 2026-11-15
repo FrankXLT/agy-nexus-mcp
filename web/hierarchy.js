@@ -129,15 +129,13 @@ function renderProjectHandoffRow(h) {
   const ownerCid = escapeHtmlSafe(h.claimed_by_conversation_id || h.target_conversation_id || "");
   const supBy = escapeHtmlSafe(h.superseded_by || "newer");
   const idColHtml = isStaged
-    ? `<span class="hier-copy-inline hier-handoff-unclaimed mono" data-copy="${hid}" title="Unclaimed handoff — click to copy ticket ID ${hid}">${hid} · (unclaimed / new chat)</span>`
+    ? `<span class="hier-copy-inline hier-handoff-unclaimed hier-uuid-pill mono" data-copy="${hid}" title="Unclaimed handoff — click to copy ticket ID ${hid}">${hid}</span>`
     : (isInWork
-      ? `<span class="hier-copy-inline hier-uuid mono" data-copy="${ownerCid || hid}" title="Claimed in-work session">${ownerCid ? `→ ${ownerCid}` : `${hid} · active`}</span>`
+      ? `<span class="hier-copy-inline hier-uuid hier-uuid-pill mono" data-copy="${ownerCid || hid}" title="Claimed session: ${ownerCid || hid}">${ownerCid ? ownerCid.slice(0, 8) : hid}</span>`
       : (isCompleted
-        ? `<span class="hier-copy-inline hier-uuid mono" data-copy="${ownerCid || hid}" title="Completed session">${ownerCid ? `✓ ${ownerCid}` : `${hid} · completed`}</span>`
-        : `<span class="hier-handoff-sup-note mono" title="Superseded by ${supBy}">→ ${supBy}</span>`));
+        ? `<span class="hier-copy-inline hier-uuid hier-uuid-pill mono" data-copy="${ownerCid || hid}" title="Completed session: ${ownerCid || hid}">${ownerCid ? ownerCid.slice(0, 8) : hid}</span>`
+        : `<span class="hier-handoff-sup-note hier-uuid-pill mono" title="Superseded by ${supBy}">→ ${supBy}</span>`));
   const rawWs = String(h.workspace_path || "");
-  const wsFull = escapeHtmlSafe(rawWs || h.repo_slug || "(auto)");
-  const wsShort = escapeHtmlSafe(rawWs ? formatShortWorkspace(rawWs) : (h.repo_slug || "(auto)"));
   const execLbl = escapeHtmlSafe(`${String(h.execution_mode || "plan").toUpperCase()}/${String(h.handoff_mode || "intent").toUpperCase()}`);
   const sizeKb = (Math.max(100, Number(h.chars_written || 0)) / 1024).toFixed(1) + " KB";
   const updated = escapeHtmlSafe(formatShortUpdated(h));
@@ -148,7 +146,6 @@ function renderProjectHandoffRow(h) {
   return `<tr class="hier-handoff-row ${st === "SUPERSEDED" ? "is-superseded" : (isCompleted ? "is-completed" : "")}">
     <td><div class="sess-cell"><span class="hier-handoff-pill ${stCls} mono">${stPillLbl}</span><span class="hier-copy-inline hier-handoff-slug mono" data-copy="${hid}" title="Click to copy ticket slug ${hid}">${hid}</span><span class="hier-copy-inline hier-title-txt" data-copy="${title}" title="Click to copy handoff title">${title}</span></div></td>
     <td class="mono">${idColHtml}</td>
-    <td class="mono"><span class="hier-copy-inline hier-ws" data-copy="${wsFull}" title="Workspace: ${wsFull}">${wsShort}</span></td>
     <td class="mono"><span class="hier-mode-lbl ${isStaged ? "warn" : (isInWork ? "writer" : (isCompleted ? "tag-ok" : ""))}">${execLbl}</span></td>
     <td class="mono num-col" title="Staged specification size">${sizeKb}</td>
     <td class="mono num-col hier-updated">${updated}</td>
@@ -159,9 +156,6 @@ function renderProjectHandoffRow(h) {
 function renderProjectSessionRow(s, slotIdx, isIdleRow, isRollup, metric, surface) {
   const cid = escapeHtmlSafe(s.conversation_id || "");
   const title = escapeHtmlSafe(s.title || "Untitled Session");
-  const rawWs = String(s.workspace_path || "(unscoped)");
-  const wsFull = escapeHtmlSafe(rawWs);
-  const wsShort = escapeHtmlSafe(s.workspace_short || formatShortWorkspace(rawWs));
   const status = String(s.status || "IDLE").toUpperCase();
   const isRun = Boolean(s.is_running || status === "RUNNING" || status === "STALLED_WAITING_APPROVAL");
   const dotCls = isRun ? "running" : (s.is_pinned ? "pinned" : "idle");
@@ -176,8 +170,7 @@ function renderProjectSessionRow(s, slotIdx, isIdleRow, isRollup, metric, surfac
 
   return `<tr class="hier-session-row ${sWinSteps === 0 ? "sess-zero-win" : ""}">
     <td><div class="sess-cell"><span class="sess-shade-swatch" style="${shadeStyle}" title="Plot 3 session bar color (${sWinSteps.toLocaleString()} window steps)"></span><span class="sess-dot ${dotCls}" title="${escapeHtmlSafe(status)}">${dotChar}</span><span class="hier-idx mono">#${Number(s.index || 0)}</span>${projPrefix}<span class="hier-copy-inline hier-title-txt" data-copy="${title}" title="Click to copy chat title">${title}</span></div></td>
-    <td class="mono"><span class="hier-copy-inline hier-uuid" data-copy="${cid}" title="Click to copy full session_id">${cid}</span></td>
-    <td class="mono"><span class="hier-copy-inline hier-ws" data-copy="${wsFull}" title="Click to copy full path: ${wsFull}">${wsShort}</span></td>
+    <td class="mono"><span class="hier-copy-inline hier-uuid hier-uuid-pill mono" data-copy="${cid}" title="Click to copy full session_id: ${cid}">${cid.slice(0, 8)}</span></td>
     <td class="mono"><span class="hier-mode-lbl ${modeObj.cls}">${modeObj.label}</span></td>
     <td class="mono num-col" title="Total lifetime steps: ${Number(s.step_count || 0).toLocaleString()}">${cellMetric}</td>
     <td class="mono num-col hier-updated">${updated}</td>
@@ -360,7 +353,7 @@ function renderHierarchyPanel(bundle) {
     const rankTag = isRollup ? "[OTHER]" : (proj.rowKind === "queued-idle" ? "[NEW · QUEUE]" : (isIdleRow ? "[QUEUE]" : `[${String(slotIdx + 1).padStart(2, "0")}]`));
     const idMeta = isRollup
       ? `<span class="hier-proj-id mono">${Number(proj.projects_count || 1)} projects rolled up</span>`
-      : `<span class="hier-copy-inline hier-proj-id mono" data-copy="${pEsc}" title="Click to copy project_id">${pEsc}</span>`;
+      : "";
     const sharedTag = proj.shared_repo ? `<span class="hier-micro-tag mono" title="Multiple sessions share repository">SHARED</span>` : "";
     const stgCnt = Number(proj.staged_count || 0), inwCnt = Number(proj.in_work_handoff_count || 0), supCnt = Number(proj.superseded_count || 0);
     const stgBadge = stgCnt > 0 ? `<span class="hier-handoff-badge staged mono" title="Unclaimed staged Gemini handoffs">◈ ${stgCnt} STAGED</span>` : "";
@@ -382,7 +375,7 @@ function renderHierarchyPanel(bundle) {
     let completedSectionHtml = "";
     if (completedHandoffs.length > 0) {
       const compRows = completedHandoffs.map((h) => renderProjectHandoffRow(h)).join("");
-      completedSectionHtml = `<tr class="hier-completed-row"><td colspan="7" style="padding:0;border-bottom:1px solid var(--border-grid);">
+      completedSectionHtml = `<tr class="hier-completed-row"><td colspan="6" style="padding:0;border-bottom:1px solid var(--border-grid);">
         <details class="hier-completed-details" style="padding:4px 8px;">
           <summary class="mono" style="cursor:pointer;color:var(--text-dim);font-size:11px;user-select:none;">▸ Completed Handoffs (${completedHandoffs.length})</summary>
           <table class="table-clean hier-table" style="width:100%;margin-top:4px;"><tbody>${compRows}</tbody></table>
@@ -394,12 +387,12 @@ function renderHierarchyPanel(bundle) {
 
     return `<details class="hier-proj-card ${isDimmed ? "is-dimmed" : ""} ${isSolo ? "is-solo" : ""}" data-pid="${pEsc}" ${isOpen ? "open" : ""}>
       <summary class="hier-proj-hdr">
-        <div class="hier-proj-left"><span class="hier-caret mono"></span><span class="proj-swatch-pill" style="${swatchCss}" title="Project color family (${actChats} active session shades)"></span><span class="hier-proj-idx mono">${rankTag}</span><strong class="hier-proj-name">${pName}</strong>${idMeta}${sharedTag}${stgBadge}${inwBadge}${supBadge}</div>
+        <div class="hier-proj-left"><span class="hier-caret mono"></span><span class="proj-swatch-pill" style="${swatchCss}" title="Project color family (${actChats} active session shades)"></span><span class="hier-proj-idx mono">${rankTag}</span><strong class="hier-proj-name" title="Project ID: ${pEsc}">${pName}</strong>${idMeta}${sharedTag}${stgBadge}${inwBadge}${supBadge}</div>
         <div class="hier-proj-right mono">${liveHtml}<span>${chatSummary}</span><span>·</span><strong style="color:var(--text-main)">${winVal}</strong><span class="proj-share-pill">${Number(proj.share_pct || 0).toFixed(1)}%</span>${soloBtnHtml}</div>
       </summary>
       <div class="hier-table-wrap" tabindex="0" role="region" aria-label="${pName} handoffs and sessions">
         <table class="table-clean hier-table">
-          <thead><tr><th class="hier-col-sess">Session / Handoff (Shade + Title)</th><th class="mono hier-col-uuid">Session / Ticket ID</th><th class="mono hier-col-ws">Workspace</th><th class="mono hier-col-mode">Mode</th><th class="mono num-col hier-col-steps">${metric === "tokens" ? "Win Tok" : "Win Steps"}</th><th class="mono num-col hier-col-upd">Updated</th><th class="mono hier-col-act">Action</th></tr></thead>
+          <thead><tr><th class="hier-col-sess">Session / Handoff (Shade + Title)</th><th class="mono hier-col-uuid">Session / Ticket ID</th><th class="mono hier-col-mode">Mode</th><th class="mono num-col hier-col-steps">${metric === "tokens" ? "Win Tok" : "Win Steps"}</th><th class="mono num-col hier-col-upd">Updated</th><th class="mono hier-col-act">Action</th></tr></thead>
           <tbody>${handoffRows}${completedSectionHtml}${sessRows}</tbody>
         </table>
       </div>

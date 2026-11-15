@@ -179,7 +179,7 @@ def list_scratch_upload_batches(conv_id: str, brain_dir: Path = AGY_BRAIN_DIR) -
                     signed_images.append({
                         "name": img.name,
                         "rel_path": rel_p,
-                        "signed_url": sign_media_url(f"brain:{conv_id}", rel_p),
+                        "signed_url": sign_media_url(f"brain:{conv_id}", rel_p, relative=True),
                     })
             batches.append({
                 "folder_name": d.name,

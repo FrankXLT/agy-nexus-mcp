@@ -1,6 +1,6 @@
 // Code Health, Praxis Semantic Index & Modular Hygiene UI Renderer for /web Overwatch Dashboard (v2.8.0)
 function renderCodeHealth(ch, installedVer) {
-  installedVer = installedVer || "2.8.0";
+  installedVer = installedVer || "3.1.0";
   let dotClass = "cyan";
   const status = (ch && ch.version && ch.version.status) || "staged_locally";
   if (status === "up_to_date") dotClass = "green";

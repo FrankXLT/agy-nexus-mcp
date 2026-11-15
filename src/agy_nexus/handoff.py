@@ -11,7 +11,6 @@ from pathlib import Path
 import re
 import time
 from typing import Any
-import urllib.request
 
 import agy_nexus.config as cfg
 from agy_nexus.config import (
@@ -31,62 +30,30 @@ from agy_nexus.inventory import (
 from agy_nexus.routing import (
     _resolve_session_identifier, _resolve_target_session_for_handoff, _session_matches_repo_hint,
 )
+from agy_nexus.retirement import (
+    build_suggested_actions,
+    get_closeout_directives,
+    is_closeout_intent,
+    is_session_retired,
+    record_session_retirement,
+)
 from agy_nexus.session_status import (
     _get_selected_session_quick_status, check_context_exceeded,
-    check_inflight_handoff_mutex, extract_prior_session_baton,
+    check_inflight_handoff_mutex, evaluate_rollover_posture,
+    extract_prior_session_baton,
 )
-from agy_nexus.sessions import resolve_canonical_project_for_workspace
 from agy_nexus.target_resolver import (
+    _USER_BODY_END,
+    _USER_BODY_START,
+    apply_global_scope_isolation,
+    extract_markdown_heading as _extract_markdown_heading,
     infer_workspace_and_project as _infer_workspace_and_project,
+    post_host_bridge as _post_bridge,
     resolve_handoff_target,
+    unwrap_staged_handoff_markdown as _unwrap_staged_handoff_markdown,
 )
 from agy_nexus.telemetry_scanner import get_active_mainchat_model
 from agy_nexus.workflows import stage_quarantine_handoff
-
-_USER_BODY_START = "<!-- BEGIN_USER_HANDOFF_BODY -->"
-_USER_BODY_END = "<!-- END_USER_HANDOFF_BODY -->"
-
-
-def _extract_markdown_heading(md_text: str) -> str:
-    """Extract the first top-level Markdown heading for default session_title."""
-    for ln in (md_text or "").splitlines():
-        s = ln.strip()
-        if not s or s.startswith("<!--"):
-            continue
-        m = re.match(r"^#{1,2}\s+(.+)$", s)
-        if m:
-            cleaned = re.sub(r"[`*_~]+", "", m.group(1)).strip()
-            if cleaned:
-                return cleaned[:90]
-    return ""
-
-
-def _unwrap_staged_handoff_markdown(staged_text: str) -> str:
-    """Extract pure user handoff markdown from an already-staged handoff file to prevent double-wrapping."""
-    txt = (staged_text or "").strip()
-    if not txt:
-        return ""
-    if _USER_BODY_START in txt and _USER_BODY_END in txt:
-        i0 = txt.index(_USER_BODY_START) + len(_USER_BODY_START)
-        i1 = txt.rindex(_USER_BODY_END)
-        if i1 >= i0:
-            return txt[i0:i1].strip()
-    txt = re.sub(r"^(?:<!--[^\n]*-->\s*\n)+", "", txt).lstrip()
-    txt = re.sub(r"^>\s*\[!IMPORTANT\]\s*\n(?:>[^\n]*\n)+\s*", "", txt).lstrip()
-    txt = re.sub(r"^## Prior Session Baton[\s\S]*?\n---\s*\n+", "", txt).lstrip()
-    txt = re.sub(r"\n---\s*\n+## Mandatory 4-Step Execution Lifecycle[\s\S]*$", "", txt).rstrip()
-    txt = re.sub(r"\n### Mandatory Modular Architecture[\s\S]*$", "", txt).rstrip()
-    txt = re.sub(r"\n---\s*\n+## Antigravity Skill, Agent Role & Customization Scope Directive[\s\S]*$", "", txt).rstrip()
-    return txt.strip()
-
-
-def _post_bridge(payload: dict[str, Any]) -> dict[str, Any]:
-    try:
-        req = urllib.request.Request(cfg.AGY_HOST_BRIDGE_URL, data=json.dumps(payload).encode("utf-8"), headers=cfg.get_host_bridge_headers(), method="POST")
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode("utf-8", errors="replace"))
-    except Exception as e:
-        return {"ok": False, "error": f"Failed reaching agy-host-bridge at {cfg.AGY_HOST_BRIDGE_URL}: {e}"}
 
 
 def _compose_handoff_document(
@@ -104,6 +71,8 @@ def _compose_handoff_document(
     target_agent_role: str,
     edit_scope_clean: str,
     active_ws: str,
+    retire_session: bool = False,
+    is_closeout: bool = False,
 ) -> dict[str, Any]:
     """Assemble full wrapped handoff markdown plus reusable prompt blocks."""
     interjection_block, cust_scope_info = build_interjection_directive(
@@ -122,6 +91,7 @@ def _compose_handoff_document(
         "> Stage all changes locally, capture verification screenshots and diffs, and halt execution so Gemini and the user can inspect via `inspect_git_diff` / `/web/media/` links. **You MUST still restart the local `ag-bridge-mcp` service/container** whenever Python/web files change so fixes take effect in memory immediately.\n\n"
         if not allow_chained_publish else ""
     )
+    closeout_block = get_closeout_directives(active_ws) if (retire_session or is_closeout) else ""
     subagent_footer = (
         "\n---\n\n"
         "## Mandatory 4-Step Execution Lifecycle & Verification Gate (Carbon 4 Main-Chat + Subagent Hybrid)\n\n"
@@ -132,11 +102,12 @@ def _compose_handoff_document(
     )
     hygiene_suffix = f"\n{MODULAR_HYGIENE_MARKDOWN_BLOCK.strip()}\n" if (apply_hygiene and "Mandatory Modular Architecture" not in body_clean) else ""
     wrapped_user_body = f"{_USER_BODY_START}\n{body_clean}\n{_USER_BODY_END}"
-    full_content = header + stage_gate_block + baton_block + wrapped_user_body + interjection_block + hygiene_suffix + subagent_footer + "\n"
+    full_content = header + stage_gate_block + baton_block + closeout_block + wrapped_user_body + interjection_block + hygiene_suffix + subagent_footer + "\n"
     return {
         "full_content": full_content,
         "stage_gate_block": stage_gate_block,
         "interjection_block": interjection_block,
+        "closeout_block": closeout_block,
         "hygiene_suffix": hygiene_suffix,
         "subagent_footer": subagent_footer,
         "cust_scope_info": cust_scope_info,
@@ -228,6 +199,7 @@ def _run_headless_new_session(ctx: dict[str, Any]) -> str:
     )
     t_stat = str(ticket.get("status", "IN_WORK"))
     out: dict[str, Any] = {"ok": bridge_ok, "status": "RESUMED" if bridge_ok else "FAILED", "handoff_id": hid, "handoff_status": t_stat, "ticket_status": t_stat, "created_new_session": bool(new_conv_id and bridge_ok), "create_new_project": create_new_proj, "default_branch": eff_branch, "resumed": bridge_ok, "write_mode": write_mode, "chars_written": len(body_clean), "execution_mode": eff_exec_mode, "modular_hygiene_enforced": apply_hygiene, "customization_scope_info": doc["cust_scope_info"], "active_mainchat_model": doc["main_model_info"], "job_id": job_id, "conversation_id": new_conv_id, "handoff_mode": eff_handoff_mode, "allow_chained_publish": allow_chained_publish, "workspace_path": pinned_ws, "project_id": pinned_pid, "project_name": pinned_pname, "handoff_file": str(handoff_file), "assistant_guidance": guidance, "bridge_response": bridge_response}
+    out["suggested_actions"] = build_suggested_actions("in_flight", target=repo_slug, conv_id=new_conv_id, is_running=bridge_ok)
     if ctx["execution_mode_advisory"]:
         out["execution_mode_advisory"] = ctx["execution_mode_advisory"]
     if ctx["auto_rollover_from"]:
@@ -278,6 +250,7 @@ def _stage_new_chat_handoff(ctx: dict[str, Any]) -> str:
         "assistant_guidance": f"STOP AND REPLY TO USER NOW: Handoff `{hid}`{sup_note} is staged (UNCLAIMED) for `{repo_slug}` ({title_clean}). Tell the user they can open a new or existing chat on `{repo_slug}` in Antigravity IDE and say 'Run handoff {hid}' (picked up via agy-praxis-mcp without file paths). You MUST end your response with this exact prompt: 'Do you understand the risk and would you like me to override and resume it headlessly anyway?'",
         "message": f"Research handoff staged as {hid}{sup_note} at {tfile} without headless wakeup.",
     }
+    out_staged["suggested_actions"] = build_suggested_actions("ready_to_run", target=repo_slug, conv_id="")
     if ensure_warn:
         out_staged["ensure_project_warning"] = ensure_warn
     if ctx["auto_rollover_from"]:
@@ -329,6 +302,7 @@ def _run_headless_existing_session(ctx: dict[str, Any]) -> str:
     )
     t_stat2 = "IN_WORK" if bridge_ok else "STAGED"
     out: dict[str, Any] = {"ok": bridge_ok, "status": "RESUMED" if bridge_ok else "FAILED", "handoff_id": hid, "handoff_status": t_stat2, "ticket_status": t_stat2, "resumed": bridge_ok, "write_mode": ctx["write_mode"], "chars_written": len(body_clean), "execution_mode": eff_exec_mode, "modular_hygiene_enforced": apply_hygiene, "customization_scope_info": doc["cust_scope_info"], "active_mainchat_model": doc["main_model_info"], "job_id": job_id, "conversation_id": conv_id, "conversation_title": conv_title, "project_id": eff_pid, "project_name": eff_pname, "workspace_path": eff_ws, "routing_reason": ctx["routing_reason"], "mode": sess_mode, "other_running_sessions": other_writers, "handoff_mode": eff_handoff_mode, "allow_chained_publish": allow_chained_publish, "handoff_file": str(handoff_file), "assistant_guidance": guidance, "bridge_response": bridge_response}
+    out["suggested_actions"] = build_suggested_actions("in_flight", target=eff_pname or ctx.get("repo_slug", "task"), conv_id=conv_id, is_running=bridge_ok)
     if ctx["execution_mode_advisory"]:
         out["execution_mode_advisory"] = ctx["execution_mode_advisory"]
     if other_writers and not use_worktree:
@@ -358,31 +332,72 @@ def _stage_or_run_existing_session(conv_id: str, routing_reason: str, base_ctx: 
     ticket = {"handoff_id": resumed_tid, "status": "STAGED", "superseded_ids": []} if resumed_tid else record_handoff_ticket(cfg.AGY_BG_DIR, full_markdown=doc["full_content"], chars_written=len(body_clean), repo_slug=repo_slug, title=title_clean, project_id=eff_pid, project_name=eff_pname, workspace_path=eff_ws or active_ws, target_conversation_id=conv_id, execution_mode=base_ctx["eff_exec_mode"], handoff_mode=eff_handoff_mode, allow_chained_publish=allow_chained_publish, initial_status="STAGED", supersede_handoff_id=base_ctx["supersede_handoff_id"], append_to_existing=base_ctx["append_to_existing"])
     sess_mode, eff_conv_ws = ("WORKTREE" if base_ctx["use_worktree"] else ("MAIN WRITER" if resume_headless else str(quick_st.get("mode") or "MAIN TREE"))), (eff_ws or active_ws)
     pin_session_context(conv_id, title=conv_title, project_id=eff_pid, project_name=eff_pname, workspace=eff_conv_ws, mode=sess_mode, last_tool="send_handoff_and_resume", set_default=True)
+    if base_ctx.get("retire_session"):
+        record_session_retirement(conv_id, cfg.AGY_BRAIN_DIR)
     if not resume_headless:
         hid, sup_note = str(ticket["handoff_id"]), (f" (superseded {', '.join(ticket['superseded_ids'])})" if ticket.get("superseded_ids") else "")
         out_local: dict[str, Any] = {"ok": True, "status": "STAGED_ONLY", "handoff_id": hid, "handoff_status": "STAGED", "ticket_status": "STAGED", "superseded_ids": ticket.get("superseded_ids", []), "repo_slug": repo_slug, "resumed": False, "write_mode": write_mode, "chars_written": len(body_clean), "execution_mode": base_ctx["eff_exec_mode"], "modular_hygiene_enforced": base_ctx["apply_hygiene"], "handoff_mode": eff_handoff_mode, "allow_chained_publish": allow_chained_publish, "customization_scope_info": doc["cust_scope_info"], "active_mainchat_model": doc["main_model_info"], "conversation_id": conv_id, "conversation_title": conv_title, "project_id": eff_pid, "project_name": eff_pname or repo_slug, "workspace_path": eff_conv_ws, "routing_reason": routing_reason, "mode": sess_mode, "other_running_sessions": other_writers, "handoff_file": str(handoff_file), "ticket_file": str(ticket.get("handoff_file") or ""), "assistant_guidance": f"STOP AND REPLY TO USER NOW: Handoff `{hid}`{sup_note} is staged (UNCLAIMED) for `{repo_slug}` ({title_clean}). Advise the user they can say 'Run handoff {hid}' in any new or existing Antigravity chat on `{repo_slug}`. You MUST end your response with this exact prompt: 'Do you understand the risk and would you like me to override and resume it headlessly anyway?'", "message": f"Research handoff staged as {hid}{sup_note} ({len(body_clean)} chars) without headless wakeup."}
+        out_local["suggested_actions"] = build_suggested_actions("ready_to_run", target=repo_slug, conv_id=conv_id)
         if base_ctx["size_warning"]:
             out_local["size_warning"] = base_ctx["size_warning"]
         return json.dumps(out_local, indent=2)
     return _run_headless_existing_session({**base_ctx, "conv_id": conv_id, "conv_title": conv_title, "eff_ws": eff_conv_ws, "handoff_file": handoff_file, "write_mode": write_mode, "other_writers": other_writers, "sess_mode": sess_mode, "routing_reason": routing_reason, "ticket": ticket})
 
 
-def _apply_global_scope_isolation(
-    *, edit_scope_clean: str, active_ws: str, conv_id: str, create_new_session: bool, create_new_project: bool,
-    routing_reason: str, eff_ws: str, eff_pid: str, eff_pname: str, repo_slug: str,
-    session_title: str, activate_skills: str, body_clean: str,
-) -> tuple[str, bool, bool, str, str, str, str, str, str]:
-    if edit_scope_clean != "global":
-        return conv_id, create_new_session, create_new_project, routing_reason, eff_ws, active_ws, eff_pid, eff_pname, repo_slug
-    scope_check = evaluate_session_customization_scope(active_ws, cfg.AGY_CONFIG_DIR, cfg.AGY_GITLAB_DIR)
-    if scope_check["is_global_config_session"] or _session_matches_repo_hint(conv_id, "antigravity-config"):
-        return conv_id, create_new_session, create_new_project, routing_reason, eff_ws, active_ws, eff_pid, eff_pname, repo_slug
-    cfg_repo_str = str(get_antigravity_config_repo())
-    cfg_pid, cfg_pname = resolve_canonical_project_for_workspace(cfg_repo_str, "antigravity-config")
-    cfg_conv, cfg_reason = _resolve_target_session_for_handoff("", cfg_repo_str, "antigravity-config", session_title, activate_skills, body_clean)
-    if cfg_conv and _session_matches_repo_hint(cfg_conv, "antigravity-config"):
-        return cfg_conv, False, False, f"scope_isolation_routed_to_existing_config_session ({cfg_reason})", cfg_repo_str, cfg_repo_str, cfg_pid, (cfg_pname or "antigravity-config"), "antigravity-config"
-    return "", True, False, "scope_isolation_new_config_session", cfg_repo_str, cfg_repo_str, cfg_pid, (cfg_pname or "antigravity-config"), "antigravity-config"
+def _evaluate_target_session(
+    conv_id: str,
+    *,
+    is_close: bool,
+    workspace_path: str,
+    raw_caller_body: str,
+    session_continuity: str,
+    allow_chained_publish: bool,
+    retire_session: bool,
+    is_resume_staged: bool,
+) -> tuple[str, str, bool, str]:
+    """Check retirement and rollover posture for an existing conversation."""
+    if is_session_retired(conv_id, cfg.AGY_BRAIN_DIR) and not is_close:
+        return "", f"retired_session_reset_from_{conv_id[:8]}", True, conv_id
+    tgt_st = _get_selected_session_quick_status(conv_id)
+    tgt_ws = str(tgt_st.get("workspace_path") or workspace_path or "")
+    posture_info = evaluate_rollover_posture(
+        conv_id, ws_path=tgt_ws, brain_dir=cfg.AGY_BRAIN_DIR,
+        step_count=int(tgt_st.get("step_count") or 0), compaction_count=int(tgt_st.get("compaction_count") or 0),
+        context_exceeded=bool(tgt_st.get("context_exceeded") or check_context_exceeded(conv_id, cfg.AGY_BRAIN_DIR)),
+        continuity=session_continuity, research_markdown="" if is_resume_staged else raw_caller_body,
+        allow_chained_publish=allow_chained_publish, retire_session=retire_session,
+    )
+    if posture_info.get("should_rollover"):
+        return "", f"auto_promoted_rollover_from_{conv_id[:8]} ({posture_info['posture']}, steps={posture_info['step_count']}, continuity={posture_info.get('continuity')})", True, conv_id
+    return conv_id, "", False, ""
+
+
+def _hydrate_resume_staged(
+    *,
+    explicit_hid: str, rollover_ref_cid: str, pre_slug: str, pre_ws: str,
+    workspace_path: str, eff_project_arg: str, implicit_hid_repo: str,
+    session_title: str, project_name: str, repo_hint: str,
+    create_new_project: bool, default_branch: str, session_identifier: str,
+) -> tuple[str, str, str, str, str, str, str, bool, str, bool]:
+    """Resolve staged handoff ticket content or brain scratch fallback."""
+    staged_tk = resolve_staged_ticket_for_resume(cfg.AGY_BG_DIR, handoff_id=explicit_hid, conv_id=rollover_ref_cid, repo_slug=pre_slug if (workspace_path or eff_project_arg or implicit_hid_repo or session_title or rollover_ref_cid) else "", workspace_path=pre_ws if (workspace_path or rollover_ref_cid) else "")
+    if staged_tk:
+        resumed_tid, body_clean = str(staged_tk["handoff_id"]), _unwrap_staged_handoff_markdown(Path(str(staged_tk["handoff_file"])).read_text(encoding="utf-8", errors="replace"))
+        ws = workspace_path or str(staged_tk.get("workspace_path") or "")
+        title = session_title or str(staged_tk.get("title") or "")
+        pid, pname, slug = str(staged_tk.get("project_id") or ""), str(staged_tk.get("project_name") or ""), str(staged_tk.get("repo_slug") or "")
+        if not project_name and pname and pname != "general" and not staged_tk.get("target_conversation_id"):
+            project_name = pname
+        if not repo_hint and slug and slug != "general" and not staged_tk.get("target_conversation_id"):
+            repo_hint = slug
+        cnp = bool(create_new_project or staged_tk.get("create_new_project"))
+        branch = default_branch or str(staged_tk.get("default_branch") or "")
+        force_new = bool(not staged_tk.get("target_conversation_id") and not session_identifier)
+        return resumed_tid, body_clean, ws, title, pid, project_name, repo_hint, cnp, branch, force_new
+    if rollover_ref_cid and (cfg.AGY_BRAIN_DIR / rollover_ref_cid / "scratch" / "gemini_research_handoff.md").is_file():
+        body_clean = _unwrap_staged_handoff_markdown((cfg.AGY_BRAIN_DIR / rollover_ref_cid / "scratch" / "gemini_research_handoff.md").read_text(encoding="utf-8", errors="replace"))
+        return "", body_clean, workspace_path, session_title, "", project_name, repo_hint, create_new_project, default_branch, False
+    return "", "", workspace_path, session_title, "", project_name, repo_hint, create_new_project, default_branch, False
 
 
 @mcp.tool(annotations=HANDOFF_ANNOTATIONS, output_schema=None)
@@ -393,14 +408,15 @@ def send_handoff_and_resume(
     session_identifier: str = "", session_title: str = "", project_name: str = "", repo_hint: str = "",
     workspace_path: str = "", handoff_id: str = "", supersede_handoff_id: str = "", append_to_existing: bool = False,
     enforce_modular_hygiene: bool = True, activate_skills: str = "", target_agent_role: str = "",
-    customization_edit_scope: str = "none", session_continuity: str = "auto", spoken_passphrase: str = "",
+    customization_edit_scope: str = "none", session_continuity: str = "auto", retire_session: bool = False,
+    spoken_passphrase: str = "",
 ) -> str:
     """Stage a repo-prefixed Gemini handoff ticket (`<repo-slug>-01`, ...) or wake up Antigravity headlessly.
 
-    - Default Write-Only Staging (`resume_headless=False`): Mints an unclaimed `<repo-slug>-NN` ticket in `STAGED` state so the user can say "Run handoff <repo-slug>-NN" in Antigravity IDE (`agy-praxis-mcp`).
-    - Zero-Reupload Override (`RESUME_STAGED`): Pass `resume_headless=True`, `research_markdown="RESUME_STAGED"` (`handoff_id="<repo-slug>-NN"`) to promote a staged ticket to `IN_WORK` and wake up Antigravity.
-    - Greenfield Project Guardrail (`create_new_project=True`): Non-existent `workspace_path`/`project_name` fails closed with `PROJECT_NOT_FOUND` unless `create_new_project=True` (provisions `projects/<slug>` + Antigravity Project on `default_branch`).
-    - Session Continuity (`session_continuity="auto"|"continuation"|"closeout"|"new_topic"`): Guides rollover threshold (new_topic rolls at >=320 steps; continuation holds to 950 steps; closeout holds to 1,150 steps).
+    - Default Write-Only Staging (`resume_headless=False`): Mints an unclaimed `<repo-slug>-NN` ticket in `STAGED` state.
+    - Zero-Reupload Override (`RESUME_STAGED`): Promotes staged ticket to `IN_WORK` and wakes up Antigravity.
+    - Greenfield Guardrail (`create_new_project=True`): Non-existent targets fail closed with `PROJECT_NOT_FOUND` unless explicitly set.
+    - In-Place Closeout & Retirement (`retire_session=True` / `session_continuity="closeout"`): Runs in-place; writes RETIRED.json.
     """
     caller_gave_ws, eff_project_arg = bool((workspace_path or "").strip()), (project_name or repo_hint).strip()
     if not is_unlocked(spoken_passphrase):
@@ -419,50 +435,26 @@ def send_handoff_and_resume(
     explicit_hid = canonicalize_handoff_id(handoff_id or (raw_caller_body if raw_caller_body.upper().startswith("RESUME_STAGED:") else ""))
     is_resume_staged = bool(raw_caller_body.upper().startswith("RESUME_STAGED") or (resume_headless and not raw_caller_body))
     size_warning = f"research_markdown was {len(raw_caller_body)} chars (recommended <= 4,500 chars per call)." if (not is_resume_staged and len(raw_caller_body) > 4500) else ""
+    is_close = bool(retire_session or (session_continuity or "").strip().lower() == "closeout" or allow_chained_publish or is_closeout_intent(raw_caller_body, retire_session, session_continuity))
 
     implicit_hid_repo = explicit_hid.rsplit("-", 1)[0] if (explicit_hid and not session_identifier and not workspace_path and not eff_project_arg) else ""
     resolved_conv_id, routing_reason, auto_rollover_from = "", "create_new_session", ""
     if not create_new_session and (resume_headless or session_identifier):
         resolved_conv_id, routing_reason = _resolve_target_session_for_handoff(session_identifier=session_identifier, workspace_path=workspace_path, project_name=eff_project_arg or implicit_hid_repo, session_title=session_title, activate_skills=activate_skills, research_markdown="" if is_resume_staged else raw_caller_body)
         if resolved_conv_id:
-            tgt_st = _get_selected_session_quick_status(resolved_conv_id)
-            tgt_ws = str(tgt_st.get("workspace_path") or workspace_path or "")
-            from agy_nexus.session_status import evaluate_rollover_posture
-            posture_info = evaluate_rollover_posture(
-                resolved_conv_id,
-                ws_path=tgt_ws,
-                brain_dir=cfg.AGY_BRAIN_DIR,
-                step_count=int(tgt_st.get("step_count") or 0),
-                compaction_count=int(tgt_st.get("compaction_count") or 0),
-                context_exceeded=bool(tgt_st.get("context_exceeded") or check_context_exceeded(resolved_conv_id, cfg.AGY_BRAIN_DIR)),
-                continuity=session_continuity,
-                research_markdown="" if is_resume_staged else raw_caller_body,
-                allow_chained_publish=allow_chained_publish,
-            )
-            if posture_info.get("should_rollover"):
-                auto_rollover_from, create_new_session, resolved_conv_id = resolved_conv_id, True, ""
-                routing_reason = f"auto_promoted_rollover_from_{auto_rollover_from[:8]} ({posture_info['posture']}, steps={posture_info['step_count']}, continuity={posture_info.get('continuity')})"
+            resolved_conv_id, extra_reason, create_new_session, auto_rollover_from = _evaluate_target_session(resolved_conv_id, is_close=is_close, workspace_path=workspace_path, raw_caller_body=raw_caller_body, session_continuity=session_continuity, allow_chained_publish=allow_chained_publish, retire_session=retire_session, is_resume_staged=is_resume_staged)
+            if extra_reason:
+                routing_reason = extra_reason
 
     conv_id, body_clean, resumed_ticket_id, tk_pid = ("" if create_new_session else resolved_conv_id), raw_caller_body, "", ""
     rollover_ref_cid = conv_id or auto_rollover_from or (_resolve_session_identifier(session_identifier.strip()) if (create_new_session and session_identifier.strip() and not create_new_project) else "")
     pre_ws, _, _, pre_slug = _infer_workspace_and_project(workspace_path, eff_project_arg or implicit_hid_repo, session_title, activate_skills, "" if is_resume_staged else raw_caller_body, rollover_ref_cid)
     if is_resume_staged:
-        staged_tk = resolve_staged_ticket_for_resume(cfg.AGY_BG_DIR, handoff_id=explicit_hid, conv_id=rollover_ref_cid, repo_slug=pre_slug if (workspace_path or eff_project_arg or implicit_hid_repo or session_title or rollover_ref_cid) else "", workspace_path=pre_ws if (workspace_path or rollover_ref_cid) else "")
-        if staged_tk:
-            resumed_ticket_id, body_clean = str(staged_tk["handoff_id"]), _unwrap_staged_handoff_markdown(Path(str(staged_tk["handoff_file"])).read_text(encoding="utf-8", errors="replace"))
-            workspace_path, session_title, tk_pid = (workspace_path or str(staged_tk.get("workspace_path") or "")), (session_title or str(staged_tk.get("title") or "")), str(staged_tk.get("project_id") or "")
-            tk_pname, tk_slug = str(staged_tk.get("project_name") or ""), str(staged_tk.get("repo_slug") or "")
-            if not project_name and tk_pname and tk_pname != "general" and not staged_tk.get("target_conversation_id"):
-                project_name = tk_pname
-            if not repo_hint and tk_slug and tk_slug != "general" and not staged_tk.get("target_conversation_id"):
-                repo_hint = tk_slug
-            create_new_project, default_branch = bool(create_new_project or staged_tk.get("create_new_project")), (default_branch or str(staged_tk.get("default_branch") or ""))
-            if not staged_tk.get("target_conversation_id") and not session_identifier:
-                create_new_session, conv_id = True, ""
-        elif rollover_ref_cid and (cfg.AGY_BRAIN_DIR / rollover_ref_cid / "scratch" / "gemini_research_handoff.md").is_file():
-            body_clean = _unwrap_staged_handoff_markdown((cfg.AGY_BRAIN_DIR / rollover_ref_cid / "scratch" / "gemini_research_handoff.md").read_text(encoding="utf-8", errors="replace"))
-        else:
+        resumed_ticket_id, body_clean, workspace_path, session_title, tk_pid, project_name, repo_hint, create_new_project, default_branch, force_new = _hydrate_resume_staged(explicit_hid=explicit_hid, rollover_ref_cid=rollover_ref_cid, pre_slug=pre_slug, pre_ws=pre_ws, workspace_path=workspace_path, eff_project_arg=eff_project_arg, implicit_hid_repo=implicit_hid_repo, session_title=session_title, project_name=project_name, repo_hint=repo_hint, create_new_project=create_new_project, default_branch=default_branch, session_identifier=session_identifier)
+        if not body_clean:
             return json.dumps({"ok": False, "status": "NO_STAGED_HANDOFF_FOR_REPO", "error": f"No matching STAGED handoff found for '{explicit_hid or pre_slug}'. Pass handoff_id='<repo>-01' or provide research_markdown."}, indent=2)
+        if force_new:
+            create_new_session, conv_id = True, ""
 
     tgt = resolve_handoff_target(workspace_path=workspace_path, project_name=project_name, repo_hint=repo_hint, session_title=session_title, activate_skills=activate_skills, body_clean=body_clean, conv_id=rollover_ref_cid, create_new_project=create_new_project, default_branch=default_branch, resume_headless=resume_headless, customization_edit_scope=customization_edit_scope, explicit_caller_ws=caller_gave_ws)
     if tgt["guard_error"]:
@@ -472,23 +464,25 @@ def send_handoff_and_resume(
         create_new_session, conv_id = True, ""
 
     active_ws, edit_scope_clean = (eff_ws or ("" if tgt["has_target_spec"] else (SESSION_STATE.get("selected_workspace") or str(get_antigravity_config_repo())))), (customization_edit_scope or "none").strip().lower()
-    conv_id, create_new_session, create_new_project, routing_reason, eff_ws, active_ws, eff_pid, eff_pname, repo_slug = _apply_global_scope_isolation(
+    conv_id, create_new_session, create_new_project, routing_reason, eff_ws, active_ws, eff_pid, eff_pname, repo_slug = apply_global_scope_isolation(
         edit_scope_clean=edit_scope_clean, active_ws=active_ws, conv_id=conv_id, create_new_session=create_new_session, create_new_project=create_new_project,
         routing_reason=routing_reason, eff_ws=eff_ws, eff_pid=eff_pid, eff_pname=eff_pname, repo_slug=repo_slug, session_title=session_title, activate_skills=activate_skills, body_clean=body_clean,
     )
 
     baton_block = ""
-    if create_new_session:
-        if rollover_ref_cid and not create_new_project and edit_scope_clean != "global":
-            baton_block = extract_prior_session_baton(rollover_ref_cid, cfg.AGY_BRAIN_DIR, ws_path=active_ws)
+    if create_new_session and rollover_ref_cid and not create_new_project and edit_scope_clean != "global":
+        baton_block = extract_prior_session_baton(rollover_ref_cid, cfg.AGY_BRAIN_DIR, ws_path=active_ws)
     elif conv_id:
         tgt_st2 = _get_selected_session_quick_status(conv_id)
         if int(tgt_st2.get("step_count") or 0) >= 350 or bool(tgt_st2.get("context_exceeded") or check_context_exceeded(conv_id, cfg.AGY_BRAIN_DIR)):
             baton_block = extract_prior_session_baton(conv_id, cfg.AGY_BRAIN_DIR, ws_path=active_ws)
 
+    if retire_session and conv_id:
+        record_session_retirement(conv_id, cfg.AGY_BRAIN_DIR)
+
     title_clean = session_title.strip() or _extract_markdown_heading(body_clean) or "Gemini Research Handoff"
-    doc = _compose_handoff_document(ts_now=ts_now, eff_exec_mode=eff_exec_mode, eff_handoff_mode=eff_handoff_mode, allow_chained_publish=allow_chained_publish, model=model, effort=effort, apply_hygiene=apply_hygiene, body_clean=body_clean, baton_block=baton_block, activate_skills=activate_skills, target_agent_role=target_agent_role, edit_scope_clean=edit_scope_clean, active_ws=active_ws)
-    base_ctx = {"title_clean": title_clean, "body_clean": body_clean, "eff_ws": eff_ws, "eff_pid": eff_pid, "eff_pname": eff_pname, "repo_slug": repo_slug, "target_exists": tgt["target_exists"], "create_new_project": create_new_project, "default_branch": eff_branch, "doc": doc, "ts_now": ts_now, "model": model, "effort": effort, "eff_exec_mode": eff_exec_mode, "eff_handoff_mode": eff_handoff_mode, "allow_chained_publish": allow_chained_publish, "apply_hygiene": apply_hygiene, "use_worktree": use_worktree, "baton_block": baton_block, "resumed_ticket_id": resumed_ticket_id, "auto_rollover_from": auto_rollover_from, "supersede_handoff_id": supersede_handoff_id, "append_to_existing": append_to_existing, "is_resume_staged": is_resume_staged, "execution_mode_advisory": execution_mode_advisory, "size_warning": size_warning}
+    doc = _compose_handoff_document(ts_now=ts_now, eff_exec_mode=eff_exec_mode, eff_handoff_mode=eff_handoff_mode, allow_chained_publish=allow_chained_publish, model=model, effort=effort, apply_hygiene=apply_hygiene, body_clean=body_clean, baton_block=baton_block, activate_skills=activate_skills, target_agent_role=target_agent_role, edit_scope_clean=edit_scope_clean, active_ws=active_ws, retire_session=retire_session, is_closeout=is_close)
+    base_ctx = {"title_clean": title_clean, "body_clean": body_clean, "eff_ws": eff_ws, "eff_pid": eff_pid, "eff_pname": eff_pname, "repo_slug": repo_slug, "target_exists": tgt["target_exists"], "create_new_project": create_new_project, "default_branch": eff_branch, "doc": doc, "ts_now": ts_now, "model": model, "effort": effort, "eff_exec_mode": eff_exec_mode, "eff_handoff_mode": eff_handoff_mode, "allow_chained_publish": allow_chained_publish, "apply_hygiene": apply_hygiene, "use_worktree": use_worktree, "baton_block": baton_block, "resumed_ticket_id": resumed_ticket_id, "auto_rollover_from": auto_rollover_from, "supersede_handoff_id": supersede_handoff_id, "append_to_existing": append_to_existing, "is_resume_staged": is_resume_staged, "execution_mode_advisory": execution_mode_advisory, "size_warning": size_warning, "retire_session": retire_session}
     if not conv_id:
         return _run_headless_new_session(base_ctx) if resume_headless else _stage_new_chat_handoff(base_ctx)
     return _stage_or_run_existing_session(conv_id, routing_reason, base_ctx, force_interrupt, resume_headless, active_ws)

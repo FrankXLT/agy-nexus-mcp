@@ -4,6 +4,71 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] — 2026-11-15
+
+### Added
+- **Unified 42px Studio Topbar, Shared D1–D4 Scaling & Collapsible Workspace Sidebar (`web/index.html`, `web/styles.css`, `web/app.js`, `web/explorer.js`)**:
+  - Invariant 42px single-row studio topbar (`AGY-NEXUS v3.1.0`) with compact sidebar toggle button `◧` visible ONLY when Workspace is active and hidden on Analytics.
+  - Non-wrapping center cluster (`Month | Quarter | Year` · `Current | Rolling` · `‹ [Span] ›` · `Steps | Tokens`) on viewports >= 780px; renamed `To Date` / `TD` to `Current` across all surfaces.
+  - Shared `[data-density="D1|D2|D3|D4"]` token scaling across Analytics and Workspace; removed `min-height` on stage (`height: auto`).
+  - 34px Unified Stage Header Bar (`[← Bucket] project / filename.md (size) [HTML|Raw|Print|Zen|Copy]`) and 34px compact inline upload dropzone strip.
+  - Collapsible Workspace Sidebar (240px Left Tree <-> 38px Slim Rail with initial pills & handoff jump <-> 0px Zen Mode); mobile slide-over drawer with `box-shadow: none` when closed.
+- **Single-Hue `#2563eb` Blue Heatmap Ramp & Mobile KPI Scaling (`web/styles.css`, `web/app.js`)**:
+  - Unified 5-level single-hue `#2563eb` blue ramp across all 4 themes (`Pure White`, `Warm Paper`, `Dark Paper`, `Obsidian`).
+  - Locked 7-row Mon–Sun alignment between `.heatmap-days` and `.heatmap-grid`.
+  - Added mobile `26w | 53w` toggle button defaulting to `26w` on small viewports (< 560px).
+  - 2×2 mobile KPI grid layout on `< 780px`.
+- **Multi-Select Gallery, Bulk .zip Endpoint, Web Share API v2 & Contact Sheet (`web/gallery_select.js`, `src/agy_nexus/bucket_api.py`)**:
+  - Extracted `web/gallery_select.js` (257L <= 260L) with multi-selection state, Shift+Click range, Select/Deselect All, and drag marquee.
+  - Sticky bulk action bar: Web Share API v2 (`shareToGemini`), `<canvas>` Contact Sheet clipboard copy, bulk `.zip` download, and individual PNG downloads.
+  - Added `POST /web/api/sessions/{conv_id}/download-zip` in `bucket_api.py` with path traversal validation and in-memory streaming.
+- **Canonical PWA Deep Links & Verified Request Origin Resolution (`src/agy_nexus/media.py`, `web/manifest.webmanifest`, `web/app.js`)**:
+  - Fixed origin resolution: reject 12-hex container hostnames, prioritize `_VERIFIED_REQUEST_ORIGIN`, tolerate query parameters like `?hl=en-US`.
+  - Added `workspace_url` to visual artifacts and updated PWA manifest with `handle_links: "preferred"` and `launch_handler`.
+  - Deep link handler in PWA supporting authenticated direct jump and unauthenticated in-app media viewer fallback with unlock button.
+- **In-Place Terminal Session Closeout & Deterministic 5-Phase Suggested Actions (`src/agy_nexus/retirement.py`, `src/agy_nexus/handoff.py`, `src/agy_nexus/session_status.py`, `src/agy_nexus/config.py`)**:
+  - Extracted `src/agy_nexus/retirement.py` (212L <= 220L) providing terminal session retirement (`RETIRED.json`), cleanup directives (`git worktree prune`), and closeout step-cap exemption.
+  - Added `retire_session: bool = False` to `send_handoff_and_resume` (slimmed to 85L <= 95L).
+  - Deterministic 5-phase `suggested_actions` protocol integrated into FastMCP instructions and `/web#workspace` RETIRED posture badge.
+
+### Fixed
+- **Markdown & Breadcrumb Bug Fixes (`web/markdown_renderer.js`, `src/agy_nexus/bucket_api.py`)**:
+  - Fixed `__MK_TOKEN_N__` token leak in markdown links wrapping inline code via multi-pass token restoration.
+  - Stripped HTML metadata comments (`<!--[\s\S]*?-->`) in Editorial HTML view mode.
+  - Real project and repository breadcrumb resolution across Explorer and stage header bar.
+
+---
+
+## [3.0.1] — 2026-11-14
+
+### Added
+- **Strict 2-Pane Finder Workspace Layout (`web/index.html`, `web/styles.css`, `web/explorer.js`)**:
+  - Eliminated redundant 4-layer navigation by removing `#workspaceControls` from topbar and removing duplicate `.artifacts-dual-layout` / `.artifacts-sidebar` middle column.
+  - Replaced with a single Left Tree (`288px`) and Full-Width Right Stage (`minmax(0, 1fr)`).
+  - Added mobile `☰ Tree` drawer toggle button at `<= 820px` with backdrop dismissing.
+  - Left Tree displays `◈ Handoffs Queue` showing active (`STAGED` + `IN_WORK`) count, collapsible `▸ + N older sessions` per project, and child branches (`Uploads` and `Artifacts`) only under the selected session.
+  - 4 full-width Right Stage modes: `overview`, `batch`, `doc`, and `queue`.
+  - Added compact inline upload strip (`padding: 10px 12px`) with drag/drop, file browse, Ctrl+V paste, and batch labeling.
+  - Added native `<dialog id="lightboxModal">` with zoom preview and 1-click absolute 7-day link copying.
+
+### Fixed
+- **Markdown Sanitizer Wiping Entire Content (`web/markdown_renderer.js`)**:
+  - Added `"article"`, `"section"`, `"header"`, `"svg"`, `"path"`, `"rect"`, `"circle"`, `"line"`, `"polyline"`, `"polygon"`, `"g"`, `"defs"`, `"marker"`, `"text"` to `ALLOWED_TAGS` and DOMPurify config.
+  - Added SVG attributes (`viewbox`, `d`, `fill`, `stroke`, etc.) to `ALLOWED_ATTRS`.
+- **Media Signer Broken URLs Across Container Restarts (`src/agy_nexus/media.py`, `src/agy_nexus/bucket_api.py`, `src/agy_nexus/uploads.py`)**:
+  - Supported relative URL signing (`/web/media/...`) for session bucket and upload responses.
+  - Client-side link copier now safely prepends `window.location.origin` for domain-invariant sharing.
+- **52-Week Heatmap Overflowing Horizontal Scrollbar (`web/styles.css`, `web/app.js`)**:
+  - Replaced fixed column widths with fluid `grid-template-columns: repeat(var(--week-cols, 53), minmax(0, 1fr))` with `aspect-ratio: 1/1` and trailing month label.
+- **Foldable Topbar Multi-Row Wrapping (`web/styles.css`, `web/app.js`)**:
+  - Hid `.brand-sub` on viewports `<= 1100px`, tightened topbar padding, disabled forward stepper at `offset <= 0`, and hid "Today" button when `offset === 0`.
+- **Average Bin Metric Calculation in Hourly Plots (`web/app.js`)**:
+  - Corrected `avgBin` formula in Model and Subagent plots to divide tokens by active bins when `metric === "tokens"` and calls/steps when `metric === "calls"`.
+- **Handoff Ticket ID Symmetrical Decoration (`src/agy_nexus/handoff_queue.py`)**:
+  - Symmetrically populated both `ticket_id` and `handoff_id` with real `<repo-slug>-NN` slugs.
+
+---
+
 ## [3.0.0] — 2026-11-14
 
 ### Added

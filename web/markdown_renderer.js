@@ -22,17 +22,19 @@
   }
 
   const ALLOWED_TAGS = new Set([
-    "a", "abbr", "b", "bdi", "bdo", "blockquote", "br", "caption", "cite", "code",
-    "col", "colgroup", "dd", "del", "details", "dfn", "div", "dl", "dt", "em",
-    "figcaption", "figure", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "i", "img",
-    "ins", "kbd", "li", "mark", "ol", "p", "pre", "q", "rp", "rt", "ruby", "s",
-    "samp", "small", "span", "strong", "sub", "summary", "sup", "table", "tbody",
-    "td", "tfoot", "th", "thead", "time", "tr", "u", "ul", "var", "wbr"
+    "a", "abbr", "article", "b", "bdi", "bdo", "blockquote", "br", "caption", "circle", "cite", "code",
+    "col", "colgroup", "dd", "defs", "del", "details", "dfn", "div", "dl", "dt", "em",
+    "figcaption", "figure", "g", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "i", "img",
+    "ins", "kbd", "li", "line", "mark", "marker", "ol", "p", "path", "polygon", "polyline", "pre", "q", "rect", "rp", "rt", "ruby", "s",
+    "samp", "section", "small", "span", "strong", "sub", "summary", "sup", "svg", "table", "tbody",
+    "td", "text", "tfoot", "th", "thead", "time", "tr", "u", "ul", "var", "wbr"
   ]);
 
   const ALLOWED_ATTRS = new Set([
     "href", "src", "alt", "title", "class", "id", "target", "rel", "loading",
-    "open", "data-copy", "aria-label", "aria-hidden", "colspan", "rowspan", "width", "height"
+    "open", "data-copy", "aria-label", "aria-hidden", "colspan", "rowspan", "width", "height",
+    "viewbox", "d", "fill", "stroke", "stroke-width", "xmlns", "transform",
+    "stroke-linecap", "stroke-linejoin", "cx", "cy", "r", "rx", "ry", "x1", "y1", "x2", "y2", "x", "y", "points"
   ]);
 
   const DANGEROUS_PROTO_RE = /^(?:\s*javascript:|\s*vbscript:|\s*data:text\/html)/i;
@@ -41,8 +43,8 @@
     if (!dirtyHtml) return "";
     if (typeof window !== "undefined" && window.DOMPurify && typeof window.DOMPurify.sanitize === "function") {
       return window.DOMPurify.sanitize(dirtyHtml, {
-        ADD_TAGS: ["summary", "details"],
-        ADD_ATTR: ["target", "rel", "data-copy", "open"],
+        ADD_TAGS: ["summary", "details", "article", "section", "header", "svg", "path", "rect", "circle", "line", "polyline", "polygon", "g", "defs", "marker", "text"],
+        ADD_ATTR: ["target", "rel", "data-copy", "open", "viewBox", "d", "fill", "stroke", "stroke-width", "xmlns"],
       });
     }
 
@@ -176,10 +178,14 @@
     s = s.replace(/\[\/\]/g, '<span class="task-badge task-prog mono">▶ In-Progress</span>');
     s = s.replace(/\[ \]/g, '<span class="task-badge task-pending mono">○ Pending</span>');
 
-    // Step 6: Restore token placeholders
-    s = s.replace(/__MK_TOKEN_(\d+)__/g, function (_, idx) {
-      return tokens[Number(idx)] || "";
-    });
+    // Step 6: Restore token placeholders (multi-pass to resolve nested tokens inside link labels)
+    let pass = 0;
+    while (s.includes("__MK_TOKEN_") && pass < 5) {
+      s = s.replace(/__MK_TOKEN_(\d+)__/g, function (_, idx) {
+        return tokens[Number(idx)] || "";
+      });
+      pass++;
+    }
 
     return s;
   }
@@ -221,7 +227,9 @@
     const meta = parseHandoffMetadata(mdText);
     const metaBanner = renderMetadataBanner(meta);
 
-    const lines = mdText.split(/\r?\n/);
+    // Strip HTML comments from Editorial HTML view (preserved in Raw mode)
+    const cleanText = String(mdText).replace(/<!--[\s\S]*?-->/g, "");
+    const lines = cleanText.split(/\r?\n/);
     const out = [];
     let inCode = false;
     let codeLang = "";

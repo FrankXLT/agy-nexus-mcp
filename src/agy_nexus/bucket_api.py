@@ -2,12 +2,15 @@
 """agy_nexus.bucket_api — Hierarchical Workspace Tree, Session Bucket Inventory & Image URL Rewriting."""
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 import re
+import sqlite3
 import time
 from typing import Any
 import urllib.parse
+import zipfile
 
 from agy_nexus.config import (
     AGY_BG_DIR,
@@ -53,7 +56,7 @@ def rewrite_markdown_media_links(
                 if res_path.is_relative_to(brain_dir) and res_path.is_file():
                     rel = str(res_path.relative_to(brain_dir))
                     if res_path.suffix.lower() in ALLOWED_MEDIA_EXTENSIONS:
-                        return sign_media_url(f"brain:{conv_id}", rel, ttl_seconds=ttl_seconds)
+                        return sign_media_url(f"brain:{conv_id}", rel, ttl_seconds=ttl_seconds, relative=True)
             except Exception:
                 pass
         else:
@@ -63,7 +66,7 @@ def rewrite_markdown_media_links(
                 if cand.is_relative_to(brain_dir) and cand.is_file():
                     rel = str(cand.relative_to(brain_dir))
                     if cand.suffix.lower() in ALLOWED_MEDIA_EXTENSIONS:
-                        return sign_media_url(f"brain:{conv_id}", rel, ttl_seconds=ttl_seconds)
+                        return sign_media_url(f"brain:{conv_id}", rel, ttl_seconds=ttl_seconds, relative=True)
             except Exception:
                 pass
 
@@ -75,7 +78,7 @@ def rewrite_markdown_media_links(
                 if cand_ws.is_relative_to(ws_dir) and cand_ws.is_file() and cand_ws.suffix.lower() in ALLOWED_MEDIA_EXTENSIONS:
                     repo_slug = ws_dir.name or "repo"
                     rel_ws = str(cand_ws.relative_to(ws_dir))
-                    return sign_media_url(f"repo:{repo_slug}", rel_ws, ttl_seconds=ttl_seconds)
+                    return sign_media_url(f"repo:{repo_slug}", rel_ws, ttl_seconds=ttl_seconds, relative=True)
             except Exception:
                 pass
 
@@ -133,7 +136,7 @@ def scan_session_uploads(conv_id: str) -> list[dict[str, Any]]:
                 ext = item.suffix.lower()
                 is_img = ext in ALLOWED_MEDIA_EXTENSIONS
                 rel = f"scratch/{folder_name}/{item.name}"
-                thumb_url = sign_media_url(f"brain:{conv_id}", rel) if is_img else ""
+                thumb_url = sign_media_url(f"brain:{conv_id}", rel, relative=True) if is_img else ""
                 files_meta.append({
                     "name": item.name,
                     "rel_path": rel,
@@ -286,18 +289,44 @@ def get_session_bucket_payload(conv_id: str) -> dict[str, Any]:
 
     ws_map = SESSION_STATE.get("session_workspace_map") or {}
     ws_path = str(ws_map.get(conv_id) or SESSION_STATE.get("selected_workspace") or "")
+    pname_map = SESSION_STATE.get("session_project_name_map") or {}
+    project_name = str(pname_map.get(conv_id) or "")
+    if not project_name and AGY_DB_FILE.is_file():
+        try:
+            with sqlite3.connect(str(AGY_DB_FILE), timeout=3) as conn:
+                row = conn.execute("SELECT project_name, workspace_uris FROM conversations WHERE conversation_id = ? LIMIT 1", (conv_id,)).fetchone()
+                if row:
+                    if row[0]:
+                        project_name = str(row[0])
+                    if not ws_path and row[1]:
+                        try:
+                            uris = json.loads(row[1])
+                            if uris:
+                                ws_path = str(uris[0])
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+    if not project_name and ws_path:
+        project_name = Path(ws_path).name
+    project_name = project_name or "Workspace"
+    repo_slug = Path(ws_path).name if ws_path else project_name.lower().replace(" ", "-")
+
     uploads = scan_session_uploads(conv_id)
     artifacts = scan_session_artifacts(conv_id)
-    visual_raw = discover_visual_artifacts(conv_id, workspace_path=ws_path, limit=20)
+    visual_raw = discover_visual_artifacts(conv_id, workspace_path=ws_path, limit=20, relative=True)
     visual_items = []
     for v in visual_raw:
-        visual_items.append({
+        item_vis = {
             "name": v.get("name") or "image",
             "rel_path": v.get("rel_path") or "",
             "signed_url": v.get("signed_url") or "",
-            "size": v.get("size") or 0,
+            "size": v.get("bytes") or v.get("size") or 0,
             "mtime": v.get("mtime") or 0,
-        })
+        }
+        if v.get("workspace_url"):
+            item_vis["workspace_url"] = v["workspace_url"]
+        visual_items.append(item_vis)
 
     posture = evaluate_rollover_posture(conv_id, ws_path=ws_path, brain_dir=AGY_BRAIN_DIR)
     title_map = SESSION_STATE.get("session_title_map") or {}
@@ -307,12 +336,59 @@ def get_session_bucket_payload(conv_id: str) -> dict[str, Any]:
         "ok": True,
         "conversation_id": conv_id,
         "title": title,
+        "project_name": project_name,
+        "repo_slug": repo_slug,
         "workspace_path": ws_path,
         "uploads": uploads,
         "artifacts": artifacts,
         "visual_artifacts": visual_items,
         "rollover": posture,
     }
+
+
+def build_session_zip(
+    conv_id: str,
+    requested_files: list[str] | None = None,
+    brain_dir: Path | None = None,
+) -> tuple[int, bytes, str]:
+    """Build in-memory zipfile of requested visual files inside brain/<conv_id>/."""
+    if not conv_id or not validate_conv_id(conv_id):
+        return 400, b'{"ok":false,"error":"Invalid conversation_id"}', "application/json"
+    target_brain = ((brain_dir or AGY_BRAIN_DIR) / conv_id).resolve()
+    if not target_brain.is_dir():
+        return 404, b'{"ok":false,"error":"Session brain not found"}', "application/json"
+
+    files_to_add: list[tuple[Path, str]] = []
+    if requested_files is not None:
+        for f in requested_files:
+            raw_f = str(f).strip()
+            if raw_f.startswith(("/", "\\")) or ".." in Path(raw_f).parts:
+                return 403, b'{"ok":false,"error":"Path traversal rejected"}', "application/json"
+            clean_rel = raw_f.lstrip("/")
+            if not clean_rel or ".." in Path(clean_rel).parts:
+                return 403, b'{"ok":false,"error":"Path traversal rejected"}', "application/json"
+            target = (target_brain / clean_rel).resolve()
+            if target == target_brain or not target.is_relative_to(target_brain):
+                return 403, b'{"ok":false,"error":"Path traversal rejected"}', "application/json"
+            if target.is_file():
+                files_to_add.append((target, target.name))
+    else:
+        for sub in ("scratch", ".user_uploaded"):
+            sdir = target_brain / sub
+            if sdir.is_dir():
+                for p in sdir.rglob("*"):
+                    if p.is_file() and p.suffix.lower() in ALLOWED_MEDIA_EXTENSIONS:
+                        files_to_add.append((p, p.name))
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for fpath, arcname in files_to_add:
+            try:
+                zf.write(fpath, arcname=arcname)
+            except Exception:
+                pass
+    buf.seek(0)
+    return 200, buf.getvalue(), "application/zip"
 
 
 def get_session_file_payload(conv_id: str, rel_path: str) -> tuple[int, dict[str, Any]]:
@@ -357,6 +433,15 @@ def get_session_file_payload(conv_id: str, rel_path: str) -> tuple[int, dict[str
     }
 
 
+async def _send_json(send: Any, status: int, data: dict[str, Any], extra_headers: list[tuple[bytes, bytes]] | None = None) -> None:
+    body_b = json.dumps(data).encode("utf-8")
+    hdrs = [(b"content-type", b"application/json"), (b"content-length", str(len(body_b)).encode("ascii")), (b"cache-control", b"no-cache")]
+    if extra_headers:
+        hdrs.extend(extra_headers)
+    await send({"type": "http.response.start", "status": status, "headers": hdrs})
+    await send({"type": "http.response.body", "body": body_b})
+
+
 async def handle_bucket_api_request(
     scope: dict[str, Any],
     receive: Any,
@@ -375,23 +460,12 @@ async def handle_bucket_api_request(
             break
 
     if not verify_passphrase(supplied_pass):
-        err_b = json.dumps({"ok": False, "error": "Invalid spoken deadbolt passphrase."}).encode("utf-8")
-        await send({
-            "type": "http.response.start", "status": 401,
-            "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(err_b)).encode("ascii")), (b"cache-control", b"no-store")],
-        })
-        await send({"type": "http.response.body", "body": err_b})
+        await _send_json(send, 401, {"ok": False, "error": "Invalid spoken deadbolt passphrase."}, [(b"cache-control", b"no-store")])
         return
 
     # Route 1: Workspace Tree
     if req_path.endswith("/web/api/workspace/tree") or req_path.endswith("/api/workspace/tree"):
-        payload = build_workspace_tree_payload()
-        body_b = json.dumps(payload).encode("utf-8")
-        await send({
-            "type": "http.response.start", "status": 200,
-            "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body_b)).encode("ascii")), (b"cache-control", b"no-cache")],
-        })
-        await send({"type": "http.response.body", "body": body_b})
+        await _send_json(send, 200, build_workspace_tree_payload())
         return
 
     # Route 2: Session Bucket
@@ -399,20 +473,9 @@ async def handle_bucket_api_request(
     if m_bucket:
         cid = m_bucket.group(1).strip()
         if not validate_conv_id(cid):
-            err_b = json.dumps({"ok": False, "error": "Invalid conversation_id"}).encode("utf-8")
-            await send({
-                "type": "http.response.start", "status": 400,
-                "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(err_b)).encode("ascii")), (b"cache-control", b"no-cache")],
-            })
-            await send({"type": "http.response.body", "body": err_b})
+            await _send_json(send, 400, {"ok": False, "error": "Invalid conversation_id"})
             return
-        payload = get_session_bucket_payload(cid)
-        body_b = json.dumps(payload).encode("utf-8")
-        await send({
-            "type": "http.response.start", "status": 200,
-            "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body_b)).encode("ascii")), (b"cache-control", b"no-cache")],
-        })
-        await send({"type": "http.response.body", "body": body_b})
+        await _send_json(send, 200, get_session_bucket_payload(cid))
         return
 
     # Route 3: Session File
@@ -420,24 +483,59 @@ async def handle_bucket_api_request(
     if m_file:
         cid = m_file.group(1).strip()
         if not validate_conv_id(cid):
-            err_b = json.dumps({"ok": False, "error": "Invalid conversation_id"}).encode("utf-8")
-            await send({
-                "type": "http.response.start", "status": 400,
-                "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(err_b)).encode("ascii")), (b"cache-control", b"no-cache")],
-            })
-            await send({"type": "http.response.body", "body": err_b})
+            await _send_json(send, 400, {"ok": False, "error": "Invalid conversation_id"})
             return
         rel_path = ""
         for kv in raw_qs.split("&"):
             if kv.startswith("path="):
                 rel_path = urllib.parse.unquote(kv.split("=", 1)[1].strip())
         status_code, payload = get_session_file_payload(cid, rel_path)
-        body_b = json.dumps(payload).encode("utf-8")
-        await send({
-            "type": "http.response.start", "status": status_code,
-            "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body_b)).encode("ascii")), (b"cache-control", b"no-cache")],
-        })
-        await send({"type": "http.response.body", "body": body_b})
+        await _send_json(send, status_code, payload)
+        return
+
+    # Route 4: Download ZIP
+    m_zip = re.search(r"/api/sessions/([^/]+)/download-zip$", req_path)
+    if m_zip:
+        cid = m_zip.group(1).strip()
+        if not validate_conv_id(cid):
+            await _send_json(send, 400, {"ok": False, "error": "Invalid conversation_id"})
+            return
+
+        body_bytes = b""
+        more_body = True
+        while more_body:
+            message = await receive()
+            body_bytes += message.get("body", b"")
+            more_body = message.get("more_body", False)
+
+        requested_files = None
+        if body_bytes:
+            try:
+                b_json = json.loads(body_bytes.decode("utf-8", errors="replace"))
+                if isinstance(b_json, dict) and "files" in b_json:
+                    requested_files = b_json["files"]
+                elif isinstance(b_json, list):
+                    requested_files = b_json
+            except Exception:
+                pass
+
+        status_code, payload_b, ctype = build_session_zip(cid, requested_files)
+        ws_map = SESSION_STATE.get("session_workspace_map") or {}
+        ws_path = str(ws_map.get(cid) or "")
+        repo_slug = Path(ws_path).name if ws_path else "session"
+        n_count = len(requested_files) if requested_files is not None else 1
+        zip_name = f"captures_{repo_slug}_{n_count}.zip"
+
+        headers_out = [
+            (b"content-type", ctype.encode("ascii")),
+            (b"content-length", str(len(payload_b)).encode("ascii")),
+            (b"cache-control", b"no-cache"),
+        ]
+        if status_code == 200 and ctype == "application/zip":
+            headers_out.append((b"content-disposition", f'attachment; filename="{zip_name}"'.encode("ascii")))
+
+        await send({"type": "http.response.start", "status": status_code, "headers": headers_out})
+        await send({"type": "http.response.body", "body": payload_b})
         return
 
     # Fallback 404
@@ -447,3 +545,4 @@ async def handle_bucket_api_request(
         "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(nf_b)).encode("ascii"))],
     })
     await send({"type": "http.response.body", "body": nf_b})
+

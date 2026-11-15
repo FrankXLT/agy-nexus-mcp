@@ -1,16 +1,17 @@
-const CACHE_NAME = "agy-nexus-overwatch-v3.0.0-r1";
+const CACHE_NAME = "agy-nexus-overwatch-v3.1.0b";
 const SHELL_ASSETS = [
   "/web",
-  "/web/styles.css?v=3.0.0",
-  "/web/palettes.js?v=3.0.0",
-  "/web/charts.js?v=3.0.0",
-  "/web/demo_data.js?v=3.0.0",
-  "/web/hierarchy.js?v=3.0.0",
-  "/web/uploads.js?v=3.0.0",
-  "/web/health.js?v=3.0.0",
-  "/web/markdown_renderer.js?v=3.0.0",
-  "/web/explorer.js?v=3.0.0",
-  "/web/app.js?v=3.0.0",
+  "/web/styles.css?v=3.1.0b",
+  "/web/palettes.js?v=3.1.0b",
+  "/web/charts.js?v=3.1.0b",
+  "/web/demo_data.js?v=3.1.0b",
+  "/web/hierarchy.js?v=3.1.0b",
+  "/web/uploads.js?v=3.1.0b",
+  "/web/health.js?v=3.1.0b",
+  "/web/markdown_renderer.js?v=3.1.0b",
+  "/web/gallery_select.js?v=3.1.0b",
+  "/web/explorer.js?v=3.1.0b",
+  "/web/app.js?v=3.1.0b",
   "/web/manifest.webmanifest",
   "/web/icon.svg",
   "/web/icon-192.png",
@@ -18,7 +19,7 @@ const SHELL_ASSETS = [
 ];
 const SHELL_NAMES = new Set([
   "styles.css", "palettes.js", "charts.js", "demo_data.js", "hierarchy.js",
-  "uploads.js", "health.js", "markdown_renderer.js", "explorer.js", "app.js",
+  "uploads.js", "health.js", "markdown_renderer.js", "gallery_select.js", "explorer.js", "app.js",
   "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png",
 ]);
 

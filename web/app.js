@@ -38,7 +38,7 @@ function renderModelPlotAndLegend(b, metric, surface) {
       const calls = Number(r.actual_calls || 0), toks = Number(r.est_tokens || 0);
       const isSolo = state.soloModel === mk, isDim = Boolean(state.soloModel && !isSolo);
       const pkVal = stats.bandPeaks[mk] || 0;
-      const avgBin = stats.avgVal > 0 ? (calls / Math.max(1, stats.nBins)) : 0;
+      const avgBin = stats.avgVal > 0 ? ((metric === "tokens" ? toks : calls) / Math.max(1, stats.nBins)) : 0;
       const p95Bin = Math.round(pkVal * 0.92);
 
       const rowHtml = `<tr class="tabular-legend-row ${isSolo ? "is-solo" : ""} ${isDim ? "is-dimmed" : ""}" data-model-key="${mk}" title="Click to solo ${col.label}">
@@ -133,7 +133,7 @@ function renderSubagentPlotAndLegend(b, metric, surface) {
       const share = ((item.steps / totSteps) * 100).toFixed(1);
       const isSolo = state.soloSubagent === item.role, isDim = Boolean(state.soloSubagent && !isSolo);
       const pkVal = stats.bandPeaks[item.role] || 0;
-      const avgBin = stats.avgVal > 0 ? (item.steps / Math.max(1, stats.nBins)) : 0;
+      const avgBin = stats.avgVal > 0 ? ((metric === "tokens" ? item.tokens : item.steps) / Math.max(1, stats.nBins)) : 0;
 
       const rowHtml = `<tr class="tabular-legend-row ${isSolo ? "is-solo" : ""} ${isDim ? "is-dimmed" : ""}" data-sub-role="${escapeHtmlSafe(item.role)}" title="Click to solo ${escapeHtmlSafe(item.role)}">
         <td class="tbl-col-name"><span class="swatch-sq" style="background:${col.fill};border-color:${col.cap};display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:middle;"></span><strong>${escapeHtmlSafe(item.role)}</strong></td>
@@ -236,6 +236,17 @@ function renderDashboard(b) {
   const actDays = Number(periodObj.active_days ?? kpis.active_days ?? 0);
   const periodBanner = String(periodObj.label || periodObj.key || "Rolling 90 Days").toUpperCase();
   document.getElementById("kpiPeriodLabel").textContent = periodBanner;
+
+  const horizonLabelEl = document.getElementById("horizonActiveLabel");
+  if (horizonLabelEl) {
+    let lbl = periodObj.label || (state.timeframe === "month" ? "This Month" : (state.timeframe === "quarter" ? "This Quarter" : "This Year"));
+    horizonLabelEl.textContent = lbl.replace(/—/g, "·").trim();
+  }
+  const stepNextBtn = document.getElementById("stepNextBtn");
+  if (stepNextBtn) stepNextBtn.disabled = (state.offset || 0) <= 0;
+  const stepTodayBtn = document.getElementById("stepTodayBtn");
+  if (stepTodayBtn) stepTodayBtn.style.display = (state.offset || 0) === 0 ? "none" : "";
+
   document.getElementById("kpiTotalSteps").textContent = totSteps.toLocaleString();
   document.getElementById("kpiTotalTokens").textContent = "~" + formatCompactTokens(totTokens) + " tok";
   document.getElementById("kpiActiveDays").textContent = actDays + "d";
@@ -248,12 +259,27 @@ function renderDashboard(b) {
   document.getElementById("kpiMcpTokens").textContent = formatCompactTokens(w.total_mcp_tokens ?? 0) + " MCP tok";
   document.getElementById("kpiAvgBytes").textContent = Number(avgKb).toFixed(1) + " / " + Number(maxKb).toFixed(1) + " KB";
   document.getElementById("kpiRpcCount").textContent = w.total_recorded_calls ?? 0;
-  document.getElementById("kpiTopClient").textContent = topProdEntry ? topProdEntry[0] : "Gemini Mobile";
+  let topClientName = topProdEntry ? topProdEntry[0] : "Gemini Mobile";
+  if (window.innerWidth < 560 && topClientName.includes("Gemini Web / Cloud MCP")) {
+    topClientName = "Gemini Cloud";
+  } else if (window.innerWidth < 560 && topClientName.length > 14) {
+    topClientName = topClientName.replace("Gemini Web / Cloud MCP", "Gemini Cloud").replace(" / ", "/");
+  }
+  document.getElementById("kpiTopClient").textContent = topClientName;
 
   const heatGrid = document.getElementById("heatmapGrid"), monthsRow = document.getElementById("heatmapMonthsRow");
   heatGrid.innerHTML = "";
   if (monthsRow) monthsRow.innerHTML = "";
-  const heatDays = b.heatmap_series || [];
+  if (typeof state.heatWeeks === "undefined") state.heatWeeks = window.innerWidth < 560 ? 26 : 53;
+  document.querySelectorAll("#heatWeeksToggle button").forEach((b) => {
+    b.classList.toggle("active", Number(b.dataset.weeks) === state.heatWeeks);
+  });
+  let heatDays = b.heatmap_series || [];
+  if (state.heatWeeks === 26 && heatDays.length > 182) {
+    let sliceIdx = heatDays.length - 182;
+    while (sliceIdx > 0 && computeIsoWeekday(heatDays[sliceIdx].date, heatDays[sliceIdx].weekday) !== 0) sliceIdx--;
+    heatDays = heatDays.slice(sliceIdx);
+  }
   const updateInspectorForDay = (d) => {
     const dowLbl = DOW_NAMES[computeIsoWeekday(d.date, d.weekday)] || "";
     document.getElementById("heatInspector").textContent = (d.future || Number(d.level) === -1)
@@ -297,14 +323,27 @@ function renderDashboard(b) {
     heatGrid.appendChild(cell);
   });
   const totalWeekCols = heatDays.length > 0 ? (weekCol + 1) : 0;
+  heatGrid.style.setProperty("--week-cols", String(totalWeekCols || 53));
+  if (monthsRow) monthsRow.style.setProperty("--week-cols", String(totalWeekCols || 53));
   document.getElementById("heatmapRangeTag").textContent = `${periodBanner} · ${totalWeekCols} WEEKS`;
+  const dowCol = document.querySelector(".heatmap-dow-col");
+  if (dowCol) {
+    dowCol.classList.toggle("compact-dow", window.innerWidth < 560 && totalWeekCols > 30);
+  }
   if (monthsRow && totalWeekCols > 0) {
     let lastLabeledCol = -99;
+    const effectiveColMonthMap = { ...colMonthMap };
+    if (effectiveColMonthMap[0] && effectiveColMonthMap[1]) {
+      delete effectiveColMonthMap[0];
+    }
     for (let c = 0; c < totalWeekCols; c++) {
       const mSpan = document.createElement("span");
       mSpan.className = "heatmap-month-lbl";
       mSpan.style.gridColumn = String(c + 1);
-      if (colMonthMap[c] && (c - lastLabeledCol >= 2)) { mSpan.textContent = colMonthMap[c]; lastLabeledCol = c; }
+      if (effectiveColMonthMap[c] && c < totalWeekCols - 1 && (c - lastLabeledCol >= 2)) {
+        mSpan.textContent = effectiveColMonthMap[c];
+        lastLabeledCol = c;
+      }
       monthsRow.appendChild(mSpan);
     }
   }
@@ -320,11 +359,16 @@ function renderDashboard(b) {
   renderCodeHealth(b.code_health, b.version || "3.0.0");
 
   const ph = b.project_hierarchy || {};
-  let totalStagedHandoffs = 0;
-  (ph.top_projects || []).forEach((p) => { totalStagedHandoffs += Number(p.staged_count || 0); });
-  (ph.idle_projects || []).forEach((p) => { totalStagedHandoffs += Number(p.staged_count || 0); });
+  let totalActiveHandoffs = 0;
+  [...(ph.top_projects || []), ...(ph.idle_projects || [])].forEach((p) => {
+    totalActiveHandoffs += Number(p.staged_count || 0) + Number(p.in_work_handoff_count || 0);
+  });
   const wsBadge = document.getElementById("navWorkspaceBadge");
-  if (wsBadge) wsBadge.textContent = String(totalStagedHandoffs);
+  if (wsBadge) {
+    wsBadge.textContent = String(totalActiveHandoffs);
+    wsBadge.classList.toggle("hidden", totalActiveHandoffs === 0);
+    wsBadge.style.display = totalActiveHandoffs === 0 ? "none" : "";
+  }
 }
 
 applyThemeAndDensity(state.surface, state.density);
@@ -354,31 +398,9 @@ document.querySelectorAll(".tab-btn[data-horizon]").forEach((btn) => {
   });
 });
 
-const stepPrevBtn = document.getElementById("stepPrevBtn");
-if (stepPrevBtn) {
-  stepPrevBtn.addEventListener("click", () => {
-    state.offset = (state.offset || 0) + 1;
-    fetchStats();
-  });
-}
-
-const stepNextBtn = document.getElementById("stepNextBtn");
-if (stepNextBtn) {
-  stepNextBtn.addEventListener("click", () => {
-    if (state.offset > 0) {
-      state.offset -= 1;
-      fetchStats();
-    }
-  });
-}
-
-const stepTodayBtn = document.getElementById("stepTodayBtn");
-if (stepTodayBtn) {
-  stepTodayBtn.addEventListener("click", () => {
-    state.offset = 0;
-    fetchStats();
-  });
-}
+document.getElementById("stepPrevBtn")?.addEventListener("click", () => { state.offset = (state.offset || 0) + 1; fetchStats(); });
+document.getElementById("stepNextBtn")?.addEventListener("click", () => { if (state.offset > 0) { state.offset -= 1; fetchStats(); } });
+document.getElementById("stepTodayBtn")?.addEventListener("click", () => { state.offset = 0; fetchStats(); });
 
 document.querySelectorAll(".metric-btn[data-metric]").forEach((btn) => {
   btn.classList.toggle("active", btn.dataset.metric === state.metric);
@@ -394,6 +416,15 @@ document.querySelectorAll(".metric-btn[data-metric]").forEach((btn) => {
   });
 });
 
+// Heatmap 26w | 53w Mobile Toggle
+document.querySelectorAll("#heatWeeksToggle button").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    state.heatWeeks = Number(btn.dataset.weeks || 26);
+    document.querySelectorAll("#heatWeeksToggle button").forEach((b) => b.classList.toggle("active", Number(b.dataset.weeks) === state.heatWeeks));
+    if (state.bundle) renderDashboard(state.bundle);
+  });
+});
+
 // Primary Surface Switcher
 function switchSurface(view) {
   state.surfaceView = view;
@@ -402,8 +433,9 @@ function switchSurface(view) {
   const dashMain = document.getElementById("dashboardMain");
   const wsMain = document.getElementById("workspaceMain");
   const anControls = document.getElementById("analyticsControls");
-  const wsControls = document.getElementById("workspaceControls");
+  const sidebarToggle = document.getElementById("sidebarToggleBtn");
 
+  const ctrCenter = document.querySelector(".controls-center");
   if (view === "workspace") {
     if (window.location.hash !== "#workspace") window.location.hash = "#workspace";
     if (navAnalytics) navAnalytics.classList.remove("active");
@@ -411,7 +443,8 @@ function switchSurface(view) {
     if (dashMain) dashMain.classList.add("hidden");
     if (wsMain) wsMain.classList.remove("hidden");
     if (anControls) anControls.classList.add("hidden");
-    if (wsControls) wsControls.classList.remove("hidden");
+    if (ctrCenter) ctrCenter.classList.add("hidden");
+    if (sidebarToggle) sidebarToggle.classList.remove("hidden");
     if (window.WorkspaceExplorer) window.WorkspaceExplorer.initWorkspace();
   } else {
     if (window.location.hash && window.location.hash !== "#analytics") window.location.hash = "#analytics";
@@ -423,7 +456,8 @@ function switchSurface(view) {
     }
     if (wsMain) wsMain.classList.add("hidden");
     if (anControls) anControls.classList.remove("hidden");
-    if (wsControls) wsControls.classList.add("hidden");
+    if (ctrCenter) ctrCenter.classList.remove("hidden");
+    if (sidebarToggle) sidebarToggle.classList.add("hidden");
   }
 }
 
@@ -437,53 +471,6 @@ window.addEventListener("hashchange", () => {
   if (window.location.hash === "#workspace") switchSurface("workspace");
   else switchSurface("analytics");
 });
-
-// Quick Pills in Workspace Topbar
-const qUpPill = document.getElementById("quickUploadPill");
-if (qUpPill) {
-  qUpPill.addEventListener("click", () => {
-    switchSurface("workspace");
-    const upTab = document.getElementById("wsPaneTabUploads");
-    if (upTab) upTab.click();
-  });
-}
-const visHandoffsPill = document.getElementById("visualHandoffsPill");
-if (visHandoffsPill) {
-  visHandoffsPill.addEventListener("click", () => {
-    switchSurface("workspace");
-    const qNode = document.getElementById("treeQueueNode");
-    if (qNode) qNode.click();
-  });
-}
-const sessArtPill = document.getElementById("sessionArtifactsPill");
-if (sessArtPill) {
-  sessArtPill.addEventListener("click", () => {
-    switchSurface("workspace");
-    const artTab = document.getElementById("wsPaneTabArtifacts");
-    if (artTab) artTab.click();
-  });
-}
-
-// Workspace Area Tabs (Artifacts vs Uploads)
-const wsTabArt = document.getElementById("wsPaneTabArtifacts");
-const wsTabUp = document.getElementById("wsPaneTabUploads");
-const wsAreaArt = document.getElementById("workspaceAreaArtifacts");
-const wsAreaUp = document.getElementById("workspaceAreaUploads");
-
-if (wsTabArt && wsTabUp) {
-  wsTabArt.addEventListener("click", () => {
-    wsTabArt.classList.add("active");
-    wsTabUp.classList.remove("active");
-    if (wsAreaArt) wsAreaArt.classList.remove("hidden");
-    if (wsAreaUp) wsAreaUp.classList.add("hidden");
-  });
-  wsTabUp.addEventListener("click", () => {
-    wsTabUp.classList.add("active");
-    wsTabArt.classList.remove("active");
-    if (wsAreaUp) wsAreaUp.classList.remove("hidden");
-    if (wsAreaArt) wsAreaArt.classList.add("hidden");
-  });
-}
 
 // Consolidated Settings Menu & Popover
 const settingsMenuWrap = document.getElementById("settingsMenuWrap") || document.getElementById("styleMenuWrap");
@@ -595,3 +582,67 @@ document.getElementById("lockBtn").addEventListener("click", () => {
 
 if (state.passphrase || state.demoMode) fetchStats(state.period);
 if (window.location.hash === "#workspace") switchSurface("workspace");
+
+function renderUnauthenticatedMediaViewer(session, artifact, t, sig) {
+  const mediaUrl = `/web/media/${encodeURIComponent(t)}/${encodeURIComponent(sig)}/brain:${encodeURIComponent(session)}/${artifact}`;
+  const fileName = artifact.split("/").pop() || "Visual Artifact";
+  document.getElementById("authOverlay")?.classList.add("hidden");
+  document.getElementById("dashboardMain")?.classList.add("hidden");
+  document.getElementById("workspaceMain")?.classList.add("hidden");
+
+  let viewer = document.getElementById("unauthMediaViewer");
+  if (!viewer) {
+    viewer = document.createElement("div");
+    viewer.id = "unauthMediaViewer";
+    viewer.className = "unauth-media-viewer";
+    document.body.appendChild(viewer);
+  }
+  viewer.innerHTML = `
+    <div class="unauth-viewer-bar mono">
+      <span class="unauth-viewer-title">${escapeHtmlSafe(fileName)}</span>
+      <button type="button" class="btn btn-primary mono" id="unauthUnlockBtn">↗ Unlock Full Workspace</button>
+    </div>
+    <div class="unauth-viewer-body">
+      <img src="${escapeHtmlSafe(mediaUrl)}" alt="${escapeHtmlSafe(fileName)}" class="unauth-viewer-img" />
+    </div>
+  `;
+  document.getElementById("unauthUnlockBtn")?.addEventListener("click", () => {
+    viewer.remove();
+    document.getElementById("authOverlay")?.classList.remove("hidden");
+  });
+}
+
+function handleWorkspaceDeepLink() {
+  const params = new URLSearchParams(window.location.search);
+  const view = params.get("view");
+  const session = params.get("session");
+  const artifact = params.get("artifact");
+  const t = params.get("t");
+  const sig = params.get("sig");
+
+  if (view === "workspace" || session) {
+    const hasAuth = Boolean(state.passphrase || localStorage.getItem("nexus_passphrase") || state.demoMode);
+    if (hasAuth) {
+      switchSurface("workspace");
+      if (session && window.WorkspaceExplorer) {
+        window.WorkspaceExplorer.selectSession(session).then(() => {
+          if (artifact) {
+            const isImg = /\.(png|jpe?g|webp|gif|svg)$/i.test(artifact);
+            if (isImg && t && sig) {
+              const mediaUrl = `/web/media/${encodeURIComponent(t)}/${encodeURIComponent(sig)}/brain:${encodeURIComponent(session)}/${artifact}`;
+              window.WorkspaceExplorer.openLightbox(mediaUrl, artifact.split("/").pop());
+            } else {
+              window.WorkspaceExplorer.viewFile(artifact, artifact.split("/").pop());
+            }
+          }
+        });
+      }
+    } else if (session && artifact && t && sig) {
+      renderUnauthenticatedMediaViewer(session, artifact, t, sig);
+    } else {
+      switchSurface("workspace");
+    }
+  }
+}
+
+handleWorkspaceDeepLink();

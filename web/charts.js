@@ -49,6 +49,7 @@ const state = {
   soloModel: "",
   soloSubagent: "",
   soloProject: "",
+  heatWeeks: (typeof window !== "undefined" && window.innerWidth < 560) ? 26 : 53,
   bundle: null,
 };
 

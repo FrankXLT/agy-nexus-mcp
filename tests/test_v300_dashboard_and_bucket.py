@@ -49,9 +49,9 @@ from agy_nexus.stats import build_nexus_stats_bundle
 from agy_nexus.stats_series import build_base_slot_grid
 
 
-def test_v300_version_bump() -> None:
-    """Verify package version is bumped to 3.0.0."""
-    assert agy_nexus.__version__ == "3.0.0"
+def test_v301_version_bump() -> None:
+    """Verify package version is bumped to 3.1.0."""
+    assert agy_nexus.__version__ == "3.1.0"
 
 
 def test_media_ttl_is_7_days() -> None:
@@ -335,3 +335,58 @@ def test_markdown_renderer_js_image_link_and_sanitizer() -> None:
     res = subprocess.run(["node", "-e", js_test_code], capture_output=True, text=True)
     assert res.returncode == 0, f"Node test failed: {res.stderr}"
     assert "OK" in res.stdout
+
+
+def test_v301_markdown_renderer_article_and_svg_preserved() -> None:
+    """Verify markdown_renderer.js ALLOWED_TAGS preserves article, section, header, and svg tags."""
+    js_test_code = """
+    const MarkdownRenderer = require('./web/markdown_renderer.js');
+    const inputHtml = '<article class="editorial-article"><header><h1>Doc</h1></header><section><p>Text</p><svg viewBox="0 0 100 100"><path d="M10 10 H 90 V 90 H 10 Z" fill="red"/></svg></section></article>';
+    const sanitized = MarkdownRenderer.sanitizeHtml(inputHtml);
+    if (!sanitized.includes('<article class="editorial-article">')) {
+      console.error('Article tag was removed by sanitizer:', sanitized);
+      process.exit(1);
+    }
+    if (!sanitized.includes('<svg') || !sanitized.includes('<path')) {
+      console.error('SVG elements removed by sanitizer:', sanitized);
+      process.exit(2);
+    }
+    const md = '# Sample\\n\\nSome paragraph content.\\n';
+    const editorialHtml = MarkdownRenderer.renderMarkdownToEditorialHtml(md);
+    if (!editorialHtml.includes('<article class="editorial-article">') || !editorialHtml.includes('Sample')) {
+      console.error('renderMarkdownToEditorialHtml wiped content:', editorialHtml);
+      process.exit(3);
+    }
+    console.log('OK');
+    """
+    res = subprocess.run(["node", "-e", js_test_code], capture_output=True, text=True)
+    assert res.returncode == 0, f"Node test failed: {res.stderr}"
+    assert "OK" in res.stdout
+
+
+def test_v301_relative_media_urls_and_bucket() -> None:
+    """Verify sign_media_url with relative=True produces /web/media/... paths."""
+    rel_url = sign_media_url("brain:test-conv", "test.png", relative=True)
+    assert rel_url.startswith("/web/media/")
+    assert not rel_url.startswith("http://")
+    assert not rel_url.startswith("https://")
+
+    abs_url = sign_media_url("brain:test-conv", "test.png", relative=False)
+    assert abs_url.startswith("http://") or abs_url.startswith("https://")
+    assert "/web/media/" in abs_url
+
+
+def test_v301_handoff_queue_real_ticket_id_decoration() -> None:
+    """Verify _decorate_ticket sets both ticket_id and handoff_id to real slug."""
+    from agy_nexus.handoff_queue import _decorate_ticket
+    raw = {
+        "slug": "agy-nexus-mcp-01",
+        "repo_slug": "agy-nexus-mcp",
+        "title": "Clean 2-Pane Workspace & Foldable UI Bug Fixes",
+        "status": "STAGED",
+    }
+    dec = _decorate_ticket(raw)
+    assert dec["ticket_id"] == "agy-nexus-mcp-01"
+    assert dec["handoff_id"] == "agy-nexus-mcp-01"
+    assert dec["ticket_id"] != "ticket"
+
