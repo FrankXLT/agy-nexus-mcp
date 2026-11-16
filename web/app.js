@@ -356,7 +356,7 @@ function renderDashboard(b) {
 
   renderAllTimePlots(b);
   if (typeof renderHierarchyPanel === "function") renderHierarchyPanel(b);
-  renderCodeHealth(b.code_health, b.version || "3.2.0");
+  renderCodeHealth(b.code_health, b.version || "3.2.1");
 
   const ph = b.project_hierarchy || {};
   let totalActiveHandoffs = 0;

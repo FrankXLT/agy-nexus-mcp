@@ -27,6 +27,9 @@ Directing agents from mobile requires zero-risk read operations. If Gemini were 
 2. **Read-Only Inspection**:
    - Gemini calls `load_session_into_gemini(conv_id=...)` or `get_session_tree(include_stats=True)`.
    - The tool returns the session's current task state (`task.md`), recent walkthrough highlights (`walkthrough.md`), git working tree status, and project workflow baselines (`workflow:baseline`).
+   - `get_session_tree` renders a copy-ready 76-column ASCII hierarchy displaying active sessions and handoff tickets across all four distinct lifecycle states: `[◈ STAGED · UNCLAIMED]`, `[▶ IN-WORK]`, `[✓ COMPLETED]`, and `[⊘ SUPERSEDED -> <id>]`.
+   - To keep active sessions prominent and protect the 20 KB MCP wire budget, historical closed (`COMPLETED` and `SUPERSEDED`) tickets attached to each project's tree are bounded at a recent window (e.g. latest 4 closed tickets per project, with a `(+N older completed)` note when truncated), while keeping 100% of active `STAGED` and `IN_WORK` tickets visible.
+   - Remote version comparison queries both GitHub `/releases/latest` and `/tags`, comparing the installed version against the highest valid semantic version tag so tag-pushed releases compare accurately without false `Staged Locally` warnings.
 3. **Concise Mobile Summary**:
    - Gemini delivers a clean, plain-English summary to the user: current task progress, active background jobs, and a 1-tap suggested next step (e.g., *"Check in on the build?"*).
 
@@ -56,6 +59,8 @@ AGY-Nexus MCP provides four primary handoff modes:
    - Tool `send_handoff_and_resume` checks handoff quality (`evaluate_handoff_quality`), providing non-blocking advisories if user goals are missing.
 2. **Ticket Staging & Claiming**:
    - A sequential ticket is registered in the queue (`<repo-slug>-01`, `<repo-slug>-02`...).
+   - Each ticket tracks full lifecycle states (`STAGED`, `IN_WORK`, `COMPLETED`, `SUPERSEDED`).
+   - `get_session_tree` and the `/web` Overwatch Dashboard render each state distinctly (`[◈ STAGED · UNCLAIMED]`, `[▶ IN-WORK]`, `[✓ COMPLETED]`, and `[⊘ SUPERSEDED]`), maintaining 100% visibility for active tickets while bounding historical closed tickets.
    - If `resume_headless=True`, Antigravity is woken up immediately; otherwise, the ticket is staged for IDE pickup via `agy-praxis-mcp`.
 3. **Execution Lifecycle**:
    - Antigravity scouts semantic outlines with Polyglot/Praxis, implements changes within file size budgets (`<= 500 lines`), audits with `flash-auditor` or dual-review, and halts at local staging (`allow_chained_publish=False`) for review.

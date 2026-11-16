@@ -4,6 +4,19 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.1] — 2026-11-16
+
+### Fixed
+- **Fix [COMPLETED] Ticket Labels & Bounded Historical Display in Session Tree (`src/agy_nexus/session_tree.py`, `docs/WORKFLOWS.md`, `web/styles.css`)**:
+  - Fixed `render_ascii_session_tree` to render completed handoff tickets as `[✓ COMPLETED]` instead of falsely falling through to `[⊘ SUPERSEDED -> newer]`.
+  - Updated `_attach_handoffs_to_groups` to keep 100% of active `STAGED` and `IN_WORK` tickets visible while bounding historical closed (`COMPLETED` + `SUPERSEDED`) tickets at a clean recent window (4 most recent closed tickets per project) and rendering `(+N older completed)` when truncated, protecting the 20 KB MCP wire budget while keeping total project counts accurate.
+  - Added visual styling for `.hier-handoff-row.is-completed` and `.hier-handoff-badge.completed, .hier-handoff-pill.completed` in `web/styles.css`.
+- **Fix Remote Tag Semantic Version Comparison in Code Health (`src/agy_nexus/code_health.py`)**:
+  - Fixed `_fetch_remote_version()` to collect candidate versions from both GitHub `/releases/latest` and `/tags` and select the highest valid semantic version tag, rather than exiting early on an older GitHub Release (`v2.7.0`).
+  - Resolves false `Staged Locally` warnings on tag-pushed releases like `v3.2.0`.
+- **Workflow Baseline Documentation (`docs/WORKFLOWS.md`)**:
+  - Documented the four distinct ticket badges, closed-ticket bounding rules in `get_session_tree`, and highest-semver release/tag comparison across Workflow 1 and Workflow 2.
+
 ## [3.2.0] — 2026-11-15
 
 ### Added

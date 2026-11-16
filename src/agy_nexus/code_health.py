@@ -65,13 +65,14 @@ def compare_versions(installed: str, remote: str | None) -> dict[str, Any]:
 
 
 def _fetch_remote_version() -> str | None:
-    """Fetch latest release or tag from GitHub with 2.0s timeout."""
+    """Fetch latest release or tag from GitHub with 2.0s timeout, comparing highest semver."""
     headers = {"User-Agent": "agy-nexus-mcp", "Accept": "application/vnd.github.v3+json"}
     repo = GITHUB_REPO.replace("github.com/", "")
     endpoints = [
         (f"https://api.github.com/repos/{repo}/releases/latest", False),
         (f"https://api.github.com/repos/{repo}/tags", True),
     ]
+    candidates: list[tuple[tuple[int, ...], str]] = []
     for url, is_tags in endpoints:
         try:
             req = urllib.request.Request(url, headers=headers)
@@ -80,15 +81,21 @@ def _fetch_remote_version() -> str | None:
                 if not is_tags and isinstance(data, dict):
                     tag = data.get("tag_name") or data.get("name")
                     if tag:
-                        return str(tag).strip()
+                        raw = str(tag).strip()
+                        sem = _parse_semver(raw)
+                        if sem:
+                            candidates.append((sem, raw))
                 elif is_tags and isinstance(data, list):
-                    valid = [(_parse_semver(raw := (t.get("name", "") if isinstance(t, dict) else str(t))), raw) for t in data]
-                    valid = [v for v in valid if v[0]]
-                    if valid:
-                        valid.sort(key=lambda x: x[0], reverse=True)
-                        return valid[0][1]
+                    for t in data:
+                        raw = (t.get("name", "") if isinstance(t, dict) else str(t)).strip()
+                        sem = _parse_semver(raw)
+                        if sem:
+                            candidates.append((sem, raw))
         except Exception:
             continue
+    if candidates:
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        return candidates[0][1]
     return None
 
 

@@ -103,7 +103,7 @@ def _attach_handoffs_to_groups(
     pf_clean: str,
 ) -> None:
     """Attach STAGED, IN_WORK, and recent SUPERSEDED handoffs onto matching project groups (creating groups for new repos)."""
-    inbox = list_handoff_tickets(eff_bg, include_superseded=True, limit=120)
+    inbox = list_handoff_tickets(eff_bg, include_superseded=True, limit=200)
     for t in inbox.get("tickets") or []:
         st = str(t.get("status") or "STAGED").upper()
         if st not in ("STAGED", "IN_WORK", "SUPERSEDED", "COMPLETED"):
@@ -146,8 +146,6 @@ def _attach_handoffs_to_groups(
                 "staged_handoffs": [], "sessions": [],
             },
         )
-        if st == "SUPERSEDED" and int(pg.get("superseded_count") or 0) >= 4:
-            continue
         if st == "STAGED":
             pg["staged_count"] = int(pg.get("staged_count") or 0) + 1
         elif st == "IN_WORK":
@@ -156,6 +154,14 @@ def _attach_handoffs_to_groups(
             pg["completed_count"] = int(pg.get("completed_count") or 0) + 1
         else:
             pg["superseded_count"] = int(pg.get("superseded_count") or 0) + 1
+
+        if st in ("COMPLETED", "SUPERSEDED"):
+            closed_attached = sum(
+                1 for h in pg.get("staged_handoffs", [])
+                if h.get("status") in ("COMPLETED", "SUPERSEDED")
+            )
+            if closed_attached >= 4:
+                continue
         pg.setdefault("staged_handoffs", []).append({
             "handoff_id": str(t.get("handoff_id") or ""), "sequence": int(t.get("sequence") or 0),
             "repo_slug": t_slug, "title": str(t.get("title") or "Gemini Research Handoff"),
@@ -219,7 +225,7 @@ def build_project_session_tree(
                 "project_id": pid, "project_name": pname,
                 "workspaces": list(projects_map.get(pid, {}).get("workspace_paths") or ([wpath] if wpath else [])),
                 "shared_repo": False, "running_count": 0, "pinned_count": 0,
-                "staged_count": 0, "in_work_handoff_count": 0, "superseded_count": 0,
+                "staged_count": 0, "in_work_handoff_count": 0, "completed_count": 0, "superseded_count": 0,
                 "staged_handoffs": [], "sessions": [],
             },
         )
@@ -260,6 +266,7 @@ def build_project_session_tree(
         "sessions_count": sum(len(p["sessions"]) for p in projects_list),
         "staged_handoffs_count": sum(int(p.get("staged_count") or 0) for p in projects_list),
         "in_work_handoffs_count": sum(int(p.get("in_work_handoff_count") or 0) for p in projects_list),
+        "completed_handoffs_count": sum(int(p.get("completed_count") or 0) for p in projects_list),
         "active_only": active_only, "project_filter": project_filter,
         "projects": projects_list, "routing_telemetry": routing, "backup_321": backup_info, "ascii_tree": ascii_tree,
     }
@@ -303,15 +310,27 @@ def render_ascii_session_tree(
             lines.append(f"  workspaces : {ws_joined}")
         handoffs = pg.get("staged_handoffs") or []
         sess_arr = pg.get("sessions") or []
+        older_comp = max(0, int(pg.get("completed_count") or 0) - sum(1 for h in handoffs if h.get("status") == "COMPLETED"))
         for h_i, h in enumerate(handoffs):
-            is_last_h = (h_i == len(handoffs) - 1) and not sess_arr
+            is_last_h = (h_i == len(handoffs) - 1) and not sess_arr and older_comp <= 0
             branch, pipe = ("└─", "   ") if is_last_h else ("├─", "│  ")
             hst = h.get("status", "STAGED")
-            st_str = "[◈ STAGED · UNCLAIMED]" if hst == "STAGED" else (f"[▶ IN-WORK]" if hst == "IN_WORK" else f"[⊘ SUPERSEDED -> {h.get('superseded_by') or 'newer'}]")
+            if hst == "STAGED":
+                st_str = "[◈ STAGED · UNCLAIMED]"
+            elif hst == "IN_WORK":
+                st_str = "[▶ IN-WORK]"
+            elif hst == "COMPLETED":
+                st_str = "[✓ COMPLETED]"
+            else:
+                st_str = f"[⊘ SUPERSEDED -> {h.get('superseded_by') or 'newer'}]"
             owner = h.get("claimed_by_conversation_id") or h.get("target_conversation_id") or "(unclaimed · new chat)"
             lines.append(f"  {branch} [HANDOFF {h.get('handoff_id', '?')}] {h.get('title', 'Handoff')}")
             lines.append(f"  {pipe} pass_off   : {st_str} · {h.get('execution_mode', 'plan')}/{h.get('handoff_mode', 'intent')} · {h.get('relative_age', '')}")
             lines.append(f"  {pipe} session_id : {owner}")
+        if older_comp > 0:
+            is_last_older = not sess_arr
+            branch = "└─" if is_last_older else "├─"
+            lines.append(f"  {branch} (+{older_comp} older completed)")
         for s_i, s in enumerate(sess_arr):
             is_last = s_i == len(sess_arr) - 1
             branch, pipe = ("└─", "   ") if is_last else ("├─", "│  ")

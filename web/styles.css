@@ -231,9 +231,11 @@ svg.line-plot { display: block; inline-size: 100%; block-size: 100%; overflow: v
 .hier-session-row.sess-zero-win { opacity: 0.62; }
 .hier-handoff-row td { background: var(--plot-canvas-bg); }
 .hier-handoff-row.is-superseded { opacity: 0.56; }
+.hier-handoff-row.is-completed { opacity: 0.72; }
 .hier-handoff-badge, .hier-handoff-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.03em; padding: 1px 6px; border-radius: 4px; flex-shrink: 0; }
 .hier-handoff-badge.staged, .hier-handoff-pill.staged { background: var(--status-warn-bg); color: var(--status-warn); border: 1px solid var(--status-warn); }
 .hier-handoff-badge.in-work, .hier-handoff-pill.in-work { background: var(--accent-cobalt-dim); color: var(--accent-cobalt); border: 1px solid var(--accent-cobalt); }
+.hier-handoff-badge.completed, .hier-handoff-pill.completed { background: var(--accent-focal-dim); color: var(--accent-focal); border: 1px solid var(--accent-focal); }
 .hier-handoff-badge.superseded, .hier-handoff-pill.superseded { background: transparent; color: var(--text-dim); border: 1px dashed var(--border-grid); text-decoration: line-through; }
 .hier-handoff-slug { font-size: 11px; font-weight: 700; color: var(--accent-cobalt); background: var(--accent-cobalt-dim); border: 1px solid var(--border-grid); border-radius: 4px; padding: 0.5px 6px; flex-shrink: 0; }
 .hier-handoff-unclaimed { color: var(--status-warn); font-size: 11px; font-weight: 600; }
