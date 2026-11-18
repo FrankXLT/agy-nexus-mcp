@@ -200,14 +200,14 @@ def _build_visual_catalog(conv_id: str, ws_path: Path, batch_folder: str = "") -
                         for idx, img_f in enumerate(imgs, 1):
                             _add_entry(img_f, sdir, f"brain:{safe_cid}", seq_hint=idx, batch_name=bdir.name)
             if not batch_folder.strip():
-                for item in discover_visual_artifacts(safe_cid, str(ws_path), limit=30):
+                for item in discover_visual_artifacts(safe_cid, str(ws_path), limit=40):
                     sc, rel = str(item.get("scope") or ""), str(item.get("rel_path") or "")
                     if sc == f"brain:{safe_cid}":
                         _add_entry(sdir / rel, sdir, sc)
                     elif sc.startswith("repo:") and ws_path.is_dir() and _is_strict_child(ws_path, allowed_ws_roots):
                         _add_entry(ws_path.resolve() / rel, ws_path.resolve(), sc)
     elif ws_path.is_dir() and _is_strict_child(ws_path, allowed_ws_roots):
-        for item in discover_visual_artifacts("", str(ws_path), limit=30):
+        for item in discover_visual_artifacts("", str(ws_path), limit=40):
             _add_entry(ws_path.resolve() / str(item.get("rel_path") or ""), ws_path.resolve(), str(item.get("scope") or f"repo:{ws_path.name}"))
     return catalog
 
@@ -269,6 +269,38 @@ def _select_targets(catalog: list[dict[str, Any]], targets: str, conv_id: str, w
     return picked
 
 
+def _resolve_conv_workspace(conv_id: str) -> str:
+    """Resolve workspace path for conv_id from SESSION_STATE or SQLite without borrowing another session's workspace."""
+    if not conv_id:
+        return ""
+    slot = (SESSION_STATE.get("active_contexts") or {}).get(conv_id) or {}
+    ws = str(slot.get("workspace") or SESSION_STATE.get("session_workspace_map", {}).get(conv_id) or "").strip()
+    if ws:
+        return re.sub(r"^file://", "", ws).rstrip("/")
+    if cfg.AGY_DB_FILE.is_file():
+        try:
+            from contextlib import closing
+            import json
+            import sqlite3
+            with closing(sqlite3.connect(f"file:{cfg.AGY_DB_FILE}?mode=ro", uri=True, timeout=3)) as con:
+                row = con.execute(
+                    "SELECT title, project_id, workspace_uris FROM conversation_summaries WHERE conversation_id = ? LIMIT 1",
+                    (conv_id,),
+                ).fetchone()
+            if row and row[2]:
+                uris = json.loads(row[2])
+                if isinstance(uris, list) and uris:
+                    from agy_nexus.sessions import pick_primary_workspace_uri
+                    clean = [re.sub(r"^file://", "", str(u)).rstrip("/") for u in uris if u]
+                    picked = pick_primary_workspace_uri(clean, str(row[0] or ""), str(row[1] or ""))
+                    if picked:
+                        SESSION_STATE.setdefault("session_workspace_map", {})[conv_id] = picked
+                        return picked
+        except Exception:
+            pass
+    return ""
+
+
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def inspect_visual_artifacts(
     targets: str = "",
@@ -280,7 +312,7 @@ def inspect_visual_artifacts(
     workspace: str = "",
     spoken_passphrase: str = "",
 ) -> list[TextContent | ImageContent]:
-    """Multimodal screenshot & visual artifact inspector returning native MCP ImageContent (WebP thumbnails strictly <20 KB total wire payload) plus 30-minute HMAC-signed HTTPS links.
+    """Multimodal screenshot & visual artifact inspector returning native MCP ImageContent (WebP thumbnails strictly <20 KB total wire payload) plus 7-day HMAC-signed HTTPS links.
     NOTE: Hosted Gemini Web/Mobile `custom_mcp` adapters strip binary MCP `ImageContent` blocks on ingress; when running from Gemini Web, share `signed_url` links with the user or route pixel review to Antigravity IDE.
     - targets: Comma-separated upload sequence numbers ('#01', '1,2', '1-4', '#42'), filenames, or relative paths. Leave empty to page through the latest upload batch or session artifacts via offset/limit (max 4 images/call).
     - region: 'full' (default), 'top', 'upper', 'middle', 'lower', 'bottom', or 'x,y,w,h' (0..1 normalized or pixels) to zoom into fine UI text on tall mobile screenshots at crisp detail."""
@@ -288,9 +320,15 @@ def inspect_visual_artifacts(
         return [TextContent(type="text", text=LOCKED_RESPONSE)]
 
     conv_id = _resolve_session_identifier(session_identifier.strip()) if session_identifier.strip() else str(SESSION_STATE.get("selected_session") or "")
-    slot = SESSION_STATE.get("active_contexts", {}).get(conv_id) or {}
     default_ws = AGY_PROJECTS_DIR if AGY_PROJECTS_DIR.is_dir() else AGY_GITLAB_DIR
-    ws_str = _resolve_workspace_str(workspace.strip()) if workspace.strip() else str(slot.get("workspace") or SESSION_STATE["session_workspace_map"].get(conv_id) or SESSION_STATE.get("selected_workspace") or default_ws)
+    if workspace.strip():
+        ws_str = _resolve_workspace_str(workspace.strip())
+    elif session_identifier.strip():
+        if not conv_id:
+            return [TextContent(type="text", text=_compact_json({"ok": False, "error": f"Session not found for session_identifier '{session_identifier.strip()}'."}))]
+        ws_str = _resolve_conv_workspace(conv_id) or str(default_ws)
+    else:
+        ws_str = _resolve_conv_workspace(conv_id) or str(SESSION_STATE.get("selected_workspace") or default_ws)
     ws_path = Path(ws_str) if ws_str else default_ws
     allowed_ws_roots = (
         *get_workspace_pillar_roots(),

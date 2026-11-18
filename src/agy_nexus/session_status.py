@@ -24,9 +24,18 @@ from agy_nexus.retirement import (
 
 def count_session_compactions(conv_id: str, brain_dir: Path = AGY_BRAIN_DIR) -> int:
     """Count context compaction events ('# Resuming from a compaction') in transcript.jsonl."""
-    if not conv_id:
+    clean_id = str(conv_id or "").strip()
+    if not clean_id or not re.match(r"^[a-zA-Z0-9_-]{1,64}$", clean_id) or ".." in clean_id:
         return 0
-    tpath = brain_dir / conv_id / ".system_generated" / "logs" / "transcript.jsonl"
+    try:
+        sess_dir = brain_dir / clean_id
+        if sess_dir.is_symlink():
+            return 0
+        tpath = sess_dir / ".system_generated" / "logs" / "transcript.jsonl"
+        if tpath.is_symlink() or not tpath.resolve().is_relative_to(brain_dir.resolve()):
+            return 0
+    except OSError:
+        return 0
     if not tpath.is_file():
         return 0
     try:
@@ -179,6 +188,7 @@ def evaluate_rollover_posture(
     allow_chained_publish: bool = False,
     retire_session: bool = False,
     session_continuity: str = "",
+    has_uncommitted_work: bool | None = None,
 ) -> dict[str, Any]:
     """Evaluate continuity-aware rollover posture and decision based on step count, compactions, git status, and tasks.
 
@@ -197,7 +207,7 @@ def evaluate_rollover_posture(
 
     compactions = compaction_count if compaction_count is not None else count_session_compactions(conv_id, brain_dir)
     ctx_exceeded = context_exceeded if context_exceeded is not None else check_context_exceeded(conv_id, brain_dir)
-    has_uncommitted = check_uncommitted_work(ws_path)
+    has_uncommitted = has_uncommitted_work if has_uncommitted_work is not None else check_uncommitted_work(ws_path)
     open_tasks = count_open_task_items(conv_id, brain_dir)
     is_clean_seam = (not has_uncommitted) and (open_tasks == 0)
     retired = is_session_retired(conv_id, brain_dir)

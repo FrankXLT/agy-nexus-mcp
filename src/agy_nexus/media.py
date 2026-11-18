@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-agy_nexus.media — Ephemeral 30-Minute HMAC-Signed /web/media/ Serving & Visual Artifact Discovery.
+agy_nexus.media — 7-Day HMAC-Signed /web/media/ Serving & Visual Artifact Discovery.
 """
 
 from __future__ import annotations
@@ -17,6 +17,16 @@ from typing import Any
 import urllib.parse
 
 import agy_nexus.config as cfg
+from agy_nexus.hygiene import is_sensitive_filename
+from agy_nexus.media_discovery import (
+    classify_repo_media as _classify_repo_media,
+    collect_git_status_media as _md_collect_git_status_media,
+    collect_repo_folder_media as _collect_repo_folder_media,
+    count_brain_visual_captures,
+    is_visual_folder_name as _is_visual_folder_name,
+    resolve_session_ownership_window as _resolve_session_ownership_window,
+    walk_media_tree as _walk_media_tree,
+)
 
 ALLOWED_MEDIA_EXTENSIONS: dict[str, bytes] = {
     ".png": b"image/png",
@@ -114,7 +124,7 @@ def get_public_base_url() -> str:
 
 
 def compute_media_hmac(exp_ts: int, scope: str, rel_path: str, pass_hash: str | None = None) -> str:
-    """Compute 32-char hex HMAC-SHA256 signature for an ephemeral media link."""
+    """Compute 32-char hex HMAC-SHA256 signature for a 7-day signed media link."""
     secret_hex = (pass_hash if pass_hash is not None else cfg.PASS_HASH) or "default-unconfigured-hash"
     clean_rel = rel_path.lstrip("/")
     msg = f"{int(exp_ts)}:{scope}:{clean_rel}".encode("utf-8")
@@ -128,7 +138,7 @@ def sign_media_url(
     exp_ts: int | None = None,
     relative: bool = False,
 ) -> str:
-    """Generate a 30-minute HMAC-signed /web/media/<exp_ts>/<hmac_sig>/<scope>/<rel_path> URL."""
+    """Generate a 7-day HMAC-signed /web/media/<exp_ts>/<hmac_sig>/<scope>/<rel_path> URL."""
     exp_val = int(exp_ts) if exp_ts is not None else int(time.time()) + int(ttl_seconds)
     clean_rel = rel_path.lstrip("/")
     sig = compute_media_hmac(exp_val, scope, clean_rel)
@@ -139,6 +149,29 @@ def sign_media_url(
         return path_part
     base = get_public_base_url()
     return f"{base}{path_part}" if base else path_part
+
+
+def is_allowed_workspace_dir(ws_path: Path | str) -> bool:
+    """Return True when ws_path is an existing directory strictly inside an allowed workspace or worktree root."""
+    if not ws_path:
+        return False
+    try:
+        resolved = Path(ws_path).resolve()
+        if not resolved.is_dir():
+            return False
+        pkg_root = Path(__file__).resolve().parents[2].resolve()
+        forbidden = {Path("/").resolve(), Path.home().resolve(), *cfg.get_umbrella_roots()}
+        if resolved in forbidden:
+            return False
+        if resolved == pkg_root:
+            return True
+        ws_roots = (
+            set(cfg.get_workspace_pillar_roots())
+            | {cfg.AGY_GITLAB_DIR.resolve(), (cfg.AGY_DATA_DIR / "worktrees").resolve()}
+        ) - {Path("/").resolve(), Path.home().resolve()}
+        return any(resolved != r and resolved.is_relative_to(r) for r in ws_roots)
+    except Exception:
+        return False
 
 
 def _resolve_scope_base_dir(scope: str) -> Path | None:
@@ -166,6 +199,15 @@ def _resolve_scope_base_dir(scope: str) -> Path | None:
                 cand = (root_dir / repo_name).resolve()
                 if cand != root_res and cand.is_relative_to(root_res) and cand.is_dir():
                     return cand
+        wt_root = cfg.AGY_DATA_DIR / "worktrees"
+        if wt_root.is_dir():
+            wt_res = wt_root.resolve()
+            for wt_sub in sorted(wt_root.iterdir(), key=lambda p: p.name):
+                if not wt_sub.is_dir() or wt_sub.is_symlink():
+                    continue
+                cand = (wt_sub / repo_name).resolve()
+                if cand != wt_res and cand.is_relative_to(wt_res) and cand.is_dir():
+                    return cand
         return None
     return None
 
@@ -191,6 +233,8 @@ def verify_and_resolve_media(req_path: str) -> tuple[Path | None, bytes, int, st
     rel_path = urllib.parse.unquote(raw_rel).lstrip("/")
     if not rel_path or ".." in Path(rel_path).parts:
         return None, b"application/json", 403, "Path traversal rejected."
+    if not cfg.PASS_HASH:
+        return None, b"application/json", 403, "Media signing is not configured."
 
     expected_sig = compute_media_hmac(exp_ts, scope, rel_path).lower()
     if not hmac.compare_digest(supplied_sig, expected_sig):
@@ -215,6 +259,11 @@ def verify_and_resolve_media(req_path: str) -> tuple[Path | None, bytes, int, st
     return target, ALLOWED_MEDIA_EXTENSIONS[ext], 200, "OK"
 
 
+def _collect_git_status_media(ws_path: Path) -> list[Path]:
+    """Query git status --porcelain -uall -z (1.5s cap) to detect newly created or modified repo media."""
+    return _md_collect_git_status_media(ws_path, ALLOWED_MEDIA_EXTENSIONS)
+
+
 def build_workspace_deep_link(
     conv_id: str,
     rel_path: str,
@@ -222,90 +271,137 @@ def build_workspace_deep_link(
     ttl_seconds: int = MEDIA_TTL_SECONDS,
     exp_ts: int | None = None,
 ) -> str:
-    """Generate https://<base>/web?view=workspace&session=<conv_id>&artifact=<rel_path>&t=<exp_ts>&sig=<hmac_sig>."""
+    """Generate https://<base>/web?view=workspace&session=<conv_id>&artifact=<rel_path>&t=<exp_ts>&sig=<hmac_sig>&scope=<scope>."""
     exp_val = int(exp_ts) if exp_ts is not None else int(time.time()) + int(ttl_seconds)
     clean_rel = rel_path.lstrip("/")
     eff_scope = scope or (f"brain:{conv_id}" if conv_id else "")
     sig = compute_media_hmac(exp_val, eff_scope, clean_rel)
     base = get_public_base_url()
-    params = urllib.parse.urlencode({
+    params_dict: dict[str, str] = {
         "view": "workspace",
         "session": conv_id,
         "artifact": clean_rel,
         "t": str(exp_val),
         "sig": sig,
-    })
+    }
+    if eff_scope:
+        params_dict["scope"] = eff_scope
+    params = urllib.parse.urlencode(params_dict)
     return f"{base}/web?{params}" if base else f"/web?{params}"
+
+
+def _append_media_candidate(
+    entry: Path,
+    base_res: Path,
+    scope: str,
+    safe_cid: str,
+    relative: bool,
+    seen_realpaths: set[str],
+    candidates: list[tuple[float, dict[str, Any]]],
+    category: str = "session",
+) -> None:
+    try:
+        if entry.is_symlink():
+            return
+        rp = entry.resolve()
+        if rp == base_res or not rp.is_relative_to(base_res):
+            return
+        if not rp.is_file() or rp.suffix.lower() not in ALLOWED_MEDIA_EXTENSIONS:
+            return
+        if is_sensitive_filename(entry.name) or is_sensitive_filename(rp.name):
+            return
+        rp_str = str(rp)
+        if rp_str in seen_realpaths:
+            return
+        seen_realpaths.add(rp_str)
+        st = rp.stat()
+        rel_str = str(rp.relative_to(base_res)).replace("\\", "/")
+        item_dict: dict[str, Any] = {
+            "name": rp.name,
+            "scope": scope,
+            "rel_path": rel_str,
+            "category": category,
+            "bytes": st.st_size,
+            "mtime": st.st_mtime,
+            "modified_at": datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat(),
+            "signed_url": sign_media_url(scope, rel_str, relative=relative),
+        }
+        if safe_cid:
+            item_dict["workspace_url"] = build_workspace_deep_link(safe_cid, rel_str, scope=scope)
+        candidates.append((st.st_mtime, item_dict))
+    except Exception:
+        return
+
+
+def discover_visual_buckets(
+    conv_id: str,
+    workspace_path: str = "",
+    session_limit: int = 40,
+    repo_limit: int = 30,
+    relative: bool = False,
+    db_file: Path | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Scan and separate session-owned captures ('session') from shared/committed repo assets ('repo_asset')."""
+    session_cands: list[tuple[float, dict[str, Any]]] = []
+    repo_cands: list[tuple[float, dict[str, Any]]] = []
+    seen_realpaths: set[str] = set()
+
+    safe_cid = re.sub(r"[^a-zA-Z0-9_-]", "", conv_id)
+    brain_dir: Path | None = None
+    if safe_cid:
+        brain_root = cfg.AGY_BRAIN_DIR.resolve()
+        cand_brain = (cfg.AGY_BRAIN_DIR / safe_cid).resolve()
+        if cand_brain != brain_root and cand_brain.is_relative_to(brain_root) and cand_brain.is_dir():
+            brain_dir = cand_brain
+            b_scope = f"brain:{safe_cid}"
+            for fpath in _walk_media_tree(brain_dir, max_depth=3, allow_dot_dirs=frozenset({".user_uploaded"})):
+                _append_media_candidate(
+                    fpath, brain_dir, b_scope, safe_cid, relative, seen_realpaths, session_cands, category="session",
+                )
+
+    if workspace_path and is_allowed_workspace_dir(workspace_path):
+        ws_res = Path(workspace_path).resolve()
+        r_scope = f"repo:{ws_res.name}"
+        git_paths = _collect_git_status_media(ws_res)
+        git_real = {str(p.resolve()) for p in git_paths if not p.is_symlink() and p.exists()}
+        has_git = (ws_res / ".git").exists()
+        is_latest, win_start, win_end = _resolve_session_ownership_window(safe_cid, ws_res, brain_dir, db_file=db_file)
+        for fpath in (*git_paths, *_collect_repo_folder_media(ws_res)):
+            try:
+                if fpath.is_symlink():
+                    continue
+                rp = fpath.resolve()
+                if rp == ws_res or not rp.is_relative_to(ws_res) or not rp.is_file():
+                    continue
+                cat = _classify_repo_media(rp, ws_res, git_real, has_git, is_latest, win_start, win_end, rp.stat().st_mtime)
+            except Exception:
+                continue
+            target_list = session_cands if cat == "session" else repo_cands
+            _append_media_candidate(fpath, ws_res, r_scope, safe_cid, relative, seen_realpaths, target_list, category=cat)
+
+    session_cands.sort(key=lambda item: item[0], reverse=True)
+    repo_cands.sort(key=lambda item: item[0], reverse=True)
+    s_lim = max(1, min(int(session_limit or 40), 60))
+    r_lim = max(1, min(int(repo_limit or 30), 60))
+    return [i[1] for i in session_cands[:s_lim]], [i[1] for i in repo_cands[:r_lim]]
 
 
 def discover_visual_artifacts(
     conv_id: str,
     workspace_path: str = "",
-    limit: int = 15,
+    limit: int = 30,
     relative: bool = False,
+    category: str = "",
+    db_file: Path | None = None,
 ) -> list[dict[str, Any]]:
-    """Scan session brain directory and active workspace for recent visual artifacts (.png/.jpg/.webp/.svg)."""
-    candidates: list[tuple[float, dict[str, Any]]] = []
-    seen_realpaths: set[str] = set()
-
-    def _scan_dir(base_dir: Path, scope: str, subdirs: tuple[str, ...]) -> None:
-        if not base_dir.is_dir():
-            return
-        extra_dirs: list[Path] = []
-        for sd in subdirs:
-            parent_sd = base_dir / sd
-            if parent_sd.is_dir():
-                try:
-                    for child in parent_sd.iterdir():
-                        if child.is_dir() and child.name.startswith("uploads_"):
-                            extra_dirs.append(child)
-                except Exception:
-                    pass
-        search_dirs = [base_dir] + [base_dir / sd for sd in subdirs if (base_dir / sd).is_dir()] + extra_dirs
-        for sdir in search_dirs:
-            try:
-                for entry in sdir.iterdir():
-                    if not entry.is_file() or entry.suffix.lower() not in ALLOWED_MEDIA_EXTENSIONS:
-                        continue
-                    rp = str(entry.resolve())
-                    if rp in seen_realpaths:
-                        continue
-                    seen_realpaths.add(rp)
-                    st = entry.stat()
-                    rel_str = str(entry.resolve().relative_to(base_dir.resolve())).replace("\\", "/")
-                    item_dict: dict[str, Any] = {
-                        "name": entry.name,
-                        "scope": scope,
-                        "rel_path": rel_str,
-                        "bytes": st.st_size,
-                        "modified_at": datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat(),
-                        "signed_url": sign_media_url(scope, rel_str, relative=relative),
-                    }
-                    if safe_cid:
-                        item_dict["workspace_url"] = build_workspace_deep_link(safe_cid, rel_str, scope=scope)
-                    candidates.append((st.st_mtime, item_dict))
-            except Exception:
-                continue
-
-    safe_cid = re.sub(r"[^a-zA-Z0-9_-]", "", conv_id)
-    if safe_cid:
-        brain_root = cfg.AGY_BRAIN_DIR.resolve()
-        brain_dir = (cfg.AGY_BRAIN_DIR / safe_cid).resolve()
-        if brain_dir != brain_root and brain_dir.is_relative_to(brain_root) and brain_dir.is_dir():
-            _scan_dir(brain_dir, f"brain:{safe_cid}", ("scratch", ".user_uploaded"))
-
-    if workspace_path:
-        ws_path = Path(workspace_path).resolve()
-        pkg_root = Path(__file__).resolve().parents[2]
-        forbidden = {Path("/").resolve(), Path.home().resolve(), *cfg.get_umbrella_roots()}
-        ws_roots = (set(cfg.get_workspace_pillar_roots()) | {(cfg.AGY_DATA_DIR / "worktrees").resolve()}) - {
-            Path("/").resolve(),
-            Path.home().resolve(),
-        }
-        if ws_path.is_dir() and ws_path not in forbidden and (
-            ws_path == pkg_root.resolve() or any(ws_path != r and ws_path.is_relative_to(r) for r in ws_roots)
-        ):
-            _scan_dir(ws_path, f"repo:{ws_path.name}", ("docs/assets", "screenshots", "scratch", "sidecars/ag-bridge-mcp/docs/assets"))
-
-    candidates.sort(key=lambda item: item[0], reverse=True)
-    return [item[1] for item in candidates[: max(1, min(limit, 30))]]
+    """Scan session brain and active workspace for visual artifacts, sorted newest-first with category tags."""
+    s_items, r_items = discover_visual_buckets(
+        conv_id, workspace_path=workspace_path, session_limit=40, repo_limit=40, relative=relative, db_file=db_file,
+    )
+    if category == "session":
+        merged = s_items
+    elif category == "repo_asset":
+        merged = r_items
+    else:
+        merged = sorted([*s_items, *r_items], key=lambda item: float(item.get("mtime") or 0.0), reverse=True)
+    return merged[: max(1, min(int(limit or 30), 40))]

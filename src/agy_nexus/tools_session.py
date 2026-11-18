@@ -157,7 +157,7 @@ def list_saved_sessions(
 
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "", include_files: str = "") -> str:
-    """Primary tool for session 'Check-in' and full context loading in a single call (live execution_status, git_summary, visual_artifacts with 30-min signed /web/media/ links, task.md, implementation_plan.md, walkthrough.md, and recent untruncated transcript turns).
+    """Primary tool for session 'Check-in' and full context loading in a single call (live execution_status, git_summary, visual_artifacts with 7-day signed /web/media/ links, task.md, implementation_plan.md, walkthrough.md, and recent untruncated transcript turns).
     IMPORTANT: This is the designated tool for checking in on running or completed Antigravity sessions. Execution_status and git_summary are already included in this response. If latest_assistant_response is compacted for the <20 KB wire ceiling, pass file_subpath='transcript:latest' (with start_line/end_line) to ask_workspace_readonly via a sequential follow-up call (never in parallel) to page the full untruncated response.
     """
     if not is_unlocked(spoken_passphrase):

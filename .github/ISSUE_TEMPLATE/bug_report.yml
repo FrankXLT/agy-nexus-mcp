@@ -1,0 +1,83 @@
+name: Bug Report
+description: Report a bug or unexpected behavior in AGY-Nexus MCP, Overwatch (/web), or Praxis IDE tools.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > **Security & Privacy Reminder:** Never paste `secrets.env`, `PATH_SECRET`, `PRAXIS_MCP_TOKEN`, `POLYGLOT_MCP_TOKEN`, `PASS_HASH`, passphrases, private LAN hostnames/IPs, or personal/private URLs into this issue. Use `/web?demo=1` for UI screenshots.
+
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: Concise one-line description of the bug.
+      placeholder: "e.g., Workspace zip download returns 403 for nested artifact path"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      description: Which component or surface is affected?
+      options:
+        - MCP Tools (agy-nexus-mcp)
+        - /web Analytics
+        - /web Workspace
+        - agy-praxis-mcp (Local IDE)
+        - Host Bridge (:8098)
+        - Docker / systemd
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Minimal numbered steps to reproduce the issue (sanitized paths only).
+      placeholder: |
+        1. Unlock session or open /web?demo=1
+        2. Run tool / click control ...
+        3. Observe error
+    validations:
+      required: true
+
+  - type: dropdown
+    id: viewport
+    attributes:
+      label: Viewport / Client
+      description: Which client or viewport width were you using?
+      options:
+        - Gemini Mobile
+        - Gemini Web
+        - Foldable (~900px)
+        - Desktop Chrome (1440px+)
+        - Antigravity IDE
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: Expected vs. Actual Behavior
+      description: Clearly state what you expected to happen and what actually happened.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Depersonalized Logs & Environment
+      description: |
+        Paste sanitized tracebacks, version/commit info, or browser console errors.
+        NEVER paste secrets.env, PATH_SECRET, tokens, LAN IPs, emails, or private URLs.
+      placeholder: |
+        - OS / Container runtime:
+        - Python version:
+        - Surface theme (if /web):
+        - Sanitized traceback / console error:
+    validations:
+      required: false

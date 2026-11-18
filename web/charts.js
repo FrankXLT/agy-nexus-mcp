@@ -106,6 +106,7 @@ async function fetchStats(period) {
     const targetMain = state.surfaceView === "workspace" ? document.getElementById("workspaceMain") : document.getElementById("dashboardMain");
     if (targetMain) targetMain.classList.remove("hidden");
     renderDashboard(state.bundle);
+    if (state.surfaceView === "workspace" && window.WorkspaceExplorer) window.WorkspaceExplorer.initWorkspace();
     return;
   }
   const statusEl = document.getElementById("authStatus");
@@ -153,6 +154,7 @@ async function fetchStats(period) {
     const targetMain = state.surfaceView === "workspace" ? document.getElementById("workspaceMain") : document.getElementById("dashboardMain");
     if (targetMain) targetMain.classList.remove("hidden");
     renderDashboard(data);
+    if (state.surfaceView === "workspace" && window.WorkspaceExplorer) window.WorkspaceExplorer.initWorkspace();
   } catch (err) {
     if (mySeq === fetchSeq && statusEl) statusEl.textContent = "Connection or render error: " + (err && err.message ? err.message : String(err));
   }

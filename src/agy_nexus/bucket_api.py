@@ -2,7 +2,7 @@
 """agy_nexus.bucket_api — Hierarchical Workspace Tree, Session Bucket Inventory & Image URL Rewriting."""
 from __future__ import annotations
 
-import io
+from contextlib import closing
 import json
 from pathlib import Path
 import re
@@ -10,8 +10,15 @@ import sqlite3
 import time
 from typing import Any
 import urllib.parse
-import zipfile
 
+import anyio
+
+from agy_nexus.bucket_zip import (
+    build_session_zip as _bz_build_session_zip,
+    handle_download_zip as _handle_download_zip,
+    resolve_zip_entry as _resolve_zip_entry,
+    send_json as _send_json,
+)
 from agy_nexus.config import (
     AGY_BG_DIR,
     AGY_BRAIN_DIR,
@@ -23,12 +30,67 @@ from agy_nexus.handoff_queue import list_handoff_tickets
 from agy_nexus.hygiene import is_sensitive_filename
 from agy_nexus.media import (
     ALLOWED_MEDIA_EXTENSIONS,
-    discover_visual_artifacts,
+    count_brain_visual_captures,
+    discover_visual_buckets,
     sign_media_url,
 )
-from agy_nexus.session_status import evaluate_rollover_posture
+from agy_nexus.session_status import check_uncommitted_work, evaluate_rollover_posture
 from agy_nexus.session_tree import build_project_session_tree
+from agy_nexus.sessions import (
+    _load_projects_map,
+    pick_primary_workspace_uri,
+    resolve_canonical_project_for_workspace,
+)
 from agy_nexus.uploads import validate_conv_id
+
+
+def _resolve_session_workspace_info(conv_id: str) -> tuple[str, str, str]:
+    """Resolve (ws_path, project_name, title) for conv_id from SESSION_STATE or SQLite without cross-session leakage."""
+    contexts = SESSION_STATE.get("active_contexts") or {}
+    slot = contexts.get(conv_id, {}) if isinstance(contexts, dict) else {}
+    ws_map = SESSION_STATE.get("session_workspace_map") or {}
+    pname_map = SESSION_STATE.get("session_project_name_map") or {}
+    pid_map = SESSION_STATE.get("session_project_map") or {}
+    title_map = SESSION_STATE.get("session_title_map") or {}
+
+    ws_path = str(slot.get("workspace") or ws_map.get(conv_id) or "").strip()
+    ws_path = re.sub(r"^file://", "", ws_path).rstrip("/")
+    project_name = str(slot.get("project_name") or pname_map.get(conv_id) or "").strip()
+    project_id = str(slot.get("project_id") or pid_map.get(conv_id) or "").strip()
+    title = str(slot.get("title") or title_map.get(conv_id) or "").strip()
+
+    if (not ws_path or not project_id or not title) and AGY_DB_FILE.is_file():
+        try:
+            with closing(sqlite3.connect(f"file:{AGY_DB_FILE}?mode=ro", uri=True, timeout=3)) as conn:
+                row = conn.execute(
+                    "SELECT title, project_id, workspace_uris FROM conversation_summaries WHERE conversation_id = ? LIMIT 1",
+                    (conv_id,),
+                ).fetchone()
+            if row:
+                if not title and row[0]:
+                    title = str(row[0]).strip()
+                    SESSION_STATE.setdefault("session_title_map", {})[conv_id] = title
+                if not project_id and row[1]:
+                    project_id = str(row[1]).strip()
+                    SESSION_STATE.setdefault("session_project_map", {})[conv_id] = project_id
+                if not ws_path and row[2]:
+                    uris = json.loads(row[2])
+                    if isinstance(uris, list) and uris:
+                        clean_uris = [re.sub(r"^file://", "", str(u)).rstrip("/") for u in uris if u]
+                        ws_path = pick_primary_workspace_uri(clean_uris, title, project_id)
+                        if ws_path:
+                            SESSION_STATE.setdefault("session_workspace_map", {})[conv_id] = ws_path
+        except Exception:
+            pass
+
+    if not project_name and project_id:
+        project_name = str(_load_projects_map().get(project_id, {}).get("name") or "").strip()
+    if not project_name and (ws_path or project_id):
+        _, resolved_pname = resolve_canonical_project_for_workspace(ws_path, project_id)
+        project_name = str(resolved_pname or "").strip()
+    if not project_name and ws_path:
+        project_name = Path(ws_path).name
+    return ws_path, (project_name or "Workspace"), (title or conv_id[:8])
 
 
 def rewrite_markdown_media_links(
@@ -39,72 +101,70 @@ def rewrite_markdown_media_links(
         return md_content or ""
 
     brain_dir = (AGY_BRAIN_DIR / conv_id).resolve()
+    ws_dir = Path(ws_path).resolve() if ws_path else None
 
-    def _replace_target(target_path_str: str) -> str:
-        clean = target_path_str.strip().strip("'\"")
-        if clean.startswith(("/web/media/", "http://", "https://", "data:")):
+    def _replace_target(target_path_str: str, preserve_title: bool = False) -> str:
+        raw_s = target_path_str.strip()
+        title_suffix = ""
+        url_token = raw_s
+        if preserve_title:
+            m_ang = re.match(r"^<([^>]+)>(.*)$", raw_s)
+            if m_ang:
+                url_token, title_suffix = m_ang.group(1).strip(), m_ang.group(2)
+            else:
+                m_tit = re.match(r'^(\S+)(\s+(?:"[^"]*"|\'[^\']*\'))\s*$', raw_s)
+                if m_tit:
+                    url_token, title_suffix = m_tit.group(1), m_tit.group(2)
+        clean = url_token.strip().strip("'\"")
+        if clean.startswith(("/web/media/", "http://", "https://", "data:", "#")):
             return target_path_str
 
-        # Strip file:// prefix
-        fs_path_str = re.sub(r"^file://", "", clean)
-        target_path = Path(fs_path_str)
+        fs_raw = urllib.parse.unquote(re.sub(r"^file://(?:localhost)?", "", clean, flags=re.IGNORECASE))
+        target_path = Path(fs_raw)
+        if not fs_raw or ".." in target_path.parts or is_sensitive_filename(target_path.name):
+            return target_path_str
 
-        # Check if absolute path inside brain_dir
         if target_path.is_absolute():
             try:
                 res_path = target_path.resolve()
-                if res_path.is_relative_to(brain_dir) and res_path.is_file():
-                    rel = str(res_path.relative_to(brain_dir))
-                    if res_path.suffix.lower() in ALLOWED_MEDIA_EXTENSIONS:
-                        return sign_media_url(f"brain:{conv_id}", rel, ttl_seconds=ttl_seconds, relative=True)
+                if (
+                    res_path.is_file()
+                    and res_path.suffix.lower() in ALLOWED_MEDIA_EXTENSIONS
+                    and not is_sensitive_filename(res_path.name)
+                ):
+                    if res_path != brain_dir and res_path.is_relative_to(brain_dir):
+                        rel = str(res_path.relative_to(brain_dir)).replace("\\", "/")
+                        return sign_media_url(f"brain:{conv_id}", rel, ttl_seconds=ttl_seconds, relative=True) + title_suffix
+                    if ws_dir is not None and res_path != ws_dir and res_path.is_relative_to(ws_dir):
+                        rel_ws = str(res_path.relative_to(ws_dir)).replace("\\", "/")
+                        return sign_media_url(f"repo:{ws_dir.name or 'repo'}", rel_ws, ttl_seconds=ttl_seconds, relative=True) + title_suffix
             except Exception:
                 pass
         else:
-            # Relative path within brain_dir
-            try:
-                cand = (brain_dir / fs_path_str.lstrip("/")).resolve()
-                if cand.is_relative_to(brain_dir) and cand.is_file():
-                    rel = str(cand.relative_to(brain_dir))
-                    if cand.suffix.lower() in ALLOWED_MEDIA_EXTENSIONS:
-                        return sign_media_url(f"brain:{conv_id}", rel, ttl_seconds=ttl_seconds, relative=True)
-            except Exception:
-                pass
-
-        # Check if inside ws_path
-        if ws_path:
-            ws_dir = Path(ws_path).resolve()
-            try:
-                cand_ws = (ws_dir / fs_path_str.lstrip("/")).resolve() if not target_path.is_absolute() else target_path.resolve()
-                if cand_ws.is_relative_to(ws_dir) and cand_ws.is_file() and cand_ws.suffix.lower() in ALLOWED_MEDIA_EXTENSIONS:
-                    repo_slug = ws_dir.name or "repo"
-                    rel_ws = str(cand_ws.relative_to(ws_dir))
-                    return sign_media_url(f"repo:{repo_slug}", rel_ws, ttl_seconds=ttl_seconds, relative=True)
-            except Exception:
-                pass
-
+            rel_clean = fs_raw.lstrip("/")
+            if rel_clean.startswith("./"):
+                rel_clean = rel_clean[2:]
+            for base_dir, scope_lbl in (
+                (brain_dir, f"brain:{conv_id}"),
+                *(([(ws_dir, f"repo:{ws_dir.name or 'repo'}")] if ws_dir is not None else [])),
+            ):
+                try:
+                    cand = (base_dir / rel_clean).resolve()
+                    if cand != base_dir and cand.is_relative_to(base_dir) and cand.is_file():
+                        if cand.suffix.lower() in ALLOWED_MEDIA_EXTENSIONS and not is_sensitive_filename(cand.name):
+                            rel_s = str(cand.relative_to(base_dir)).replace("\\", "/")
+                            return sign_media_url(scope_lbl, rel_s, ttl_seconds=ttl_seconds, relative=True) + title_suffix
+                except Exception:
+                    continue
         return target_path_str
 
-    # Rewrite Markdown image syntax: ![alt](url)
-    def _md_img_sub(match: re.Match[str]) -> str:
-        alt, url = match.group(1), match.group(2)
-        signed = _replace_target(url)
-        return f"![{alt}]({signed})"
-
-    rewritten = re.sub(r"!\[(.*?)\]\(([^)]+)\)", _md_img_sub, md_content)
-
-    # Rewrite HTML <img> tags: <img src="url" ...>
-    def _html_img_sub(match: re.Match[str]) -> str:
-        tag_start, src, tag_end = match.group(1), match.group(2), match.group(3)
-        signed = _replace_target(src)
-        return f"{tag_start}{signed}{tag_end}"
-
-    rewritten = re.sub(
+    rewritten = re.sub(r"!\[(.*?)\]\(([^)]+)\)", lambda m: f"![{m.group(1)}]({_replace_target(m.group(2), preserve_title=True)})", md_content)
+    return re.sub(
         r"(<img\b[^>]*?\bsrc=[\"'])([^\"']+)([\"'][^>]*>)",
-        _html_img_sub,
+        lambda m: f"{m.group(1)}{_replace_target(m.group(2), preserve_title=False)}{m.group(3)}",
         rewritten,
         flags=re.IGNORECASE,
     )
-    return rewritten
 
 
 def scan_session_uploads(conv_id: str) -> list[dict[str, Any]]:
@@ -112,62 +172,60 @@ def scan_session_uploads(conv_id: str) -> list[dict[str, Any]]:
     if not conv_id or not validate_conv_id(conv_id):
         return []
     scratch_dir = AGY_BRAIN_DIR / conv_id / "scratch"
-    if not scratch_dir.is_dir():
+    if not scratch_dir.is_dir() or scratch_dir.is_symlink():
         return []
+    scratch_res = scratch_dir.resolve()
 
     batches: list[dict[str, Any]] = []
     try:
         subdirs = sorted(
-            [d for d in scratch_dir.iterdir() if d.is_dir() and d.name.startswith("uploads_")],
+            [
+                d for d in scratch_dir.iterdir()
+                if d.is_dir() and not d.is_symlink() and d.name.startswith("uploads_") and d.resolve().is_relative_to(scratch_res)
+            ],
             key=lambda p: p.stat().st_mtime,
             reverse=True,
         )
         for sd in subdirs:
+            sd_res = sd.resolve()
             folder_name = sd.name
             files_meta: list[dict[str, Any]] = []
-            signed_images: list[dict[str, str]] = []
+            signed_images: list[dict[str, Any]] = []
             total_size = 0
             index_md_content = ""
             for item in sorted(sd.iterdir(), key=lambda p: p.name.lower()):
-                if not item.is_file() or is_sensitive_filename(item.name):
+                if item.is_symlink() or not item.is_file():
                     continue
-                sz = item.stat().st_size
+                res_item = item.resolve()
+                if res_item == sd_res or not res_item.is_relative_to(sd_res) or is_sensitive_filename(res_item.name):
+                    continue
+                st = res_item.stat()
+                sz = int(st.st_size)
                 total_size += sz
-                ext = item.suffix.lower()
+                ext = res_item.suffix.lower()
                 is_img = ext in ALLOWED_MEDIA_EXTENSIONS
                 rel = f"scratch/{folder_name}/{item.name}"
                 thumb_url = sign_media_url(f"brain:{conv_id}", rel, relative=True) if is_img else ""
-                files_meta.append({
-                    "name": item.name,
-                    "rel_path": rel,
-                    "size": sz,
-                    "is_image": is_img,
-                    "thumbnail_url": thumb_url,
-                })
+                files_meta.append({"name": item.name, "rel_path": rel, "size": sz, "is_image": is_img, "thumbnail_url": thumb_url})
                 if is_img and thumb_url:
                     signed_images.append({
-                        "name": item.name,
-                        "rel_path": rel,
-                        "signed_url": thumb_url,
+                        "name": item.name, "rel_path": rel, "scope": f"brain:{conv_id}",
+                        "mtime": float(st.st_mtime), "signed_url": thumb_url,
                     })
                 if item.name.upper() == "INDEX.MD":
                     try:
-                        index_md_content = item.read_text(encoding="utf-8", errors="replace")[:4000]
+                        index_md_content = res_item.read_text(encoding="utf-8", errors="replace")[:4000]
                     except Exception:
                         pass
             non_index_count = len([f for f in files_meta if f["name"].upper() != "INDEX.MD"])
             app_prompt = f"Evaluate the {non_index_count} uploaded files in ~/.gemini/antigravity/brain/{conv_id}/scratch/{folder_name}/ (see INDEX.md for sequence order)."
+            sd_st = sd_res.stat()
             batches.append({
                 "folder_name": folder_name,
-                "created_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(sd.stat().st_mtime)),
-                "mtime": sd.stat().st_mtime,
-                "total_size": total_size,
-                "file_count": len(files_meta),
-                "files": files_meta,
-                "signed_images": signed_images,
-                "app_prompt": app_prompt,
-                "index_rel_path": f"scratch/{folder_name}/INDEX.md",
-                "index_preview": index_md_content,
+                "created_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(sd_st.st_mtime)),
+                "mtime": sd_st.st_mtime, "total_size": total_size, "file_count": len(files_meta),
+                "files": files_meta, "signed_images": signed_images, "app_prompt": app_prompt,
+                "index_rel_path": f"scratch/{folder_name}/INDEX.md", "index_preview": index_md_content,
             })
     except Exception:
         pass
@@ -179,37 +237,29 @@ def scan_session_artifacts(conv_id: str) -> list[dict[str, Any]]:
     if not conv_id or not validate_conv_id(conv_id):
         return []
     b_dir = AGY_BRAIN_DIR / conv_id
-    if not b_dir.is_dir():
+    if not b_dir.is_dir() or b_dir.is_symlink():
         return []
+    b_res = b_dir.resolve()
 
     artifacts: list[dict[str, Any]] = []
     try:
-        # Check root of brain/<id>
-        for item in b_dir.iterdir():
-            if item.is_file() and item.suffix.lower() == ".md" and not is_sensitive_filename(item.name):
-                sz = item.stat().st_size
-                mtime = item.stat().st_mtime
-                artifacts.append({
-                    "name": item.name,
-                    "rel_path": item.name,
-                    "size": sz,
-                    "mtime": mtime,
-                    "type": "artifact",
-                })
-        # Check scratch/*.md
+        scan_dirs: list[tuple[Path, str]] = [(b_res, "")]
         scratch_dir = b_dir / "scratch"
-        if scratch_dir.is_dir():
-            for item in scratch_dir.iterdir():
-                if item.is_file() and item.suffix.lower() == ".md" and not is_sensitive_filename(item.name):
-                    sz = item.stat().st_size
-                    mtime = item.stat().st_mtime
-                    artifacts.append({
-                        "name": f"scratch/{item.name}",
-                        "rel_path": f"scratch/{item.name}",
-                        "size": sz,
-                        "mtime": mtime,
-                        "type": "handoff" if "handoff" in item.name.lower() else "scratch",
-                    })
+        if scratch_dir.is_dir() and not scratch_dir.is_symlink():
+            s_res = scratch_dir.resolve()
+            if s_res.is_relative_to(b_res):
+                scan_dirs.append((s_res, "scratch/"))
+        for folder_res, prefix in scan_dirs:
+            for item in folder_res.iterdir():
+                if item.is_symlink() or not item.is_file() or item.suffix.lower() != ".md":
+                    continue
+                res_item = item.resolve()
+                if res_item == folder_res or not res_item.is_relative_to(folder_res) or is_sensitive_filename(res_item.name):
+                    continue
+                st = res_item.stat()
+                rel_p = f"{prefix}{item.name}"
+                kind = ("handoff" if "handoff" in item.name.lower() else "scratch") if prefix else "artifact"
+                artifacts.append({"name": rel_p, "rel_path": rel_p, "size": st.st_size, "mtime": st.st_mtime, "type": kind})
     except Exception:
         pass
     artifacts.sort(key=lambda a: a["mtime"], reverse=True)
@@ -232,6 +282,7 @@ def build_workspace_tree_payload() -> dict[str, Any]:
         "tickets": all_tickets[:40],
     }
 
+    uncommitted_cache: dict[str, bool] = {}
     projects_out: list[dict[str, Any]] = []
     for proj in tree_bundle.get("projects") or []:
         p_name = str(proj.get("project_name") or "Workspace")
@@ -245,11 +296,15 @@ def build_workspace_tree_payload() -> dict[str, Any]:
             title = str(s.get("title") or cid[:8])
             uploads = scan_session_uploads(cid)
             artifacts = scan_session_artifacts(cid)
+            ws_s = str(s.get("workspace_path") or "")
+            if ws_s not in uncommitted_cache:
+                uncommitted_cache[ws_s] = check_uncommitted_work(ws_s)
             posture = evaluate_rollover_posture(
                 cid,
-                ws_path=str(s.get("workspace_path") or ""),
+                ws_path=ws_s,
                 brain_dir=AGY_BRAIN_DIR,
                 step_count=int(s.get("step_count") or 0),
+                has_uncommitted_work=uncommitted_cache[ws_s],
             )
             sessions_out.append({
                 "conversation_id": cid,
@@ -259,7 +314,9 @@ def build_workspace_tree_payload() -> dict[str, Any]:
                 "is_pinned": bool(s.get("is_pinned")),
                 "step_count": int(s.get("step_count") or 0),
                 "relative_age": str(s.get("relative_age") or ""),
+                "last_updated_ts": float(s.get("last_updated_ts") or 0.0),
                 "rollover_posture": posture.get("posture", "FRESH"),
+                "capture_count": count_brain_visual_captures(cid, ALLOWED_MEDIA_EXTENSIONS, AGY_BRAIN_DIR),
                 "upload_batches": uploads,
                 "artifacts": artifacts,
             })
@@ -267,6 +324,7 @@ def build_workspace_tree_payload() -> dict[str, Any]:
         projects_out.append({
             "project_id": p_id,
             "project_name": p_name,
+            "last_updated_ts": float(proj.get("last_updated_ts") or 0.0),
             "staged_count": int(proj.get("staged_count") or 0),
             "in_work_count": int(proj.get("in_work_handoff_count") or 0),
             "completed_count": int(proj.get("completed_count") or 0),
@@ -282,56 +340,38 @@ def build_workspace_tree_payload() -> dict[str, Any]:
     }
 
 
+def _format_bucket_visual(v: dict[str, Any]) -> dict[str, Any]:
+    item_vis: dict[str, Any] = {
+        "name": v.get("name") or "image",
+        "scope": v.get("scope") or "",
+        "rel_path": v.get("rel_path") or "",
+        "category": v.get("category") or "session",
+        "signed_url": v.get("signed_url") or "",
+        "size": v.get("bytes") or v.get("size") or 0,
+        "mtime": v.get("mtime") or 0,
+    }
+    if v.get("workspace_url"):
+        item_vis["workspace_url"] = v["workspace_url"]
+    return item_vis
+
+
 def get_session_bucket_payload(conv_id: str) -> dict[str, Any]:
-    """Assemble session bucket data (uploads, artifacts, visual thumbnails, rollover posture)."""
+    """Assemble session bucket data (uploads, artifacts, session captures vs shared repo assets, rollover)."""
     if not conv_id or not validate_conv_id(conv_id):
         return {"ok": False, "error": "Missing or invalid conversation_id"}
 
-    ws_map = SESSION_STATE.get("session_workspace_map") or {}
-    ws_path = str(ws_map.get(conv_id) or SESSION_STATE.get("selected_workspace") or "")
-    pname_map = SESSION_STATE.get("session_project_name_map") or {}
-    project_name = str(pname_map.get(conv_id) or "")
-    if not project_name and AGY_DB_FILE.is_file():
-        try:
-            with sqlite3.connect(str(AGY_DB_FILE), timeout=3) as conn:
-                row = conn.execute("SELECT project_name, workspace_uris FROM conversations WHERE conversation_id = ? LIMIT 1", (conv_id,)).fetchone()
-                if row:
-                    if row[0]:
-                        project_name = str(row[0])
-                    if not ws_path and row[1]:
-                        try:
-                            uris = json.loads(row[1])
-                            if uris:
-                                ws_path = str(uris[0])
-                        except Exception:
-                            pass
-        except Exception:
-            pass
-    if not project_name and ws_path:
-        project_name = Path(ws_path).name
-    project_name = project_name or "Workspace"
+    ws_path, project_name, title = _resolve_session_workspace_info(conv_id)
     repo_slug = Path(ws_path).name if ws_path else project_name.lower().replace(" ", "-")
 
     uploads = scan_session_uploads(conv_id)
     artifacts = scan_session_artifacts(conv_id)
-    visual_raw = discover_visual_artifacts(conv_id, workspace_path=ws_path, limit=20, relative=True)
-    visual_items = []
-    for v in visual_raw:
-        item_vis = {
-            "name": v.get("name") or "image",
-            "rel_path": v.get("rel_path") or "",
-            "signed_url": v.get("signed_url") or "",
-            "size": v.get("bytes") or v.get("size") or 0,
-            "mtime": v.get("mtime") or 0,
-        }
-        if v.get("workspace_url"):
-            item_vis["workspace_url"] = v["workspace_url"]
-        visual_items.append(item_vis)
+    session_raw, repo_raw = discover_visual_buckets(
+        conv_id, workspace_path=ws_path, session_limit=40, repo_limit=30, relative=True, db_file=AGY_DB_FILE,
+    )
+    visual_items = [_format_bucket_visual(v) for v in session_raw]
+    repo_visual_items = [_format_bucket_visual(v) for v in repo_raw[:30]]
 
     posture = evaluate_rollover_posture(conv_id, ws_path=ws_path, brain_dir=AGY_BRAIN_DIR)
-    title_map = SESSION_STATE.get("session_title_map") or {}
-    title = str(title_map.get(conv_id) or conv_id[:8])
-
     return {
         "ok": True,
         "conversation_id": conv_id,
@@ -342,6 +382,7 @@ def get_session_bucket_payload(conv_id: str) -> dict[str, Any]:
         "uploads": uploads,
         "artifacts": artifacts,
         "visual_artifacts": visual_items,
+        "repo_visual_assets": repo_visual_items,
         "rollover": posture,
     }
 
@@ -350,49 +391,24 @@ def build_session_zip(
     conv_id: str,
     requested_files: list[str] | None = None,
     brain_dir: Path | None = None,
+    ws_path: str = "",
 ) -> tuple[int, bytes, str]:
-    """Build in-memory zipfile of requested visual files inside brain/<conv_id>/."""
-    if not conv_id or not validate_conv_id(conv_id):
-        return 400, b'{"ok":false,"error":"Invalid conversation_id"}', "application/json"
-    target_brain = ((brain_dir or AGY_BRAIN_DIR) / conv_id).resolve()
-    if not target_brain.is_dir():
-        return 404, b'{"ok":false,"error":"Session brain not found"}', "application/json"
+    """Delegate session ZIP assembly while binding module-level AGY_BRAIN_DIR and SQLite resolver."""
+    return _bz_build_session_zip(
+        conv_id,
+        requested_files=requested_files,
+        brain_dir=brain_dir,
+        ws_path=ws_path,
+        ws_resolver=_resolve_session_workspace_info,
+        default_brain_dir=AGY_BRAIN_DIR,
+    )
 
-    files_to_add: list[tuple[Path, str]] = []
-    if requested_files is not None:
-        for f in requested_files:
-            raw_f = str(f).strip()
-            if raw_f.startswith(("/", "\\")) or ".." in Path(raw_f).parts:
-                return 403, b'{"ok":false,"error":"Path traversal rejected"}', "application/json"
-            clean_rel = raw_f.lstrip("/")
-            if not clean_rel or ".." in Path(clean_rel).parts:
-                return 403, b'{"ok":false,"error":"Path traversal rejected"}', "application/json"
-            target = (target_brain / clean_rel).resolve()
-            if target == target_brain or not target.is_relative_to(target_brain):
-                return 403, b'{"ok":false,"error":"Path traversal rejected"}', "application/json"
-            if target.is_file():
-                files_to_add.append((target, target.name))
-    else:
-        for sub in ("scratch", ".user_uploaded"):
-            sdir = target_brain / sub
-            if sdir.is_dir():
-                for p in sdir.rglob("*"):
-                    if p.is_file() and p.suffix.lower() in ALLOWED_MEDIA_EXTENSIONS:
-                        files_to_add.append((p, p.name))
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for fpath, arcname in files_to_add:
-            try:
-                zf.write(fpath, arcname=arcname)
-            except Exception:
-                pass
-    buf.seek(0)
-    return 200, buf.getvalue(), "application/zip"
+MAX_DOC_BYTES = 10 * 1024 * 1024
 
 
 def get_session_file_payload(conv_id: str, rel_path: str) -> tuple[int, dict[str, Any]]:
-    """Safely fetch file content with path traversal guard and media link rewriting."""
+    """Safely fetch file content with path traversal guard, 10 MB cap, and media link rewriting."""
     if not conv_id or not validate_conv_id(conv_id) or not rel_path:
         return 400, {"ok": False, "error": "Missing or invalid conversation_id or rel_path"}
 
@@ -401,45 +417,46 @@ def get_session_file_payload(conv_id: str, rel_path: str) -> tuple[int, dict[str
         return 403, {"ok": False, "error": "Path traversal or sensitive file rejected"}
 
     brain_dir = (AGY_BRAIN_DIR / conv_id).resolve()
-    target = (brain_dir / clean_rel).resolve()
+    raw_brain = brain_dir / clean_rel
+    if raw_brain.is_symlink():
+        return 403, {"ok": False, "error": "Symlink rejected"}
+    target = raw_brain.resolve()
     if target == brain_dir or not target.is_relative_to(brain_dir) or not target.is_file():
-        # Check if staged handoffs queue file
         if clean_rel.startswith("staged_handoffs/"):
-            stg_file = (AGY_BG_DIR / clean_rel).resolve()
-            if stg_file.is_file() and stg_file.is_relative_to(AGY_BG_DIR.resolve()):
+            staged_root = (AGY_BG_DIR / "staged_handoffs").resolve()
+            raw_stg = AGY_BG_DIR / clean_rel
+            if raw_stg.is_symlink():
+                return 403, {"ok": False, "error": "Symlink rejected"}
+            stg_file = raw_stg.resolve()
+            if stg_file != staged_root and stg_file.is_relative_to(staged_root) and stg_file.is_file():
                 target = stg_file
             else:
                 return 404, {"ok": False, "error": "File not found"}
         else:
             return 404, {"ok": False, "error": "File not found"}
 
+    if target.is_symlink() or is_sensitive_filename(target.name):
+        return 403, {"ok": False, "error": "Sensitive or symlink file rejected"}
+
     try:
+        st = target.stat()
+        if st.st_size > MAX_DOC_BYTES:
+            return 413, {"ok": False, "error": "File exceeds 10 MB preview limit"}
         raw_text = target.read_text(encoding="utf-8", errors="replace")
     except Exception as e:
         return 500, {"ok": False, "error": f"Failed reading file: {e}"}
 
-    ws_map = SESSION_STATE.get("session_workspace_map") or {}
-    ws_path = str(ws_map.get(conv_id) or "")
+    ws_path, _, _ = _resolve_session_workspace_info(conv_id)
     rewritten_text = rewrite_markdown_media_links(raw_text, conv_id, ws_path=ws_path)
-
     return 200, {
         "ok": True,
         "conversation_id": conv_id,
         "rel_path": clean_rel,
         "content": rewritten_text,
         "raw_content": raw_text,
-        "size": target.stat().st_size,
-        "mtime": target.stat().st_mtime,
+        "size": st.st_size,
+        "mtime": st.st_mtime,
     }
-
-
-async def _send_json(send: Any, status: int, data: dict[str, Any], extra_headers: list[tuple[bytes, bytes]] | None = None) -> None:
-    body_b = json.dumps(data).encode("utf-8")
-    hdrs = [(b"content-type", b"application/json"), (b"content-length", str(len(body_b)).encode("ascii")), (b"cache-control", b"no-cache")]
-    if extra_headers:
-        hdrs.extend(extra_headers)
-    await send({"type": "http.response.start", "status": status, "headers": hdrs})
-    await send({"type": "http.response.body", "body": body_b})
 
 
 async def handle_bucket_api_request(
@@ -452,7 +469,6 @@ async def handle_bucket_api_request(
     raw_qs: str = "",
 ) -> None:
     """ASGI handler for /web/api/workspace/tree, /web/api/sessions/{id}/bucket, and file access."""
-    # Authenticate via X-Nexus-Passphrase
     supplied_pass = ""
     for hk, hv in headers:
         if hk.lower() == b"x-nexus-passphrase":
@@ -463,86 +479,35 @@ async def handle_bucket_api_request(
         await _send_json(send, 401, {"ok": False, "error": "Invalid spoken deadbolt passphrase."}, [(b"cache-control", b"no-store")])
         return
 
-    # Route 1: Workspace Tree
     if req_path.endswith("/web/api/workspace/tree") or req_path.endswith("/api/workspace/tree"):
-        await _send_json(send, 200, build_workspace_tree_payload())
+        await _send_json(send, 200, await anyio.to_thread.run_sync(build_workspace_tree_payload))
         return
 
-    # Route 2: Session Bucket
-    m_bucket = re.search(r"/api/sessions/([^/]+)/bucket$", req_path)
-    if m_bucket:
-        cid = m_bucket.group(1).strip()
+    for pattern, kind in (
+        (r"/api/sessions/([^/]+)/bucket$", "bucket"),
+        (r"/api/sessions/([^/]+)/file$", "file"),
+        (r"/api/sessions/([^/]+)/download-zip$", "zip"),
+    ):
+        m_route = re.search(pattern, req_path)
+        if not m_route:
+            continue
+        cid = m_route.group(1).strip()
         if not validate_conv_id(cid):
             await _send_json(send, 400, {"ok": False, "error": "Invalid conversation_id"})
             return
-        await _send_json(send, 200, get_session_bucket_payload(cid))
+        if kind == "bucket":
+            await _send_json(send, 200, await anyio.to_thread.run_sync(get_session_bucket_payload, cid))
+        elif kind == "file":
+            rel_path = ""
+            for kv in raw_qs.split("&"):
+                if kv.startswith("path="):
+                    rel_path = urllib.parse.unquote(kv.split("=", 1)[1].strip())
+            status_code, payload = await anyio.to_thread.run_sync(get_session_file_payload, cid, rel_path)
+            await _send_json(send, status_code, payload)
+        else:
+            ws_path, _, _ = await anyio.to_thread.run_sync(_resolve_session_workspace_info, cid)
+            await _handle_download_zip(receive, send, cid, ws_path=ws_path, brain_dir=AGY_BRAIN_DIR)
         return
 
-    # Route 3: Session File
-    m_file = re.search(r"/api/sessions/([^/]+)/file$", req_path)
-    if m_file:
-        cid = m_file.group(1).strip()
-        if not validate_conv_id(cid):
-            await _send_json(send, 400, {"ok": False, "error": "Invalid conversation_id"})
-            return
-        rel_path = ""
-        for kv in raw_qs.split("&"):
-            if kv.startswith("path="):
-                rel_path = urllib.parse.unquote(kv.split("=", 1)[1].strip())
-        status_code, payload = get_session_file_payload(cid, rel_path)
-        await _send_json(send, status_code, payload)
-        return
-
-    # Route 4: Download ZIP
-    m_zip = re.search(r"/api/sessions/([^/]+)/download-zip$", req_path)
-    if m_zip:
-        cid = m_zip.group(1).strip()
-        if not validate_conv_id(cid):
-            await _send_json(send, 400, {"ok": False, "error": "Invalid conversation_id"})
-            return
-
-        body_bytes = b""
-        more_body = True
-        while more_body:
-            message = await receive()
-            body_bytes += message.get("body", b"")
-            more_body = message.get("more_body", False)
-
-        requested_files = None
-        if body_bytes:
-            try:
-                b_json = json.loads(body_bytes.decode("utf-8", errors="replace"))
-                if isinstance(b_json, dict) and "files" in b_json:
-                    requested_files = b_json["files"]
-                elif isinstance(b_json, list):
-                    requested_files = b_json
-            except Exception:
-                pass
-
-        status_code, payload_b, ctype = build_session_zip(cid, requested_files)
-        ws_map = SESSION_STATE.get("session_workspace_map") or {}
-        ws_path = str(ws_map.get(cid) or "")
-        repo_slug = Path(ws_path).name if ws_path else "session"
-        n_count = len(requested_files) if requested_files is not None else 1
-        zip_name = f"captures_{repo_slug}_{n_count}.zip"
-
-        headers_out = [
-            (b"content-type", ctype.encode("ascii")),
-            (b"content-length", str(len(payload_b)).encode("ascii")),
-            (b"cache-control", b"no-cache"),
-        ]
-        if status_code == 200 and ctype == "application/zip":
-            headers_out.append((b"content-disposition", f'attachment; filename="{zip_name}"'.encode("ascii")))
-
-        await send({"type": "http.response.start", "status": status_code, "headers": headers_out})
-        await send({"type": "http.response.body", "body": payload_b})
-        return
-
-    # Fallback 404
-    nf_b = b'{"ok":false,"error":"Endpoint not found"}'
-    await send({
-        "type": "http.response.start", "status": 404,
-        "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(nf_b)).encode("ascii"))],
-    })
-    await send({"type": "http.response.body", "body": nf_b})
+    await _send_json(send, 404, {"ok": False, "error": "Endpoint not found"})
 

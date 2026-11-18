@@ -21,7 +21,12 @@ from agy_nexus.config import (
     get_antigravity_config_repo,
     get_workspace_pillar_roots,
 )
+from agy_nexus.media_discovery import parse_iso_epoch
 from agy_nexus.stats import extract_pending_approval
+from agy_nexus.uploads import validate_conv_id
+
+
+_parse_iso_ts = parse_iso_epoch
 
 NEXUS_TITLE_KEYWORDS: tuple[str, ...] = (
     "agy-nexus",
@@ -200,41 +205,134 @@ def _matches_status_filter(sf: str, live_status: str) -> bool:
     return sf in live_status
 
 
+def _safe_mtime(path: Path) -> float:
+    """Return file/dir mtime as UTC epoch seconds, or 0.0 if missing/unreadable."""
+    try:
+        return float(path.stat().st_mtime) if path.exists() else 0.0
+    except OSError:
+        return 0.0
+
+
+def _safe_conv_subdir(base_dir: Path, conv_id: str) -> Path | None:
+    """Return validated non-symlink session subdirectory inside base_dir, or None on invalid/escaping conv_id."""
+    if not validate_conv_id(conv_id):
+        return None
+    try:
+        root_res = base_dir.resolve()
+        cand = base_dir / conv_id.strip()
+        if cand.is_symlink() or not cand.resolve().is_relative_to(root_res):
+            return None
+        return cand
+    except OSError:
+        return None
+
+
+def _compute_session_activity_ts(conv_id: str, db_iso: str = "") -> tuple[float, str, Path]:
+    """Compute effective_ts = max(db_ts, transcript_mtime, task_md_mtime, brain_dir_mtime) and normalized ISO string."""
+    db_ts = _parse_iso_ts(db_iso)
+    sess_dir = _safe_conv_subdir(cfg.AGY_BRAIN_DIR, conv_id)
+    if sess_dir is None:
+        return db_ts, db_iso, cfg.AGY_BRAIN_DIR / "__invalid_conv__"
+    logs_dir = sess_dir / ".system_generated" / "logs"
+    t_full = logs_dir / "transcript_full.jsonl"
+    t_comp = logs_dir / "transcript.jsonl"
+    transcript_path = t_full if t_full.is_file() else t_comp
+    effective_ts = max(db_ts, _safe_mtime(sess_dir), _safe_mtime(sess_dir / "task.md"), _safe_mtime(t_full), _safe_mtime(t_comp))
+    eff_iso = datetime.fromtimestamp(effective_ts, tz=timezone.utc).isoformat() if (effective_ts > db_ts and effective_ts > 0.0) else db_iso
+    return effective_ts, eff_iso, transcript_path
+
+
 def _scan_fallback_brain_sessions(limit: int) -> list[dict[str, Any]]:
     """Fallback brain directory scan ONLY if SQLite DB could not be queried."""
-    results: list[dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
     if not cfg.AGY_BRAIN_DIR.is_dir():
-        return results
-    idx_counter = 1
-    for session_dir in sorted(cfg.AGY_BRAIN_DIR.iterdir(), key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True):
-        if not session_dir.is_dir() or session_dir.name.startswith("."):
+        return candidates
+    ws_fallback = str(cfg.AGY_PROJECTS_DIR if cfg.AGY_PROJECTS_DIR.is_dir() else cfg.AGY_GITLAB_DIR)
+    for session_dir in cfg.AGY_BRAIN_DIR.iterdir():
+        if session_dir.is_symlink() or not session_dir.is_dir() or session_dir.name.startswith("."):
             continue
         conv_id = session_dir.name
-        task_path = session_dir / "task.md"
-        task_preview = ""
-        if task_path.is_file():
-            try:
-                task_preview = task_path.read_text(encoding="utf-8", errors="replace")[:200]
-            except Exception:
-                pass
-        idx_str = str(idx_counter)
-        SESSION_STATE["session_index_map"][idx_str] = conv_id
-        results.append({
-            "index": idx_str,
+        sess_dir = _safe_conv_subdir(cfg.AGY_BRAIN_DIR, conv_id)
+        if sess_dir is None:
+            continue
+        eff_ts, eff_iso, _ = _compute_session_activity_ts(conv_id)
+        task_preview, _ = _parse_task_checklist(sess_dir / "task.md")
+        candidates.append({
+            "index": "0",
             "conversation_id": conv_id,
             "title": conv_id,
-            "workspace_path": str(cfg.AGY_PROJECTS_DIR if cfg.AGY_PROJECTS_DIR.is_dir() else cfg.AGY_GITLAB_DIR),
+            "workspace_path": ws_fallback,
             "workspace_uris": [],
             "status": "IDLE",
             "step_count": 0,
-            "last_updated": datetime.fromtimestamp(session_dir.stat().st_mtime, tz=timezone.utc).isoformat(),
+            "last_updated": eff_iso,
+            "last_updated_ts": eff_ts,
             "has_gui_lock": False,
-            "task_preview": task_preview,
+            "task_preview": task_preview[:200] if task_preview else "",
         })
-        idx_counter += 1
-        if len(results) >= limit:
-            break
+    candidates.sort(key=lambda s: float(s.get("last_updated_ts") or 0.0), reverse=True)
+    results = candidates[:limit]
+    for idx_counter, s in enumerate(results, 1):
+        idx_str = str(idx_counter)
+        s["index"] = idx_str
+        SESSION_STATE["session_index_map"][idx_str] = s["conversation_id"]
     return results
+
+
+def _build_session_entry(row: tuple[Any, ...], projects_map: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Assemble one normalized session dict from a SQLite row plus filesystem activity timestamps."""
+    conv_id, title = str(row[0] or "").strip(), str(row[1] or "Untitled Conversation")
+    step_count, last_modified = int(row[3] or 0), str(row[4] or "")
+    raw_uris, db_status = str(row[5] or "[]"), str(row[6] or "")
+    not_fully_idle, killed = bool(row[7]), bool(row[8])
+    project_id = str(row[10] or "")
+    project_name = projects_map.get(project_id, {}).get("name", project_id)
+    workspace_path, workspace_uris_list, clean_uris = "", [], []
+    try:
+        workspace_uris_list = json.loads(raw_uris) if raw_uris else []
+        if workspace_uris_list and isinstance(workspace_uris_list, list):
+            clean_uris = [re.sub(r"^file://", "", str(u)).rstrip("/") for u in workspace_uris_list if u]
+            workspace_path = pick_primary_workspace_uri(clean_uris, title, project_id)
+    except Exception:
+        pass
+    if not workspace_path and project_id in projects_map:
+        p_paths = projects_map[project_id].get("workspace_paths", [])
+        if p_paths:
+            workspace_path = p_paths[0]
+            clean_uris = clean_uris or list(p_paths)
+    SESSION_STATE["session_workspace_map"][conv_id] = workspace_path
+    SESSION_STATE["session_workspace_uris_map"][conv_id] = clean_uris or ([workspace_path] if workspace_path else [])
+    SESSION_STATE["session_project_map"][conv_id] = project_id
+    SESSION_STATE["session_title_map"][conv_id] = title
+
+    eff_ts, eff_iso, transcript_path = _compute_session_activity_ts(conv_id, last_modified)
+    sess_dir = _safe_conv_subdir(cfg.AGY_BRAIN_DIR, conv_id)
+    task_md = (sess_dir / "task.md") if sess_dir is not None else (cfg.AGY_BRAIN_DIR / "__invalid_task__")
+    task_preview, task_counts = _parse_task_checklist(task_md)
+    live_status = _derive_session_live_status(killed, db_status, not_fully_idle, transcript_path, task_counts)
+    lock_path = (cfg.AGY_PRESENCE_DIR / f"{conv_id}.lock") if validate_conv_id(conv_id) else None
+    sess_obj: dict[str, Any] = {
+        "index": "0",
+        "conversation_id": conv_id,
+        "title": title,
+        "project_id": project_id,
+        "project_name": project_name,
+        "workspace_path": workspace_path,
+        "workspace_uris": workspace_uris_list,
+        "status": live_status,
+        "step_count": step_count,
+        "last_updated": eff_iso,
+        "last_updated_ts": eff_ts,
+        "has_gui_lock": bool(lock_path and not lock_path.is_symlink() and lock_path.exists()),
+        "task_preview": task_preview[:200] if task_preview else "No active task checklist",
+    }
+    if step_count > 1500:
+        sess_obj["session_health_warning"] = f"SESSION HEALTH WARNING: step_count={step_count} (>1,500). Consider rotating via create_new_session=True."
+    if live_status in ("STALLED_WAITING_APPROVAL", "RUNNING") and transcript_path.is_file():
+        pending = extract_pending_approval(transcript_path)
+        if pending:
+            sess_obj["pending_approval"] = pending
+    return sess_obj
 
 
 def _list_saved_sessions_internal(
@@ -242,7 +340,7 @@ def _list_saved_sessions_internal(
     status_filter: str = "ALL",
     include_subagents: bool = False,
 ) -> list[dict[str, Any]]:
-    """Scan SQLite conversation_summaries.db and return live sessions."""
+    """Scan SQLite conversation_summaries.db and return live sessions sorted strictly by last_updated_ts descending."""
     results: list[dict[str, Any]] = []
     sf = (status_filter or "ALL").strip().upper()
     is_unfiltered = sf in ("ALL", "")
@@ -252,80 +350,52 @@ def _list_saved_sessions_internal(
     db_queried_ok = False
     if cfg.AGY_DB_FILE.is_file():
         try:
+            sub_flag = 1 if include_subagents else 0
+            cols = (
+                "conversation_id, title, preview, step_count, last_modified_time, "
+                "workspace_uris, status, not_fully_idle, killed, parent_conversation_id, project_id"
+            )
+            parent_cond = "(? = 1 OR parent_conversation_id IS NULL OR parent_conversation_id = '')"
             con = sqlite3.connect(f"file:{cfg.AGY_DB_FILE}?mode=ro", uri=True)
             try:
                 cur = con.cursor()
-                query = """
-                    SELECT conversation_id, title, preview, step_count, last_modified_time,
-                           workspace_uris, status, not_fully_idle, killed, parent_conversation_id, project_id
-                    FROM conversation_summaries
-                    WHERE (? = 1 OR parent_conversation_id IS NULL OR parent_conversation_id = '')
-                    ORDER BY last_modified_time DESC
-                    LIMIT ?
-                """
-                rows = cur.execute(query, (1 if include_subagents else 0, max(limit * 3, 45))).fetchall()
+                rows_recent = cur.execute(
+                    f"SELECT {cols} FROM conversation_summaries WHERE {parent_cond} ORDER BY last_modified_time DESC LIMIT ?",
+                    (sub_flag, max(limit * 4, 200)),
+                ).fetchall()
+                rows_sentinel = cur.execute(
+                    f"SELECT {cols} FROM conversation_summaries WHERE {parent_cond} "
+                    "AND (last_modified_time IS NULL OR last_modified_time = '' OR last_modified_time LIKE '0001-%') "
+                    "ORDER BY rowid DESC LIMIT 200",
+                    (sub_flag,),
+                ).fetchall()
             finally:
                 con.close()
             db_queried_ok = True
-            idx_counter = 1
-            for row in rows:
-                conv_id, title = str(row[0] or ""), str(row[1] or "Untitled Conversation")
-                step_count, last_modified = int(row[3] or 0), str(row[4] or "")
-                raw_uris, db_status = str(row[5] or "[]"), str(row[6] or "")
-                not_fully_idle, killed = bool(row[7]), bool(row[8])
-                project_id = str(row[10] or "")
-                project_name = projects_map.get(project_id, {}).get("name", project_id)
-                workspace_path, workspace_uris_list, clean_uris = "", [], []
-                try:
-                    workspace_uris_list = json.loads(raw_uris) if raw_uris else []
-                    if workspace_uris_list and isinstance(workspace_uris_list, list):
-                        clean_uris = [re.sub(r"^file://", "", str(u)).rstrip("/") for u in workspace_uris_list if u]
-                        workspace_path = pick_primary_workspace_uri(clean_uris, title, project_id)
-                except Exception:
-                    pass
-                if not workspace_path and project_id in projects_map:
-                    p_paths = projects_map[project_id].get("workspace_paths", [])
-                    if p_paths:
-                        workspace_path = p_paths[0]
-                        clean_uris = clean_uris or list(p_paths)
-                SESSION_STATE["session_workspace_map"][conv_id] = workspace_path
-                SESSION_STATE["session_workspace_uris_map"][conv_id] = clean_uris or ([workspace_path] if workspace_path else [])
-                SESSION_STATE["session_project_map"][conv_id] = project_id
-                SESSION_STATE["session_title_map"][conv_id] = title
-                has_gui_lock = (cfg.AGY_PRESENCE_DIR / f"{conv_id}.lock").exists()
-                logs_dir = cfg.AGY_BRAIN_DIR / conv_id / ".system_generated" / "logs"
-                transcript_path = logs_dir / ("transcript_full.jsonl" if (logs_dir / "transcript_full.jsonl").is_file() else "transcript.jsonl")
-                task_preview, task_counts = _parse_task_checklist(cfg.AGY_BRAIN_DIR / conv_id / "task.md")
-                live_status = _derive_session_live_status(killed, db_status, not_fully_idle, transcript_path, task_counts)
-                if not is_unfiltered and not _matches_status_filter(sf, live_status):
+            seen_ids: set[str] = set()
+            scored: list[tuple[float, tuple[Any, ...]]] = []
+            for row in [*rows_recent, *rows_sentinel]:
+                cid = str(row[0] or "").strip()
+                if not validate_conv_id(cid) or cid in seen_ids:
                     continue
-                idx_str = str(idx_counter)
-                if is_unfiltered or idx_str not in SESSION_STATE["session_index_map"]:
-                    SESSION_STATE["session_index_map"][idx_str] = conv_id
-                sess_obj: dict[str, Any] = {
-                    "index": idx_str,
-                    "conversation_id": conv_id,
-                    "title": title,
-                    "project_id": project_id,
-                    "project_name": project_name,
-                    "workspace_path": workspace_path,
-                    "workspace_uris": workspace_uris_list,
-                    "status": live_status,
-                    "step_count": step_count,
-                    "last_updated": last_modified,
-                    "has_gui_lock": has_gui_lock,
-                    "task_preview": task_preview[:200] if task_preview else "No active task checklist",
-                }
-                if step_count > 1500:
-                    sess_obj["session_health_warning"] = f"SESSION HEALTH WARNING: step_count={step_count} (>1,500). Consider rotating via create_new_session=True."
-                if live_status in ("STALLED_WAITING_APPROVAL", "RUNNING"):
-                    pending = extract_pending_approval(transcript_path)
-                    if pending:
-                        sess_obj["pending_approval"] = pending
+                seen_ids.add(cid)
+                eff_ts, _, _ = _compute_session_activity_ts(cid, str(row[4] or ""))
+                scored.append((eff_ts, row))
+            scored.sort(key=lambda pair: pair[0], reverse=True)
+            to_build = scored[:limit] if is_unfiltered else scored
+            for _, row in to_build:
+                sess_obj = _build_session_entry(row, projects_map)
+                if not is_unfiltered and not _matches_status_filter(sf, str(sess_obj.get("status") or "")):
+                    continue
                 results.append(sess_obj)
-                idx_counter += 1
                 if len(results) >= limit:
                     break
+            results.sort(key=lambda s: float(s.get("last_updated_ts") or 0.0), reverse=True)
+            for idx_counter, sess_obj in enumerate(results, 1):
+                idx_str = str(idx_counter)
+                sess_obj["index"] = idx_str
+                if is_unfiltered or idx_str not in SESSION_STATE["session_index_map"]:
+                    SESSION_STATE["session_index_map"][idx_str] = sess_obj["conversation_id"]
         except Exception as e:
             results.append({"error": f"Failed to query conversation_summaries.db: {e}"})
     if not db_queried_ok and not results:

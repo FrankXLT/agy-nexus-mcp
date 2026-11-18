@@ -28,8 +28,8 @@ from agy_nexus.tools_workspace import _resolve_pinned_context, inspect_git_diff
 
 
 def test_v290_version_bump() -> None:
-    """Verify version is bumped to 3.2.1."""
-    assert agy_nexus.__version__ == "3.2.1"
+    """Verify version is bumped to 3.2.2."""
+    assert agy_nexus.__version__ == "3.2.2"
 
 
 def test_fastmcp_instructions_sequential_governance() -> None:

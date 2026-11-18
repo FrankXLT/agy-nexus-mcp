@@ -4,6 +4,31 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.2] — 2026-11-18
+
+### Added
+- **GitHub Community Standards & Documentation Sync (`CODE_OF_CONDUCT.md`, `ACCESSIBILITY.md`, `.github/ISSUE_TEMPLATE/`, `.github/PULL_REQUEST_TEMPLATE.md`, `README.md`, `AGENTS.md`, `CONTRIBUTING.md`)**:
+  - Added Contributor Covenant `CODE_OF_CONDUCT.md`, comprehensive `ACCESSIBILITY.md`, YAML Issue Forms (`bug_report.yml`, `feature_request.yml`, `config.yml`), and `PULL_REQUEST_TEMPLATE.md` (`100%` GitHub Community Profile compliance), packaged in `pyproject.toml`, and refreshed `README.md`, `AGENTS.md`, `CONTRIBUTING.md`, and high-DPI `?demo=1` Workspace screenshots in `docs/assets/` to `v3.2.2`.
+
+### Fixed
+- **Strict Most-Recent-First Project & Session Ordering (`src/agy_nexus/sessions.py`, `src/agy_nexus/session_tree.py`, `src/agy_nexus/bucket_api.py`, `src/agy_nexus/media_discovery.py`, `web/explorer.js`, `web/workspace.css`)**:
+  - Normalized >6-digit ISO fractional seconds in `parse_iso_epoch` (`media_discovery.py`) for Python 3.12 compatibility and computed unified `last_updated_ts = max(db_ts, transcript_mtime, task_md_mtime, brain_dir_mtime)` in `sessions.py` alongside a dedicated sentinel query so brand-new `"0001-01-01..."` SQLite rows are never dropped behind `LIMIT`.
+  - Sorted sessions strictly descending by `last_updated_ts` (`is_running` tie-breaker only; `is_pinned` kept visual) and sorted projects strictly descending by newest session or active `STAGED`/`IN_WORK` handoff timestamp in `session_tree.py` and `bucket_api.py`.
+  - Updated `web/explorer.js` to display compact `.tree-age-pill` recency badges and auto-select `projects[0].sessions[0]` whenever `selected_session` is empty, missing, or older than the newest active session (preserving explicit `?session=` deep-links).
+- **7-Day Media Link Docstrings (`src/agy_nexus/media.py`, `src/agy_nexus/tools_media.py`, `src/agy_nexus/tools_session.py`, `docs/WORKFLOWS.md`)**:
+  - Updated stale `"30-min"` / `"30-minute"` media-link docstrings on `load_session_into_gemini`, `inspect_visual_artifacts`, and `sign_media_url` to accurately describe **7-day (`604,800s`) HMAC-signed `/web/media/` HTTPS links**, keeping the 30-minute passphrase deadbolt window distinct.
+- **Session-Isolated SQLite Workspace Resolution, Markdown Rewriting & Repo-Aware ZIP Downloads (`src/agy_nexus/bucket_api.py`, `src/agy_nexus/tools_media.py`, `web/`)**:
+  - Added `_resolve_session_workspace_info(conv_id)` querying SQLite `conversation_summaries` (`title`, `project_id`, `workspace_uris`) and `pick_primary_workspace_uri()` instead of the nonexistent `conversations` table or borrowing another session's `SESSION_STATE["selected_workspace"]`.
+  - Updated `get_session_bucket_payload` (cap raised to `30`, returning `"scope"` and numeric `"mtime"`), `get_session_file_payload` (resolving `ws_path` from SQLite so Markdown previews rewrite both `file://` and relative repository image links), and `build_session_zip` / `/download-zip` (safely bundling both `brain:<conv_id>/` and validated `repo:<slug>/` screenshots while blocking traversal with `403` and deduplicating ZIP member names).
+  - Split `handle_bucket_api_request` into helper handlers so every function stays well under `100` lines.
+  - Scoped multi-select gallery keys (`scope/rel_path`) in `web/gallery_select.js` / `web/explorer.js`, added `scope` deep-link support and auth-overlay workspace guards in `web/app.js` / `web/charts.js`.
+- **Expanded Workspace & Brain Screenshot Discovery (`src/agy_nexus/media.py`, `src/agy_nexus/media_discovery.py`, `src/agy_nexus/bucket_api.py`, `src/agy_nexus/bucket_zip.py`)**:
+  - Upgraded `discover_visual_artifacts(limit=30, cap=40)` and added `discover_visual_buckets()` with `"category": "session" | "repo_asset"` ownership windowing so `Session Captures` shows only `brain/<conv_id>/` and active/in-window uncommitted repo captures, moving static `docs/assets/*` into a collapsed `Shared Repo Assets (M)` drawer and exposing fast `capture_count` badges in the left tree.
+  - Extracted ZIP archival into `src/agy_nexus/bucket_zip.py` and discovery helpers into `src/agy_nexus/media_discovery.py` so every backend module remains comfortably under `500` lines.
+- **Press-and-Glide Gallery Selection, 2/4/8 High-Res Sheets & Workspace UI Cleanups (`web/`)**:
+  - Removed the broken `⬚ Drag-Select` toggle and replaced `15×15px` checkboxes with `40×40px` (`44×44px` touch) corner tap zones displaying `1, 2, 3...` selection badges, 260ms touch press-and-glide sweep selection + desktop mouse click-drag in-place (`syncGalleryDomState`), zero layout-shift sticky `.gallery-toolbar`, uncropped `16:10` `object-fit: contain` thumbnails with `WxH` dimension badges, and 2-line tail-preserving filenames.
+  - Added `web/sheet_builder.js` (`2 / 4 / 8` per sheet persisted in `localStorage`, aspect-aware `MAX_EDGE=3072` canvas layout engine with direct sequential individual PNG export for `⬇ Sheets (K)` and `⬇ PNGs (N)` alongside optional `⬇ ZIP (N)` / modal `⬇ Sheets ZIP`, plus 10-file Gemini Web Share batching and preview modal), Lightbox `‹ Prev` / `Next ›` / swipe / `✓ Select` controls (`web/gallery_view.js`), and collapsible `+ Upload / Paste` header toggle + hidden empty `Uploads (0)` tree blocks (`web/explorer.js`, `web/workspace.css`).
+
 ## [3.2.1] — 2026-11-16
 
 ### Fixed

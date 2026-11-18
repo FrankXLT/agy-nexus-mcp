@@ -17,28 +17,26 @@ import agy_nexus.config as cfg
 from agy_nexus.config import AGY_GITLAB_DIR, AGY_PROJECTS_DIR, SESSION_STATE
 from agy_nexus.handoff_queue import list_handoff_tickets, slugify_token
 from agy_nexus.hygiene import TTL_SECONDS
+from agy_nexus.media_discovery import parse_iso_epoch
 from agy_nexus.sessions import _list_saved_sessions_internal, _load_projects_map
 from agy_nexus.telemetry_scanner import normalize_workspace_name
 
 
-def _format_relative_age(iso_str: str) -> str:
-    """Convert ISO-8601 timestamp string into compact relative age (e.g. '4m ago', '2h ago', '3d ago')."""
-    if not iso_str:
+def _format_relative_age(iso_str: str, ts: float = 0.0) -> str:
+    """Convert ISO-8601 timestamp or epoch seconds into compact relative age (e.g. '4m ago', '2h ago', '3d ago')."""
+    eff_ts = float(ts or 0.0)
+    if eff_ts <= 0.0:
+        eff_ts = parse_iso_epoch(iso_str)
+    if eff_ts <= 0.0:
         return "recent"
-    try:
-        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        diff_s = max(0, int((datetime.now(timezone.utc) - dt).total_seconds()))
-        if diff_s < 60:
-            return f"{diff_s}s ago"
-        if diff_s < 3600:
-            return f"{diff_s // 60}m ago"
-        if diff_s < 86400:
-            return f"{diff_s // 3600}h ago"
-        return f"{diff_s // 86400}d ago"
-    except Exception:
-        return iso_str[:10]
+    diff_s = max(0, int(time.time() - eff_ts))
+    if diff_s < 60:
+        return f"{diff_s}s ago"
+    if diff_s < 3600:
+        return f"{diff_s // 60}m ago"
+    if diff_s < 86400:
+        return f"{diff_s // 3600}h ago"
+    return f"{diff_s // 86400}d ago"
 
 
 def read_backup_321_manifest(bg_dir: Path | None = None) -> dict[str, Any]:
@@ -172,7 +170,45 @@ def _attach_handoffs_to_groups(
             "execution_mode": str(t.get("execution_mode") or "plan"), "handoff_mode": str(t.get("handoff_mode") or "intent"),
             "chars_written": int(t.get("chars_written") or 0), "superseded_by": str(t.get("superseded_by") or ""),
             "relative_age": str(t.get("relative_age") or ""), "updated_at": str(t.get("updated_at") or ""),
+            "updated_ts": parse_iso_epoch(str(t.get("updated_at") or t.get("created_at") or "")),
         })
+
+
+def _sort_and_index_tree_groups(grouped: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Sort sessions inside every project and project groups strictly by most recent activity descending."""
+    projects_list = list(grouped.values())
+    for pg in projects_list:
+        pg["sessions"].sort(
+            key=lambda s: (
+                -float(s.get("last_updated_ts") or 0.0),
+                not bool(s.get("is_running")),
+                int(s.get("index") or 999),
+            )
+        )
+        sess_max = max((float(s.get("last_updated_ts") or 0.0) for s in pg["sessions"]), default=0.0)
+        active_handoff_ts = max(
+            (float(h.get("updated_ts") or 0.0) for h in pg.get("staged_handoffs") or [] if h.get("status") in ("STAGED", "IN_WORK")),
+            default=0.0,
+        )
+        pg["_closed_handoff_ts"] = max(
+            (float(h.get("updated_ts") or 0.0) for h in pg.get("staged_handoffs") or [] if h.get("status") not in ("STAGED", "IN_WORK")),
+            default=0.0,
+        )
+        pg["last_updated_ts"] = max(sess_max, active_handoff_ts)
+
+    projects_list.sort(
+        key=lambda p: (
+            -float(p.get("last_updated_ts") or 0.0),
+            -(int(p.get("staged_count") or 0) + int(p.get("in_work_handoff_count") or 0)),
+            -int(p.get("running_count") or 0),
+            -float(p.get("_closed_handoff_ts") or 0.0),
+            str(p.get("project_name") or "").lower(),
+        )
+    )
+    for idx_p, pg in enumerate(projects_list, 1):
+        pg.pop("_closed_handoff_ts", None)
+        pg["project_index"] = idx_p
+    return projects_list
 
 
 def build_project_session_tree(
@@ -235,28 +271,20 @@ def build_project_session_tree(
             p_group["shared_repo"] = True
         p_group["running_count"] += int(is_running)
         p_group["pinned_count"] += int(is_pinned)
+        last_iso = str(s.get("last_updated") or "")
+        last_ts = float(s.get("last_updated_ts") or 0.0) or parse_iso_epoch(last_iso)
         p_group["sessions"].append({
             "index": str(s.get("index") or ""), "conversation_id": cid, "title": title, "project_id": pid, "project_name": pname,
             "workspace_path": wpath, "workspace_short": Path(wpath).name if wpath else "unassigned",
             "status": st, "is_running": is_running, "is_pinned": is_pinned, "status_badge": status_badge, "mode": mode,
             "shared_repo": ws_session_counts.get(wpath, 0) >= 2, "step_count": int(s.get("step_count") or 0),
-            "last_updated": str(s.get("last_updated") or ""), "relative_age": _format_relative_age(str(s.get("last_updated") or "")),
+            "last_updated": last_iso, "last_updated_ts": last_ts,
+            "relative_age": _format_relative_age(last_iso, ts=last_ts),
             "task_preview": str(s.get("task_preview") or ""),
         })
 
     _attach_handoffs_to_groups(grouped, projects_map, eff_bg, active_only, pf_clean)
-
-    projects_list = list(grouped.values())
-    for pg in projects_list:
-        pg["sessions"].sort(key=lambda s: (not s.get("is_running"), not s.get("is_pinned"), int(s.get("index") or 999)))
-    projects_list.sort(
-        key=lambda p: (
-            -(int(p.get("running_count") or 0) * 10 + int(p.get("staged_count") or 0) * 6 + int(p.get("in_work_handoff_count") or 0) * 4 + int(p.get("pinned_count") or 0)),
-            -sum(int(s.get("step_count") or 0) for s in p.get("sessions", [])),
-        )
-    )
-    for idx_p, pg in enumerate(projects_list, 1):
-        pg["project_index"] = idx_p
+    projects_list = _sort_and_index_tree_groups(grouped)
 
     routing = get_routing_telemetry()
     backup_info = read_backup_321_manifest(eff_bg)

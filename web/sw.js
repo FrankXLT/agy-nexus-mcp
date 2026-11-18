@@ -1,25 +1,28 @@
-const CACHE_NAME = "agy-nexus-overwatch-v3.2.1";
+const CACHE_NAME = "agy-nexus-overwatch-v3.2.2-b3";
 const SHELL_ASSETS = [
   "/web",
-  "/web/styles.css?v=3.2.1",
-  "/web/palettes.js?v=3.2.1",
-  "/web/charts.js?v=3.2.1",
-  "/web/demo_data.js?v=3.2.1",
-  "/web/hierarchy.js?v=3.2.1",
-  "/web/uploads.js?v=3.2.1",
-  "/web/health.js?v=3.2.1",
-  "/web/markdown_renderer.js?v=3.2.1",
-  "/web/gallery_select.js?v=3.2.1",
-  "/web/explorer.js?v=3.2.1",
-  "/web/app.js?v=3.2.1",
+  "/web/styles.css?v=3.2.2",
+  "/web/workspace.css?v=3.2.2c",
+  "/web/palettes.js?v=3.2.2",
+  "/web/charts.js?v=3.2.2",
+  "/web/demo_data.js?v=3.2.2c",
+  "/web/hierarchy.js?v=3.2.2",
+  "/web/uploads.js?v=3.2.2",
+  "/web/health.js?v=3.2.2",
+  "/web/markdown_renderer.js?v=3.2.2",
+  "/web/gallery_select.js?v=3.2.2b",
+  "/web/sheet_builder.js?v=3.2.2b",
+  "/web/gallery_view.js?v=3.2.2b",
+  "/web/explorer.js?v=3.2.2c",
+  "/web/app.js?v=3.2.2",
   "/web/manifest.webmanifest",
   "/web/icon.svg",
   "/web/icon-192.png",
   "/web/icon-512.png",
 ];
 const SHELL_NAMES = new Set([
-  "styles.css", "palettes.js", "charts.js", "demo_data.js", "hierarchy.js",
-  "uploads.js", "health.js", "markdown_renderer.js", "gallery_select.js", "explorer.js", "app.js",
+  "styles.css", "workspace.css", "palettes.js", "charts.js", "demo_data.js", "hierarchy.js",
+  "uploads.js", "health.js", "markdown_renderer.js", "gallery_select.js", "sheet_builder.js", "gallery_view.js", "explorer.js", "app.js",
   "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png",
 ]);
 

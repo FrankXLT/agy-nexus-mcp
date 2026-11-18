@@ -26,6 +26,7 @@ from agy_nexus.uploads import handle_session_upload_request
 
 PWA_ASSETS: dict[str, bytes] = {
     "styles.css": b"text/css; charset=utf-8",
+    "workspace.css": b"text/css; charset=utf-8",
     "palettes.js": b"application/javascript; charset=utf-8",
     "demo_data.js": b"application/javascript; charset=utf-8",
     "charts.js": b"application/javascript; charset=utf-8",
@@ -35,6 +36,8 @@ PWA_ASSETS: dict[str, bytes] = {
     "uploads.js": b"application/javascript; charset=utf-8",
     "explorer.js": b"application/javascript; charset=utf-8",
     "gallery_select.js": b"application/javascript; charset=utf-8",
+    "gallery_view.js": b"application/javascript; charset=utf-8",
+    "sheet_builder.js": b"application/javascript; charset=utf-8",
     "markdown_renderer.js": b"application/javascript; charset=utf-8",
     "manifest.webmanifest": b"application/manifest+json; charset=utf-8",
     "sw.js": b"application/javascript; charset=utf-8",

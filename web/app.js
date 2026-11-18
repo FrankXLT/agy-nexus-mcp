@@ -356,7 +356,7 @@ function renderDashboard(b) {
 
   renderAllTimePlots(b);
   if (typeof renderHierarchyPanel === "function") renderHierarchyPanel(b);
-  renderCodeHealth(b.code_health, b.version || "3.2.1");
+  renderCodeHealth(b.code_health, b.version || "3.2.2");
 
   const ph = b.project_hierarchy || {};
   let totalActiveHandoffs = 0;
@@ -428,121 +428,69 @@ document.querySelectorAll("#heatWeeksToggle button").forEach((btn) => {
 // Primary Surface Switcher
 function switchSurface(view) {
   state.surfaceView = view;
-  const navAnalytics = document.getElementById("navAnalyticsBtn");
-  const navWorkspace = document.getElementById("navWorkspaceBtn");
-  const dashMain = document.getElementById("dashboardMain");
-  const wsMain = document.getElementById("workspaceMain");
-  const anControls = document.getElementById("analyticsControls");
-  const sidebarToggle = document.getElementById("sidebarToggleBtn");
-
-  const ctrCenter = document.querySelector(".controls-center");
+  const navAn = document.getElementById("navAnalyticsBtn"), navWs = document.getElementById("navWorkspaceBtn");
+  const dashMain = document.getElementById("dashboardMain"), wsMain = document.getElementById("workspaceMain");
+  const anCtrl = document.getElementById("analyticsControls"), sideBtn = document.getElementById("sidebarToggleBtn");
+  const ctrCenter = document.querySelector(".controls-center"), authEl = document.getElementById("authOverlay");
+  const isUnlockedView = Boolean(authEl && authEl.classList.contains("hidden"));
   if (view === "workspace") {
     if (window.location.hash !== "#workspace") window.location.hash = "#workspace";
-    if (navAnalytics) navAnalytics.classList.remove("active");
-    if (navWorkspace) navWorkspace.classList.add("active");
-    if (dashMain) dashMain.classList.add("hidden");
-    if (wsMain) wsMain.classList.remove("hidden");
-    if (anControls) anControls.classList.add("hidden");
-    if (ctrCenter) ctrCenter.classList.add("hidden");
-    if (sidebarToggle) sidebarToggle.classList.remove("hidden");
-    if (window.WorkspaceExplorer) window.WorkspaceExplorer.initWorkspace();
+    navAn?.classList.remove("active"); navWs?.classList.add("active");
+    dashMain?.classList.add("hidden");
+    if (wsMain && isUnlockedView) wsMain.classList.remove("hidden");
+    anCtrl?.classList.add("hidden"); ctrCenter?.classList.add("hidden"); sideBtn?.classList.remove("hidden");
+    if (window.WorkspaceExplorer && isUnlockedView) window.WorkspaceExplorer.initWorkspace();
   } else {
     if (window.location.hash && window.location.hash !== "#analytics") window.location.hash = "#analytics";
-    if (navAnalytics) navAnalytics.classList.add("active");
-    if (navWorkspace) navWorkspace.classList.remove("active");
-    const authEl = document.getElementById("authOverlay");
-    if (dashMain && authEl && authEl.classList.contains("hidden")) {
-      dashMain.classList.remove("hidden");
-    }
-    if (wsMain) wsMain.classList.add("hidden");
-    if (anControls) anControls.classList.remove("hidden");
-    if (ctrCenter) ctrCenter.classList.remove("hidden");
-    if (sidebarToggle) sidebarToggle.classList.add("hidden");
+    navAn?.classList.add("active"); navWs?.classList.remove("active");
+    if (dashMain && isUnlockedView) dashMain.classList.remove("hidden");
+    wsMain?.classList.add("hidden");
+    anCtrl?.classList.remove("hidden"); ctrCenter?.classList.remove("hidden"); sideBtn?.classList.add("hidden");
   }
 }
 
-const navAnalyticsBtn = document.getElementById("navAnalyticsBtn");
-if (navAnalyticsBtn) navAnalyticsBtn.addEventListener("click", () => switchSurface("analytics"));
+document.getElementById("navAnalyticsBtn")?.addEventListener("click", () => switchSurface("analytics"));
+document.getElementById("navWorkspaceBtn")?.addEventListener("click", () => switchSurface("workspace"));
+window.addEventListener("hashchange", () => switchSurface(window.location.hash === "#workspace" ? "workspace" : "analytics"));
 
-const navWorkspaceBtn = document.getElementById("navWorkspaceBtn");
-if (navWorkspaceBtn) navWorkspaceBtn.addEventListener("click", () => switchSurface("workspace"));
-
-window.addEventListener("hashchange", () => {
-  if (window.location.hash === "#workspace") switchSurface("workspace");
-  else switchSurface("analytics");
-});
-
-// Consolidated Settings Menu & Popover
 const settingsMenuWrap = document.getElementById("settingsMenuWrap") || document.getElementById("styleMenuWrap");
 const settingsMenuBtn = document.getElementById("settingsMenuBtn") || document.getElementById("styleMenuBtn");
 const settingsPopover = document.getElementById("settingsPopover") || document.getElementById("stylePopover");
 const pwaInstallPromptBtn = document.getElementById("pwaInstallPromptBtn");
-const copyChromiumCmdBtn = document.getElementById("copyChromiumCmdBtn");
-const chromiumCmdInput = document.getElementById("chromiumCmdInput");
+const copyChromiumCmdBtn = document.getElementById("copyChromiumCmdBtn"), chromiumCmdInput = document.getElementById("chromiumCmdInput");
 let deferredPwaPrompt = null;
 
-if (settingsMenuBtn && settingsPopover) {
-  settingsMenuBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const isHidden = settingsPopover.classList.toggle("hidden");
-    settingsMenuBtn.setAttribute("aria-expanded", String(!isHidden));
-  });
-}
-
-document.querySelectorAll(".theme-opt").forEach((btn) => {
-  btn.addEventListener("click", (e) => { e.stopPropagation(); applyThemeAndDensity(btn.dataset.theme, state.density); });
+settingsMenuBtn?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (!settingsPopover) return;
+  settingsMenuBtn.setAttribute("aria-expanded", String(!settingsPopover.classList.toggle("hidden")));
 });
-document.querySelectorAll(".density-opt").forEach((btn) => {
-  btn.addEventListener("click", (e) => { e.stopPropagation(); applyThemeAndDensity(state.surface, btn.dataset.density); });
-});
+document.querySelectorAll(".theme-opt").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); applyThemeAndDensity(b.dataset.theme, state.density); }));
+document.querySelectorAll(".density-opt").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); applyThemeAndDensity(state.surface, b.dataset.density); }));
 
 if (chromiumCmdInput && window.location.protocol.startsWith("http")) {
-  chromiumCmdInput.value = state.demoMode
-    ? "google-chrome --app=https://agy-mcp.example.com/web"
-    : `google-chrome --app=${window.location.origin}${window.location.pathname}`;
+  chromiumCmdInput.value = state.demoMode ? "google-chrome --app=https://agy-mcp.example.com/web" : `google-chrome --app=${window.location.origin}${window.location.pathname}`;
 }
-
-window.addEventListener("beforeinstallprompt", (e) => {
-  e.preventDefault();
-  deferredPwaPrompt = e;
-  if (pwaInstallPromptBtn) pwaInstallPromptBtn.classList.remove("hidden");
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredPwaPrompt = e; pwaInstallPromptBtn?.classList.remove("hidden"); });
+pwaInstallPromptBtn?.addEventListener("click", async () => {
+  if (!deferredPwaPrompt) return;
+  deferredPwaPrompt.prompt(); await deferredPwaPrompt.userChoice.catch(() => {}); deferredPwaPrompt = null;
+  pwaInstallPromptBtn.classList.add("hidden"); settingsPopover?.classList.add("hidden");
 });
-
-const triggerInstall = async () => {
-  if (!deferredPwaPrompt) return false;
-  deferredPwaPrompt.prompt();
-  await deferredPwaPrompt.userChoice.catch(() => {});
-  deferredPwaPrompt = null;
-  return true;
-};
-
-if (pwaInstallPromptBtn) {
-  pwaInstallPromptBtn.addEventListener("click", async () => {
-    if (await triggerInstall()) { pwaInstallPromptBtn.classList.add("hidden"); if (settingsPopover) settingsPopover.classList.add("hidden"); }
-  });
-}
-
 if (copyChromiumCmdBtn && chromiumCmdInput) {
   copyChromiumCmdBtn.addEventListener("click", () => copyTextWithFeedback(copyChromiumCmdBtn, chromiumCmdInput.value, "Copy", 1500));
 }
-
 if ("serviceWorker" in navigator && window.location.protocol.startsWith("http")) {
   const basePrefix = window.location.pathname.replace(/\/web\/?$/, "");
   navigator.serviceWorker.register(basePrefix + "/web/sw.js", { scope: basePrefix ? (basePrefix + "/") : "/" }).catch(() => {});
 }
-
 document.addEventListener("click", (e) => {
   if (settingsMenuWrap && !settingsMenuWrap.contains(e.target) && settingsPopover) {
-    settingsPopover.classList.add("hidden");
-    if (settingsMenuBtn) settingsMenuBtn.setAttribute("aria-expanded", "false");
+    settingsPopover.classList.add("hidden"); settingsMenuBtn?.setAttribute("aria-expanded", "false");
   }
 });
-
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && settingsPopover) {
-    settingsPopover.classList.add("hidden");
-    if (settingsMenuBtn) settingsMenuBtn.setAttribute("aria-expanded", "false");
-  }
+  if (e.key === "Escape" && settingsPopover) { settingsPopover.classList.add("hidden"); settingsMenuBtn?.setAttribute("aria-expanded", "false"); }
 });
 
 function clearSensitiveView() {
@@ -551,97 +499,73 @@ function clearSensitiveView() {
   ["hierarchyProjectList", "heatmapGrid", "modelTabularLegendBody", "subagentTabularLegendBody", "velocityLineSvg", "subagentAreaSvg", "workspaceAreaSvg"].forEach((id) => {
     const el = document.getElementById(id); if (el) el.innerHTML = "";
   });
-  const dlg = document.getElementById("uploadDialog"); if (dlg && dlg.open) dlg.close();
+  ["uploadDialog", "lightboxModal", "sheetExportDialog"].forEach((id) => {
+    const dlg = document.getElementById(id); if (dlg?.open) dlg.close();
+  });
+  window.GallerySelect?.cleanupGestures?.();
+  window.GalleryView?.resetLightboxState?.();
+  window.WorkspaceExplorer?.resetSensitiveState?.();
 }
 
 document.getElementById("unlockForm").addEventListener("submit", (e) => {
-  e.preventDefault();
-  state.demoMode = false; localStorage.removeItem("nexus_demo_mode");
-  state.passphrase = document.getElementById("passInput").value.trim();
-  fetchStats(state.period);
+  e.preventDefault(); state.demoMode = false; localStorage.removeItem("nexus_demo_mode");
+  state.passphrase = document.getElementById("passInput").value.trim(); fetchStats(state.period);
 });
-
 document.getElementById("previewDemoBtn").addEventListener("click", () => {
   state.demoMode = true; localStorage.setItem("nexus_demo_mode", "1");
   document.getElementById("authOverlay").classList.add("hidden");
-  const targetMain = state.surfaceView === "workspace" ? document.getElementById("workspaceMain") : document.getElementById("dashboardMain");
-  if (targetMain) targetMain.classList.remove("hidden");
+  document.getElementById(state.surfaceView === "workspace" ? "workspaceMain" : "dashboardMain")?.classList.remove("hidden");
   fetchStats(state.period);
 });
-
 document.getElementById("lockBtn").addEventListener("click", () => {
   localStorage.removeItem("nexus_passphrase"); sessionStorage.removeItem("nexus_passphrase"); localStorage.removeItem("nexus_demo_mode");
-  state.passphrase = ""; state.demoMode = false;
-  clearSensitiveView();
+  state.passphrase = ""; state.demoMode = false; clearSensitiveView();
   document.getElementById("passInput").value = "";
   document.getElementById("authOverlay").classList.remove("hidden");
   document.getElementById("dashboardMain").classList.add("hidden");
-  const wsMain = document.getElementById("workspaceMain");
-  if (wsMain) wsMain.classList.add("hidden");
+  document.getElementById("workspaceMain")?.classList.add("hidden");
 });
 
 if (state.passphrase || state.demoMode) fetchStats(state.period);
 if (window.location.hash === "#workspace") switchSurface("workspace");
 
-function renderUnauthenticatedMediaViewer(session, artifact, t, sig) {
-  const mediaUrl = `/web/media/${encodeURIComponent(t)}/${encodeURIComponent(sig)}/brain:${encodeURIComponent(session)}/${artifact}`;
-  const fileName = artifact.split("/").pop() || "Visual Artifact";
-  document.getElementById("authOverlay")?.classList.add("hidden");
-  document.getElementById("dashboardMain")?.classList.add("hidden");
-  document.getElementById("workspaceMain")?.classList.add("hidden");
+function buildSignedMediaUrl(session, artifact, t, sig, scopeParam) {
+  const effScope = scopeParam || `brain:${session}`;
+  return `/web/media/${encodeURIComponent(t)}/${encodeURIComponent(sig)}/${encodeURIComponent(effScope).replace(/%3A/gi, ":")}/${artifact}`;
+}
 
+function renderUnauthenticatedMediaViewer(session, artifact, t, sig, scopeParam) {
+  const mediaUrl = buildSignedMediaUrl(session, artifact, t, sig, scopeParam), fileName = artifact.split("/").pop() || "Visual Artifact";
+  ["authOverlay", "dashboardMain", "workspaceMain"].forEach((id) => document.getElementById(id)?.classList.add("hidden"));
   let viewer = document.getElementById("unauthMediaViewer");
-  if (!viewer) {
-    viewer = document.createElement("div");
-    viewer.id = "unauthMediaViewer";
-    viewer.className = "unauth-media-viewer";
-    document.body.appendChild(viewer);
-  }
-  viewer.innerHTML = `
-    <div class="unauth-viewer-bar mono">
-      <span class="unauth-viewer-title">${escapeHtmlSafe(fileName)}</span>
-      <button type="button" class="btn btn-primary mono" id="unauthUnlockBtn">↗ Unlock Full Workspace</button>
-    </div>
-    <div class="unauth-viewer-body">
-      <img src="${escapeHtmlSafe(mediaUrl)}" alt="${escapeHtmlSafe(fileName)}" class="unauth-viewer-img" />
-    </div>
-  `;
-  document.getElementById("unauthUnlockBtn")?.addEventListener("click", () => {
-    viewer.remove();
-    document.getElementById("authOverlay")?.classList.remove("hidden");
-  });
+  if (!viewer) { viewer = document.createElement("div"); viewer.id = "unauthMediaViewer"; viewer.className = "unauth-media-viewer"; document.body.appendChild(viewer); }
+  viewer.innerHTML = `<div class="unauth-viewer-bar mono"><span class="unauth-viewer-title">${escapeHtmlSafe(fileName)}</span><button type="button" class="btn btn-primary mono" id="unauthUnlockBtn">↗ Unlock Full Workspace</button></div><div class="unauth-viewer-body"><img src="${escapeHtmlSafe(mediaUrl)}" alt="${escapeHtmlSafe(fileName)}" class="unauth-viewer-img" /></div>`;
+  document.getElementById("unauthUnlockBtn")?.addEventListener("click", () => { viewer.remove(); document.getElementById("authOverlay")?.classList.remove("hidden"); });
 }
 
 function handleWorkspaceDeepLink() {
   const params = new URLSearchParams(window.location.search);
-  const view = params.get("view");
-  const session = params.get("session");
-  const artifact = params.get("artifact");
-  const t = params.get("t");
-  const sig = params.get("sig");
-
-  if (view === "workspace" || session) {
-    const hasAuth = Boolean(state.passphrase || localStorage.getItem("nexus_passphrase") || state.demoMode);
-    if (hasAuth) {
-      switchSurface("workspace");
-      if (session && window.WorkspaceExplorer) {
-        window.WorkspaceExplorer.selectSession(session).then(() => {
-          if (artifact) {
-            const isImg = /\.(png|jpe?g|webp|gif|svg)$/i.test(artifact);
-            if (isImg && t && sig) {
-              const mediaUrl = `/web/media/${encodeURIComponent(t)}/${encodeURIComponent(sig)}/brain:${encodeURIComponent(session)}/${artifact}`;
-              window.WorkspaceExplorer.openLightbox(mediaUrl, artifact.split("/").pop());
-            } else {
-              window.WorkspaceExplorer.viewFile(artifact, artifact.split("/").pop());
-            }
-          }
-        });
-      }
-    } else if (session && artifact && t && sig) {
-      renderUnauthenticatedMediaViewer(session, artifact, t, sig);
-    } else {
-      switchSurface("workspace");
+  const view = params.get("view"), rawSess = params.get("session") || "", artifact = params.get("artifact");
+  const session = /^[a-zA-Z0-9_-]{1,64}$/.test(rawSess) ? rawSess : "";
+  const t = params.get("t"), sig = params.get("sig"), scopeParam = params.get("scope") || "";
+  if (view !== "workspace" && !session) return;
+  const hasAuth = Boolean(state.passphrase || localStorage.getItem("nexus_passphrase") || state.demoMode);
+  if (hasAuth) {
+    switchSurface("workspace");
+    if (session && window.WorkspaceExplorer) {
+      window.WorkspaceExplorer.selectSession(session).then(() => {
+        if (!artifact) return;
+        if (/\.(png|jpe?g|webp|gif|svg)$/i.test(artifact) && t && sig) {
+          window.WorkspaceExplorer.openLightbox(buildSignedMediaUrl(session, artifact, t, sig, scopeParam), artifact.split("/").pop());
+        } else {
+          window.WorkspaceExplorer.viewFile(artifact, artifact.split("/").pop());
+        }
+      });
     }
+  } else if (session && artifact && t && sig) {
+    renderUnauthenticatedMediaViewer(session, artifact, t, sig, scopeParam);
+  } else {
+    switchSurface("workspace");
   }
 }
 

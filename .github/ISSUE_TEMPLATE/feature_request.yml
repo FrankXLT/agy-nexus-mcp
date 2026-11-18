@@ -1,0 +1,40 @@
+name: Feature Request
+description: Propose a new workflow, MCP capability, or Overwatch UI improvement for AGY-Nexus MCP.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Plain-English User Workflow / Goal
+      description: Describe the real-world user workflow you want to enable and why it matters.
+      placeholder: "As a user on Gemini Mobile / Antigravity IDE, I want to..."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: target_surface
+    attributes:
+      label: Target Surface
+      description: Which surface should this feature live on?
+      options:
+        - MCP Tools (agy-nexus-mcp)
+        - /web Analytics
+        - /web Workspace
+        - agy-praxis-mcp (Local IDE)
+        - Host Bridge (:8098)
+        - Docs / Community
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Behavior & Acceptance Criteria
+      description: Outline expected inputs/outputs, security boundaries, and measurable acceptance criteria.
+      placeholder: |
+        - Proposed behavior:
+        - Acceptance criteria:
+        - Security / privacy considerations:
+    validations:
+      required: true

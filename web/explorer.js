@@ -1,13 +1,13 @@
-// AGY-NEXUS Overwatch — 2-Pane Workspace Explorer & Stage Reader (v3.2.1)
+// AGY-NEXUS Overwatch — 2-Pane Workspace Explorer & Stage Reader (v3.2.2)
 (function (root, factory) {
   if (typeof define === "function" && define.amd) {
-    define(["./markdown_renderer", "./gallery_select"], factory);
+    define(["./markdown_renderer", "./gallery_select", "./gallery_view"], factory);
   } else if (typeof module === "object" && module.exports) {
-    module.exports = factory(require("./markdown_renderer"), require("./gallery_select"));
+    module.exports = factory(require("./markdown_renderer"), require("./gallery_select"), require("./gallery_view"));
   } else {
-    root.WorkspaceExplorer = factory(root.MarkdownRenderer, root.GallerySelect);
+    root.WorkspaceExplorer = factory(root.MarkdownRenderer, root.GallerySelect, root.GalleryView);
   }
-})(typeof self !== "undefined" ? self : this, function (MarkdownRenderer, GallerySelect) {
+})(typeof self !== "undefined" ? self : this, function (MarkdownRenderer, GallerySelect, GalleryView) {
   "use strict";
 
   const expState = {
@@ -15,19 +15,45 @@
     selectedSessionTitle: "", selectedBucket: null, selectedFilePath: "", selectedFileName: "",
     selectedFileSize: 0, rawFileContent: "", renderedHtmlContent: "", docViewMode: "html",
     selectedBatchFolder: "", stageMode: "overview", queueDocFile: "", queueDocTid: "",
-    docBackTarget: "overview", searchQuery: "", showCompletedQueue: false,
+    docBackTarget: "overview", searchQuery: "", showCompletedQueue: false, showUploadStrip: false,
     expandedProjects: new Set(), isSidebarCollapsed: false, isZenMode: false,
   };
+  let eventsInitialized = false, treeReqSeq = 0, bucketReqSeq = 0, fileReqSeq = 0, bucketLoadingConvId = "";
 
   const escapeHtmlSafe = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   const getApiHeaders = () => ({ "X-Nexus-Passphrase": (typeof state !== "undefined" && state.passphrase) || localStorage.getItem("nexus_passphrase") || "", "X-Client-Product": "Workspace Explorer" });
   const getBaseApiPath = () => (window.location.pathname || "/web").replace(/\/web\/?$/, "");
-  const toAbsoluteMediaUrl = (url) => (!url || url.startsWith("http://") || url.startsWith("https://")) ? (url || "") : `${window.location.origin}${url.startsWith("/") ? "" : "/"}${url}`;
+  const formatRelativeAge = (m) => GalleryView?.formatRelativeAge(m) || "";
+  const formatThumbLabel = (n) => GalleryView?.formatThumbLabel(n) || String(n || "");
+  const openLightbox = (...args) => GalleryView?.openLightbox(...args);
+  const syncGalleryDomState = (el) => GalleryView?.syncGalleryDomState(el);
 
-  function formatRelativeAge(mtime) {
-    if (!mtime) return "";
-    const sec = Math.max(0, Math.floor(Date.now() / 1000 - Number(mtime)));
-    return sec < 60 ? `${sec}s ago` : (sec < 3600 ? `${Math.floor(sec / 60)}m ago` : (sec < 86400 ? `${Math.floor(sec / 3600)}h ago` : `${Math.floor(sec / 86400)}d ago`));
+  function resetSensitiveState() {
+    treeReqSeq++; bucketReqSeq++; fileReqSeq++;
+    GallerySelect?.cleanupGestures?.();
+    GallerySelect?.clearSelection?.();
+    GalleryView?.resetLightboxState?.();
+    expState.treeData = null; expState.selectedSessionId = ""; expState.selectedProjectName = ""; expState.selectedRepoSlug = "";
+    expState.selectedSessionTitle = ""; expState.selectedBucket = null; expState.selectedFilePath = ""; expState.selectedFileName = "";
+    expState.selectedFileSize = 0; expState.rawFileContent = ""; expState.renderedHtmlContent = "";
+    expState.selectedBatchFolder = ""; expState.stageMode = "overview"; expState.queueDocFile = ""; expState.queueDocTid = "";
+    ["workspaceTreeRoot", "slimRailProjects", "workspaceSessionHeader", "workspaceStage"].forEach((id) => {
+      const el = document.getElementById(id); if (el) el.innerHTML = "";
+    });
+  }
+
+  function handleUnauthorized() {
+    localStorage.removeItem("nexus_passphrase");
+    sessionStorage.removeItem("nexus_passphrase");
+    localStorage.removeItem("nexus_demo_mode");
+    if (typeof state !== "undefined") { state.passphrase = ""; state.demoMode = false; }
+    resetSensitiveState();
+    ["uploadDialog", "lightboxModal", "sheetExportDialog"].forEach((id) => {
+      const dlg = document.getElementById(id); if (dlg?.open) dlg.close();
+    });
+    document.getElementById("workspaceMain")?.classList.add("hidden");
+    document.getElementById("dashboardMain")?.classList.add("hidden");
+    document.getElementById("authOverlay")?.classList.remove("hidden");
   }
 
   function formatUploadBatchLabel(ub) {
@@ -36,63 +62,88 @@
     return m ? `📂 ${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}${m[7] ? ` · ${m[7]}` : ""} (${ub.file_count})` : `📂 ${ub.folder_name} (${ub.file_count})`;
   }
 
-  function openLightbox(imgUrl, title, meta) {
-    const dlg = document.getElementById("lightboxModal");
-    if (!dlg) return window.open(imgUrl, "_blank");
-    const imgEl = document.getElementById("lightboxImg"), titleEl = document.getElementById("lightboxTitle");
-    const metaEl = document.getElementById("lightboxMeta"), copyBtn = document.getElementById("lightboxCopyLinkBtn");
-    if (imgEl) imgEl.src = imgUrl;
-    if (titleEl) titleEl.textContent = title || "Visual Artifact Preview";
-    if (metaEl) metaEl.textContent = meta || "";
-    if (copyBtn) copyBtn.onclick = () => { const fl = toAbsoluteMediaUrl(imgUrl); navigator.clipboard?.writeText(fl); copyBtn.textContent = "Copied!"; setTimeout(() => { copyBtn.textContent = "Copy 7d Link"; }, 1200); };
-    document.getElementById("lightboxCloseBtn")?.addEventListener("click", () => dlg.close(), { once: true });
-    dlg.onclick = (e) => { if (e.target === dlg) dlg.close(); };
-    typeof dlg.showModal === "function" ? dlg.showModal() : dlg.setAttribute("open", "");
-  }
-
   async function loadWorkspaceTree() {
+    const reqSeq = ++treeReqSeq;
     try {
+      const rawUrlSess = new URLSearchParams(window.location.search || "").get("session") || "";
+      const urlSess = /^[a-zA-Z0-9_-]{1,64}$/.test(rawUrlSess.trim()) ? rawUrlSess.trim() : "";
       if (typeof state !== "undefined" && state.demoMode) {
-        expState.treeData = window.DEMO_WORKSPACE_TREE || { ok: true, selected_session: "demo-sess-01", queue: { staged_count: 1, tickets: [{ handoff_id: "agy-nexus-mcp-01", repo_slug: "agy-nexus-mcp", title: "Clean 2-Pane Workspace & Foldable UI Bug Fixes", status: "STAGED", relative_age: "15m ago", handoff_file: "scratch/gemini_research_handoff.md" }] }, projects: [{ project_name: "Core Infrastructure & Container GitOps", staged_count: 1, sessions: [{ conversation_id: "demo-sess-01", title: "AGY-Nexus MCP v3.1.0 Overwatch", status: "RUNNING", is_pinned: true, step_count: 152 }] }] };
-        renderLeftTree(); selectSession("demo-sess-01", "Core Infrastructure & Container GitOps", "AGY-Nexus MCP v3.1.0 Overwatch"); return;
+        expState.treeData = window.DEMO_WORKSPACE_TREE || { ok: true, selected_session: "demo-sess-01", queue: { staged_count: 1, tickets: [] }, projects: [] };
+        renderLeftTree();
+        if (!expState.selectedSessionId && !urlSess && expState.stageMode !== "queue") {
+          const firstId = expState.treeData.selected_session || expState.treeData.projects?.[0]?.sessions?.[0]?.conversation_id;
+          if (firstId) selectSession(firstId);
+        }
+        return;
       }
       const resp = await fetch(getBaseApiPath() + "/web/api/workspace/tree", { headers: getApiHeaders() });
-      if (resp.status === 401 && typeof showAuthModal === "function") return showAuthModal();
+      if (resp.status === 401) return handleUnauthorized();
       const data = await resp.json();
-      if (!data.ok) return;
+      if (reqSeq !== treeReqSeq || !data.ok) return;
       expState.treeData = data; renderLeftTree();
-      if (!expState.selectedSessionId && expState.stageMode !== "queue") {
-        if (data.selected_session) selectSession(data.selected_session);
-        else if (data.projects?.[0]?.sessions?.[0]) selectSession(data.projects[0].sessions[0].conversation_id, data.projects[0].project_name, data.projects[0].sessions[0].title);
+      if (expState.stageMode !== "queue") {
+        if (!expState.selectedSessionId && !urlSess) {
+          let newestProj = null, newest = null;
+          for (const p of (data.projects || [])) {
+            const s0 = p.sessions?.[0];
+            if (s0 && (!newest || Number(s0.last_updated_ts || 0) > Number(newest.last_updated_ts || 0))) {
+              newestProj = p; newest = s0;
+            }
+          }
+          const selMatch = data.selected_session ? data.projects?.flatMap((p) => p.sessions || []).find((s) => s.conversation_id === data.selected_session) : null;
+          if (newest && (!selMatch || Number(newest.last_updated_ts || 0) > Number(selMatch.last_updated_ts || 0))) {
+            selectSession(newest.conversation_id, newestProj.project_name, newest.title);
+          } else if (data.selected_session) {
+            selectSession(data.selected_session);
+          }
+        } else if (expState.selectedSessionId && !expState.selectedBucket && bucketLoadingConvId !== expState.selectedSessionId) {
+          selectSession(expState.selectedSessionId);
+        }
       }
     } catch (err) { console.warn("Error loading workspace tree:", err); }
   }
 
   async function selectSession(convId, projectName, sessionTitle) {
     if (!convId) return;
+    const reqSeq = ++bucketReqSeq;
+    const isNewSession = convId !== expState.selectedSessionId;
+    bucketLoadingConvId = convId;
     expState.selectedSessionId = convId; expState.stageMode = "overview";
+    if (isNewSession) {
+      expState.selectedBucket = null;
+      GallerySelect?.clearSelection?.();
+    }
     if (projectName) expState.selectedProjectName = projectName;
     if (sessionTitle) expState.selectedSessionTitle = sessionTitle;
-    window.GallerySelect?.clearSelection?.(); renderSessionHeader(); renderLeftTree();
+    renderSessionHeader(); renderLeftTree();
     if (typeof state !== "undefined" && state.demoMode) {
-      expState.selectedBucket = window.DEMO_SESSION_BUCKET || { ok: true, conversation_id: convId, title: expState.selectedSessionTitle, project_name: expState.selectedProjectName, repo_slug: "agy-nexus-mcp", rollover: { posture: "FRESH", reason: "FRESH: Optimal context headroom.", should_rollover: false }, uploads: [], artifacts: [{ name: "walkthrough.md", rel_path: "walkthrough.md", size: 4500, mtime: Date.now() / 1000 - 600, type: "artifact" }], visual_artifacts: [{ name: "preview_desktop.png", signed_url: "/web/icon.svg", rel_path: "scratch/preview_desktop.png", size: 48000, mtime: Date.now() / 1000 - 600 }] };
+      bucketLoadingConvId = "";
+      expState.selectedBucket = window.DEMO_SESSION_BUCKET || { ok: true, conversation_id: convId, title: expState.selectedSessionTitle, project_name: expState.selectedProjectName, repo_slug: "agy-nexus-mcp", rollover: { posture: "FRESH", reason: "FRESH", should_rollover: false }, uploads: [], artifacts: [], visual_artifacts: [], repo_visual_assets: [] };
+      expState.selectedProjectName = expState.selectedBucket.project_name || expState.selectedProjectName;
+      expState.selectedRepoSlug = expState.selectedBucket.repo_slug || "agy-nexus-mcp";
+      expState.selectedSessionTitle = expState.selectedBucket.title || expState.selectedSessionTitle;
       renderSessionHeader(); renderLeftTree(); renderStage(); return;
     }
     try {
       const resp = await fetch(getBaseApiPath() + `/web/api/sessions/${encodeURIComponent(convId)}/bucket`, { headers: getApiHeaders() });
+      if (resp.status === 401) return handleUnauthorized();
       const data = await resp.json();
-      if (data.ok) {
-        expState.selectedBucket = data;
-        expState.selectedProjectName = data.project_name || expState.selectedProjectName;
-        expState.selectedRepoSlug = data.repo_slug || expState.selectedRepoSlug;
-        expState.selectedSessionTitle = data.title || expState.selectedSessionTitle;
-        renderSessionHeader(); renderLeftTree(); renderStage();
-      }
-    } catch (err) { console.warn("Error loading session bucket:", err); }
+      if (reqSeq !== bucketReqSeq || convId !== expState.selectedSessionId || !data.ok) return;
+      expState.selectedBucket = data;
+      expState.selectedProjectName = data.project_name || expState.selectedProjectName;
+      expState.selectedRepoSlug = data.repo_slug || expState.selectedRepoSlug;
+      expState.selectedSessionTitle = data.title || expState.selectedSessionTitle;
+      renderSessionHeader(); renderLeftTree(); renderStage();
+    } catch (err) {
+      console.warn("Error loading session bucket:", err);
+    } finally {
+      if (reqSeq === bucketReqSeq) bucketLoadingConvId = "";
+    }
   }
 
   async function viewFile(relPath, fileName, backTarget, isQueue, qTid) {
     if (!relPath) return;
+    const reqSeq = ++fileReqSeq;
     expState.selectedFilePath = relPath; expState.selectedFileName = fileName || relPath.split("/").pop();
     expState.stageMode = "doc"; expState.docViewMode = "html";
     if (backTarget) expState.docBackTarget = backTarget;
@@ -110,42 +161,42 @@
       const qPath = encodeURIComponent(relPath.includes("staged_handoffs/") ? relPath.slice(relPath.indexOf("staged_handoffs/")) : relPath);
       const cid = isQueue ? (expState.selectedSessionId || expState.treeData?.selected_session || "00000000-0000-0000-0000-000000000000") : expState.selectedSessionId;
       const resp = await fetch(getBaseApiPath() + `/web/api/sessions/${encodeURIComponent(cid)}/file?path=${qPath}`, { headers: getApiHeaders() });
+      if (resp.status === 401) return handleUnauthorized();
       const data = await resp.json();
+      if (reqSeq !== fileReqSeq || relPath !== expState.selectedFilePath || expState.stageMode !== "doc") return;
       if (data.ok && viewer) {
         expState.selectedFileSize = data.size || 0; expState.rawFileContent = data.raw_content || data.content;
         expState.renderedHtmlContent = data.content; renderDocViewerContent(viewer); renderSessionHeader();
       } else if (viewer) viewer.innerHTML = `<div class="viewer-error mono">Failed: ${escapeHtmlSafe(data.error || "File error")}</div>`;
-    } catch (err) { if (viewer) viewer.innerHTML = `<div class="viewer-error mono">Error: ${escapeHtmlSafe(String(err))}</div>`; }
+    } catch (err) {
+      if (reqSeq !== fileReqSeq) return;
+      if (viewer) viewer.innerHTML = `<div class="viewer-error mono">Error: ${escapeHtmlSafe(String(err))}</div>`;
+    }
   }
 
   function renderDocViewerContent(viewer) {
     if (!viewer) return;
     if (expState.docViewMode === "raw") viewer.innerHTML = `<pre class="raw-pre mono">${escapeHtmlSafe(expState.rawFileContent)}</pre>`;
     else if (MarkdownRenderer?.createMarkdownViewer) MarkdownRenderer.createMarkdownViewer(viewer, expState.renderedHtmlContent, { fileName: expState.selectedFileName });
-    else viewer.innerHTML = `<div class="editorial-html-body">${expState.renderedHtmlContent}</div>`;
+    else viewer.innerHTML = `<pre class="raw-pre mono">${escapeHtmlSafe(expState.rawFileContent || expState.renderedHtmlContent)}</pre>`;
   }
 
   function renderLeftTree() {
     const treeEl = document.getElementById("workspaceTreeRoot"), railEl = document.getElementById("slimRailProjects");
     if (!treeEl || !expState.treeData) return;
-    const data = expState.treeData, q = (expState.searchQuery || "").toLowerCase().trim();
-    const qNode = data.queue || {}, tickets = qNode.tickets || [];
+    const data = expState.treeData, q = (expState.searchQuery || "").toLowerCase().trim(), tickets = data.queue?.tickets || [];
     const activeCount = tickets.filter((t) => ["STAGED", "IN_WORK"].includes(String(t.status || "").toUpperCase())).length;
     const qBadge = activeCount > 0 ? `<span class="tree-badge mono staged">${activeCount}</span>` : "";
     let html = `<div class="tree-node tree-queue-node ${expState.stageMode === "queue" ? "active" : ""}" id="treeQueueNode" title="Visual Handoffs Queue"><span class="tree-icon">◈</span><span class="tree-label">Visual Handoffs Queue</span>${qBadge}</div>`, railHtml = "";
     document.getElementById("slimQueueBadge") && (document.getElementById("slimQueueBadge").textContent = activeCount > 0 ? String(activeCount) : "");
     const wsBadge = document.getElementById("navWorkspaceBadge");
-    if (wsBadge) {
-      wsBadge.textContent = String(activeCount);
-      wsBadge.classList.toggle("hidden", activeCount === 0);
-      wsBadge.style.display = activeCount === 0 ? "none" : "";
-    }
+    if (wsBadge) { wsBadge.textContent = String(activeCount); wsBadge.classList.toggle("hidden", activeCount === 0); wsBadge.style.display = activeCount === 0 ? "none" : ""; }
 
     (data.projects || []).forEach((proj) => {
-      const pName = proj.project_name || "Project", sessList = proj.sessions || [];
-      const initials = pName.split(/[\s_-]+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "PR";
-      const s0 = sessList[0];
-      railHtml += `<button type="button" class="slim-project-pill mono" data-cid="${s0 ? s0.conversation_id : ""}" data-pname="${escapeHtmlSafe(pName)}" data-stitle="${s0 ? escapeHtmlSafe(s0.title) : ""}" title="${escapeHtmlSafe(pName)}">${initials}</button>`;
+      const pName = proj.project_name || "Project", sessList = proj.sessions || [], s0 = sessList[0];
+      const initials = escapeHtmlSafe(pName.split(/[\s_-]+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "PR");
+      const escS0 = s0 ? escapeHtmlSafe(s0.conversation_id) : "";
+      railHtml += `<button type="button" class="slim-project-pill mono" data-cid="${escS0}" data-pname="${escapeHtmlSafe(pName)}" data-stitle="${s0 ? escapeHtmlSafe(s0.title) : ""}" title="${escapeHtmlSafe(pName)}">${initials}</button>`;
       if (q && !pName.toLowerCase().includes(q) && !sessList.some((s) => (s.title || "").toLowerCase().includes(q))) return;
       const stg = Number(proj.staged_count || 0), pBadge = stg > 0 ? `<span class="tree-badge mono staged">${stg}</span>` : "";
       const isExpanded = expState.expandedProjects.has(pName), visibleSess = isExpanded ? sessList : sessList.slice(0, 4);
@@ -155,17 +206,20 @@
       visibleSess.forEach((s) => {
         const sTitle = s.title || "Untitled Session";
         if (q && !sTitle.toLowerCase().includes(q) && !pName.toLowerCase().includes(q)) return;
-        const cid = s.conversation_id, isActive = cid === expState.selectedSessionId && expState.stageMode !== "queue";
+        const cid = String(s.conversation_id || ""), escCid = escapeHtmlSafe(cid), isActive = cid === expState.selectedSessionId && expState.stageMode !== "queue";
         const dotCls = (s.is_running || s.status === "RUNNING") ? "running" : (s.is_pinned ? "pinned" : "idle");
-        html += `<div class="tree-session-item ${isActive ? "active" : ""}" data-cid="${cid}" data-pname="${escapeHtmlSafe(pName)}" data-stitle="${escapeHtmlSafe(sTitle)}"><span class="status-dot-6px ${dotCls}"></span><span class="tree-session-title">${escapeHtmlSafe(sTitle)}</span></div>`;
+        const sessCap = isActive && expState.selectedBucket ? (expState.selectedBucket.visual_artifacts || []).length : Number(s.capture_count || 0);
+        const capHtml = sessCap > 0 ? `<span class="tree-cap-pill mono" title="${sessCap} session captures">🖼 ${sessCap}</span>` : "";
+        const rawAge = String(s.relative_age || "");
+        const shortAge = rawAge.replace(/\s*ago$/, "");
+        const ageHtml = shortAge ? `<span class="tree-age-pill mono">${escapeHtmlSafe(shortAge)}</span>` : "";
+        html += `<div class="tree-session-item ${isActive ? "active" : ""}" data-cid="${escCid}" data-pname="${escapeHtmlSafe(pName)}" data-stitle="${escapeHtmlSafe(sTitle)}" title="${escapeHtmlSafe(sTitle)}${rawAge ? ` (${escapeHtmlSafe(rawAge)})` : ""}"><span class="status-dot-6px ${dotCls}"></span><span class="tree-session-title">${escapeHtmlSafe(sTitle)}</span>${ageHtml}${capHtml}</div>`;
         if (isActive && expState.selectedBucket) {
           const uploads = expState.selectedBucket.uploads || [], artifacts = expState.selectedBucket.artifacts || [], visuals = expState.selectedBucket.visual_artifacts || [];
-          html += `<div class="tree-session-children">
-            <details class="tree-sub-details" open><summary class="tree-sub-hdr mono"><span>Uploads (${uploads.length})</span></summary><div class="tree-sub-list">${uploads.map((ub) => `<div class="tree-sub-leaf tree-upload-leaf mono ${expState.stageMode === "batch" && expState.selectedBatchFolder === ub.folder_name ? "active" : ""}" data-folder="${escapeHtmlSafe(ub.folder_name)}"><span class="leaf-icon">📂</span><span class="leaf-text">${escapeHtmlSafe(formatUploadBatchLabel(ub))}</span></div>`).join("") || '<div class="tree-sub-leaf empty mono">No uploads</div>'}</div></details>
-            <details class="tree-sub-details" open><summary class="tree-sub-hdr mono"><span>Artifacts (${artifacts.length + (visuals.length ? 1 : 0)})</span></summary><div class="tree-sub-list">
-              ${visuals.length ? `<div class="tree-sub-leaf tree-visuals-leaf mono"><span class="leaf-icon">🖼</span><span class="leaf-text">Visual Captures (${visuals.length})</span></div>` : ""}
-              ${artifacts.map((art) => `<div class="tree-sub-leaf tree-art-leaf mono ${expState.stageMode === "doc" && art.rel_path === expState.selectedFilePath ? "active" : ""}" data-path="${escapeHtmlSafe(art.rel_path)}" data-name="${escapeHtmlSafe(art.name)}"><span class="leaf-icon">${art.type === "handoff" || art.name.includes("handoff") ? "◈" : "📄"}</span><span class="leaf-text">${escapeHtmlSafe(art.name)}</span></div>`).join("") || '<div class="tree-sub-leaf empty mono">No artifacts</div>'}
-            </div></details></div>`;
+          const upBlock = uploads.length ? `<details class="tree-sub-details" open><summary class="tree-sub-hdr mono"><span>Uploads (${uploads.length})</span></summary><div class="tree-sub-list">${uploads.map((ub) => `<div class="tree-sub-leaf tree-upload-leaf mono ${expState.stageMode === "batch" && expState.selectedBatchFolder === ub.folder_name ? "active" : ""}" data-folder="${escapeHtmlSafe(ub.folder_name)}"><span class="leaf-icon">📂</span><span class="leaf-text">${escapeHtmlSafe(formatUploadBatchLabel(ub))}</span></div>`).join("")}</div></details>` : "";
+          const artCount = artifacts.length + (visuals.length ? 1 : 0);
+          const artBlock = artCount ? `<details class="tree-sub-details" open><summary class="tree-sub-hdr mono"><span>Artifacts (${artCount})</span></summary><div class="tree-sub-list">${visuals.length ? `<div class="tree-sub-leaf tree-visuals-leaf mono"><span class="leaf-icon">🖼</span><span class="leaf-text">Session Captures (${visuals.length})</span></div>` : ""}${artifacts.map((art) => `<div class="tree-sub-leaf tree-art-leaf mono ${expState.stageMode === "doc" && art.rel_path === expState.selectedFilePath ? "active" : ""}" data-path="${escapeHtmlSafe(art.rel_path)}" data-name="${escapeHtmlSafe(art.name)}"><span class="leaf-icon">${art.type === "handoff" || art.name.includes("handoff") ? "◈" : "📄"}</span><span class="leaf-text">${escapeHtmlSafe(art.name)}</span></div>`).join("")}</div></details>` : "";
+          if (upBlock || artBlock) html += `<div class="tree-session-children">${upBlock}${artBlock}</div>`;
         }
       });
       if (olderCount > 0 && !isExpanded) html += `<button type="button" class="tree-toggle-older-btn mono" data-pname="${escapeHtmlSafe(pName)}">▸ +${olderCount} older sessions</button>`;
@@ -197,7 +251,13 @@
     const pName = expState.selectedProjectName || "Project", sTitle = expState.selectedSessionTitle || "Untitled Session";
     const rollover = expState.selectedBucket?.rollover || {}, posture = rollover.posture || "FRESH";
     const postureCls = posture === "HARD_ROLLOVER" ? "red" : (posture.includes("HOLD") || posture.includes("CLOSEOUT") ? "amber" : (posture === "RETIRED" ? "dim" : "cyan"));
-    hdrEl.innerHTML = `<div class="ws-header-left"><span class="breadcrumb-proj">${escapeHtmlSafe(pName)}</span><span class="breadcrumb-sep">/</span><strong class="breadcrumb-session">${escapeHtmlSafe(sTitle)}</strong><span class="card-tag mono ${postureCls}" title="${escapeHtmlSafe(rollover.reason || posture)}">${escapeHtmlSafe(posture)}</span></div><div class="ws-header-right"><button type="button" class="btn btn-xs mono btn-copy-cid" data-copy="${cid}">Copy ID</button></div>`;
+    const upBtn = expState.stageMode === "overview" ? `<button type="button" class="btn btn-xs mono btn-upload-toggle ${expState.showUploadStrip ? "active" : ""}" id="wsHeaderUploadBtn">+ Upload / Paste</button>` : "";
+    hdrEl.innerHTML = `<div class="ws-header-left"><span class="breadcrumb-proj">${escapeHtmlSafe(pName)}</span><span class="breadcrumb-sep">/</span><strong class="breadcrumb-session">${escapeHtmlSafe(sTitle)}</strong><span class="card-tag mono ${postureCls}" title="${escapeHtmlSafe(rollover.reason || posture)}">${escapeHtmlSafe(posture)}</span></div><div class="ws-header-right">${upBtn}<button type="button" class="btn btn-xs mono btn-copy-cid" data-copy="${escapeHtmlSafe(cid)}">Copy ID</button></div>`;
+    hdrEl.querySelector("#wsHeaderUploadBtn")?.addEventListener("click", () => {
+      expState.showUploadStrip = !expState.showUploadStrip;
+      document.getElementById("wsInlineUploadStrip")?.classList.toggle("hidden", !expState.showUploadStrip);
+      hdrEl.querySelector("#wsHeaderUploadBtn")?.classList.toggle("active", expState.showUploadStrip);
+    });
     hdrEl.querySelector(".btn-copy-cid")?.addEventListener("click", (e) => { navigator.clipboard?.writeText(cid); e.currentTarget.textContent = "Copied!"; setTimeout(() => { e.currentTarget.textContent = "Copy ID"; }, 1000); });
   }
 
@@ -211,8 +271,8 @@
     return renderOverviewStage(stageEl);
   }
 
-  function getInlineUploadHtml(tagVal) {
-    return `<div class="inline-upload-strip mono"><div class="upload-strip-left"><span class="upload-strip-icon">📁</span><span>Drop files, paste (Ctrl+V), or</span><button type="button" class="btn btn-xs mono upload-browse-btn">Browse...</button><input type="file" class="hidden-file-input" multiple style="display:none;" /></div><div class="upload-strip-right"><input type="text" class="upload-tag-input mono" placeholder="Batch label (opt)..." value="${escapeHtmlSafe(tagVal || "")}" /><span class="upload-status-lbl"></span></div></div>`;
+  function getInlineUploadHtml(tagVal, visible) {
+    return `<div id="wsInlineUploadStrip" class="inline-upload-strip mono ${visible ? "" : "hidden"}"><div class="upload-strip-left"><span class="upload-strip-icon">📁</span><span>Drop files, paste (Ctrl+V), or</span><button type="button" class="btn btn-xs mono upload-browse-btn">Browse...</button><input type="file" class="hidden-file-input" multiple style="display:none;" /></div><div class="upload-strip-right"><input type="text" class="upload-tag-input mono" placeholder="Batch label (opt)..." value="${escapeHtmlSafe(tagVal || "")}" /><span class="upload-status-lbl"></span></div></div>`;
   }
 
   function bindInlineUploadStrip(container) {
@@ -226,51 +286,21 @@
     strip.addEventListener("drop", (e) => { e.preventDefault(); if (e.dataTransfer?.files?.length) handleFilesUpload(e.dataTransfer.files, tagIn.value, stLbl); });
   }
 
-  function renderVisualsGridHtml(items, hdrText, hdrId) {
-    if (!items || !items.length) return "";
-    const idAttr = hdrId ? ` id="${escapeHtmlSafe(hdrId)}"` : "", dragMode = GallerySelect.getDragSelectMode();
-    let out = `<div class="stage-sec-hdr mono"${idAttr} style="display:flex;justify-content:space-between;align-items:center;"><span>${escapeHtmlSafe(hdrText)} (${items.length})</span><button type="button" class="btn btn-xs mono btn-toggle-drag-select ${dragMode ? "active" : ""}" title="Toggle Rubber-Band Drag-Select">⬚ Drag-Select</button></div>`;
-    out += GallerySelect.renderBulkActionBarHtml(expState.selectedSessionId, items.length);
-    out += `<div class="visuals-strip-grid">${items.map((v, idx) => {
-      const isSel = GallerySelect.isSelected(v.rel_path);
-      return `<div class="visual-thumb-card mono ${isSel ? "selected" : ""}" data-idx="${idx}" data-url="${escapeHtmlSafe(v.signed_url)}" data-name="${escapeHtmlSafe(v.name)}" data-rel="${escapeHtmlSafe(v.rel_path)}"><label class="gallery-item-cb-wrap" onclick="event.stopPropagation();"><input type="checkbox" class="gallery-item-cb" data-idx="${idx}" ${isSel ? "checked" : ""} /><span class="cb-custom"></span></label><img src="${escapeHtmlSafe(v.signed_url)}" alt="${escapeHtmlSafe(v.name)}" class="visual-thumb-img" loading="lazy" style="cursor:zoom-in;"/><span class="thumb-lbl" title="${escapeHtmlSafe(v.name)}">${escapeHtmlSafe(v.name)}</span><button type="button" class="btn mono btn-copy-link" style="font-size:10px;padding:2px 6px;margin-top:4px;">Copy Link</button></div>`;
-    }).join("")}</div>`;
-    return out;
-  }
-
-  function bindVisualGridInteractions(container, items) {
-    const grid = container.querySelector(".visuals-strip-grid");
-    if (!grid) return;
-    GallerySelect.bindRubberBandMarquee(grid, () => items, () => renderStage());
-    container.querySelector(".btn-toggle-drag-select")?.addEventListener("click", () => { GallerySelect.setDragSelectMode(!GallerySelect.getDragSelectMode()); renderStage(); });
-    container.querySelectorAll(".gallery-item-cb").forEach((cb) => {
-      cb.addEventListener("click", (e) => {
-        e.stopPropagation(); const idx = Number(cb.getAttribute("data-idx"));
-        if (e.shiftKey) GallerySelect.handleShiftSelect(items, idx, cb.checked);
-        else GallerySelect.toggleItem(items[idx], cb.checked, idx);
-        renderStage();
-      });
-    });
-    container.querySelectorAll(".visual-thumb-card").forEach((card) => {
-      const img = card.querySelector(".visual-thumb-img"), btn = card.querySelector(".btn-copy-link");
-      const url = card.getAttribute("data-url"), name = card.getAttribute("data-name");
-      if (img) img.onclick = () => openLightbox(url, name);
-      if (btn) btn.onclick = (e) => { e.stopPropagation(); navigator.clipboard?.writeText(toAbsoluteMediaUrl(url)); btn.textContent = "Copied!"; setTimeout(() => { btn.textContent = "Copy Link"; }, 1200); };
-    });
-    const bulkMap = {
-      "#bulkSelectAllBtn": () => { GallerySelect.selectAll(items); renderStage(); },
-      "#bulkClearBtn": () => { GallerySelect.clearSelection(); renderStage(); },
-      "#bulkShareBtn": () => GallerySelect.shareToGemini(),
-      "#bulkContactSheetBtn": () => GallerySelect.copyContactSheetForChat(openLightbox),
-      "#bulkDownloadZipBtn": () => GallerySelect.downloadZip(expState.selectedSessionId, getApiHeaders, getBaseApiPath),
-      "#bulkDownloadPngsBtn": () => GallerySelect.downloadSequentialPngs(),
+  function buildGalleryCtx(overrideCount) {
+    return {
+      sessionId: expState.selectedSessionId,
+      repoSlug: expState.selectedRepoSlug,
+      getApiHeaders,
+      getBaseApiPath,
+      onUnauthorized: handleUnauthorized,
+      isDemo: () => Boolean(typeof state !== "undefined" && state.demoMode),
+      getSessionCount: () => (typeof overrideCount === "number" ? overrideCount : (expState.selectedBucket?.visual_artifacts || []).length),
     };
-    Object.entries(bulkMap).forEach(([sel, fn]) => container.querySelector(sel)?.addEventListener("click", fn));
   }
 
   function renderOverviewStage(stageEl) {
-    const b = expState.selectedBucket || {}, artifacts = b.artifacts || [], uploads = b.uploads || [], visuals = b.visual_artifacts || [];
-    let html = getInlineUploadHtml("");
+    const b = expState.selectedBucket || {}, artifacts = b.artifacts || [], uploads = b.uploads || [], visuals = b.visual_artifacts || [], repoAssets = b.repo_visual_assets || [];
+    let html = getInlineUploadHtml("", expState.showUploadStrip);
     if (artifacts.length > 0) {
       html += `<div class="stage-sec-hdr mono">Session Documents &amp; Handoffs (${artifacts.length})</div><div class="cards-grid">${artifacts.map((a) => `<div class="doc-card mono" data-path="${escapeHtmlSafe(a.rel_path)}" data-name="${escapeHtmlSafe(a.name)}"><div class="doc-card-title"><span class="leaf-icon">${a.type === "handoff" || a.name.includes("handoff") ? "◈" : "📄"}</span><strong>${escapeHtmlSafe(a.name)}</strong></div><div class="doc-card-meta"><span>${(Number(a.size || 0) / 1024).toFixed(1)} KB</span><span>${formatRelativeAge(a.mtime)}</span></div></div>`).join("")}</div>`;
     }
@@ -280,10 +310,21 @@
         return `<div class="batch-card mono" data-folder="${escapeHtmlSafe(ub.folder_name)}"><div class="batch-card-top"><span class="batch-card-title">📁 ${escapeHtmlSafe(ub.folder_name)}</span><span class="card-tag mono">${ub.file_count} files</span></div>${imgs.length ? `<div class="batch-card-thumbs">${imgs.slice(0, 4).map((im) => `<img src="${escapeHtmlSafe(im.signed_url)}" class="batch-card-thumb-img" alt="${escapeHtmlSafe(im.name)}" loading="lazy"/>`).join("")}</div>` : ""}<div class="batch-files">${(ub.files || []).slice(0, 5).map((f) => `<span class="batch-file-pill">${escapeHtmlSafe(typeof f === "object" ? f.name : f)}</span>`).join(" ")}</div></div>`;
       }).join("")}</div>`;
     }
-    html += renderVisualsGridHtml(visuals, "Visual Artifacts & Captures", "secVisualArtifacts");
-    if (!artifacts.length && !uploads.length && !visuals.length) html += `<div class="stage-placeholder mono">Session workspace is clean. Use the upload strip above to stage artifacts.</div>`;
+    if ((visuals.length > 0 || repoAssets.length > 0) && GalleryView) html += GalleryView.renderToolbarHtml(visuals.length);
+    if (visuals.length > 0 && GalleryView) html += `<div class="visuals-strip-grid" id="sessionCapturesGrid">${GalleryView.renderCardsHtml(visuals)}</div>`;
+    else if (repoAssets.length > 0 || artifacts.length > 0 || uploads.length > 0) html += `<div class="session-empty-captures mono">No screenshots captured in this session.</div>`;
+    if (repoAssets.length > 0 && GalleryView) {
+      html += `<details class="shared-repo-assets-drawer" id="sharedRepoAssetsDrawer"><summary class="shared-repo-summary mono">Shared Repo Assets (${repoAssets.length})</summary><div class="shared-repo-subbar mono"><span>Committed / shared repository images</span><button type="button" class="btn btn-xs mono" id="selectRepoAssetsBtn">Select Repo Assets (${repoAssets.length})</button></div><div class="visuals-strip-grid" id="sharedRepoAssetsGrid">${GalleryView.renderCardsHtml(repoAssets)}</div></details>`;
+    }
+    if (!artifacts.length && !uploads.length && !visuals.length && !repoAssets.length) html += `<div class="stage-placeholder mono">Session workspace is clean. Click + Upload / Paste above to stage files.</div>`;
+
     stageEl.innerHTML = html;
-    bindInlineUploadStrip(stageEl); bindVisualGridInteractions(stageEl, visuals);
+    bindInlineUploadStrip(stageEl);
+    const ctx = buildGalleryCtx();
+    GalleryView?.bindToolbarActions(stageEl, visuals, ctx);
+    GalleryView?.bindGridCards(stageEl.querySelector("#sessionCapturesGrid"), visuals, stageEl, ctx);
+    GalleryView?.bindGridCards(stageEl.querySelector("#sharedRepoAssetsGrid"), repoAssets, stageEl, ctx);
+    stageEl.querySelector("#selectRepoAssetsBtn")?.addEventListener("click", () => { GallerySelect.selectAll(repoAssets); syncGalleryDomState(stageEl); });
     stageEl.querySelectorAll(".doc-card").forEach((c) => c.addEventListener("click", () => viewFile(c.getAttribute("data-path"), c.getAttribute("data-name"), "overview")));
     stageEl.querySelectorAll(".batch-card").forEach((c) => c.addEventListener("click", () => { expState.selectedBatchFolder = c.getAttribute("data-folder"); expState.stageMode = "batch"; renderSessionHeader(); renderLeftTree(); renderStage(); }));
   }
@@ -295,8 +336,11 @@
       stageEl.querySelector("#batchBackBtn")?.addEventListener("click", () => { expState.stageMode = "overview"; renderStage(); }); return;
     }
     const imgs = ub.signed_images || [];
-    stageEl.innerHTML = `<div class="stage-header-bar mono"><div class="stage-hdr-left"><button type="button" class="btn btn-xs mono stage-back-btn" id="batchBackBtn">← Bucket</button><span class="stage-hdr-crumb">📁 <strong>${escapeHtmlSafe(ub.folder_name)}</strong> (${ub.file_count} files)</span></div><div class="stage-hdr-actions">${ub.app_prompt ? `<button type="button" class="btn btn-xs btn-focal btn-copy-app-prompt mono">Copy App Prompt</button>` : ""}${ub.index_rel_path ? `<button type="button" class="btn btn-xs mono btn-open-idx">Read INDEX.md</button>` : ""}</div></div>${getInlineUploadHtml(ub.folder_name.replace(/^uploads_\d{8}_\d{6}_?/, ""))}${renderVisualsGridHtml(imgs, "Batch Visual Media")}`;
-    bindInlineUploadStrip(stageEl); bindVisualGridInteractions(stageEl, imgs);
+    stageEl.innerHTML = `<div class="stage-header-bar mono"><div class="stage-hdr-left"><button type="button" class="btn btn-xs mono stage-back-btn" id="batchBackBtn">← Bucket</button><span class="stage-hdr-crumb">📁 <strong>${escapeHtmlSafe(ub.folder_name)}</strong> (${ub.file_count} files)</span></div><div class="stage-hdr-actions">${ub.app_prompt ? `<button type="button" class="btn btn-xs btn-focal btn-copy-app-prompt mono">Copy App Prompt</button>` : ""}${ub.index_rel_path ? `<button type="button" class="btn btn-xs mono btn-open-idx">Read INDEX.md</button>` : ""}</div></div>${getInlineUploadHtml(ub.folder_name.replace(/^uploads_\d{8}_\d{6}_?/, ""), true)}${imgs.length && GalleryView ? `${GalleryView.renderToolbarHtml(imgs.length)}<div class="visuals-strip-grid" id="batchImagesGrid">${GalleryView.renderCardsHtml(imgs)}</div>` : ""}`;
+    bindInlineUploadStrip(stageEl);
+    const ctx = buildGalleryCtx(imgs.length);
+    GalleryView?.bindToolbarActions(stageEl, imgs, ctx);
+    GalleryView?.bindGridCards(stageEl.querySelector("#batchImagesGrid"), imgs, stageEl, ctx);
     stageEl.querySelector("#batchBackBtn")?.addEventListener("click", () => { expState.stageMode = "overview"; renderSessionHeader(); renderLeftTree(); renderStage(); });
     stageEl.querySelector(".btn-copy-app-prompt")?.addEventListener("click", (e) => { navigator.clipboard?.writeText(ub.app_prompt); e.currentTarget.textContent = "Copied!"; setTimeout(() => { e.currentTarget.textContent = "Copy App Prompt"; }, 1200); });
     stageEl.querySelector(".btn-open-idx")?.addEventListener("click", () => viewFile(ub.index_rel_path, "INDEX.md", "batch"));
@@ -316,21 +360,18 @@
   }
 
   function renderQueueStage(stageEl) {
-    const qNode = expState.treeData?.queue || {}, allTickets = qNode.tickets || [];
-    const active = allTickets.filter((t) => ["STAGED", "IN_WORK"].includes(String(t.status || "").toUpperCase()));
+    const allTickets = expState.treeData?.queue?.tickets || [], active = allTickets.filter((t) => ["STAGED", "IN_WORK"].includes(String(t.status || "").toUpperCase()));
     const visible = expState.showCompletedQueue ? allTickets : active, completedCount = allTickets.length - active.length;
     stageEl.innerHTML = `<div class="queue-board-hdr mono"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;"><div><div class="q-title mono">◈ Cross-Project Visual Handoffs Queue</div><div class="q-subtitle mono">${active.length} active (${allTickets.length} total across all repos)</div></div>${completedCount > 0 ? `<button type="button" class="btn btn-xs mono" id="toggleQueueHistoryBtn">${expState.showCompletedQueue ? "▾ Hide Completed History" : `+ Show Completed History (${completedCount})`}</button>` : ""}</div></div><div class="queue-tickets-grid">${visible.map((t) => {
-      const rawTid = String(t.handoff_id || t.ticket_id || "ticket");
-      const tid = escapeHtmlSafe(rawTid), st = String(t.status || "STAGED").toUpperCase();
-      const stCls = st === "STAGED" ? "cyan" : (st === "IN_WORK" ? "amber" : (st === "COMPLETED" ? "green" : "dim"));
-      const rawRepo = String(t.repo_slug || "");
-      const showRepo = rawRepo && !rawTid.startsWith(rawRepo);
-      const repoHtml = showRepo ? `<span class="q-repo mono">${escapeHtmlSafe(rawRepo)}</span>` : "";
+      const rawTid = String(t.handoff_id || t.ticket_id || "ticket"), tid = escapeHtmlSafe(rawTid);
+      const rawSt = String(t.status || "STAGED").toUpperCase(), st = escapeHtmlSafe(rawSt);
+      const stCls = rawSt === "STAGED" ? "cyan" : (rawSt === "IN_WORK" ? "amber" : (rawSt === "COMPLETED" ? "green" : "dim")), rawRepo = String(t.repo_slug || "");
+      const repoHtml = rawRepo && !rawTid.startsWith(rawRepo) ? `<span class="q-repo mono">${escapeHtmlSafe(rawRepo)}</span>` : "";
       return `<div class="queue-ticket-card mono" data-tid="${tid}"><div class="q-card-top"><span class="q-tid mono"><strong>${tid}</strong></span>${repoHtml}<span class="card-tag mono ${stCls}">${st}</span></div><div class="q-card-title">${escapeHtmlSafe(t.title || "Gemini Research Handoff")}</div><div class="q-card-meta">${escapeHtmlSafe(t.relative_age || t.timestamp || "recent")}</div><div class="q-card-actions"><button type="button" class="btn btn-xs btn-view-ticket" data-file="${escapeHtmlSafe(t.handoff_file || "")}" data-tid="${tid}">Read Spec</button><button type="button" class="btn btn-xs btn-copy-claim" data-cmd="praxis claim ${tid}">Copy Claim</button></div></div>`;
     }).join("") || '<div class="hier-empty mono">No handoff tickets currently staged in queue.</div>'}</div>`;
     stageEl.querySelector("#toggleQueueHistoryBtn")?.addEventListener("click", () => { expState.showCompletedQueue = !expState.showCompletedQueue; renderQueueStage(stageEl); });
     stageEl.querySelectorAll(".btn-view-ticket").forEach((b) => b.addEventListener("click", () => viewFile(b.getAttribute("data-file") || "", b.getAttribute("data-tid") || "ticket.md", "queue", true, b.getAttribute("data-tid") || "")));
-    stageEl.querySelectorAll(".btn-copy-claim").forEach((b) => b.addEventListener("click", (e) => { const cmd = e.currentTarget.getAttribute("data-cmd"); navigator.clipboard?.writeText(cmd); e.currentTarget.textContent = "Copied!"; setTimeout(() => { e.currentTarget.textContent = "Copy Claim"; }, 1200); }));
+    stageEl.querySelectorAll(".btn-copy-claim").forEach((b) => b.addEventListener("click", (e) => { navigator.clipboard?.writeText(e.currentTarget.getAttribute("data-cmd")); e.currentTarget.textContent = "Copied!"; setTimeout(() => { e.currentTarget.textContent = "Copy Claim"; }, 1200); }));
   }
 
   async function handleFilesUpload(fileList, batchLabel, statusEl) {
@@ -343,6 +384,7 @@
     try {
       const q = label ? `?label=${encodeURIComponent(label)}` : "";
       const resp = await fetch(getBaseApiPath() + `/web/api/sessions/${encodeURIComponent(expState.selectedSessionId)}/upload${q}`, { method: "POST", headers: getApiHeaders(), body: fd });
+      if (resp.status === 401) return handleUnauthorized();
       const data = await resp.json();
       if (data.ok) {
         if (statusEl) statusEl.textContent = `Uploaded ${data.saved_files ? data.saved_files.length : fileList.length} files!`;
@@ -366,7 +408,7 @@
   function toggleZenMode() {
     const pane = document.getElementById("workspaceTreePane");
     expState.isZenMode = !expState.isZenMode;
-    if (pane) pane.classList.toggle("zen", expState.isZenMode);
+    pane?.classList.toggle("zen", expState.isZenMode);
     document.getElementById("docZenBtn")?.classList.toggle("active", expState.isZenMode);
   }
 
@@ -374,13 +416,15 @@
     const pane = document.getElementById("workspaceTreePane");
     if (!pane) return;
     const isOpen = pane.classList.toggle("drawer-open");
-    let backdrop = document.getElementById("wsDrawerBackdrop");
     if (isOpen) {
-      if (!backdrop) {
-        backdrop = document.createElement("div"); backdrop.id = "wsDrawerBackdrop"; backdrop.className = "ws-drawer-backdrop";
-        backdrop.onclick = closeMobileDrawer; document.body.appendChild(backdrop);
-      }
-    } else closeMobileDrawer();
+      document.getElementById("workspaceSlimRail")?.classList.add("hidden");
+      document.getElementById("workspaceFullTree")?.classList.remove("hidden");
+    }
+    let backdrop = document.getElementById("wsDrawerBackdrop");
+    if (isOpen && !backdrop) {
+      backdrop = document.createElement("div"); backdrop.id = "wsDrawerBackdrop"; backdrop.className = "ws-drawer-backdrop";
+      backdrop.onclick = closeMobileDrawer; document.body.appendChild(backdrop);
+    } else if (!isOpen) closeMobileDrawer();
   }
 
   function closeMobileDrawer() {
@@ -389,11 +433,20 @@
   }
 
   function initExplorerEvents() {
+    if (eventsInitialized) return;
+    eventsInitialized = true;
     document.getElementById("workspaceTreeSearch")?.addEventListener("input", (e) => { expState.searchQuery = e.target.value; renderLeftTree(); });
     document.getElementById("sidebarToggleBtn")?.addEventListener("click", () => toggleSidebar());
     document.getElementById("treeCollapseBtn")?.addEventListener("click", () => toggleSidebar(true));
     document.getElementById("slimRailExpandBtn")?.addEventListener("click", () => toggleSidebar(false));
     document.getElementById("slimRailQueueBtn")?.addEventListener("click", () => { expState.stageMode = "queue"; renderSessionHeader(); renderLeftTree(); renderStage(); });
+    document.getElementById("workspaceContentPane")?.addEventListener("dragenter", (e) => {
+      if (e.dataTransfer?.types && Array.from(e.dataTransfer.types).includes("Files") && expState.stageMode === "overview") {
+        expState.showUploadStrip = true;
+        document.getElementById("wsInlineUploadStrip")?.classList.remove("hidden");
+        document.getElementById("wsHeaderUploadBtn")?.classList.add("active");
+      }
+    });
     window.addEventListener("keydown", (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
         const wsMain = document.getElementById("workspaceMain");
@@ -411,5 +464,5 @@
   }
 
   function initWorkspace() { initExplorerEvents(); loadWorkspaceTree(); }
-  return { initWorkspace, loadWorkspaceTree, selectSession, viewFile, openLightbox, toggleSidebar, toggleZenMode };
+  return { initWorkspace, resetSensitiveState, loadWorkspaceTree, selectSession, viewFile, openLightbox, syncGalleryDomState, formatThumbLabel, toggleSidebar, toggleZenMode };
 });

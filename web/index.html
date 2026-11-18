@@ -13,7 +13,8 @@
   <link rel="icon" type="image/svg+xml" href="/web/icon.svg" />
   <link rel="apple-touch-icon" href="/web/icon-192.png" />
   <title>AGY-NEXUS-MCP — Usage, Quota &amp; Project Activity Dashboard</title>
-  <link rel="stylesheet" href="/web/styles.css?v=3.2.1" />
+  <link rel="stylesheet" href="/web/styles.css?v=3.2.2" />
+  <link rel="stylesheet" href="/web/workspace.css?v=3.2.2c" />
 </head>
 <body>
   <!-- Top Navigation Bar -->
@@ -22,7 +23,7 @@
       <button type="button" class="btn btn-xs mono sidebar-toggle-btn hidden" id="sidebarToggleBtn" title="Toggle Tree (Ctrl+B)">◧</button>
       <span class="sq-dot"></span>
       <div>
-        <div class="brand-title mono">AGY-NEXUS <span class="version-tag" id="versionTag" title="Installed version"><span class="status-dot-6px cyan" id="versionDot"></span><span id="versionLabel">v3.2.1</span></span></div>
+        <div class="brand-title mono">AGY-NEXUS <span class="version-tag" id="versionTag" title="Installed version"><span class="status-dot-6px cyan" id="versionDot"></span><span id="versionLabel">v3.2.2</span></span></div>
         <div class="brand-sub" id="subtitleStatus">Usage, Model Quotas, Subagents, Tokens &amp; Project Activity</div>
       </div>
       <!-- Primary Surface Switcher -->
@@ -390,12 +391,29 @@
         <span id="lightboxMeta" class="lightbox-meta mono"></span>
       </div>
       <div class="lightbox-actions">
+        <button type="button" class="btn btn-xs mono hidden" id="lightboxPrevBtn" aria-label="Previous image">&lsaquo; Prev</button>
+        <button type="button" class="btn btn-xs mono hidden" id="lightboxNextBtn" aria-label="Next image">Next &rsaquo;</button>
+        <button type="button" class="btn btn-xs mono lightbox-select-btn hidden" id="lightboxSelectBtn" aria-pressed="false">&checkmark; Select</button>
         <button type="button" class="btn mono" id="lightboxCopyLinkBtn">Copy 7d Link</button>
         <button type="button" class="btn-icon" id="lightboxCloseBtn" aria-label="Close">&times;</button>
       </div>
     </div>
     <div class="lightbox-body">
       <img id="lightboxImg" class="lightbox-img" src="" alt="Full preview" />
+    </div>
+  </dialog>
+
+  <!-- Sheet Export & Gemini 10-File Batch Share Modal -->
+  <dialog id="sheetExportDialog" closedby="any" aria-labelledby="sheetExportTitle">
+    <div class="lightbox-hdr">
+      <div class="lightbox-title-wrap">
+        <h3 id="sheetExportTitle" class="lightbox-heading mono">Sheet Export</h3>
+      </div>
+      <button type="button" class="btn-icon" id="sheetExportCloseBtn" aria-label="Close">&times;</button>
+    </div>
+    <div class="sheet-export-body">
+      <div class="sheet-batch-bar" id="sheetExportBatchBar"></div>
+      <div class="sheet-preview-grid" id="sheetPreviewGrid"></div>
     </div>
   </dialog>
 
@@ -446,15 +464,17 @@
     </div>
   </dialog>
 
-  <script src="/web/palettes.js?v=3.2.1"></script>
-  <script src="/web/charts.js?v=3.2.1"></script>
-  <script src="/web/demo_data.js?v=3.2.1"></script>
-  <script src="/web/hierarchy.js?v=3.2.1"></script>
-  <script src="/web/markdown_renderer.js?v=3.2.1"></script>
-  <script src="/web/gallery_select.js?v=3.2.1"></script>
-  <script src="/web/explorer.js?v=3.2.1"></script>
-  <script src="/web/uploads.js?v=3.2.1"></script>
-  <script src="/web/health.js?v=3.2.1"></script>
-  <script src="/web/app.js?v=3.2.1"></script>
+  <script src="/web/palettes.js?v=3.2.2"></script>
+  <script src="/web/charts.js?v=3.2.2"></script>
+  <script src="/web/demo_data.js?v=3.2.2c"></script>
+  <script src="/web/hierarchy.js?v=3.2.2"></script>
+  <script src="/web/markdown_renderer.js?v=3.2.2"></script>
+  <script src="/web/gallery_select.js?v=3.2.2b"></script>
+  <script src="/web/sheet_builder.js?v=3.2.2b"></script>
+  <script src="/web/gallery_view.js?v=3.2.2b"></script>
+  <script src="/web/explorer.js?v=3.2.2c"></script>
+  <script src="/web/uploads.js?v=3.2.2"></script>
+  <script src="/web/health.js?v=3.2.2"></script>
+  <script src="/web/app.js?v=3.2.2"></script>
 </body>
 </html>

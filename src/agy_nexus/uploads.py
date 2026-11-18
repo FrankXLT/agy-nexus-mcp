@@ -172,13 +172,19 @@ def list_scratch_upload_batches(conv_id: str, brain_dir: Path = AGY_BRAIN_DIR) -
             files = [f for f in d.iterdir() if f.is_file() and f.name != "INDEX.md"]
             total_bytes = sum(f.stat().st_size for f in files)
             idx_file = d / "INDEX.md"
-            signed_images: list[dict[str, str]] = []
+            signed_images: list[dict[str, Any]] = []
             for img in sorted(files, key=lambda f: f.name):
                 if img.suffix.lower() in ALLOWED_MEDIA_EXTENSIONS:
                     rel_p = f"scratch/{d.name}/{img.name}"
+                    try:
+                        img_mtime = float(img.stat().st_mtime)
+                    except OSError:
+                        img_mtime = 0.0
                     signed_images.append({
                         "name": img.name,
                         "rel_path": rel_p,
+                        "scope": f"brain:{conv_id}",
+                        "mtime": img_mtime,
                         "signed_url": sign_media_url(f"brain:{conv_id}", rel_p, relative=True),
                     })
             batches.append({

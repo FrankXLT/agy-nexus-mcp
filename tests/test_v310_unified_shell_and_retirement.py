@@ -56,11 +56,11 @@ WEB_DIR = PROJECT_ROOT / "web"
 
 
 def test_v310_version_bump() -> None:
-    """Verify package version is bumped to 3.2.1 across pyproject.toml and package."""
-    assert agy_nexus.__version__ == "3.2.1"
+    """Verify package version is bumped to 3.2.2 across pyproject.toml and package."""
+    assert agy_nexus.__version__ == "3.2.2"
 
     pyproject_text = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'version = "3.2.1"' in pyproject_text
+    assert 'version = "3.2.2"' in pyproject_text
 
     manifest_data = json.loads((WEB_DIR / "manifest.webmanifest").read_text(encoding="utf-8"))
     assert manifest_data.get("handle_links") == "preferred"
