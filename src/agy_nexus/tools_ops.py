@@ -58,6 +58,40 @@ from agy_nexus.stats import (
 )
 from agy_nexus.workflows import export_notebook_bundle
 
+def _compact_session_tree_payload(out_payload: dict[str, Any], max_bytes: int = 17500) -> str:
+    """Guarantee get_session_tree inner JSON stays <= max_bytes so HTTP wire stays <20 KB."""
+    out_s = _compact_json(out_payload)
+    if len(out_s.encode("utf-8")) <= max_bytes:
+        return out_s
+    rt = out_payload.get("routing_telemetry")
+    if isinstance(rt, dict) and isinstance(rt.get("slots"), list):
+        rt["slots"] = rt["slots"][:5]
+    out_payload.pop("projects", None)
+    out_s = _compact_json(out_payload)
+    if len(out_s.encode("utf-8")) <= max_bytes:
+        return out_s
+    if isinstance(rt, dict) and isinstance(rt.get("slots"), list):
+        rt["slots"] = []
+    qp = out_payload.get("quota_and_pools")
+    if isinstance(qp, dict) and isinstance(qp.get("recent_quota_events"), list):
+        qp["recent_quota_events"] = qp["recent_quota_events"][-2:]
+    out_s = _compact_json(out_payload)
+    if len(out_s.encode("utf-8")) > max_bytes and isinstance(out_payload.get("ascii_tree"), str):
+        suffix = "\n... [compacted for <20KB wire ceiling — pass project_filter='<name>' or limit=5]"
+        lines = out_payload["ascii_tree"].splitlines()
+        while len(out_s.encode("utf-8")) > max_bytes and len(lines) > 6:
+            drop_n = max(1, (len(out_s.encode("utf-8")) - (max_bytes - 250)) // 48)
+            lines = lines[: max(6, len(lines) - drop_n)]
+            out_payload["ascii_tree"] = "\n".join(lines) + suffix
+            out_s = _compact_json(out_payload)
+        if len(out_s.encode("utf-8")) > max_bytes:
+            cur_t = str(out_payload.get("ascii_tree") or "")
+            excess = len(out_s.encode("utf-8")) - (max_bytes - 100)
+            out_payload["ascii_tree"] = cur_t[: max(80, len(cur_t) - excess - len(suffix))] + suffix
+            out_s = _compact_json(out_payload)
+    return out_s
+
+
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def get_session_tree(
     active_only: bool = False,
@@ -68,22 +102,27 @@ def get_session_tree(
     style: str = "default",
     spoken_passphrase: str = "",
 ) -> str:
-    """Return a copy-ready 76-column ASCII Project -> Chat -> Session ID hierarchy tree (with untruncated UUIDs and workspace paths), parallel context slot telemetry, 3-2-1 backup status, and optional policy-safe Dual-Pool Quota & Activity Heatmap stats (include_stats=True, period='last_90d'|'current_month'|'last_month'|'last_year', style='default'|'quick'|'rich')."""
-    if not is_unlocked(spoken_passphrase):
-        if not (ALLOW_LOCKED_STATS and include_stats):
-            return LOCKED_RESPONSE
+    """Return 76-col Project->Chat->Session ID ASCII tree, slot telemetry, 3-2-1 backup, and optional stats (include_stats=True, period, style=default|quick|rich)."""
+    unlocked_now = is_unlocked(spoken_passphrase)
+    if not unlocked_now and not (ALLOW_LOCKED_STATS and include_stats):
+        return LOCKED_RESPONSE
     eff_lim = min(limit, 12) if include_stats else limit
-    tree_bundle = build_project_session_tree(active_only=active_only, project_filter=project_filter, limit=eff_lim, bg_dir=AGY_BG_DIR)
+    tree_bundle = (
+        build_project_session_tree(active_only=active_only, project_filter=project_filter, limit=eff_lim, bg_dir=AGY_BG_DIR)
+        if unlocked_now
+        else {"locked": True, "ascii_tree": "[Locked — unlock_sessions required for project/session titles and slots]"}
+    )
     stats_extra: dict[str, Any] = {}
     if include_stats:
         bundle = build_nexus_stats_bundle(
             data_dir=AGY_DATA_DIR, brain_dir=AGY_BRAIN_DIR, db_file=AGY_DB_FILE,
             config_dir=AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR, period=period, style=style,
         )
+        period_obj = bundle.get("period") if isinstance(bundle.get("period"), dict) else {}
         stats_extra = {
-            "period_key": bundle.get("period_key"),
+            "period_key": bundle.get("period_key") or period_obj.get("key"),
             "ascii_mobile_report": bundle.get("ascii_mobile_report"),
-            "totals": bundle.get("totals"),
+            "totals": bundle.get("totals") or bundle.get("kpis") or bundle.get("summary"),
             "quota_and_pools": bundle.get("quota_and_pools"),
         }
     out_payload = {
@@ -100,11 +139,7 @@ def get_session_tree(
         **stats_extra,
         **tree_bundle,
     }
-    out_s = _compact_json(out_payload)
-    if include_stats and len(out_s.encode("utf-8")) > 19200:
-        out_payload.pop("projects", None)
-        out_s = _compact_json(out_payload)
-    return out_s
+    return _compact_session_tree_payload(out_payload, max_bytes=17500)
 
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def manage_background_run(
@@ -117,8 +152,7 @@ def manage_background_run(
     client_tokens_reported: int = 0,
     spoken_passphrase: str = "",
 ) -> str:
-    """Retrieve live Dual-Pool Quota Pacing, Activity Heatmaps, and Wire Telemetry (action='stats' or action='telemetry', period='last_90d'|'current_month'|'last_month'|'last_year', style='default'|'quick'|'rich'), render 76-col Project -> Chat -> Session ID hierarchy tree (action='sessions' or action='session_status'), or export session plans/walkthroughs for Gemini Notebook (action='export_notebook').
-    NOTE: For routine session 'Check-in' or checking active execution status, PREFER calling load_session_into_gemini or ask_workspace_readonly directly to avoid Gemini Mobile verb-permission collisions."""
+    """Get Quota/Heatmaps/Wire Telemetry (action=stats|telemetry, period=last_90d|current_month|last_month|last_year, style=default|quick|rich), tree (sessions), or export_notebook. Prefer load_session_into_gemini for check-ins."""
     action_clean = action.strip().lower()
     is_stats_action = action_clean in ("stats", "dashboard", "quota", "heatmap", "telemetry", "wire", "logs")
     if not is_unlocked(spoken_passphrase):
@@ -258,7 +292,7 @@ def list_models_and_agents(
     inspect_name: str = "",
     spoken_passphrase: str = "",
 ) -> str:
-    """List Antigravity agent roles, core skills (workspace, user_global, builtin), installed plugin skill bundles (pass skill_scope_filter='all' or 'plugin:<name>' to expand plugin descriptions), global & workspace rules, Customization Scope-Isolation policy, modular hygiene standards, live Dual-Pool Quota Pacing, and Language Server connectivity. Pass inspect_name (e.g. 'agy-nexus-stats', 'argon-sentinel', 'GEMINI.md') to read a specific item."""
+    """List Antigravity agents, skills (skill_scope_filter=core|all|plugin:<name>), rules, scope policy, hygiene standards, Quota Pacing & LS status. inspect_name slices 1 item."""
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
     ws_str = SESSION_STATE.get("selected_workspace") or str(get_antigravity_config_repo())

@@ -270,8 +270,11 @@ def _resolve_skill_directives(
     workspace_str: str,
     activate_skills: str,
     research_markdown: str,
+    handoff_mode: str = "",
 ) -> str:
     """Resolve and augment skill directives with workspace defaults and content-aware domain triggers."""
+    from agy_nexus.handoff_templates import should_inject_dual_review
+
     skills_list: list[str] = [
         s.strip() for s in re.split(r"[,;\n]+", activate_skills or "") if s.strip()
     ]
@@ -300,7 +303,7 @@ def _resolve_skill_directives(
         if "portainer-gitops" not in skills_list:
             skills_list.append("portainer-gitops")
 
-    if re.search(r"\b(publish_to_github|release|security|deadbolt|auth)\b", md_lower):
+    if should_inject_dual_review(research_markdown, handoff_mode=handoff_mode):
         if "dual-review" not in skills_list:
             skills_list.append("dual-review")
 
@@ -321,12 +324,13 @@ def build_interjection_directive(
     config_dir: Path,
     data_dir: Path,
     gitlab_dir: Path,
+    handoff_mode: str = "",
 ) -> tuple[str, dict[str, Any]]:
     """Build markdown interjection directives for activated skills/agents and enforce scope isolation."""
     ws_path = Path(workspace_str).resolve() if workspace_str and Path(workspace_str).exists() else None
     scope_eval = evaluate_session_customization_scope(workspace_str, config_dir, gitlab_dir)
     edit_scope = (customization_edit_scope or "none").strip().lower()
-    eff_skills = _resolve_skill_directives(workspace_str, activate_skills, research_markdown)
+    eff_skills = _resolve_skill_directives(workspace_str, activate_skills, research_markdown, handoff_mode=handoff_mode)
     resolved_skills = [
         {"name": s.strip(), "path": str(p) if (p := resolve_customization_file(f"skill:{s.strip()}", config_dir, data_dir, ws_path)) else f"(unresolved: {s.strip()})"}
         for s in re.split(r"[,;\n]+", eff_skills or "") if s.strip()

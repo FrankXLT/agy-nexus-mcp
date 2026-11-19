@@ -28,8 +28,8 @@ from agy_nexus.tools_workspace import _resolve_pinned_context, inspect_git_diff
 
 
 def test_v290_version_bump() -> None:
-    """Verify version is bumped to 3.2.2."""
-    assert agy_nexus.__version__ == "3.2.2"
+    """Verify version is bumped to 3.2.3."""
+    assert agy_nexus.__version__ == "3.2.3"
 
 
 def test_fastmcp_instructions_sequential_governance() -> None:
@@ -207,8 +207,9 @@ def test_real_workspace_cross_repo_slot_isolation() -> None:
     assert SESSION_STATE["session_workspace_map"][conv_sib] == str(ws_sibling)
 
 
-def test_readonly_tools_guidance_strings() -> None:
+def test_readonly_tools_guidance_strings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify read-only tools guidance strings permit sequential calls and have no STOP AND REPLY."""
+    monkeypatch.setattr("agy_nexus.tools_ops.is_unlocked", lambda phrase="": True)
     # 1. get_session_tree
     tree_out = get_session_tree(include_stats=False)
     tree_data = json.loads(tree_out)

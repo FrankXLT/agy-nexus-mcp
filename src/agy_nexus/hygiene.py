@@ -226,24 +226,28 @@ def slice_git_diff(
 
 
 def _compact_markdown(text: str, max_chars: int = 5500, source_hint: str = "...") -> str:
-    """Keep markdown under max_chars while preserving all section headings, intro, and the latest trailing sections."""
+    """Keep markdown under max_chars while preserving headings, intro, and latest sections."""
     if len(text) <= max_chars:
         return text
-    toc_cap = max(300, int(max_chars * 0.14))
-    head_cap = max(600, int(max_chars * 0.35))
-    tail_cap = max(800, int(max_chars * 0.43))
+    if max_chars < 420:
+        cut = max(1, max_chars - 16)
+        return text[:cut] + "\n... [compacted]"
     headings = [line.strip() for line in text.splitlines() if line.lstrip().startswith("#")][:40]
-    toc = "\n".join(headings)[:toc_cap]
-    head_part = text[:head_cap]
-    tail_part = text[-tail_cap:]
     hint_expr = f"'{source_hint}'" if source_hint != "..." else "..."
-    return (
-        f"[Document Outline ({len(text)} total chars — use ask_workspace_readonly(file_subpath={hint_expr}, start_line=..., end_line=...) for middle sections)]:\n"
-        f"{toc}\n\n"
-        f"--- [Beginning] ---\n{head_part}\n\n"
-        f"... [middle omitted] ...\n\n"
-        f"--- [End (Latest Checkpoints)] ---\n{tail_part}"
-    )
+    hdr = f"[Document Outline ({len(text)} total chars — ask_workspace_readonly(file_subpath={hint_expr}) for middle)]:\n"
+    sep_mid = "\n\n... [middle omitted] ...\n\n--- [End] ---\n"
+    if max_chars < 1800:
+        toc_cap = min(180, max(0, int(max_chars * 0.14))) if headings else 0
+        toc = "\n".join(headings)[:toc_cap]
+        overhead = len(hdr) + len(toc) + len("\n\n--- [Begin] ---\n") + len(sep_mid)
+        rem = max(80, max_chars - overhead)
+        head_cap = rem // 2
+        tail_cap = rem - head_cap
+    else:
+        toc = "\n".join(headings)[:max(300, int(max_chars * 0.14))]
+        head_cap, tail_cap = max(600, int(max_chars * 0.35)), max(800, int(max_chars * 0.43))
+    out = f"{hdr}{toc}\n\n--- [Begin] ---\n{text[:head_cap]}{sep_mid}{text[-tail_cap:]}"
+    return out if len(out) <= max_chars else out[:max_chars - 16] + "\n... [compacted]"
 
 
 def _summarize_jsonl_line(raw_line: str) -> dict[str, Any]:

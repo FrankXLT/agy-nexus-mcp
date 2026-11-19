@@ -258,7 +258,12 @@ function renderDashboard(b) {
   document.getElementById("kpiCompliance").textContent = Number(compPct).toFixed(1) + "%";
   document.getElementById("kpiMcpTokens").textContent = formatCompactTokens(w.total_mcp_tokens ?? 0) + " MCP tok";
   document.getElementById("kpiAvgBytes").textContent = Number(avgKb).toFixed(1) + " / " + Number(maxKb).toFixed(1) + " KB";
-  document.getElementById("kpiRpcCount").textContent = w.total_recorded_calls ?? 0;
+  const hs = w.protocol_handshakes || {};
+  const rpcEl = document.getElementById("kpiRpcCount");
+  rpcEl.textContent = w.total_recorded_calls ?? 0;
+  rpcEl.title = hs.calls
+    ? `${w.total_recorded_calls ?? 0} tool calls · ${hs.calls} protocol handshakes (${Number(hs.tools_list_kb || 0).toFixed(1)} KB tools/list)`
+    : `${w.total_recorded_calls ?? 0} tool calls`;
   let topClientName = topProdEntry ? topProdEntry[0] : "Gemini Mobile";
   if (window.innerWidth < 560 && topClientName.includes("Gemini Web / Cloud MCP")) {
     topClientName = "Gemini Cloud";
@@ -356,7 +361,7 @@ function renderDashboard(b) {
 
   renderAllTimePlots(b);
   if (typeof renderHierarchyPanel === "function") renderHierarchyPanel(b);
-  renderCodeHealth(b.code_health, b.version || "3.2.2");
+  renderCodeHealth(b.code_health, b.version || "3.2.3");
 
   const ph = b.project_hierarchy || {};
   let totalActiveHandoffs = 0;
@@ -515,7 +520,7 @@ document.getElementById("previewDemoBtn").addEventListener("click", () => {
   state.demoMode = true; localStorage.setItem("nexus_demo_mode", "1");
   document.getElementById("authOverlay").classList.add("hidden");
   document.getElementById(state.surfaceView === "workspace" ? "workspaceMain" : "dashboardMain")?.classList.remove("hidden");
-  fetchStats(state.period);
+  fetchStats(urlPeriod ? state.period : undefined);
 });
 document.getElementById("lockBtn").addEventListener("click", () => {
   localStorage.removeItem("nexus_passphrase"); sessionStorage.removeItem("nexus_passphrase"); localStorage.removeItem("nexus_demo_mode");
@@ -526,7 +531,7 @@ document.getElementById("lockBtn").addEventListener("click", () => {
   document.getElementById("workspaceMain")?.classList.add("hidden");
 });
 
-if (state.passphrase || state.demoMode) fetchStats(state.period);
+if (state.passphrase || state.demoMode) fetchStats((state.demoMode && !urlPeriod) ? undefined : state.period);
 if (window.location.hash === "#workspace") switchSurface("workspace");
 
 function buildSignedMediaUrl(session, artifact, t, sig, scopeParam) {

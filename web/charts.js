@@ -28,18 +28,26 @@ const urlParams = (typeof window !== "undefined" && window.location) ? new URLSe
 const urlDemo = urlParams.get("demo") === "1" || urlParams.get("demo") === "true";
 const urlTheme = urlParams.get("theme") || urlParams.get("surface") || "";
 const urlPeriod = urlParams.get("period") || "";
+const urlView = (urlParams.get("view") || "").toLowerCase();
 const urlDensity = (urlParams.get("density") || "").toUpperCase();
 const initThemePref = THEME_META[urlTheme] ? urlTheme : (localStorage.getItem("nexus_surface") || localStorage.getItem("nexus_theme") || "obsidian");
 const initPeriodPref = VALID_PERIODS.includes(urlPeriod) ? urlPeriod : (VALID_PERIODS.includes(localStorage.getItem("nexus_period")) ? localStorage.getItem("nexus_period") : "current_month");
 const initDensityPref = VALID_DENSITIES.includes(urlDensity) ? urlDensity : (VALID_DENSITIES.includes(localStorage.getItem("nexus_density")) ? localStorage.getItem("nexus_density") : "D2");
+const periodPresetMap = {
+  current_month: { timeframe: "month", horizon: "to_date", offset: 0 },
+  last_month: { timeframe: "month", horizon: "to_date", offset: 1 },
+  last_90d: { timeframe: "quarter", horizon: "rolling", offset: 0 },
+  last_year: { timeframe: "year", horizon: "rolling", offset: 0 },
+};
+const urlPeriodCfg = VALID_PERIODS.includes(urlPeriod) ? periodPresetMap[urlPeriod] : null;
 let fetchSeq = 0;
-const initialView = (typeof window !== "undefined" && window.location && window.location.hash === "#workspace") ? "workspace" : "analytics";
+const initialView = (typeof window !== "undefined" && window.location && (window.location.hash === "#workspace" || urlView === "workspace")) ? "workspace" : "analytics";
 const state = {
   passphrase: urlDemo ? "" : (localStorage.getItem("nexus_passphrase") || sessionStorage.getItem("nexus_passphrase") || ""),
   period: initPeriodPref,
-  timeframe: localStorage.getItem("nexus_timeframe") || "month",
-  horizon_mode: localStorage.getItem("nexus_horizon_mode") || "to_date",
-  offset: 0,
+  timeframe: urlPeriodCfg ? urlPeriodCfg.timeframe : (localStorage.getItem("nexus_timeframe") || "month"),
+  horizon_mode: urlPeriodCfg ? urlPeriodCfg.horizon : (localStorage.getItem("nexus_horizon_mode") || "to_date"),
+  offset: urlPeriodCfg ? urlPeriodCfg.offset : 0,
   surfaceView: initialView,
   surface: THEME_META[initThemePref] ? initThemePref : "obsidian",
   density: initDensityPref,
@@ -97,11 +105,22 @@ function applyThemeAndDensity(surface, density) {
   }
 }
 
+function resolveDemoPeriodKey(explicitPeriod) {
+  if (VALID_PERIODS.includes(explicitPeriod)) return explicitPeriod;
+  if (state.timeframe === "year") return "last_year";
+  if (state.timeframe === "quarter") return "last_90d";
+  if (Number(state.offset || 0) > 0) return "last_month";
+  return "current_month";
+}
+
 async function fetchStats(period) {
   const mySeq = ++fetchSeq;
   if (state.demoMode) {
     localStorage.setItem("nexus_demo_mode", "1");
-    state.bundle = generateDemoBundle(period);
+    const demoPk = resolveDemoPeriodKey(period);
+    state.period = demoPk;
+    localStorage.setItem("nexus_period", demoPk);
+    state.bundle = generateDemoBundle(demoPk);
     document.getElementById("authOverlay").classList.add("hidden");
     const targetMain = state.surfaceView === "workspace" ? document.getElementById("workspaceMain") : document.getElementById("dashboardMain");
     if (targetMain) targetMain.classList.remove("hidden");

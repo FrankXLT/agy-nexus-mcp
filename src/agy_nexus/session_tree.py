@@ -72,15 +72,30 @@ def read_backup_321_manifest(bg_dir: Path | None = None) -> dict[str, Any]:
 
 def get_routing_telemetry() -> dict[str, Any]:
     """Return parallel context slot counts, routing counters, and Deadbolt TTL telemetry."""
+    cfg.prune_stale_context_slots()
     now = time.time()
-    unlocked_at = float(SESSION_STATE.get("unlocked_at") or 0.0)
-    ttl_rem = max(0, int(TTL_SECONDS - (now - unlocked_at))) if unlocked_at > 0 else 0
-    raw_contexts = SESSION_STATE.get("active_contexts") or {}
-    slots_list = sorted(
-        (v for v in raw_contexts.values() if isinstance(v, dict) and v.get("conversation_id")),
-        key=lambda x: float(x.get("last_used_at") or 0.0),
-        reverse=True,
-    )
+    with cfg._STATE_LOCK:
+        unlocked_at = float(SESSION_STATE.get("unlocked_at") or 0.0)
+        ttl_rem = max(0, int(TTL_SECONDS - (now - unlocked_at))) if unlocked_at > 0 else 0
+        raw_contexts = SESSION_STATE.get("active_contexts") or {}
+        slots_list = sorted(
+            (dict(v) for v in raw_contexts.values() if isinstance(v, dict) and v.get("conversation_id")),
+            key=lambda x: float(x.get("last_used_at") or 0.0),
+            reverse=True,
+        )
+    compact_slots = [
+        {
+            "conversation_id": str(s.get("conversation_id") or ""),
+            "title": str(s.get("title") or ""),
+            "project_id": str(s.get("project_id") or ""),
+            "project_name": str(s.get("project_name") or ""),
+            "workspace": str(s.get("workspace") or ""),
+            "mode": str(s.get("mode") or ""),
+            "last_tool": str(s.get("last_tool") or ""),
+            "last_used_at": s.get("last_used_at", 0.0),
+        }
+        for s in slots_list[:8]
+    ]
     return {
         "active_slots": len(slots_list),
         "pinned_calls": int(SESSION_STATE.get("pinned_calls") or 0),
@@ -89,7 +104,7 @@ def get_routing_telemetry() -> dict[str, Any]:
         "selected_workspace": str(SESSION_STATE.get("selected_workspace") or ""),
         "ttl_remaining_seconds": ttl_rem,
         "ttl_remaining_min": round(ttl_rem / 60.0, 1),
-        "slots": slots_list[:15],
+        "slots": compact_slots,
     }
 
 

@@ -1,6 +1,6 @@
-// Code Health, Praxis Semantic Index & Modular Hygiene UI Renderer for /web Overwatch Dashboard (v3.2.2)
+// Code Health, Praxis Semantic Index & Modular Hygiene UI Renderer for /web Overwatch Dashboard (v3.2.3)
 function renderCodeHealth(ch, installedVer) {
-  installedVer = installedVer || "3.2.2";
+  installedVer = installedVer || "3.2.3";
   let dotClass = "cyan";
   const status = (ch && ch.version && ch.version.status) || "staged_locally";
   if (status === "up_to_date") dotClass = "green";
@@ -160,9 +160,12 @@ function renderCodeHealth(ch, installedVer) {
           ? `<span class="card-tag mono" style="margin-left:6px;font-size:9px;padding:1px 5px;background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.3);">DIRTY</span>`
           : "";
 
+        const escH = typeof escapeHtmlSafe === "function"
+          ? escapeHtmlSafe
+          : (s) => String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td><strong class="mono">${m.name}</strong>${dirtyBadge}</td>
+          <td><strong class="mono">${escH(m.name)}</strong>${dirtyBadge}</td>
           <td class="mono">${lines}</td>
           <td><span style="display:inline-flex;align-items:center;gap:6px;"><span class="status-dot-6px ${dot}"></span><span>${modStatusText}</span></span></td>
           <td>${polyHtml}</td>

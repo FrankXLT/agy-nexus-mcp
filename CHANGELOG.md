@@ -4,6 +4,32 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.3] — 2026-11-18
+
+### Added
+- **Two-Tier Proportional Execution Lifecycle (`src/agy_nexus/handoff_templates.py`, `src/agy_nexus/handoff.py`, `src/agy_nexus/inventory.py`)**:
+  - Smart `execution_mode="auto"` resolution selecting `"fast"` for `release_closeout` and compact non-security `bug_or_visual_fix` handoffs (`< 6,500` chars) while preserving `"plan"` for `feature_update`, `new_project`, large specs, and any security/auth/deadbolt boundary changes (`touches_security_boundary()`).
+  - Extracted `handoff_templates.py` (`128L`) emitting a streamlined **Tier 1 Surgical Fast-Path Lifecycle** (direct Main-Chat `Gemini 4 Carbon` inspection/editing + `pytest`/`--self-test` without multi-subagent ceremony on `<= 3` non-security files) vs. the **Tier 2 Full 4-Step Execution Lifecycle + Intra-Google Dual-Review**.
+  - Tightened `_resolve_skill_directives` so `dual-review` only auto-injects for `release_closeout`, `publish_to_github`, or genuine security/auth/deadbolt scope.
+- **Byte-Bounded Praxis `polyglot_map` (`src/agy_nexus/polyglot_index.py`, `src/agy_nexus/tools_praxis.py`)**:
+  - Added `max_bytes: int = 17500` (`< 20 KB` on-wire budget), grouped `"directory_summary"` stats (`dir`, `files`, `lines`, `symbols`), progressive symbol-prioritized trimming, `truncated` flag, and `drilldown_hint`.
+- **Real Depersonalized HTML, Workspace & ASCII Showcase (`scripts/export_depersonalized_showcase.py`, `web/demo_snapshot.js`, `docs/assets/*.png`)**:
+  - Created repeatable `scripts/export_depersonalized_showcase.py` (`494L`, zero cleartext private strings; deterministic SHA-256[:12] aliasing and sparse `_z()` + shared-date serialization into `web/demo_snapshot.js`).
+  - Exported live 4-window telemetry (`current_month`, `last_month`, `last_90d`, `last_year`), 16-project recency tree, and live Code Health; replaced flat placeholder SVGs with crisp preview captures (`web/demo_thumb_{desktop,workspace,foldable,mobile,health}.png`) registered in `PWA_ASSETS` and `web/sw.js` (`v3.2.3-b2`); refreshed `docs/assets/{dashboard,workspace}-{desktop,mobile}.png` and all four `README.md` ASCII showcase blocks (`get_session_tree`, `default`, `quick`, `rich`).
+- **Autouse `pytest` Isolation & Regression Suites (`tests/conftest.py`, `tests/test_v323_wire_caps_fastpath_and_isolation.py`, `tests/test_v323_showcase_privacy_and_compaction.py`)**:
+  - Isolated `cfg.STATE_FILE`, `AG_BRIDGE_STATE_FILE`, and in-place `SESSION_STATE` across `pytest` runs and expanded test coverage to **95 `pytest` tests** including zero-leak sub-token hash scans, UUID leak checks, PWA parity, and Markdown/wire-cap bounds.
+
+### Fixed
+- **Praxis IDE Attribution & Handshake Separation in Wire Telemetry (`src/agy_nexus/telemetry_scanner.py`, `src/agy_nexus/middleware.py`, `ascii_default.py`, `ascii_rich.py`)**:
+  - Fixed `detect_product_name()` to evaluate Praxis/local IDE signals (`doorway == "praxis"`, `praxis`/`polyglot` tokens, `polyglot_*`/`praxis_*` tool names) before generic `"http-client"`/`"google"` User-Agent matches, classifying Praxis calls as `"Antigravity IDE (Praxis MCP)"`, and updated `ascii_rich.py` / `ascii_default.py` client labels dynamically.
+  - Recorded `"rpc"` and `[rpc:<method>]` labels in `middleware.py`, computing `total_recorded_calls`, `avg_kb`, `max_kb`, `total_mcp_tokens`, and `budget_compliance_pct` over real `tools/call` traffic while exposing `"protocol_handshakes"` (`calls`, `bytes`, `tokens`, `tools_list_kb`).
+- **Tight `load_session_into_gemini` Compaction & Hard `< 20 KB` Wire Loop (`src/agy_nexus/hygiene.py`, `src/agy_nexus/tools_session.py`)**:
+  - Fixed `_compact_markdown()` to scale proportionally under `1,800` chars instead of enforcing fixed `~1.8 KB` floors, re-compacted from raw documents, and added `_shrink_optional_payload_fields()` enforcing `<= 17.8 KB` inner JSON (`< 20 KB` wire even with 6 signed `/web/media/` URLs, `include_files`, and large untracked file lists).
+- **Stale Test Slot Pruning & `< 17.5 KB` `get_session_tree` Wire Guard (`src/agy_nexus/config.py`, `src/agy_nexus/session_tree.py`, `src/agy_nexus/tools_ops.py`)**:
+  - Added `prune_stale_context_slots()` removing dead `/tmp/` and unbacked synthetic test slots on state load/save and in `get_routing_telemetry()`, capped `slots` at `8` compact entries, and tightened `get_session_tree` compaction to `<= 17,500` inner JSON bytes.
+- **`/web?demo=1` Offline Resilience, URL XSS Hardening & Compact `tools/list` (`web/explorer.js`, `web/app.js`, `web/charts.js`, `web/gallery_view.js`, `web/markdown_renderer.js`)**:
+  - Guarded Demo Mode `viewFile()` (Queue `Read Spec` / Batch `INDEX.md`) and `handleFilesUpload()` against `401` lockouts, synced `localStorage.nexus_period` across Demo horizon switches/reloads, added intrinsic `width`/`height` + `decoding="async"` on gallery thumbnails, hardened `isSafeUrl()` against tab/control-character `javascript:`/`vbscript:`/`data:image/svg+xml` bypasses, and compacted `tools/list` from `12.2 KB` down to `~9.1 KB`.
+
 ## [3.2.2] — 2026-11-18
 
 ### Added

@@ -37,7 +37,11 @@
     "stroke-linecap", "stroke-linejoin", "cx", "cy", "r", "rx", "ry", "x1", "y1", "x2", "y2", "x", "y", "points"
   ]);
 
-  const DANGEROUS_PROTO_RE = /^(?:\s*javascript:|\s*vbscript:|\s*data:text\/html)/i;
+  const DANGEROUS_PROTO_RE = /^(?:javascript:|vbscript:|data:(?:text\/html|image\/svg\+xml))/i;
+  function isSafeUrl(raw) {
+    const cleaned = String(raw || "").replace(/[\u0000-\u0020\u007f]+/g, "");
+    return Boolean(cleaned) && !DANGEROUS_PROTO_RE.test(cleaned);
+  }
 
   function sanitizeHtml(dirtyHtml) {
     if (!dirtyHtml) return "";
@@ -70,7 +74,7 @@
                 const val = attr.value;
                 if (name.startsWith("on") || !ALLOWED_ATTRS.has(name)) {
                   child.removeAttribute(attr.name);
-                } else if ((name === "href" || name === "src") && DANGEROUS_PROTO_RE.test(val)) {
+                } else if ((name === "href" || name === "src") && !isSafeUrl(val)) {
                   child.removeAttribute(attr.name);
                 }
               }
@@ -148,8 +152,9 @@
     // Step 2: Tokenize Images: ![alt](url) (BEFORE links!)
     s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function (_, alt, url) {
       const idx = tokens.length;
+      const safeSrc = isSafeUrl(url) ? url.trim() : "#blocked";
       tokens.push(
-        `<figure class="editorial-figure"><img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" loading="lazy" class="editorial-img"/><figcaption>${escapeHtml(alt)}</figcaption></figure>`
+        `<figure class="editorial-figure"><img src="${escapeHtml(safeSrc)}" alt="${escapeHtml(alt)}" loading="lazy" class="editorial-img"/><figcaption>${escapeHtml(alt)}</figcaption></figure>`
       );
       return `__MK_TOKEN_${idx}__`;
     });
@@ -157,7 +162,7 @@
     // Step 3: Tokenize Links: (?<!!)\[([^\]]+)\]\(([^)]+)\)
     s = s.replace(/(?<!!)\[([^\]]+)\]\(([^)]+)\)/g, function (_, label, url) {
       const idx = tokens.length;
-      const cleanUrl = url.trim();
+      const cleanUrl = isSafeUrl(url) ? url.trim() : "#blocked";
       const isExternal = cleanUrl.startsWith("http://") || cleanUrl.startsWith("https://");
       const targetAttr = isExternal ? ' target="_blank" rel="noopener noreferrer"' : "";
       tokens.push(`<a href="${escapeHtml(cleanUrl)}" class="editorial-link"${targetAttr}>${escapeHtml(label)}</a>`);

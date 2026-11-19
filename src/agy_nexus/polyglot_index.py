@@ -243,15 +243,7 @@ def refresh_polyglot_index(ws_root: Path, force: bool = False, rebuild_all: bool
     }
 
     if reindexed > 0 or pruned > 0 or not idx_path.is_file():
-        with _INDEX_LOCK:
-            tmp_path = idx_path.with_suffix(".json.tmp")
-            try:
-                fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-                with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                    fh.write(json.dumps(index_doc, separators=(",", ":")))
-                os.replace(tmp_path, idx_path)
-            except OSError:
-                tmp_path.unlink(missing_ok=True)
+        _write_index_atomic(idx_path, index_doc)
 
     _MEM_INDEX_CACHE[ws_key] = (time.time(), index_doc)
     elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
@@ -265,53 +257,109 @@ def refresh_polyglot_index(ws_root: Path, force: bool = False, rebuild_all: bool
     }
 
 
+def _write_index_atomic(idx_path: Path, index_doc: dict[str, Any]) -> None:
+    """Persist serialized Praxis index atomically under mode 0600."""
+    with _INDEX_LOCK:
+        tmp_path = idx_path.with_suffix(f".json.{os.getpid()}.{threading.get_ident()}.tmp")
+        try:
+            fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(json.dumps(index_doc, separators=(",", ":")))
+            os.replace(tmp_path, idx_path)
+        except OSError:
+            tmp_path.unlink(missing_ok=True)
+
+
+def _build_directory_summary(matched_keys: list[str], files_map: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group matched repository files by top directory for compact map overview."""
+    buckets: dict[str, dict[str, Any]] = {}
+    for rel in matched_keys:
+        parts = Path(rel).parent.parts
+        dkey = "/".join(parts[:2]) if parts else "."
+        info = files_map[rel]
+        b = buckets.setdefault(dkey, {"dir": dkey, "files": 0, "lines": 0, "symbols": 0})
+        b["files"] += 1
+        b["lines"] += int(info.get("lines") or 0)
+        b["symbols"] += int(info.get("symbol_count") or 0)
+    return sorted(buckets.values(), key=lambda x: (-x["files"], -x["symbols"], x["dir"]))[:30]
+
+
+def _json_utf8_len(payload: dict[str, Any]) -> int:
+    return len(json.dumps(payload, separators=(",", ": "), ensure_ascii=False).encode("utf-8"))
+
+
 def polyglot_repo_map(
     workspace: str = "",
     path_prefix: str = "",
     limit: int = 120,
     force_refresh: bool = False,
+    max_bytes: int = 17500,
 ) -> dict[str, Any]:
-    """Return an up-to-date semantic repository map backed by the incremental SHA-256 index."""
+    """Return a byte-bounded semantic repository map backed by the incremental SHA-256 index."""
     ws_root = resolve_polyglot_workspace(workspace)
     ref = refresh_polyglot_index(ws_root, force=force_refresh)
     files_map: dict[str, dict[str, Any]] = ref["index"].get("files", {})
     pfx = path_prefix.strip().lstrip("./")
     matched_keys = [k for k in sorted(files_map) if not pfx or k.startswith(pfx)]
     cap = max(1, min(int(limit or 120), 300))
+    eff_max_bytes = max(1500, min(int(max_bytes or 17500), 200_000))
+    dir_summary = _build_directory_summary(matched_keys, files_map)
+    ordered_keys = (
+        sorted(matched_keys, key=lambda k: (-int(files_map[k].get("symbol_count") or 0), -int(files_map[k].get("lines") or 0), k))
+        if (not pfx and len(matched_keys) > 40) else matched_keys
+    )
+    drilldown = "Pass path_prefix='<dir>/' to polyglot_map or call polyglot_outline(file_subpath=...) for full symbol spans."
+    header_line = f"# Polyglot Map: {ws_root.name} ({len(matched_keys)} files matched)"
+
+    def _assemble(ent_list: list[dict[str, Any]], md_body: list[str], trunc: bool) -> dict[str, Any]:
+        md_all = [header_line, *md_body]
+        if trunc:
+            md_all.append(f"... [truncated at {len(ent_list)}/{len(matched_keys)} files for <={eff_max_bytes}B budget; pass path_prefix='<dir>/']")
+        res_obj: dict[str, Any] = {
+            "ok": True, "workspace": str(ws_root), "path_prefix": pfx,
+            "matched_files": len(matched_keys), "shown_files": len(ent_list), "truncated": trunc,
+            "directory_summary": dir_summary, "index_stats": ref["stats"],
+            "files": ent_list, "formatted_map": "\n".join(md_all),
+        }
+        if trunc:
+            res_obj["drilldown_hint"] = drilldown
+        return res_obj
 
     entries: list[dict[str, Any]] = []
-    md_lines = [f"# Polyglot Map: {ws_root.name} ({len(matched_keys)} files matched)"]
-    for rel in matched_keys[:cap]:
+    md_chunks: list[list[str]] = []
+    byte_trimmed = False
+    est_bytes = _json_utf8_len(_assemble([], [], True))
+    for rel in ordered_keys[:cap]:
         info = files_map[rel]
         syms = info.get("symbols") or []
-        top_syms = [
-            f"L{s['start_line']}-L{s['end_line']} {s['name']}"
-            for s in syms[:6]
-            if isinstance(s, dict) and s.get("name")
-        ]
-        entries.append({
-            "path": rel,
-            "lang": info.get("lang", ""),
-            "lines": info.get("lines", 0),
-            "symbol_count": info.get("symbol_count", 0),
-            "summary": info.get("summary", ""),
-            "top_symbols": top_syms,
-        })
+        top_syms = [f"L{s['start_line']}-L{s['end_line']} {s['name']}" for s in syms[:6] if isinstance(s, dict) and s.get("name")]
+        entry = {"path": rel, "lang": info.get("lang", ""), "lines": info.get("lines", 0), "symbol_count": info.get("symbol_count", 0), "summary": info.get("summary", ""), "top_symbols": top_syms}
         summ = f" — {info['summary']}" if info.get("summary") else ""
-        md_lines.append(f"- `{rel}` ({info.get('lang')}, {info.get('lines')}L, {info.get('symbol_count')} syms){summ}")
+        lines_for_file = [f"- `{rel}` ({info.get('lang')}, {info.get('lines')}L, {info.get('symbol_count')} syms){summ}"]
         if top_syms:
-            md_lines.append(f"  [{', '.join(top_syms)}]")
+            lines_for_file.append(f"  [{', '.join(top_syms)}]")
+        delta = len(json.dumps(entry, separators=(",", ": "), ensure_ascii=False).encode("utf-8")) + sum(len(l.encode("utf-8")) + 2 for l in lines_for_file) + 4
+        if est_bytes + delta > eff_max_bytes - 180:
+            cand_bytes = _json_utf8_len(_assemble([*entries, entry], [ln for ch in md_chunks for ln in ch] + lines_for_file, True))
+            if cand_bytes > eff_max_bytes:
+                byte_trimmed = True
+                break
+            est_bytes = cand_bytes
+        else:
+            est_bytes += delta
+        entries.append(entry)
+        md_chunks.append(lines_for_file)
 
-    return {
-        "ok": True,
-        "workspace": str(ws_root),
-        "path_prefix": pfx,
-        "matched_files": len(matched_keys),
-        "shown_files": len(entries),
-        "index_stats": ref["stats"],
-        "files": entries,
-        "formatted_map": "\n".join(md_lines),
-    }
+    is_trunc = byte_trimmed or (len(entries) < len(matched_keys))
+    out = _assemble(entries, [ln for ch in md_chunks for ln in ch], is_trunc)
+    while _json_utf8_len(out) > eff_max_bytes and entries:
+        entries.pop()
+        md_chunks.pop()
+        out = _assemble(entries, [ln for ch in md_chunks for ln in ch], True)
+    while _json_utf8_len(out) > eff_max_bytes and len(dir_summary) > 1:
+        dir_summary.pop()
+        out = _assemble(entries, [ln for ch in md_chunks for ln in ch], True)
+    return out
 
 
 def polyglot_symbol_search(

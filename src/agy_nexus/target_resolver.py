@@ -277,12 +277,31 @@ def apply_global_scope_isolation(
         return conv_id, create_new_session, create_new_project, routing_reason, eff_ws, active_ws, eff_pid, eff_pname, repo_slug
     scope_check = evaluate_session_customization_scope(active_ws, cfg.AGY_CONFIG_DIR, cfg.AGY_GITLAB_DIR)
     if scope_check["is_global_config_session"] or _session_matches_repo_hint(conv_id, "antigravity-config"):
-        return conv_id, create_new_session, create_new_project, routing_reason, eff_ws, active_ws, eff_pid, eff_pname, repo_slug
+        cfg_repo_str = str(get_antigravity_config_repo())
+        cfg_pid, cfg_pname = resolve_canonical_project_for_workspace(cfg_repo_str, "antigravity-config")
+        eff_ws = eff_ws or active_ws or cfg_repo_str
+        if cfg_pid and (not eff_pid or repo_slug != "antigravity-config"):
+            eff_pid = cfg_pid
+            eff_pname = cfg_pname or eff_pname or "antigravity-config"
+            if Path(eff_ws).resolve() != Path(cfg_repo_str).resolve():
+                eff_ws = cfg_repo_str
+        return (
+            conv_id,
+            create_new_session,
+            create_new_project,
+            routing_reason,
+            eff_ws,
+            eff_ws,
+            eff_pid,
+            eff_pname or cfg_pname or "antigravity-config",
+            "antigravity-config",
+        )
     cfg_repo_str = str(get_antigravity_config_repo())
     cfg_pid, cfg_pname = resolve_canonical_project_for_workspace(cfg_repo_str, "antigravity-config")
-    cfg_conv, cfg_reason = _resolve_target_session_for_handoff("", cfg_repo_str, "antigravity-config", session_title, activate_skills, body_clean)
-    if cfg_conv and _session_matches_repo_hint(cfg_conv, "antigravity-config"):
-        return cfg_conv, False, False, f"scope_isolation_routed_to_existing_config_session ({cfg_reason})", cfg_repo_str, cfg_repo_str, cfg_pid, (cfg_pname or "antigravity-config"), "antigravity-config"
+    if not create_new_session:
+        cfg_conv, cfg_reason = _resolve_target_session_for_handoff("", cfg_repo_str, "antigravity-config", session_title, activate_skills, body_clean)
+        if cfg_conv and _session_matches_repo_hint(cfg_conv, "antigravity-config"):
+            return cfg_conv, False, False, f"scope_isolation_routed_to_existing_config_session ({cfg_reason})", cfg_repo_str, cfg_repo_str, cfg_pid, (cfg_pname or "antigravity-config"), "antigravity-config"
     return "", True, False, "scope_isolation_new_config_session", cfg_repo_str, cfg_repo_str, cfg_pid, (cfg_pname or "antigravity-config"), "antigravity-config"
 
 

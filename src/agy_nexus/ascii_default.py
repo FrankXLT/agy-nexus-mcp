@@ -144,6 +144,10 @@ def render_ascii_default(bundle: dict[str, Any]) -> str:
     wk_left = round(max(0.0, 100.0 - float((quota.get("partner_weekly_pacing") or {}).get("recommended_cumulative_ceiling_pct", 14.3))), 1)
     w_calls, w_avg, w_max = int(wire.get("total_recorded_calls", 0)), float(wire.get("avg_kb", 0.0)), float(wire.get("max_kb", 0.0))
     w_tok, w_pct = fmt_tok(int(wire.get("total_mcp_tokens", 0)), False), int(round(float(wire.get("budget_compliance_pct", 100.0))))
+    by_prod = wire.get("by_product") or {}
+    has_web = any("Web" in k or "Mobile" in k for k in by_prod)
+    has_prx = any("Praxis" in k or "IDE" in k for k in by_prod)
+    w_client = "Web+Praxis" if (has_web and has_prx) else ("Praxis IDE" if has_prx else "Gemini Web")
 
     code_health = bundle.get("code_health") or {}
     v_info, m_info, ast_info = code_health.get("version") or {}, code_health.get("modular_hygiene") or {}, code_health.get("ast_integrity") or {}
@@ -160,10 +164,10 @@ def render_ascii_default(bundle: dict[str, Any]) -> str:
         _sr(f"PARTNER 1x : {p_rem:>5.1f}% [{p_bar}] ON PACE", f" {wk_left:>4.1f}% Wk Left | Lim <=14.3%/d"),
         _sr(f"STEPS/TOOLS: {tot_steps:,}s | {tot_tools:,}t | {tot_chats}c", f" {tot_steps // act_days:,} s/act-d | {tot_steps // cal_days:,} s/cal-d"),
         _sr(f"TOKEN BURN : {fmt_tok(tot_tok)} Total ({tot_subs} sub runs)", f" {fmt_rate(tot_tok / act_days)} tok/d   | {fmt_rate(tot_tok / max(1.0, act_days / 7.0))} tok/wk"),
-        _sr(f"MCP WIRE   : {w_pct}% <20KB (avg {w_avg:.1f}/{w_max:.1f}KB)", f" {w_calls} req ({w_tok} tok) | Gemini Web"),
+        _sr(f"MCP WIRE   : {w_pct}% <20KB (avg {w_avg:.1f}/{w_max:.1f}KB)", f" {w_calls} req ({w_tok} tok) | {w_client}"),
         _sr(
             f"CODE HEALTH: Poly {int((code_health.get('polyglot_health') or ast_info).get('total_symbols', 0))} syms | {m_info.get('compliant_500', m_info.get('compliant_300', 0))}/{m_info.get('total_modules', 0)} <=500L",
-            f" {m_info.get('violations_over_650', 0)} >650L | Polyglot+Serena",
+            f" {m_info.get('violations_over_650', 0)} >650L | Praxis+Serena",
         ),
         "────────────────────────────────────────┴───────────────────────────────",
     ]

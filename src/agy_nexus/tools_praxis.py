@@ -43,13 +43,15 @@ def polyglot_map(
     path_prefix: str = "",
     limit: int = 120,
     force_refresh: bool = False,
+    max_bytes: int = 17500,
 ) -> str:
-    """Build or incrementally refresh the SHA-256 Polyglot index for a workspace and return its semantic file map with top symbol spans and 1-liner summaries."""
+    """Build or refresh the SHA-256 Polyglot index and return a byte-capped (<18 KB) semantic map with directory summary and top symbol spans."""
     res = polyglot_repo_map(
         workspace=workspace,
         path_prefix=path_prefix,
         limit=limit,
         force_refresh=force_refresh,
+        max_bytes=max_bytes,
     )
     return _compact_json(res)
 

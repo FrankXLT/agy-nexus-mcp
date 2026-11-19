@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +16,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 CACHE_VERSION = 6
+_WIRE_RING_LOCK = threading.Lock()
 WIRE_TELEMETRY_RING: list[dict[str, Any]] = []
 MAX_WIRE_RING = 200
 MODEL_CHANGE_RE = re.compile(
@@ -77,30 +79,58 @@ MODEL_TARGET_ALLOCATION = {
         "gpt_oss": {"label": "GPT-OSS 120B", "pool": "Partner Pool (Failover)", "target_pct": 5.0},
     },
 }
-def detect_product_name(raw_product: str = "", user_agent: str = "", tool_name: str = "") -> str:
+def detect_product_name(raw_product: str = "", user_agent: str = "", tool_name: str = "", doorway: str = "") -> str:
+    raw_low = (raw_product or "").lower()
+    tool_low = (tool_name or "").lower()
+    door_low = (doorway or "").lower()
+    if door_low == "praxis" or "praxis" in raw_low or "polyglot" in raw_low or tool_low.startswith(("polyglot_", "praxis_")):
+        return "Antigravity IDE (Praxis MCP)"
+    if "antigravity" in raw_low:
+        return "Antigravity IDE"
     s = f"{raw_product or ''} {user_agent or ''}".lower()
-    if any(k in s for k in ("mobile", "android", "iphone", "gsa/")): return "Gemini Mobile"
-    if "web_ui" in tool_name or "web_stats" in tool_name or "mozilla" in s: return "Web Dashboard"
-    if any(k in s for k in ("gemini", "google", "vertex", "http-client")): return "Gemini Web / Cloud MCP"
+    if any(k in s for k in ("mobile", "android", "iphone", "gsa/")):
+        return "Gemini Mobile"
+    if "web_ui" in tool_low or "web_stats" in tool_low or "mozilla" in s:
+        return "Web Dashboard"
+    if any(k in s for k in ("gemini", "google", "vertex", "http-client")):
+        return "Gemini Web / Cloud MCP"
     return "Antigravity IDE" if ("antigravity" in s or "agy" in s) else (raw_product.strip() or "Gemini MCP Client")
+
+def _is_handshake_record(rec: dict[str, Any]) -> bool:
+    rpc_val = str(rec.get("rpc") or "").strip().lower()
+    tool_val = str(rec.get("tool") or "").strip()
+    if rpc_val and rpc_val not in ("tools/call", "-"):
+        return True
+    return tool_val == "-" or tool_val.startswith("[rpc:")
+
+def _effective_record_product(rec: dict[str, Any]) -> str:
+    tool_val = str(rec.get("tool") or "").strip().lower()
+    if tool_val.startswith(("polyglot_", "praxis_")) or str(rec.get("doorway") or "").lower() == "praxis":
+        return "Antigravity IDE (Praxis MCP)"
+    return str(rec.get("product") or "Gemini MCP Client")
 
 def record_wire_telemetry(tool_or_event: str | dict[str, Any], payload_or_bg_dir: Any = "", duration_ms: float = 0.0, *, bg_dir: Path | None = None, product: str = "", reported_tokens: int = 0) -> dict[str, Any]:
     """Record wire payload size, estimated context tokens, product source, and latency for MCP calls."""
-    req_bytes, user_agent = 0, ""
+    req_bytes, user_agent, rpc_kind, doorway = 0, "", "", ""
     if isinstance(tool_or_event, dict):
         byte_len, req_bytes = int(tool_or_event.get("bytes", 0) or 0), int(tool_or_event.get("req_bytes", 0) or 0)
-        tool_name, dur = str(tool_or_event.get("tool") or tool_or_event.get("rpc") or "mcp"), float(tool_or_event.get("ms", duration_ms) or 0.0)
-        product, user_agent = str(tool_or_event.get("product") or product or ""), str(tool_or_event.get("user_agent") or "")
+        rpc_kind, doorway = str(tool_or_event.get("rpc") or "").strip(), str(tool_or_event.get("doorway") or "").strip()
+        raw_t = str(tool_or_event.get("tool") or "").strip()
+        tool_name = raw_t if (raw_t and raw_t != "-") else (f"[rpc:{rpc_kind}]" if rpc_kind and rpc_kind not in ("-", "tools/call") else (raw_t or rpc_kind or "mcp"))
+        dur, product, user_agent = float(tool_or_event.get("ms", duration_ms) or 0.0), str(tool_or_event.get("product") or product or ""), str(tool_or_event.get("user_agent") or "")
         reported_tokens = int(tool_or_event.get("reported_tokens", reported_tokens) or 0)
         if isinstance(payload_or_bg_dir, Path) and bg_dir is None:
             bg_dir = payload_or_bg_dir
     else:
         byte_len, tool_name, dur = len(str(payload_or_bg_dir or "").encode("utf-8")), str(tool_or_event or "mcp"), float(duration_ms or 0.0)
+        rpc_kind = "tools/call" if tool_name not in ("-", "") and not tool_name.startswith("[rpc:") else ""
     est_tokens = reported_tokens if reported_tokens > 0 else max(1, round((byte_len + req_bytes) / 4.0))
-    entry = {"ts": datetime.now(timezone.utc).isoformat(), "tool": tool_name, "product": detect_product_name(product, user_agent, tool_name), "bytes": byte_len, "kb": round(byte_len / 1024.0, 2), "est_tokens": est_tokens, "under_20kb_budget": byte_len <= 20480, "duration_ms": round(dur, 1)}
-    WIRE_TELEMETRY_RING.append(entry)
-    if len(WIRE_TELEMETRY_RING) > MAX_WIRE_RING:
-        del WIRE_TELEMETRY_RING[: len(WIRE_TELEMETRY_RING) - MAX_WIRE_RING]
+    eff_rpc = rpc_kind or ("tools/call" if tool_name != "-" and not tool_name.startswith("[rpc:") else "")
+    entry = {"ts": datetime.now(timezone.utc).isoformat(), "rpc": eff_rpc, "tool": tool_name, "product": detect_product_name(product, user_agent, tool_name, doorway=doorway), "bytes": byte_len, "kb": round(byte_len / 1024.0, 2), "est_tokens": est_tokens, "under_20kb_budget": byte_len <= 20480, "duration_ms": round(dur, 1)}
+    with _WIRE_RING_LOCK:
+        WIRE_TELEMETRY_RING.append(entry)
+        if len(WIRE_TELEMETRY_RING) > MAX_WIRE_RING:
+            del WIRE_TELEMETRY_RING[: len(WIRE_TELEMETRY_RING) - MAX_WIRE_RING]
     target_bg = bg_dir or (Path(os.getenv("AGY_DATA_DIR", str(Path.home() / ".gemini/antigravity"))).expanduser() / "sidecar_data/ag-bridge-bg")
     try:
         target_bg.mkdir(parents=True, exist_ok=True)
@@ -111,10 +141,11 @@ def record_wire_telemetry(tool_or_event: str | dict[str, Any], payload_or_bg_dir
     return entry
 
 def get_wire_telemetry_summary(bg_dir_or_limit: Any = None, limit: int = 25) -> dict[str, Any]:
-    """Return summary metrics, product breakdown, and recent entries from the persistent wire telemetry ledger."""
+    """Return summary metrics, product breakdown, handshake totals, and recent entries from wire telemetry."""
     lim = int(bg_dir_or_limit) if isinstance(bg_dir_or_limit, int) else int(limit or 25)
     bg_dir = bg_dir_or_limit if isinstance(bg_dir_or_limit, Path) else (Path(os.getenv("AGY_DATA_DIR", str(Path.home() / ".gemini/antigravity"))).expanduser() / "sidecar_data/ag-bridge-bg")
-    records = list(WIRE_TELEMETRY_RING)
+    with _WIRE_RING_LOCK:
+        records = list(WIRE_TELEMETRY_RING)
     ledger_path = bg_dir / "mcp_telemetry_ledger.jsonl"
     if not records and ledger_path.exists():
         try:
@@ -122,16 +153,26 @@ def get_wire_telemetry_summary(bg_dir_or_limit: Any = None, limit: int = 25) -> 
             records = [json.loads(line) for line in lines if line.strip().startswith("{")]
         except Exception:
             records = []
+    empty_hs = {"calls": 0, "bytes": 0, "tokens": 0, "tools_list_kb": 0.0}
     if not records:
-        return {"total_recorded_calls": 0, "avg_kb": 0.0, "max_kb": 0.0, "total_mcp_tokens": 0, "budget_compliance_pct": 100.0, "by_product": {}, "recent_calls": []}
-    recent = list(reversed(records[-max(1, min(lim, 100)) :]))
-    kb_vals, compliant = [float(x.get("kb", 0.0)) for x in records], sum(1 for x in records if x.get("under_20kb_budget", True))
-    tot_tokens = sum(int(x.get("est_tokens", 0) or round(int(x.get("bytes", 0)) / 4.0)) for x in records)
+        return {"total_recorded_calls": 0, "avg_kb": 0.0, "max_kb": 0.0, "total_mcp_tokens": 0, "budget_compliance_pct": 100.0, "by_product": {}, "protocol_handshakes": empty_hs, "recent_calls": []}
+    tool_recs = [x for x in records if not _is_handshake_record(x)]
+    hs_recs = [x for x in records if _is_handshake_record(x)]
+    recent = [{**r, "product": _effective_record_product(r)} for r in reversed(records[-max(1, min(lim, 100)) :])]
+    tl_recs = [x for x in hs_recs if str(x.get("rpc") or "").strip().lower() == "tools/list" or str(x.get("tool") or "").strip() == "[rpc:tools/list]"]
+    hs_bytes = sum(int(x.get("bytes", 0)) for x in hs_recs)
+    hs_tokens = sum(int(x.get("est_tokens", 0) or round(int(x.get("bytes", 0)) / 4.0)) for x in hs_recs)
+    protocol_handshakes = {"calls": len(hs_recs), "bytes": hs_bytes, "tokens": hs_tokens, "tools_list_kb": round(float(tl_recs[-1].get("kb", 0.0)), 2) if tl_recs else 0.0}
+    if not tool_recs:
+        return {"total_recorded_calls": 0, "avg_kb": 0.0, "max_kb": 0.0, "total_mcp_tokens": 0, "budget_compliance_pct": 100.0, "by_product": {}, "protocol_handshakes": protocol_handshakes, "recent_calls": recent}
+    metric_recs = tool_recs
+    kb_vals, compliant = [float(x.get("kb", 0.0)) for x in metric_recs], sum(1 for x in metric_recs if x.get("under_20kb_budget", True))
+    tot_tokens = sum(int(x.get("est_tokens", 0) or round(int(x.get("bytes", 0)) / 4.0)) for x in metric_recs)
     by_prod: dict[str, dict[str, int]] = {}
-    for x in records:
-        rec = by_prod.setdefault(str(x.get("product") or "Gemini MCP Client"), {"calls": 0, "tokens": 0, "bytes": 0})
+    for x in metric_recs:
+        rec = by_prod.setdefault(_effective_record_product(x), {"calls": 0, "tokens": 0, "bytes": 0})
         rec["calls"], rec["tokens"], rec["bytes"] = rec["calls"] + 1, rec["tokens"] + int(x.get("est_tokens", 0) or round(int(x.get("bytes", 0)) / 4.0)), rec["bytes"] + int(x.get("bytes", 0))
-    return {"total_recorded_calls": len(records), "avg_kb": round(sum(kb_vals) / len(kb_vals), 2), "max_kb": round(max(kb_vals), 2), "total_mcp_tokens": tot_tokens, "budget_compliance_pct": round((compliant / len(records)) * 100.0, 1), "by_product": by_prod, "recent_calls": recent}
+    return {"total_recorded_calls": len(metric_recs), "avg_kb": round(sum(kb_vals) / len(kb_vals), 2), "max_kb": round(max(kb_vals), 2), "total_mcp_tokens": tot_tokens, "budget_compliance_pct": round((compliant / len(metric_recs)) * 100.0, 1), "by_product": by_prod, "protocol_handshakes": protocol_handshakes, "recent_calls": recent}
 
 def extract_pending_approval(transcript_or_brain_dir: Path, conv_id: str = "") -> dict[str, Any] | None:
     """Inspect transcript.jsonl tail to extract exact tool call details when waiting/running."""

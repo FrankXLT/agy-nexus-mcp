@@ -66,6 +66,15 @@ def render_ascii_rich(bundle: dict[str, Any]) -> str:
     wk_left = round(max(0.0, 100.0 - float((quota.get("partner_weekly_pacing") or {}).get("recommended_cumulative_ceiling_pct", 14.3))), 1)
     w_calls, w_avg, w_max = int(wire.get("total_recorded_calls", 0)), float(wire.get("avg_kb", 0.0)), float(wire.get("max_kb", 0.0))
     w_tok, w_pct = fmt_tok(int(wire.get("total_mcp_tokens", 0)), False), int(round(float(wire.get("budget_compliance_pct", 100.0))))
+    by_prod = wire.get("by_product") or {}
+    p_tot = max(1, sum(int((v or {}).get("calls", 0)) for v in by_prod.values()))
+    web_c = sum(int((v or {}).get("calls", 0)) for k, v in by_prod.items() if "Web" in k or "Client" in k)
+    prx_c = sum(int((v or {}).get("calls", 0)) for k, v in by_prod.items() if "Praxis" in k or "IDE" in k)
+    mob_c = sum(int((v or {}).get("calls", 0)) for k, v in by_prod.items() if "Mobile" in k)
+    if by_prod:
+        client_line = f"Client: Web {round(web_c * 100 / p_tot)}% · Prx {round(prx_c * 100 / p_tot)}% · Mob {round(mob_c * 100 / p_tot)}%"
+    else:
+        client_line = "Client: Gemini Web (100% / 0 Mob)"
 
     code_health = bundle.get("code_health") or {}
     v_info = code_health.get("version") or {}
@@ -85,14 +94,14 @@ def render_ascii_rich(bundle: dict[str, Any]) -> str:
         _box_split("TOKEN BURN & ROLLING AVERAGES", "MCP WIRE & CLIENT SURFACES"),
         _box_split(f"Total : {fmt_tok(tot_tok)} ({fmt_tok(tot_tok * 0.91)} direct)", f"Wire  : {w_pct}% <20KB (avg {w_avg:.1f}/{w_max:.1f}KB)"),
         _box_split(f"Daily : {fmt_rate(tot_tok / act_days)} tok/act-d", f"Calls : {w_calls} MCP reqs ({w_tok} tok)"),
-        _box_split(f"Weekly: {fmt_rate(tot_tok / max(1.0, act_days / 7.0))} tok/wk", "Client: Gemini Web (100% / 0 Mob)"),
+        _box_split(f"Weekly: {fmt_rate(tot_tok / max(1.0, act_days / 7.0))} tok/wk", client_line),
         "╠════════════════════════════════════╦═════════════════════════════════════╣",
         _box_split("VERSION & RELEASE STATUS", "POLYGLOT & MODULAR CODE HEALTH"),
         _box_split(
             f"Installed: v{__version__} ({v_info.get('status', 'OK')})",
-            f"Poly: {int(poly_info.get('total_symbols', 0))} syms | {m_info.get('compliant_500', m_info.get('compliant_300', 0))}/{m_info.get('total_modules', 0)} <=500L (0 >650L)",
+            f"Poly: {int(poly_info.get('total_symbols', 0))}s | {m_info.get('compliant_500', m_info.get('compliant_300', 0))}/{m_info.get('total_modules', 0)} <=500L {m_info.get('violations_over_650', 0)}>650L",
         ),
-        _box_split(f"Remote   : {v_info.get('remote', 'unknown')}", "IDE MCP  : agy-polyglot-mcp + Serena"),
+        _box_split(f"Remote   : {v_info.get('remote', 'unknown')}", "IDE MCP  : agy-praxis-mcp + Serena"),
         "╠════════════════════════════════════╩═════════════════════════════════════╣",
         _box_full("DAILY ACTIVITY MATRIX (NOW: W01 ──► W13)     [·· 0  ░░ <1k  ▒▒ <4k  ██]"),
     ]

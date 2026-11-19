@@ -29,7 +29,8 @@ Directing agents from mobile requires zero-risk read operations. If Gemini were 
    - The tool returns the session's current task state (`task.md`), recent walkthrough highlights (`walkthrough.md`), git working tree status, project workflow baselines (`workflow:baseline`), and recent `visual_artifacts` with **7-day HMAC-signed `/web/media/` HTTPS links** (`604,800` seconds — completely separate from the 30-minute passphrase deadbolt window).
    - `get_session_tree`, `list_saved_sessions`, and the Workspace Explorer tree strictly order **both projects and sessions most-recently-active first** (`last_updated_ts` computed from `max(SQLite last_modified_time, transcript.jsonl mtime, task.md mtime, brain/<cid> mtime)` — preventing brand-new `"0001-01-01..."` chats from dropping and preventing older pinned/running chats or high cumulative-step projects from floating above newer work).
    - `get_session_tree` renders a copy-ready 76-column ASCII hierarchy displaying active sessions and handoff tickets across all four distinct lifecycle states: `[◈ STAGED · UNCLAIMED]`, `[▶ IN-WORK]`, `[✓ COMPLETED]`, and `[⊘ SUPERSEDED -> <id>]`.
-   - To keep active sessions prominent and protect the 20 KB MCP wire budget, historical closed (`COMPLETED` and `SUPERSEDED`) tickets attached to each project's tree are bounded at a recent window (e.g. latest 4 closed tickets per project, with a `(+N older completed)` note when truncated), while keeping 100% of active `STAGED` and `IN_WORK` tickets visible.
+   - To keep active sessions prominent and keep every response strictly **under the `20 KB` wire limit** (capping `get_session_tree` inner JSON at `17.5 KB` and Praxis `polyglot_map` at `17.5 KB` with a `directory_summary` and drilldown hint), historical closed (`COMPLETED` and `SUPERSEDED`) tickets attached to each project's tree are bounded at a recent window (latest 4 closed tickets per project, with a `(+N older completed)` note when truncated), while keeping 100% of active `STAGED` and `IN_WORK` tickets visible.
+   - Stale synthetic test context slots are automatically pruned from `session_state.json`, Praxis IDE calls (`/praxis/`) classify separately as `Antigravity IDE (Praxis MCP)`, and stateless MCP handshakes (`tools/list`, `initialize`) are separated into `protocol_handshakes` so wire averages reflect real tool calls.
    - Remote version comparison queries both GitHub `/releases/latest` and `/tags`, comparing the installed version against the highest valid semantic version tag so tag-pushed releases compare accurately without false `Staged Locally` warnings.
 3. **Concise Mobile Summary**:
    - Gemini delivers a clean, plain-English summary to the user: current task progress, active background jobs, and a 1-tap suggested next step (e.g., *"Check in on the build?"*).
@@ -42,7 +43,7 @@ Directing agents from mobile requires zero-risk read operations. If Gemini were 
 The user wants to delegate a specific task to Antigravity without manually micro-managing file names or line numbers. They provide the user goal, the user story, and the target behavior in plain English.
 
 ### Why It Matters
-Historical audit data shows that over-compressed, line-number-focused handoffs produced a **42.6% rework rate** because agents missed coupled architectural touchpoints. Plain-language handoffs grounded in user goals and end-to-end workflows allow Antigravity to discover and update all coupled files cleanly on the first pass.
+Historical audit data shows that over-compressed, line-number-focused handoffs produced a **42.6% rework rate** because agents missed coupled architectural touchpoints. Plain-language handoffs grounded in user goals and end-to-end workflows allow Antigravity to discover and update all coupled files cleanly on the first pass—while matching execution ceremony to task size keeps small 2–3 file fixes fast instead of wrapping them in heavyweight subagent loops.
 
 ### Handoff Modes & When to Use Them
 AGY-Nexus MCP provides four primary handoff modes:
@@ -63,8 +64,9 @@ AGY-Nexus MCP provides four primary handoff modes:
    - Each ticket tracks full lifecycle states (`STAGED`, `IN_WORK`, `COMPLETED`, `SUPERSEDED`).
    - `get_session_tree` and the `/web` Overwatch Dashboard render each state distinctly (`[◈ STAGED · UNCLAIMED]`, `[▶ IN-WORK]`, `[✓ COMPLETED]`, and `[⊘ SUPERSEDED]`), maintaining 100% visibility for active tickets while bounding historical closed tickets.
    - If `resume_headless=True`, Antigravity is woken up immediately; otherwise, the ticket is staged for IDE pickup via `agy-praxis-mcp`.
-3. **Execution Lifecycle**:
-   - Antigravity scouts semantic outlines with Polyglot/Praxis, implements changes within file size budgets (`<= 500 lines`), audits with `flash-auditor` or dual-review, and halts at local staging (`allow_chained_publish=False`) for review.
+3. **Proportional Two-Tier Execution Lifecycle (`execution_mode="auto"`)**:
+   - **Tier 1 — Surgical Fast-Path (`fast`)**: When `execution_mode="auto"` receives a `release_closeout` or a compact (`< 6,500` chars) `bug_or_visual_fix` that does **not** touch security, auth, deadbolt, middleware, or crypto files, Antigravity inspects target spans directly in Main Chat (`Gemini 4 Carbon`), edits within `<= 500` lines/file, runs `pytest` + `--self-test` directly (skipping multi-subagent `flash-scout` / `flash-surgeon` / 2-sentinel loops unless `4+` modules change), restarts `ag-bridge-mcp`, and captures a quick browser check if UI changed.
+   - **Tier 2 — Full 4-Step Multi-Agent + Dual-Review (`plan`)**: Used for `new_project`, `feature_update`, large specifications (`>= 6,500` chars), or **any** security/auth/deadbolt change (`middleware.py`, `bridge_security.py`, `PASS_HASH`, `PATH_SECRET`, `PRAXIS_MCP_TOKEN`, `hmac`, `verify_passphrase`). Antigravity runs full `flash-scout` discovery, targeted Main-Chat/`argon-surgeon`/`flash-surgeon` implementation, `flash-auditor` + adversarial Dual-Review, visual verification, and halts at local staging when `allow_chained_publish=False`.
 
 ---
 

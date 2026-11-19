@@ -118,7 +118,7 @@
     renderSessionHeader(); renderLeftTree();
     if (typeof state !== "undefined" && state.demoMode) {
       bucketLoadingConvId = "";
-      expState.selectedBucket = window.DEMO_SESSION_BUCKET || { ok: true, conversation_id: convId, title: expState.selectedSessionTitle, project_name: expState.selectedProjectName, repo_slug: "agy-nexus-mcp", rollover: { posture: "FRESH", reason: "FRESH", should_rollover: false }, uploads: [], artifacts: [], visual_artifacts: [], repo_visual_assets: [] };
+      expState.selectedBucket = (window.DEMO_SESSION_BUCKETS && window.DEMO_SESSION_BUCKETS[convId]) || window.DEMO_SESSION_BUCKET || { ok: true, conversation_id: convId, title: expState.selectedSessionTitle, project_name: expState.selectedProjectName, repo_slug: "agy-nexus-mcp", rollover: { posture: "FRESH", reason: "FRESH", should_rollover: false }, uploads: [], artifacts: [], visual_artifacts: [], repo_visual_assets: [] };
       expState.selectedProjectName = expState.selectedBucket.project_name || expState.selectedProjectName;
       expState.selectedRepoSlug = expState.selectedBucket.repo_slug || "agy-nexus-mcp";
       expState.selectedSessionTitle = expState.selectedBucket.title || expState.selectedSessionTitle;
@@ -152,10 +152,16 @@
     const viewer = document.getElementById("workspaceContentViewer");
     if (!viewer) return;
     viewer.innerHTML = `<div class="viewer-loading mono">Loading ${escapeHtmlSafe(expState.selectedFileName)}...</div>`;
-    if (typeof state !== "undefined" && state.demoMode && window.DEMO_DOC_FILES?.[relPath]) {
-      const docMd = window.DEMO_DOC_FILES[relPath];
-      expState.selectedFileSize = docMd.length; expState.rawFileContent = docMd; expState.renderedHtmlContent = docMd;
-      renderDocViewerContent(viewer); renderSessionHeader(); return;
+    if (typeof state !== "undefined" && state.demoMode) {
+      const demoDoc = window.DEMO_DOC_FILES?.[relPath]
+        || (isQueue ? `# Demo Handoff Ticket (\`${expState.queueDocTid || expState.selectedFileName}\`)\n\n> Read-only offline preview for \`${relPath}\`.`
+          : (relPath.endsWith("/INDEX.md") ? `# Demo Batch Index (\`${expState.selectedBatchFolder || "uploads"}\`)\n\n> Offline batch manifest preview for \`${relPath}\`.` : ""));
+      if (demoDoc) {
+        expState.selectedFileSize = demoDoc.length; expState.rawFileContent = demoDoc; expState.renderedHtmlContent = demoDoc;
+        renderDocViewerContent(viewer); renderSessionHeader(); return;
+      }
+      viewer.innerHTML = `<div class="viewer-error mono">Document not bundled in Demo Mode: ${escapeHtmlSafe(relPath)}</div>`;
+      return;
     }
     try {
       const qPath = encodeURIComponent(relPath.includes("staged_handoffs/") ? relPath.slice(relPath.indexOf("staged_handoffs/")) : relPath);
@@ -375,6 +381,10 @@
   }
 
   async function handleFilesUpload(fileList, batchLabel, statusEl) {
+    if (typeof state !== "undefined" && state.demoMode) {
+      if (statusEl) statusEl.textContent = "Uploads are disabled in Demo Mode.";
+      return;
+    }
     if (!expState.selectedSessionId) return alert("Please select a session first before uploading files.");
     const fd = new FormData();
     for (let i = 0; i < fileList.length; i++) fd.append("files", fileList[i]);

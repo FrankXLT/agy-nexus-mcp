@@ -57,7 +57,7 @@ from agy_nexus.workspace import _collect_git_summary, _resolve_and_read_files
 
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def unlock_sessions(spoken_passphrase: str, search_query: str = "", style: str = "default") -> str:
-    """Verify user spoken passphrase against the deadbolt hash, unlock sessions, return active conversations and projects, and optionally search workspaces/history in a single step."""
+    """Verify spoken passphrase against deadbolt, unlock sessions, list active chats/projects + stats, optional search."""
     if not verify_passphrase(spoken_passphrase):
         return _compact_json({"ok": False, "locked": True, "error": "Passphrase verification failed. Deadbolt remains locked."})
     now = time.time()
@@ -108,7 +108,7 @@ def unlock_sessions(spoken_passphrase: str, search_query: str = "", style: str =
 
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def lock_bridge() -> str:
-    """Manually engage the security deadbolt immediately, clearing active session selections."""
+    """Engage security deadbolt and clear active session selections."""
     SESSION_STATE["unlocked_at"] = 0.0
     _clear_selected_session_state()
     _save_session_state()
@@ -118,7 +118,7 @@ def lock_bridge() -> str:
 def list_saved_sessions(
     limit: int = 15, status_filter: str = "ALL", include_subagents: bool = False, spoken_passphrase: str = ""
 ) -> str:
-    """List recent Antigravity conversations with execution status, project, workspace, step count, and task previews. (Tip: For a routine 'Check-in', use load_session_into_gemini with session_identifier='1'|'latest'|<keyword> directly in 1 call instead of calling list_saved_sessions first.)"""
+    """List recent chats with status, project, workspace & steps. Prefer load_session_into_gemini('1'|'latest'|<keyword>) for check-ins."""
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
     sessions = _list_saved_sessions_internal(limit=max(1, min(limit, 30)), status_filter=status_filter, include_subagents=include_subagents)
@@ -157,9 +157,7 @@ def list_saved_sessions(
 
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "", include_files: str = "") -> str:
-    """Primary tool for session 'Check-in' and full context loading in a single call (live execution_status, git_summary, visual_artifacts with 7-day signed /web/media/ links, task.md, implementation_plan.md, walkthrough.md, and recent untruncated transcript turns).
-    IMPORTANT: This is the designated tool for checking in on running or completed Antigravity sessions. Execution_status and git_summary are already included in this response. If latest_assistant_response is compacted for the <20 KB wire ceiling, pass file_subpath='transcript:latest' (with start_line/end_line) to ask_workspace_readonly via a sequential follow-up call (never in parallel) to page the full untruncated response.
-    """
+    """1-call session check-in returning execution_status, git_summary, visual_artifacts (7-day signed /web/media/ links), task/plan/walkthrough, project_workflows & recent turns. Page compacted turns sequentially via ask_workspace_readonly."""
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
     ident = session_identifier.strip()
@@ -340,46 +338,75 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
     if included_files:
         payload["included_files"] = included_files
 
+    return _compact_loaded_session_payload(payload, raw_latest_assistant, recent_turns, has_inc, (task_raw, plan_raw, walk_raw))
+
+
+def _shrink_optional_payload_fields(payload: dict[str, Any]) -> bool:
+    """Trim lowest-priority auxiliary fields one notch inside load_session_into_gemini wire loop."""
+    inc_files = (payload.get("included_files") or {}).get("files") if isinstance(payload.get("included_files"), dict) else None
+    if isinstance(inc_files, list) and inc_files:
+        last_f = inc_files[-1]
+        if isinstance(last_f, dict) and len(str(last_f.get("content") or "")) > 500:
+            last_f["content"] = str(last_f["content"])[:400] + "\n... [compacted]"
+            last_f["truncated"] = True
+        else:
+            inc_files.pop()
+        return True
+    if isinstance(payload.get("scratch_upload_batches"), list) and payload["scratch_upload_batches"]:
+        payload["scratch_upload_batches"].pop()
+        return True
+    gs = payload.get("git_summary")
+    if isinstance(gs, dict) and isinstance(gs.get("untracked_files"), list) and len(gs["untracked_files"]) > 5:
+        gs["untracked_files"] = gs["untracked_files"][:5]
+        return True
+    for k in ("walkthrough", "implementation_plan", "task_content", "latest_assistant_response"):
+        val = str(payload.get(k) or "")
+        if len(val) > 260:
+            payload[k] = val[: max(180, len(val) // 2)] + "\n... [compacted]"
+            return True
+    if isinstance(payload.get("scratch_files"), list) and payload["scratch_files"]:
+        payload["scratch_files"] = []
+        return True
+    return False
+
+
+def _compact_loaded_session_payload(
+    payload: dict[str, Any],
+    raw_latest_assistant: str,
+    recent_turns: list[Any],
+    has_inc: bool,
+    raw_docs: tuple[str, str, str] = ("", "", ""),
+) -> str:
+    """Compact load_session_into_gemini JSON strictly under 17.8 KB (<20 KB wire with SSE framing)."""
+    task_raw, plan_raw, walk_raw = raw_docs
     base_bytes = len(_compact_json(payload).encode("utf-8"))
     if raw_latest_assistant:
-        avail_cap = max(1200, min(4000, 18200 - base_bytes)) if has_inc else max(2000, min(10500, 18600 - base_bytes))
-        payload["latest_assistant_response"] = _compact_markdown(
-            raw_latest_assistant,
-            max_chars=avail_cap,
-            source_hint="transcript:latest",
-        )
+        avail_cap = max(900, min(3600, 16800 - base_bytes)) if has_inc else max(1400, min(9500, 17200 - base_bytes))
+        payload["latest_assistant_response"] = _compact_markdown(raw_latest_assistant, max_chars=avail_cap, source_hint="transcript:latest")
         if len(raw_latest_assistant) > avail_cap:
-            payload["transcript_uri_hint"] = (
-                "Pass file_subpath='transcript:latest' (with start_line/end_line) to ask_workspace_readonly to page the full untruncated response."
-            )
+            payload["transcript_uri_hint"] = "Pass file_subpath='transcript:latest' (with start_line/end_line) to ask_workspace_readonly to page the full untruncated response."
 
     out_str = _compact_json(payload)
-    if len(out_str.encode("utf-8")) > 19000:
-        for k_trim, cap_trim, hint_trim in (
-            ("walkthrough", 900, "brain:walkthrough.md"),
-            ("implementation_plan", 900, "brain:implementation_plan.md"),
-            ("task_content", 1200, "brain:task.md"),
+    if len(out_str.encode("utf-8")) > 17600:
+        for k_trim, raw_src, cap_trim, hint_trim in (
+            ("walkthrough", walk_raw or str(payload.get("walkthrough") or ""), 750, "brain:walkthrough.md"),
+            ("implementation_plan", plan_raw or str(payload.get("implementation_plan") or ""), 750, "brain:implementation_plan.md"),
+            ("task_content", task_raw or str(payload.get("task_content") or ""), 900, "brain:task.md"),
         ):
             if payload.get(k_trim):
-                payload[k_trim] = _compact_markdown(str(payload[k_trim]), max_chars=cap_trim, source_hint=hint_trim)
+                payload[k_trim] = _compact_markdown(raw_src, max_chars=cap_trim, source_hint=hint_trim)
         payload["recent_transcript_turns"] = recent_turns[-2:]
         out_str = _compact_json(payload)
-        if len(out_str.encode("utf-8")) > 19200 and payload.get("latest_assistant_response"):
-            excess = len(out_str.encode("utf-8")) - 18600
-            new_cap = max(1500, len(str(payload["latest_assistant_response"])) - excess - 200)
-            payload["latest_assistant_response"] = _compact_markdown(raw_latest_assistant, max_chars=new_cap, source_hint="transcript:latest")
-            out_str = _compact_json(payload)
-        if len(out_str.encode("utf-8")) > 19200 and isinstance(payload.get("included_files"), dict):
-            inc_files = payload["included_files"].get("files")
-            if isinstance(inc_files, list):
-                for fv in inc_files:
-                    if isinstance(fv, dict) and isinstance(fv.get("content"), str) and len(fv["content"]) > 2200:
-                        fv["content"] = fv["content"][:2200] + "\n... [compacted for <20KB wire ceiling]"
-                        fv["truncated"] = True
-            out_str = _compact_json(payload)
-        if len(out_str.encode("utf-8")) > 19200 and isinstance(payload.get("project_workflows"), dict):
-            pw_sum = str(payload["project_workflows"].get("summary") or "")
-            if len(pw_sum) > 600:
-                payload["project_workflows"]["summary"] = pw_sum[:600] + "\n... [compacted for <20KB wire ceiling]"
-            out_str = _compact_json(payload)
+    if len(out_str.encode("utf-8")) > 17800:
+        payload["recent_transcript_turns"] = []
+        if isinstance(payload.get("project_workflows"), dict) and len(str(payload["project_workflows"].get("summary") or "")) > 500:
+            payload["project_workflows"]["summary"] = str(payload["project_workflows"]["summary"])[:500] + "\n... [compacted]"
+        if isinstance(payload.get("scratch_files"), list):
+            payload["scratch_files"] = payload["scratch_files"][:4]
+        out_str = _compact_json(payload)
+    while len(out_str.encode("utf-8")) > 17800 and _shrink_optional_payload_fields(payload):
+        out_str = _compact_json(payload)
+    if len(out_str.encode("utf-8")) > 17800 and isinstance(payload.get("visual_artifacts"), list) and len(payload["visual_artifacts"]) > 4:
+        payload["visual_artifacts"] = payload["visual_artifacts"][:4]
+        out_str = _compact_json(payload)
     return out_str

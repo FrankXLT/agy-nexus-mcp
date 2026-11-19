@@ -312,10 +312,7 @@ def inspect_visual_artifacts(
     workspace: str = "",
     spoken_passphrase: str = "",
 ) -> list[TextContent | ImageContent]:
-    """Multimodal screenshot & visual artifact inspector returning native MCP ImageContent (WebP thumbnails strictly <20 KB total wire payload) plus 7-day HMAC-signed HTTPS links.
-    NOTE: Hosted Gemini Web/Mobile `custom_mcp` adapters strip binary MCP `ImageContent` blocks on ingress; when running from Gemini Web, share `signed_url` links with the user or route pixel review to Antigravity IDE.
-    - targets: Comma-separated upload sequence numbers ('#01', '1,2', '1-4', '#42'), filenames, or relative paths. Leave empty to page through the latest upload batch or session artifacts via offset/limit (max 4 images/call).
-    - region: 'full' (default), 'top', 'upper', 'middle', 'lower', 'bottom', or 'x,y,w,h' (0..1 normalized or pixels) to zoom into fine UI text on tall mobile screenshots at crisp detail."""
+    """Inspect screenshots as <20 KB WebP ImageContent + 7-day HMAC-signed /web/media/ links (cloud adapters strip binary blocks on ingress; share signed_url). targets: '#01', '1-4', filename (max 4). region: full|top|upper|middle|lower|bottom|x,y,w,h."""
     if not is_unlocked(spoken_passphrase):
         return [TextContent(type="text", text=LOCKED_RESPONSE)]
 

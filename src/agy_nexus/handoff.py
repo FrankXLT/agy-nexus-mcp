@@ -22,6 +22,10 @@ from agy_nexus.handoff_queue import (
     canonicalize_handoff_id, mark_ticket_status,
     record_handoff_ticket, resolve_staged_ticket_for_resume,
 )
+from agy_nexus.handoff_templates import (
+    build_execution_lifecycle_footer, build_existing_session_lifecycle_text,
+    resolve_effective_execution_mode,
+)
 from agy_nexus.hygiene import ENFORCE_MODULAR_HYGIENE, MODULAR_HYGIENE_MARKDOWN_BLOCK
 from agy_nexus.inventory import (
     _resolve_skill_directives,  # noqa: F401
@@ -75,11 +79,12 @@ def _compose_handoff_document(
     retire_session: bool = False,
     is_closeout: bool = False,
 ) -> dict[str, Any]:
-    """Assemble full wrapped handoff markdown plus reusable prompt blocks."""
+    """Assemble full wrapped handoff markdown plus proportional lifecycle prompt blocks."""
     interjection_block, cust_scope_info = build_interjection_directive(
         activate_skills=activate_skills, target_agent_role=target_agent_role,
         customization_edit_scope=edit_scope_clean, research_markdown=body_clean,
-        workspace_str=active_ws, config_dir=AGY_CONFIG_DIR, data_dir=AGY_DATA_DIR, gitlab_dir=AGY_GITLAB_DIR,
+        workspace_str=active_ws, config_dir=AGY_CONFIG_DIR, data_dir=AGY_DATA_DIR,
+        gitlab_dir=AGY_GITLAB_DIR, handoff_mode=eff_handoff_mode,
     )
     main_model_info = get_active_mainchat_model(AGY_DATA_DIR)
     header = (
@@ -93,14 +98,7 @@ def _compose_handoff_document(
         if not allow_chained_publish else ""
     )
     closeout_block = get_closeout_directives(active_ws) if (retire_session or is_closeout) else ""
-    subagent_footer = (
-        "\n---\n\n"
-        "## Mandatory 4-Step Execution Lifecycle & Verification Gate (Carbon 4 Main-Chat + Subagent Hybrid)\n\n"
-        "1. **Scout (`agy-praxis-mcp` / Serena LSP / `flash-scout`)**: Read all attached `SKILL.md` contracts first. Call `agy-praxis-mcp` (`polyglot_map`, `polyglot_search`, `polyglot_outline`) or Serena LSP tools to locate exact `Lstart-Lend` spans; search the repo for all connected routes, static asset allowlists (e.g. `PWA_ASSETS`), caches, and responsive containers beyond any files Gemini named. For multi-file discovery, dispatch `flash-scout` (`model='flash'`).\n"
-        "2. **Implement (Main-Chat `Gemini 4 Carbon` / `argon-surgeon` / `flash-surgeon`)**: Execute 1–2 file surgical symbolic edits or complex logic directly in Main Chat (on **Gemini 4 Carbon**) or via `argon-surgeon` (`model='pro'`); fan out 3+ file or mechanical refactors (`<= 500 lines/file`, hard ceiling 650 lines, functions `<= 100` lines) to `flash-surgeon` (`model='flash'`). Keep `docs/WORKFLOWS.md` updated whenever workflows or edge-case rules are added or clarified.\n"
-        "3. **Audit (`flash-auditor` & Intra-Google Dual-Review)**: Invoke `flash-auditor` (`model='flash'`) to run syntax/unit/smoke checks and verify `git diff` (or pit `argon-sentinel` `model='pro'` against Main-Chat **Gemini 4 Carbon** for architectural/security review) before marking `task.md` complete (Rule 8.1: no solo signoff).\n"
-        "4. **Visual & Preview Gate**: If any `.html`, `.css`, or frontend `.js` files were modified, run `~/.gemini/config/skills/visual-architecture-system/scripts/verify_visual_contract.py` against the local page and save desktop + mobile screenshots to the session artifact directory. Test actual user click-through flows (logged-out/locked state, unlocked state, and 390px / 900px / 1440px widths on target app's real port) rather than just checking if selectors exist in HTML. When `allow_chained_publish=False`, halt at local staging + preview without pushing or redeploying (restarting the local `ag-bridge-mcp` service/container whenever Python/web files change so fixes take effect in memory immediately).\n"
-    )
+    subagent_footer = build_execution_lifecycle_footer(eff_exec_mode, eff_handoff_mode, body_clean)
     hygiene_suffix = f"\n{MODULAR_HYGIENE_MARKDOWN_BLOCK.strip()}\n" if (apply_hygiene and "Mandatory Modular Architecture" not in body_clean) else ""
     wrapped_user_body = f"{_USER_BODY_START}\n{body_clean}\n{_USER_BODY_END}"
     full_content = header + stage_gate_block + baton_block + closeout_block + wrapped_user_body + interjection_block + hygiene_suffix + subagent_footer + "\n"
@@ -278,6 +276,7 @@ def _run_headless_existing_session(ctx: dict[str, Any]) -> str:
     job_id = f"job-{hashlib.sha256(f'{conv_id}-{time.time()}'.encode()).hexdigest()[:8]}"
     gate_directive = "STAGE & PREVIEW ONLY (allow_chained_publish=False): Stage changes locally, run visual checks/diffs, and do NOT push to GitHub or redeploy remote production stacks in this turn. You MUST still restart the local ag-bridge-mcp service/container whenever Python/web files change so fixes take effect in memory immediately. " if not allow_chained_publish else "CHAINED PUBLISH PERMITTED (allow_chained_publish=True): Ensure all verification and audit checks pass before publishing. "
     send_prompt_body = body_clean if len(body_clean) <= 2500 else f"{body_clean[:2500]}\n\n... [Full {len(body_clean)}-char specification written to `{handoff_file}` — read that file first]"
+    lifecycle_text = build_existing_session_lifecycle_text(eff_exec_mode, eff_handoff_mode, body_clean, gate_directive)
     bridge_payload = {
         "action": "send-message", "conversation_id": conv_id, "project_id": eff_pid,
         "title": ctx["title_clean"] or conv_title or "Gemini Research Handoff",
@@ -285,11 +284,7 @@ def _run_headless_existing_session(ctx: dict[str, Any]) -> str:
             f"{doc['stage_gate_block']}# Gemini Follow-Up Handoff ({eff_handoff_mode.upper()} Mode | Execution Mode: {eff_exec_mode})\n\n"
             f"The user provided a new follow-up request via Google Gemini (`agy-nexus-mcp`).\n\n"
             f"{ctx['baton_block']}{send_prompt_body}\n\n---\n{doc['interjection_block']}\n"
-            "Follow the 4-Step Execution Lifecycle (Carbon 4 Main-Chat + Subagent Hybrid):\n"
-            "1. Scout: Read attached SKILL.md contracts; use agy-praxis-mcp (polyglot_map, polyglot_search, polyglot_outline) or Serena LSP tools directly for 1-2 files, or flash-scout (model='flash') for multi-file discovery.\n"
-            "2. Implement: Execute 1-2 file surgical symbolic edits (replace_symbol_body) or complex logic directly in Main Chat (Gemini 4 Carbon) or via argon-surgeon (model='pro'); fan out 3+ file / mechanical refactors (<= 500 lines/file, ceiling 650L, functions <= 100L) to flash-surgeon (model='flash').\n"
-            "3. Audit: Invoke flash-auditor (model='flash') or Intra-Google Dual-Review (argon-sentinel model='pro' vs Carbon 4) to verify git diff and run unit/smoke tests before marking task.md complete (Rule 8.1: no solo signoff).\n"
-            f"4. Gate: {gate_directive}\n\nPlease review `{handoff_file}`, update `task.md`, and execute the next phase in `{eff_exec_mode}` mode."
+            f"{lifecycle_text}\n\nPlease review `{handoff_file}`, update `task.md`, and execute the next phase in `{eff_exec_mode}` mode."
         ),
     }
     bridge_response = _post_bridge(bridge_payload)
@@ -387,8 +382,9 @@ def _hydrate_resume_staged(
     workspace_path: str, eff_project_arg: str, implicit_hid_repo: str,
     session_title: str, project_name: str, repo_hint: str,
     create_new_project: bool, default_branch: str, session_identifier: str,
-) -> tuple[str, str, str, str, str, str, str, bool, str, bool]:
-    """Resolve staged handoff ticket content or brain scratch fallback."""
+    raw_hm: str = "feature_update", raw_exec_mode: str = "auto",
+) -> dict[str, Any]:
+    """Resolve staged handoff ticket content (preserving staged lifecycle modes) or brain scratch fallback."""
     staged_tk = resolve_staged_ticket_for_resume(cfg.AGY_BG_DIR, handoff_id=explicit_hid, conv_id=rollover_ref_cid, repo_slug=pre_slug if (workspace_path or eff_project_arg or implicit_hid_repo or session_title or rollover_ref_cid) else "", workspace_path=pre_ws if (workspace_path or rollover_ref_cid) else "")
     if staged_tk:
         resumed_tid, body_clean = str(staged_tk["handoff_id"]), _unwrap_staged_handoff_markdown(Path(str(staged_tk["handoff_file"])).read_text(encoding="utf-8", errors="replace"))
@@ -402,11 +398,19 @@ def _hydrate_resume_staged(
         cnp = bool(create_new_project or staged_tk.get("create_new_project"))
         branch = default_branch or str(staged_tk.get("default_branch") or "")
         force_new = bool(not staged_tk.get("target_conversation_id") and not session_identifier)
-        return resumed_tid, body_clean, ws, title, pid, project_name, repo_hint, cnp, branch, force_new
+        staged_hm = str(staged_tk.get("handoff_mode") or "").strip().lower()
+        staged_em = str(staged_tk.get("execution_mode") or "").strip().lower()
+        eff_hm = MODE_MAPPING.get(staged_hm, staged_hm) if (raw_hm in ("", "feature_update") and staged_hm) else MODE_MAPPING.get(raw_hm, "feature_update")
+        eff_em = "fast" if (raw_exec_mode in ("", "auto") and staged_em == "fast") else (raw_exec_mode or "auto")
+        return {
+            "resumed_tid": resumed_tid, "body_clean": body_clean, "ws": ws, "title": title, "pid": pid,
+            "project_name": project_name, "repo_hint": repo_hint, "cnp": cnp, "branch": branch,
+            "force_new": force_new, "handoff_mode": eff_hm, "exec_mode": eff_em,
+        }
     if rollover_ref_cid and (cfg.AGY_BRAIN_DIR / rollover_ref_cid / "scratch" / "gemini_research_handoff.md").is_file():
         body_clean = _unwrap_staged_handoff_markdown((cfg.AGY_BRAIN_DIR / rollover_ref_cid / "scratch" / "gemini_research_handoff.md").read_text(encoding="utf-8", errors="replace"))
-        return "", body_clean, workspace_path, session_title, "", project_name, repo_hint, create_new_project, default_branch, False
-    return "", "", workspace_path, session_title, "", project_name, repo_hint, create_new_project, default_branch, False
+        return {"resumed_tid": "", "body_clean": body_clean, "ws": workspace_path, "title": session_title, "pid": "", "project_name": project_name, "repo_hint": repo_hint, "cnp": create_new_project, "branch": default_branch, "force_new": False, "handoff_mode": MODE_MAPPING.get(raw_hm, "feature_update"), "exec_mode": raw_exec_mode}
+    return {"resumed_tid": "", "body_clean": "", "ws": workspace_path, "title": session_title, "pid": "", "project_name": project_name, "repo_hint": repo_hint, "cnp": create_new_project, "branch": default_branch, "force_new": False, "handoff_mode": MODE_MAPPING.get(raw_hm, "feature_update"), "exec_mode": raw_exec_mode}
 
 
 @mcp.tool(annotations=HANDOFF_ANNOTATIONS, output_schema=None)
@@ -420,13 +424,7 @@ def send_handoff_and_resume(
     customization_edit_scope: str = "none", session_continuity: str = "auto", retire_session: bool = False,
     spoken_passphrase: str = "",
 ) -> str:
-    """Stage a repo-prefixed Gemini handoff ticket (`<repo-slug>-01`, ...) or wake up Antigravity headlessly.
-
-    - Stage Modes (`handoff_mode`): 'feature_update' (default: ongoing features/sprints), 'new_project' (starting a project, creates docs/WORKFLOWS.md), 'bug_or_visual_fix' (fixing a bug or visual issue, updating docs/WORKFLOWS.md & tests), 'release_closeout' (shipping/retiring).
-    - Legacy modes mapped cleanly: 'intent' -> 'feature_update', 'visual_critique' -> 'bug_or_visual_fix', 'surgical_audit' -> 'bug_or_visual_fix'.
-    - High Capacity: Allows up to 24,000 characters without warning for thorough plain-English workflow explanations.
-    - Quality Advisory: Provides non-blocking feedback when a handoff skips plain-English workflow context.
-    """
+    """Stage repo-prefixed handoff (<repo>-01) or wake Antigravity headlessly. handoff_mode: feature_update (default), new_project (creates docs/WORKFLOWS.md), bug_or_visual_fix, release_closeout (legacy aliases mapped). Up to 24k chars + quality advisory."""
     caller_gave_ws, eff_project_arg = bool((workspace_path or "").strip()), (project_name or repo_hint).strip()
     if not is_unlocked(spoken_passphrase):
         if ALLOW_LOCKED_STAGING and not resume_headless and not create_new_session and not create_new_project:
@@ -434,10 +432,8 @@ def send_handoff_and_resume(
         return LOCKED_RESPONSE
 
     ts_now, apply_hygiene = datetime.now(timezone.utc).isoformat(), bool(ENFORCE_MODULAR_HYGIENE and enforce_modular_hygiene)
-    raw_hm = (handoff_mode or "feature_update").strip().lower()
+    raw_hm, raw_exec_mode = (handoff_mode or "feature_update").strip().lower(), (execution_mode or "auto").strip().lower()
     eff_handoff_mode = MODE_MAPPING.get(raw_hm, "feature_update")
-    raw_exec_mode = (execution_mode or "auto").strip().lower()
-    eff_exec_mode = ("fast" if (allow_chained_publish and resume_headless) else "plan") if raw_exec_mode not in ("fast", "plan") else raw_exec_mode
     execution_mode_advisory = "execution_mode='plan' was explicitly requested with allow_chained_publish=True and resume_headless=True; headless runs in 'plan' mode pause after planning." if (raw_exec_mode == "plan" and allow_chained_publish and resume_headless) else ""
 
     raw_caller_body = (research_markdown or "").strip()
@@ -445,8 +441,7 @@ def send_handoff_and_resume(
     is_resume_staged = bool(raw_caller_body.upper().startswith("RESUME_STAGED") or (resume_headless and not raw_caller_body))
     size_warning = f"research_markdown was {len(raw_caller_body)} chars (recommended <= 24,000 chars per call)." if (not is_resume_staged and len(raw_caller_body) > 24000) else ""
     is_close = bool(retire_session or eff_handoff_mode == "release_closeout" or (session_continuity or "").strip().lower() == "closeout" or allow_chained_publish or is_closeout_intent(raw_caller_body, retire_session, session_continuity))
-    qual_eval = evaluate_handoff_quality(raw_caller_body, is_closeout=is_close)
-    handoff_advisory = qual_eval.get("advisory", "")
+    handoff_advisory = evaluate_handoff_quality(raw_caller_body, is_closeout=is_close).get("advisory", "")
 
     implicit_hid_repo = explicit_hid.rsplit("-", 1)[0] if (explicit_hid and not session_identifier and not workspace_path and not eff_project_arg) else ""
     resolved_conv_id, routing_reason, auto_rollover_from = "", "create_new_session", ""
@@ -454,19 +449,20 @@ def send_handoff_and_resume(
         resolved_conv_id, routing_reason = _resolve_target_session_for_handoff(session_identifier=session_identifier, workspace_path=workspace_path, project_name=eff_project_arg or implicit_hid_repo, session_title=session_title, activate_skills=activate_skills, research_markdown="" if is_resume_staged else raw_caller_body)
         if resolved_conv_id:
             resolved_conv_id, extra_reason, create_new_session, auto_rollover_from = _evaluate_target_session(resolved_conv_id, is_close=is_close, workspace_path=workspace_path, raw_caller_body=raw_caller_body, session_continuity=session_continuity, allow_chained_publish=allow_chained_publish, retire_session=retire_session, is_resume_staged=is_resume_staged)
-            if extra_reason:
-                routing_reason = extra_reason
+            routing_reason = extra_reason or routing_reason
 
     conv_id, body_clean, resumed_ticket_id, tk_pid = ("" if create_new_session else resolved_conv_id), raw_caller_body, "", ""
     rollover_ref_cid = conv_id or auto_rollover_from or (_resolve_session_identifier(session_identifier.strip()) if (create_new_session and session_identifier.strip() and not create_new_project) else "")
     pre_ws, _, _, pre_slug = _infer_workspace_and_project(workspace_path, eff_project_arg or implicit_hid_repo, session_title, activate_skills, "" if is_resume_staged else raw_caller_body, rollover_ref_cid)
     if is_resume_staged:
-        resumed_ticket_id, body_clean, workspace_path, session_title, tk_pid, project_name, repo_hint, create_new_project, default_branch, force_new = _hydrate_resume_staged(explicit_hid=explicit_hid, rollover_ref_cid=rollover_ref_cid, pre_slug=pre_slug, pre_ws=pre_ws, workspace_path=workspace_path, eff_project_arg=eff_project_arg, implicit_hid_repo=implicit_hid_repo, session_title=session_title, project_name=project_name, repo_hint=repo_hint, create_new_project=create_new_project, default_branch=default_branch, session_identifier=session_identifier)
-        if not body_clean:
+        hyd = _hydrate_resume_staged(explicit_hid=explicit_hid, rollover_ref_cid=rollover_ref_cid, pre_slug=pre_slug, pre_ws=pre_ws, workspace_path=workspace_path, eff_project_arg=eff_project_arg, implicit_hid_repo=implicit_hid_repo, session_title=session_title, project_name=project_name, repo_hint=repo_hint, create_new_project=create_new_project, default_branch=default_branch, session_identifier=session_identifier, raw_hm=raw_hm, raw_exec_mode=raw_exec_mode)
+        if not hyd["body_clean"]:
             return json.dumps({"ok": False, "status": "NO_STAGED_HANDOFF_FOR_REPO", "error": f"No matching STAGED handoff found for '{explicit_hid or pre_slug}'. Pass handoff_id='<repo>-01' or provide research_markdown."}, indent=2)
-        if force_new:
+        resumed_ticket_id, body_clean, workspace_path, session_title, tk_pid, project_name, repo_hint, create_new_project, default_branch, eff_handoff_mode, raw_exec_mode = hyd["resumed_tid"], hyd["body_clean"], hyd["ws"], hyd["title"], hyd["pid"], hyd["project_name"], hyd["repo_hint"], hyd["cnp"], hyd["branch"], hyd["handoff_mode"], hyd["exec_mode"]
+        if hyd["force_new"]:
             create_new_session, conv_id = True, ""
 
+    eff_exec_mode = resolve_effective_execution_mode(raw_exec_mode, eff_handoff_mode, body_clean, allow_chained_publish, resume_headless)
     tgt = resolve_handoff_target(workspace_path=workspace_path, project_name=project_name, repo_hint=repo_hint, session_title=session_title, activate_skills=activate_skills, body_clean=body_clean, conv_id=rollover_ref_cid, create_new_project=create_new_project, default_branch=default_branch, resume_headless=resume_headless, customization_edit_scope=customization_edit_scope, explicit_caller_ws=caller_gave_ws)
     if tgt["guard_error"]:
         return json.dumps(tgt["guard_error"], indent=2)
@@ -474,11 +470,11 @@ def send_handoff_and_resume(
     if tgt["force_new_session"]:
         create_new_session, conv_id = True, ""
 
-    active_ws, edit_scope_clean = (eff_ws or ("" if tgt["has_target_spec"] else (SESSION_STATE.get("selected_workspace") or str(get_antigravity_config_repo())))), (customization_edit_scope or "none").strip().lower()
-    conv_id, create_new_session, create_new_project, routing_reason, eff_ws, active_ws, eff_pid, eff_pname, repo_slug = apply_global_scope_isolation(
-        edit_scope_clean=edit_scope_clean, active_ws=active_ws, conv_id=conv_id, create_new_session=create_new_session, create_new_project=create_new_project,
-        routing_reason=routing_reason, eff_ws=eff_ws, eff_pid=eff_pid, eff_pname=eff_pname, repo_slug=repo_slug, session_title=session_title, activate_skills=activate_skills, body_clean=body_clean,
-    )
+    active_ws, edit_scope_clean, pre_iso_cid = (eff_ws or ("" if tgt["has_target_spec"] else (SESSION_STATE.get("selected_workspace") or str(get_antigravity_config_repo())))), (customization_edit_scope or "none").strip().lower(), conv_id
+    conv_id, create_new_session, create_new_project, routing_reason, eff_ws, active_ws, eff_pid, eff_pname, repo_slug = apply_global_scope_isolation(edit_scope_clean=edit_scope_clean, active_ws=active_ws, conv_id=conv_id, create_new_session=create_new_session, create_new_project=create_new_project, routing_reason=routing_reason, eff_ws=eff_ws, eff_pid=eff_pid, eff_pname=eff_pname, repo_slug=repo_slug, session_title=session_title, activate_skills=activate_skills, body_clean=body_clean)
+    if conv_id and conv_id != pre_iso_cid and not create_new_session:
+        conv_id, extra_iso, create_new_session, auto_rollover_from = _evaluate_target_session(conv_id, is_close=is_close, workspace_path=eff_ws, raw_caller_body=raw_caller_body, session_continuity=session_continuity, allow_chained_publish=allow_chained_publish, retire_session=retire_session, is_resume_staged=is_resume_staged)
+        routing_reason = extra_iso or routing_reason
 
     baton_block = ""
     if create_new_session and rollover_ref_cid and not create_new_project and edit_scope_clean != "global":

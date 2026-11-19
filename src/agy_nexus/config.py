@@ -5,6 +5,7 @@ agy_nexus.config — Environment, Paths, Deadbolt Authentication & FastMCP Insta
 
 from __future__ import annotations
 
+import copy
 import fcntl
 import hashlib
 import hmac
@@ -12,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+import threading
 import time
 from typing import Any
 
@@ -132,30 +134,101 @@ SESSION_STATE: dict[str, Any] = {
     "session_title_map": {},           # conv_id -> title
 }
 
+_STATE_LOCK = threading.RLock()
+
+
 def _clear_selected_session_state() -> None:
     """Clear selected session/workspace pointers when deadbolt expires or resets."""
-    SESSION_STATE["selected_session"] = ""
-    SESSION_STATE["selected_workspace"] = ""
-    SESSION_STATE["selected_workspace_uris"] = []
-    SESSION_STATE["selected_project"] = ""
-    SESSION_STATE["active_contexts"] = {}
+    with _STATE_LOCK:
+        SESSION_STATE["selected_session"] = ""
+        SESSION_STATE["selected_workspace"] = ""
+        SESSION_STATE["selected_workspace_uris"] = []
+        SESSION_STATE["selected_project"] = ""
+        SESSION_STATE["active_contexts"] = {}
 
-def _save_session_state() -> None:
+
+_SYNTH_SLOT_RE = re.compile(r"^(?:test-|conv-|demo-)|^([0-9a-fA-F])\1{7}-", re.IGNORECASE)
+
+
+def prune_stale_context_slots(
+    brain_dir: Path | None = None,
+    db_file: Path | None = None,
+    *,
+    max_synthetic_age_s: float = 0.0,
+) -> int:
+    """Prune stale /tmp/ or synthetic test slots from SESSION_STATE['active_contexts']."""
+    import sqlite3
+    with _STATE_LOCK:
+        contexts = SESSION_STATE.get("active_contexts")
+        if not isinstance(contexts, dict) or not contexts:
+            return 0
+        items_snapshot = list(contexts.items())
+    eff_brain, eff_db, now = brain_dir or AGY_BRAIN_DIR, db_file or AGY_DB_FILE, time.time()
+    stale_ids: set[str] = set()
+    db_candidates: list[str] = []
+    for cid, slot in items_snapshot:
+        slot_d = slot if isinstance(slot, dict) else {}
+        ws_str = str(slot_d.get("workspace") or "").strip()
+        if ws_str.startswith(("/tmp/", "/var/tmp/")) and not Path(ws_str).exists():
+            stale_ids.add(cid)
+            continue
+        if _SYNTH_SLOT_RE.match(str(cid)):
+            last_used = float(slot_d.get("last_used_at") or 0.0)
+            if max_synthetic_age_s > 0.0 and last_used > 0.0 and (now - last_used) < max_synthetic_age_s:
+                continue
+            if not (eff_brain / str(cid)).is_dir():
+                db_candidates.append(str(cid))
+    if db_candidates:
+        found_in_db: set[str] = set()
+        if eff_db.is_file():
+            try:
+                con = sqlite3.connect(f"file:{eff_db}?mode=ro", uri=True)
+                try:
+                    marks = ",".join("?" for _ in db_candidates)
+                    found_in_db = {str(r[0]) for r in con.execute(f"SELECT conversation_id FROM conversation_summaries WHERE conversation_id IN ({marks})", db_candidates).fetchall()}
+                finally:
+                    con.close()
+            except Exception:
+                pass
+        stale_ids.update(cid for cid in db_candidates if cid not in found_in_db)
+    if not stale_ids:
+        return 0
+    with _STATE_LOCK:
+        contexts_live = SESSION_STATE.get("active_contexts")
+        if not isinstance(contexts_live, dict):
+            return 0
+        for cid in stale_ids:
+            contexts_live.pop(cid, None)
+            for mkey in ("session_workspace_map", "session_workspace_uris_map", "session_project_map", "session_title_map"):
+                if isinstance(SESSION_STATE.get(mkey), dict):
+                    SESSION_STATE[mkey].pop(cid, None)
+        if SESSION_STATE.get("selected_session") in stale_ids:
+            SESSION_STATE["selected_session"] = ""
+            SESSION_STATE["selected_workspace"] = ""
+            SESSION_STATE["selected_workspace_uris"] = []
+            SESSION_STATE["selected_project"] = ""
+    return len(stale_ids)
+
+
+def _save_session_state(*, prune: bool = True) -> None:
     """Atomically persist core session state and parallel active_contexts with flock + os.replace."""
     try:
+        if prune:
+            prune_stale_context_slots(max_synthetic_age_s=300.0)
+        with _STATE_LOCK:
+            persisted = {
+                "unlocked_at": SESSION_STATE.get("unlocked_at", 0.0),
+                "selected_session": SESSION_STATE.get("selected_session", ""),
+                "selected_workspace": SESSION_STATE.get("selected_workspace", ""),
+                "selected_workspace_uris": copy.deepcopy(SESSION_STATE.get("selected_workspace_uris", [])),
+                "selected_project": SESSION_STATE.get("selected_project", ""),
+                "active_contexts": copy.deepcopy(SESSION_STATE.get("active_contexts", {})),
+                "pinned_calls": int(SESSION_STATE.get("pinned_calls") or 0),
+                "auto_resolved_calls": int(SESSION_STATE.get("auto_resolved_calls") or 0),
+            }
         STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
         lock_path = STATE_FILE.with_suffix(".lock")
-        tmp_path = STATE_FILE.with_suffix(f".tmp.{os.getpid()}")
-        persisted = {
-            "unlocked_at": SESSION_STATE.get("unlocked_at", 0.0),
-            "selected_session": SESSION_STATE.get("selected_session", ""),
-            "selected_workspace": SESSION_STATE.get("selected_workspace", ""),
-            "selected_workspace_uris": SESSION_STATE.get("selected_workspace_uris", []),
-            "selected_project": SESSION_STATE.get("selected_project", ""),
-            "active_contexts": SESSION_STATE.get("active_contexts", {}),
-            "pinned_calls": int(SESSION_STATE.get("pinned_calls") or 0),
-            "auto_resolved_calls": int(SESSION_STATE.get("auto_resolved_calls") or 0),
-        }
+        tmp_path = STATE_FILE.with_suffix(f".tmp.{os.getpid()}.{threading.get_ident()}")
         with open(lock_path, "a+", encoding="utf-8") as lf:
             fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
             try:
@@ -165,6 +238,7 @@ def _save_session_state() -> None:
                 fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
     except Exception:
         pass
+
 
 def _load_session_state() -> None:
     """Load persisted session state from disk with shared flock if present."""
@@ -178,20 +252,27 @@ def _load_session_state() -> None:
                 finally:
                     fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
             if isinstance(data, dict):
-                unlocked_at = float(data.get("unlocked_at") or 0.0)
-                SESSION_STATE["unlocked_at"] = unlocked_at
-                SESSION_STATE["pinned_calls"] = int(data.get("pinned_calls") or 0)
-                SESSION_STATE["auto_resolved_calls"] = int(data.get("auto_resolved_calls") or 0)
-                if (time.time() - unlocked_at) < TTL_SECONDS:
-                    for key in ("selected_session", "selected_workspace", "selected_workspace_uris", "selected_project", "active_contexts"):
-                        if key in data and data[key] is not None:
-                            SESSION_STATE[key] = data[key]
-                else:
-                    _clear_selected_session_state()
+                with _STATE_LOCK:
+                    unlocked_at = float(data.get("unlocked_at") or 0.0)
+                    SESSION_STATE["unlocked_at"] = unlocked_at
+                    SESSION_STATE["pinned_calls"] = int(data.get("pinned_calls") or 0)
+                    SESSION_STATE["auto_resolved_calls"] = int(data.get("auto_resolved_calls") or 0)
+                    if (time.time() - unlocked_at) < TTL_SECONDS:
+                        for key in ("selected_session", "selected_workspace", "selected_workspace_uris", "selected_project", "active_contexts"):
+                            if key in data and data[key] is not None:
+                                SESSION_STATE[key] = data[key]
+                        need_save = prune_stale_context_slots() > 0
+                    else:
+                        _clear_selected_session_state()
+                        need_save = False
+                if need_save:
+                    _save_session_state(prune=False)
     except Exception:
         pass
 
+
 _load_session_state()
+
 
 def pin_session_context(
     conv_id: str,
@@ -207,46 +288,48 @@ def pin_session_context(
     """Record or update an isolated context slot in active_contexts for parallel Gemini chats."""
     if not conv_id:
         return {}
-    contexts = SESSION_STATE.setdefault("active_contexts", {})
-    existing = contexts.get(conv_id, {}) if isinstance(contexts, dict) else {}
-    eff_title = title or existing.get("title") or SESSION_STATE["session_title_map"].get(conv_id, "")
-    eff_proj_id = project_id or existing.get("project_id") or SESSION_STATE["session_project_map"].get(conv_id, "")
-    eff_ws = workspace or existing.get("workspace") or SESSION_STATE["session_workspace_map"].get(conv_id, "")
-    eff_uris = workspace_uris if workspace_uris is not None else (existing.get("workspace_uris") or SESSION_STATE["session_workspace_uris_map"].get(conv_id, []))
-    slot = {
-        "conversation_id": conv_id,
-        "title": eff_title,
-        "project_id": eff_proj_id,
-        "project_name": project_name or existing.get("project_name") or eff_proj_id,
-        "workspace": eff_ws,
-        "workspace_uris": eff_uris,
-        "mode": mode or existing.get("mode") or "PINNED",
-        "last_tool": last_tool or existing.get("last_tool") or "session",
-        "last_used_at": time.time(),
-    }
-    contexts[conv_id] = slot
-    if len(contexts) > 25:
-        oldest_k = min(contexts.keys(), key=lambda k: float(contexts[k].get("last_used_at") or 0.0))
-        if oldest_k != conv_id:
-            contexts.pop(oldest_k, None)
-    if eff_ws:
-        SESSION_STATE["session_workspace_map"][conv_id] = eff_ws
-    if eff_proj_id:
-        SESSION_STATE["session_project_map"][conv_id] = eff_proj_id
-    if eff_title:
-        SESSION_STATE["session_title_map"][conv_id] = eff_title
-    if eff_uris:
-        SESSION_STATE["session_workspace_uris_map"][conv_id] = list(eff_uris)
-    if set_default:
-        SESSION_STATE["selected_session"] = conv_id
+    with _STATE_LOCK:
+        contexts = SESSION_STATE.setdefault("active_contexts", {})
+        existing = contexts.get(conv_id, {}) if isinstance(contexts, dict) else {}
+        eff_title = title or existing.get("title") or SESSION_STATE["session_title_map"].get(conv_id, "")
+        eff_proj_id = project_id or existing.get("project_id") or SESSION_STATE["session_project_map"].get(conv_id, "")
+        eff_ws = workspace or existing.get("workspace") or SESSION_STATE["session_workspace_map"].get(conv_id, "")
+        eff_uris = workspace_uris if workspace_uris is not None else (existing.get("workspace_uris") or SESSION_STATE["session_workspace_uris_map"].get(conv_id, []))
+        slot = {
+            "conversation_id": conv_id,
+            "title": eff_title,
+            "project_id": eff_proj_id,
+            "project_name": project_name or existing.get("project_name") or eff_proj_id,
+            "workspace": eff_ws,
+            "workspace_uris": eff_uris,
+            "mode": mode or existing.get("mode") or "PINNED",
+            "last_tool": last_tool or existing.get("last_tool") or "session",
+            "last_used_at": time.time(),
+        }
+        contexts[conv_id] = slot
+        if len(contexts) > 25:
+            oldest_k = min(contexts.keys(), key=lambda k: float(contexts[k].get("last_used_at") or 0.0))
+            if oldest_k != conv_id:
+                contexts.pop(oldest_k, None)
         if eff_ws:
-            SESSION_STATE["selected_workspace"] = eff_ws
-        if eff_uris:
-            SESSION_STATE["selected_workspace_uris"] = list(eff_uris)
+            SESSION_STATE["session_workspace_map"][conv_id] = eff_ws
         if eff_proj_id:
-            SESSION_STATE["selected_project"] = eff_proj_id
+            SESSION_STATE["session_project_map"][conv_id] = eff_proj_id
+        if eff_title:
+            SESSION_STATE["session_title_map"][conv_id] = eff_title
+        if eff_uris:
+            SESSION_STATE["session_workspace_uris_map"][conv_id] = list(eff_uris)
+        if set_default:
+            SESSION_STATE["selected_session"] = conv_id
+            if eff_ws:
+                SESSION_STATE["selected_workspace"] = eff_ws
+            if eff_uris:
+                SESSION_STATE["selected_workspace_uris"] = list(eff_uris)
+            if eff_proj_id:
+                SESSION_STATE["selected_project"] = eff_proj_id
+        slot_copy = dict(slot)
     _save_session_state()
-    return slot
+    return slot_copy
 
 def normalize_phrase(phrase: str) -> str:
     """Normalize spoken passphrase (lowercase, strip whitespace and punctuation) and compute SHA-256."""
@@ -281,15 +364,17 @@ def is_unlocked(spoken_passphrase: str = "") -> bool:
     if not PASS_HASH:
         return False
     now = time.time()
-    was_expired = (now - float(SESSION_STATE.get("unlocked_at") or 0.0)) >= TTL_SECONDS
-    if was_expired and SESSION_STATE.get("selected_session"):
-        _clear_selected_session_state()
-    if spoken_passphrase and verify_passphrase(spoken_passphrase):
-        SESSION_STATE["unlocked_at"] = now
-        _save_session_state()
-        return True
-    if not was_expired:
-        SESSION_STATE["unlocked_at"] = now
+    phrase_valid = bool(spoken_passphrase and verify_passphrase(spoken_passphrase))
+    with _STATE_LOCK:
+        was_expired = (now - float(SESSION_STATE.get("unlocked_at") or 0.0)) >= TTL_SECONDS
+        if was_expired and SESSION_STATE.get("selected_session"):
+            _clear_selected_session_state()
+        if phrase_valid or not was_expired:
+            SESSION_STATE["unlocked_at"] = now
+            unlocked_ok = True
+        else:
+            unlocked_ok = False
+    if unlocked_ok:
         _save_session_state()
         return True
     return False
@@ -329,32 +414,21 @@ HANDOFF_ANNOTATIONS = {
 mcp = FastMCP(
     name="agy-nexus-mcp",
     instructions=(
-        "AGY-NEXUS-MCP: Antigravity Mission Control, Cross-Session FTS5 Memory, Quota Overwatch & Governance MCP Server. "
-        "Enables Gemini to authenticate via voice passphrase, discover and inspect active Antigravity conversations, "
-        "explore local codebases in read-only mode, audit 4-layer Skills/Agents/Rules, view live Dual-Pool Quota & Activity Heatmaps, and dispatch synthesized research handoffs.\n"
-        "CRITICAL GEMINI WEB / MOBILE PLATFORM RULES (MANDATORY):\n"
-        "1. PLAIN-LANGUAGE, STAGE-SPECIFIC RESEARCH HANDOFFS (`send_handoff_and_resume`):\n"
-        "- USE PLAIN EVERYDAY ENGLISH (NO JARGON SHORTHAND): Use the 5 to 15 plain words needed to explain what the user sees, clicks, and expects. Never compress explanations into coined 1–2 word buzzwords ('dogfooding', 'baton continuity', 'maturation delta'), and NEVER treat a list of files/lines as a substitute for explaining what the user is doing and why.\n"
-        "- MATCH THE HANDOFF TO WHERE THE PROJECT IS (`handoff_mode`):\n"
-        "  * 'feature_update' (DEFAULT for ongoing feature work): Reference existing workflows in `docs/WORKFLOWS.md` and Gemini memory that must keep working; describe new/updated workflows in plain sentences; update both `docs/WORKFLOWS.md` and code.\n"
-        "  * 'new_project' (starting something new): Explain who uses it, what they do step by step across phone (~390px), unfolded foldable (~900px), and desktop (~1440px) including logged-out/empty/error states; instruct Antigravity to create `docs/WORKFLOWS.md`.\n"
-        "  * 'bug_or_visual_fix' (fixing a bug or visual issue): State plainly (1) what broke or looks wrong, (2) how it gets in the user's way during their workflow, (3) what detail or rule was missing from `docs/WORKFLOWS.md` that let it happen, and (4) update both `docs/WORKFLOWS.md` and code, testing real click-by-click steps in a browser.\n"
-        "  * 'release_closeout' (shipping a release): Confirm `docs/WORKFLOWS.md` matches code, run tests, privacy/depersonalization checks, commit/tag/push, auto-reconcile queue tickets, and retire session.\n"
+        "AGY-NEXUS-MCP: Antigravity Mission Control, Cross-Session Memory, Quota Overwatch & Handoff Server.\n"
+        "1. PLAIN-LANGUAGE STAGE HANDOFFS (`send_handoff_and_resume`): Explain in 5-15 everyday words what the user sees, clicks, and expects (never buzzwords or bare file lists). Match `handoff_mode`: "
+        "'feature_update' (default: keep docs/WORKFLOWS.md intact + update docs & code), "
+        "'new_project' (user steps across 390px/900px/1440px + empty/error states; create docs/WORKFLOWS.md), "
+        "'bug_or_visual_fix' (what broke, workflow impact, missing docs/WORKFLOWS.md rule, browser test), "
+        "'release_closeout' (verify docs/WORKFLOWS.md, tests, privacy, commit/tag/push, retire). "
+        "Leave `execution_mode='auto'` so compact non-security bugfixes/closeouts use Surgical Fast-Path (`fast`) while features/security stay in `plan`.\n"
         "2. SEQUENTIAL READ-ONLY GOVERNANCE (1 CALL AT A TIME, UP TO 4 HOPS/TURN):\n"
-        "- NEVER emit parallel simultaneous MCP calls in the same step (parallel calls cause UI confirmation cards to hang).\n"
-        "- Always batch already-known files or virtual URIs into a single call first for speed.\n"
-        "- You MAY issue up to 4 sequential read-only calls (`get_session_tree`, `load_session_into_gemini`, `ask_workspace_readonly`, `inspect_git_diff`, `inspect_visual_artifacts`, `list_saved_sessions`, `list_models_and_agents`) in one turn by waiting for each response before making the next call (`call -> wait for response -> next call`).\n"
-        "- If a tool call fails with permission_denied or an immediate error, you MAY automatically invoke ask_workspace_readonly or load_session_into_gemini once as a sequential same-turn fallback without asking the user to reply 'Go'.\n"
-        "- HARD STOP ON MUTATIONS & DEADBOLT: `send_handoff_and_resume` and `LOCKED_RESPONSE` remain strict turn boundaries—stop and reply to the user immediately upon receiving their response.\n"
-        "3. ONE-SHOT BUNDLED SUPER-CALLS (GET ALL FILES & CONTEXT IN 1 CALL):\n"
-        "- Do NOT call `list_saved_sessions` first when the user asks to inspect or load a session: call `load_session_into_gemini(session_identifier='1'|'latest'|<project_or_title_keyword>|<uuid>, include_files='path1,path2')` directly in 1 shot! It automatically discovers `docs/WORKFLOWS.md` (as `project_workflows`), `task.md`, `walkthrough.md`, `git_summary`, and `visual_artifacts`.\n"
-        "- When exploring code with `ask_workspace_readonly`, batch all needed files or virtual URIs in a single comma-separated `file_subpath='a.py,outline:b.py,workflow:baseline,transcript:latest'` (up to 12 items per call).\n"
-        "4. PROJECT ROUTING & CONTINUITY: When calling `send_handoff_and_resume`, pass `session_identifier` (for existing sessions) or `project_name` and `workspace_path` (when `create_new_session=True`). Pass `session_continuity='auto'|'continuation'|'closeout'|'new_topic'` to guide rollover posture ('new_topic' rolls at >=320 steps; 'continuation' holds up to 950 steps; 'closeout' holds up to 1,150 steps).\n"
-        "5. JOB-FIRST SUGGESTED ACTION BUTTONS (MANDATORY GEMINI UI FORMATTING):\n"
-        "- Guide the user with native 1-tap options matching the tool's returned `suggested_actions`:\n"
-        "  * Ready to Run: 'Run these changes and update the live preview?' (Yes)\n"
-        "  * In-Flight (is_running=True): 'Check in on the build?' (Yes)\n"
-        "  * Ready to Ship: 'Ship <target> to GitHub?' (Yes — automatically handles cleanup and retirement behind the scenes)."
+        "- NEVER emit parallel simultaneous MCP calls in the same step (causes UI confirmation hangs).\n"
+        "- You MAY issue up to 4 sequential read-only calls (`get_session_tree`, `load_session_into_gemini`, `ask_workspace_readonly`, `inspect_git_diff`, `inspect_visual_artifacts`, `list_saved_sessions`, `list_models_and_agents`) per turn (`call -> wait -> next`).\n"
+        "- On permission_denied/immediate error, auto-fallback sequentially once to `ask_workspace_readonly` or `load_session_into_gemini`.\n"
+        "- HARD STOP ON MUTATIONS & DEADBOLT: `send_handoff_and_resume` and `LOCKED_RESPONSE` end the turn—reply to the user immediately.\n"
+        "3. 1-CALL SUPER-CALLS: Call `load_session_into_gemini(session_identifier='1'|'latest'|<keyword>, include_files=...)` directly for check-ins (skip `list_saved_sessions`). Batch up to 12 files/virtual URIs in `ask_workspace_readonly(file_subpath='a.py,outline:b.py,workflow:baseline,transcript:latest')`.\n"
+        "4. ROUTING & CONTINUITY: Pass `session_identifier` (or `project_name` + `workspace_path` with `create_new_session=True`) and `session_continuity='auto'|'continuation'|'closeout'|'new_topic'`.\n"
+        "5. JOB-FIRST 1-TAP BUTTONS: Match `suggested_actions` ('Run these changes and update the live preview?' / 'Check in on the build?' / 'Ship <target> to GitHub?')."
     ),
 )
 

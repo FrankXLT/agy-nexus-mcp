@@ -28,6 +28,7 @@ PWA_ASSETS: dict[str, bytes] = {
     "styles.css": b"text/css; charset=utf-8",
     "workspace.css": b"text/css; charset=utf-8",
     "palettes.js": b"application/javascript; charset=utf-8",
+    "demo_snapshot.js": b"application/javascript; charset=utf-8",
     "demo_data.js": b"application/javascript; charset=utf-8",
     "charts.js": b"application/javascript; charset=utf-8",
     "hierarchy.js": b"application/javascript; charset=utf-8",
@@ -44,6 +45,11 @@ PWA_ASSETS: dict[str, bytes] = {
     "icon.svg": b"image/svg+xml",
     "icon-192.png": b"image/png",
     "icon-512.png": b"image/png",
+    "demo_thumb_desktop.png": b"image/png",
+    "demo_thumb_workspace.png": b"image/png",
+    "demo_thumb_foldable.png": b"image/png",
+    "demo_thumb_mobile.png": b"image/png",
+    "demo_thumb_health.png": b"image/png",
 }
 
 

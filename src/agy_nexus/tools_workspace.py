@@ -77,7 +77,7 @@ def ask_workspace_readonly(
     workspace: str = "",
     spoken_passphrase: str = "",
 ) -> Any:
-    """Read-only codebase explorer and secondary 'Check-in' status reader querying 1..12 comma-separated files or virtual URIs (supports line ranges via start_line/end_line or inline 'path/file.py:100-350', 'outline:path/to/file' for 1-call Polyglot semantic outlines, 'polyglot:map[:prefix]' / 'polyglot:search:<query>', 'transcript:latest' / 'transcript:step:<N>' for untruncated assistant turns, 'brain:<subpath>' for nested session artifacts, 'telemetry:stats[:period[:style]]' for policy-safe quota/heatmap stats, 'image:#01,#02[@top]', and 'skill:<name>' / 'agent:<name>' / 'rule:<name>'), git grep across local repositories, and SQLite FTS5 conversation history."""
+    """Read-only explorer for 1..12 CSV files/virtual URIs (file:10-90, outline:file, polyglot:map[:pfx]|search:<q>, workflow:baseline, transcript:latest|step:N, brain:<subpath>, telemetry:stats[:period[:style]], image:#01@top, skill|agent|rule:<name>), git grep & FTS5."""
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
     raw_sub = file_subpath.strip()
@@ -219,7 +219,7 @@ def inspect_git_diff(
     session_identifier: str = "",
     spoken_passphrase: str = "",
 ) -> str:
-    """Inspect active git status, untracked files, and branch diffs across the target repository (or pass workspace_override='ALL' / comma-separated repo names for a 1-turn multi-repo drift audit, or session_identifier to pin a specific session's repo). Supports filtering to a specific file_path and paging through large diffs."""
+    """Inspect repo git status, untracked files & diffs (workspace_override='ALL' or CSV repos for multi-repo drift, or session_identifier); pages file_path/lines."""
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
     raw_override = workspace_override.strip()
