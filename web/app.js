@@ -243,7 +243,7 @@ function renderDashboard(b) {
     horizonLabelEl.textContent = lbl.replace(/—/g, "·").trim();
   }
   const stepNextBtn = document.getElementById("stepNextBtn");
-  if (stepNextBtn) stepNextBtn.disabled = (state.offset || 0) <= 0;
+  if (stepNextBtn) stepNextBtn.disabled = (state.offset || 0) >= 0;
   const stepTodayBtn = document.getElementById("stepTodayBtn");
   if (stepTodayBtn) stepTodayBtn.style.display = (state.offset || 0) === 0 ? "none" : "";
 
@@ -272,96 +272,13 @@ function renderDashboard(b) {
   }
   document.getElementById("kpiTopClient").textContent = topClientName;
 
-  const heatGrid = document.getElementById("heatmapGrid"), monthsRow = document.getElementById("heatmapMonthsRow");
-  heatGrid.innerHTML = "";
-  if (monthsRow) monthsRow.innerHTML = "";
-  if (typeof state.heatWeeks === "undefined") state.heatWeeks = window.innerWidth < 560 ? 26 : 53;
-  document.querySelectorAll("#heatWeeksToggle button").forEach((b) => {
-    b.classList.toggle("active", Number(b.dataset.weeks) === state.heatWeeks);
-  });
-  let heatDays = b.heatmap_series || [];
-  if (state.heatWeeks === 26 && heatDays.length > 182) {
-    let sliceIdx = heatDays.length - 182;
-    while (sliceIdx > 0 && computeIsoWeekday(heatDays[sliceIdx].date, heatDays[sliceIdx].weekday) !== 0) sliceIdx--;
-    heatDays = heatDays.slice(sliceIdx);
-  }
-  const updateInspectorForDay = (d) => {
-    const dowLbl = DOW_NAMES[computeIsoWeekday(d.date, d.weekday)] || "";
-    document.getElementById("heatInspector").textContent = (d.future || Number(d.level) === -1)
-      ? `${d.date} (${dowLbl}) — Upcoming calendar day in current month`
-      : `${d.date} (${dowLbl}) — Steps: ${Number(d.steps || 0).toLocaleString()} | Tool Calls: ${Number(d.tools || 0).toLocaleString()} | Est. Tokens: ~${formatCompactTokens(d.tokens || (d.steps * 215))} | Active Chats: ${d.sessions || 0}`;
-  };
-  let weekCol = 0, matchedSelectedDay = null;
-  const colMonthMap = {};
-  if (heatDays.length > 0) {
-    const firstDow = computeIsoWeekday(heatDays[0].date, heatDays[0].weekday);
-    for (let padRow = 0; padRow < firstDow; padRow++) {
-      const padCell = document.createElement("div");
-      padCell.className = "heat-cell pad";
-      padCell.style.gridRow = String(padRow + 1);
-      padCell.style.gridColumn = "1";
-      heatGrid.appendChild(padCell);
-    }
-  }
-  heatDays.forEach((d, idx) => {
-    const dow = computeIsoWeekday(d.date, d.weekday);
-    if (idx > 0 && dow === 0) weekCol++;
-    const mNum = Number(String(d.date || "").slice(5, 7)), dayOfM = Number(String(d.date || "").slice(8, 10));
-    if ((idx === 0 || dayOfM === 1) && mNum >= 1 && mNum <= 12 && colMonthMap[weekCol] === undefined) colMonthMap[weekCol] = MONTH_NAMES[mNum - 1];
-    const cell = document.createElement("div");
-    cell.className = "heat-cell" + (d.in_window === false ? " out-window" : "");
-    cell.dataset.level = String(d.future ? -1 : (d.level ?? 0));
-    cell.dataset.date = d.date;
-    cell.style.gridRow = String(dow + 1);
-    cell.style.gridColumn = String(weekCol + 1);
-    cell.title = d.future
-      ? `${d.date} (${DOW_NAMES[dow]}): Upcoming calendar day`
-      : `${d.date} (${DOW_NAMES[dow]}): ${Number(d.steps || 0).toLocaleString()} steps, ${Number(d.tools || 0).toLocaleString()} tool calls, ~${formatCompactTokens(d.tokens || (d.steps * 215))} tokens`;
-    if (state.selectedDate && state.selectedDate === d.date && !d.future) { cell.classList.add("selected"); matchedSelectedDay = d; }
-    cell.addEventListener("click", () => {
-      document.querySelectorAll(".heat-cell.selected").forEach((el) => el.classList.remove("selected"));
-      cell.classList.add("selected");
-      state.selectedDate = d.date;
-      localStorage.setItem("nexus_selected_date", d.date);
-      updateInspectorForDay(d);
-    });
-    heatGrid.appendChild(cell);
-  });
-  const totalWeekCols = heatDays.length > 0 ? (weekCol + 1) : 0;
-  heatGrid.style.setProperty("--week-cols", String(totalWeekCols || 53));
-  if (monthsRow) monthsRow.style.setProperty("--week-cols", String(totalWeekCols || 53));
-  document.getElementById("heatmapRangeTag").textContent = `${periodBanner} · ${totalWeekCols} WEEKS`;
-  const dowCol = document.querySelector(".heatmap-dow-col");
-  if (dowCol) {
-    dowCol.classList.toggle("compact-dow", window.innerWidth < 560 && totalWeekCols > 30);
-  }
-  if (monthsRow && totalWeekCols > 0) {
-    let lastLabeledCol = -99;
-    const effectiveColMonthMap = { ...colMonthMap };
-    if (effectiveColMonthMap[0] && effectiveColMonthMap[1]) {
-      delete effectiveColMonthMap[0];
-    }
-    for (let c = 0; c < totalWeekCols; c++) {
-      const mSpan = document.createElement("span");
-      mSpan.className = "heatmap-month-lbl";
-      mSpan.style.gridColumn = String(c + 1);
-      if (effectiveColMonthMap[c] && c < totalWeekCols - 1 && (c - lastLabeledCol >= 2)) {
-        mSpan.textContent = effectiveColMonthMap[c];
-        lastLabeledCol = c;
-      }
-      monthsRow.appendChild(mSpan);
-    }
-  }
-  if (matchedSelectedDay) updateInspectorForDay(matchedSelectedDay);
-  else {
-    const nonFuture = heatDays.filter((x) => !x.future);
-    const recentActive = [...nonFuture].reverse().find((x) => Number(x.steps || 0) > 0) || nonFuture[nonFuture.length - 1];
-    if (recentActive) updateInspectorForDay(recentActive);
+  if (typeof renderDailyHeatmap === "function") {
+    renderDailyHeatmap(b, periodBanner);
   }
 
   renderAllTimePlots(b);
   if (typeof renderHierarchyPanel === "function") renderHierarchyPanel(b);
-  renderCodeHealth(b.code_health, b.version || "3.2.3");
+  renderCodeHealth(b.code_health, b.version || "3.2.4");
 
   const ph = b.project_hierarchy || {};
   let totalActiveHandoffs = 0;
@@ -403,8 +320,8 @@ document.querySelectorAll(".tab-btn[data-horizon]").forEach((btn) => {
   });
 });
 
-document.getElementById("stepPrevBtn")?.addEventListener("click", () => { state.offset = (state.offset || 0) + 1; fetchStats(); });
-document.getElementById("stepNextBtn")?.addEventListener("click", () => { if (state.offset > 0) { state.offset -= 1; fetchStats(); } });
+document.getElementById("stepPrevBtn")?.addEventListener("click", () => { state.offset = Math.min(0, Number(state.offset) || 0) - 1; fetchStats(); });
+document.getElementById("stepNextBtn")?.addEventListener("click", () => { if ((Number(state.offset) || 0) < 0) { state.offset = Math.min(0, (Number(state.offset) || 0) + 1); fetchStats(); } });
 document.getElementById("stepTodayBtn")?.addEventListener("click", () => { state.offset = 0; fetchStats(); });
 
 document.querySelectorAll(".metric-btn[data-metric]").forEach((btn) => {
@@ -487,7 +404,14 @@ if (copyChromiumCmdBtn && chromiumCmdInput) {
 }
 if ("serviceWorker" in navigator && window.location.protocol.startsWith("http")) {
   const basePrefix = window.location.pathname.replace(/\/web\/?$/, "");
-  navigator.serviceWorker.register(basePrefix + "/web/sw.js", { scope: basePrefix ? (basePrefix + "/") : "/" }).catch(() => {});
+  const hadCtrl = Boolean(navigator.serviceWorker.controller);
+  let swReloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadCtrl || swReloading) return;
+    try { if (sessionStorage.getItem("nexus_sw_reloaded") === "3.2.4") return; sessionStorage.setItem("nexus_sw_reloaded", "3.2.4"); } catch (_) {}
+    swReloading = true; window.location.reload();
+  });
+  navigator.serviceWorker.register(basePrefix + "/web/sw.js", { scope: basePrefix ? (basePrefix + "/") : "/", updateViaCache: "none" }).catch(() => {});
 }
 document.addEventListener("click", (e) => {
   if (settingsMenuWrap && !settingsMenuWrap.contains(e.target) && settingsPopover) {
@@ -530,15 +454,12 @@ document.getElementById("lockBtn").addEventListener("click", () => {
   document.getElementById("dashboardMain").classList.add("hidden");
   document.getElementById("workspaceMain")?.classList.add("hidden");
 });
-
 if (state.passphrase || state.demoMode) fetchStats((state.demoMode && !urlPeriod) ? undefined : state.period);
 if (window.location.hash === "#workspace") switchSurface("workspace");
-
 function buildSignedMediaUrl(session, artifact, t, sig, scopeParam) {
   const effScope = scopeParam || `brain:${session}`;
   return `/web/media/${encodeURIComponent(t)}/${encodeURIComponent(sig)}/${encodeURIComponent(effScope).replace(/%3A/gi, ":")}/${artifact}`;
 }
-
 function renderUnauthenticatedMediaViewer(session, artifact, t, sig, scopeParam) {
   const mediaUrl = buildSignedMediaUrl(session, artifact, t, sig, scopeParam), fileName = artifact.split("/").pop() || "Visual Artifact";
   ["authOverlay", "dashboardMain", "workspaceMain"].forEach((id) => document.getElementById(id)?.classList.add("hidden"));
@@ -547,7 +468,6 @@ function renderUnauthenticatedMediaViewer(session, artifact, t, sig, scopeParam)
   viewer.innerHTML = `<div class="unauth-viewer-bar mono"><span class="unauth-viewer-title">${escapeHtmlSafe(fileName)}</span><button type="button" class="btn btn-primary mono" id="unauthUnlockBtn">↗ Unlock Full Workspace</button></div><div class="unauth-viewer-body"><img src="${escapeHtmlSafe(mediaUrl)}" alt="${escapeHtmlSafe(fileName)}" class="unauth-viewer-img" /></div>`;
   document.getElementById("unauthUnlockBtn")?.addEventListener("click", () => { viewer.remove(); document.getElementById("authOverlay")?.classList.remove("hidden"); });
 }
-
 function handleWorkspaceDeepLink() {
   const params = new URLSearchParams(window.location.search);
   const view = params.get("view"), rawSess = params.get("session") || "", artifact = params.get("artifact");
@@ -573,5 +493,4 @@ function handleWorkspaceDeepLink() {
     switchSurface("workspace");
   }
 }
-
 handleWorkspaceDeepLink();

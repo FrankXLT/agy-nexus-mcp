@@ -47,6 +47,7 @@
     sessionStorage.removeItem("nexus_passphrase");
     localStorage.removeItem("nexus_demo_mode");
     if (typeof state !== "undefined") { state.passphrase = ""; state.demoMode = false; }
+    if (typeof clearSensitiveView === "function") clearSensitiveView();
     resetSensitiveState();
     ["uploadDialog", "lightboxModal", "sheetExportDialog"].forEach((id) => {
       const dlg = document.getElementById(id); if (dlg?.open) dlg.close();
@@ -69,6 +70,9 @@
       const urlSess = /^[a-zA-Z0-9_-]{1,64}$/.test(rawUrlSess.trim()) ? rawUrlSess.trim() : "";
       if (typeof state !== "undefined" && state.demoMode) {
         expState.treeData = window.DEMO_WORKSPACE_TREE || { ok: true, selected_session: "demo-sess-01", queue: { staged_count: 1, tickets: [] }, projects: [] };
+        if (typeof window !== "undefined" && typeof window.updateVersionBadge === "function") {
+          window.updateVersionBadge(expState.treeData.version_info, expState.treeData.version || window.DEMO_SNAPSHOT?.version);
+        }
         renderLeftTree();
         if (!expState.selectedSessionId && !urlSess && expState.stageMode !== "queue") {
           const firstId = expState.treeData.selected_session || expState.treeData.projects?.[0]?.sessions?.[0]?.conversation_id;
@@ -80,7 +84,11 @@
       if (resp.status === 401) return handleUnauthorized();
       const data = await resp.json();
       if (reqSeq !== treeReqSeq || !data.ok) return;
-      expState.treeData = data; renderLeftTree();
+      expState.treeData = data;
+      if (typeof window !== "undefined" && typeof window.updateVersionBadge === "function" && (data.version_info || data.version)) {
+        window.updateVersionBadge(data.version_info, data.version);
+      }
+      renderLeftTree();
       if (expState.stageMode !== "queue") {
         if (!expState.selectedSessionId && !urlSess) {
           let newestProj = null, newest = null;
@@ -220,13 +228,6 @@
         const shortAge = rawAge.replace(/\s*ago$/, "");
         const ageHtml = shortAge ? `<span class="tree-age-pill mono">${escapeHtmlSafe(shortAge)}</span>` : "";
         html += `<div class="tree-session-item ${isActive ? "active" : ""}" data-cid="${escCid}" data-pname="${escapeHtmlSafe(pName)}" data-stitle="${escapeHtmlSafe(sTitle)}" title="${escapeHtmlSafe(sTitle)}${rawAge ? ` (${escapeHtmlSafe(rawAge)})` : ""}"><span class="status-dot-6px ${dotCls}"></span><span class="tree-session-title">${escapeHtmlSafe(sTitle)}</span>${ageHtml}${capHtml}</div>`;
-        if (isActive && expState.selectedBucket) {
-          const uploads = expState.selectedBucket.uploads || [], artifacts = expState.selectedBucket.artifacts || [], visuals = expState.selectedBucket.visual_artifacts || [];
-          const upBlock = uploads.length ? `<details class="tree-sub-details" open><summary class="tree-sub-hdr mono"><span>Uploads (${uploads.length})</span></summary><div class="tree-sub-list">${uploads.map((ub) => `<div class="tree-sub-leaf tree-upload-leaf mono ${expState.stageMode === "batch" && expState.selectedBatchFolder === ub.folder_name ? "active" : ""}" data-folder="${escapeHtmlSafe(ub.folder_name)}"><span class="leaf-icon">📂</span><span class="leaf-text">${escapeHtmlSafe(formatUploadBatchLabel(ub))}</span></div>`).join("")}</div></details>` : "";
-          const artCount = artifacts.length + (visuals.length ? 1 : 0);
-          const artBlock = artCount ? `<details class="tree-sub-details" open><summary class="tree-sub-hdr mono"><span>Artifacts (${artCount})</span></summary><div class="tree-sub-list">${visuals.length ? `<div class="tree-sub-leaf tree-visuals-leaf mono"><span class="leaf-icon">🖼</span><span class="leaf-text">Session Captures (${visuals.length})</span></div>` : ""}${artifacts.map((art) => `<div class="tree-sub-leaf tree-art-leaf mono ${expState.stageMode === "doc" && art.rel_path === expState.selectedFilePath ? "active" : ""}" data-path="${escapeHtmlSafe(art.rel_path)}" data-name="${escapeHtmlSafe(art.name)}"><span class="leaf-icon">${art.type === "handoff" || art.name.includes("handoff") ? "◈" : "📄"}</span><span class="leaf-text">${escapeHtmlSafe(art.name)}</span></div>`).join("")}</div></details>` : "";
-          if (upBlock || artBlock) html += `<div class="tree-session-children">${upBlock}${artBlock}</div>`;
-        }
       });
       if (olderCount > 0 && !isExpanded) html += `<button type="button" class="tree-toggle-older-btn mono" data-pname="${escapeHtmlSafe(pName)}">▸ +${olderCount} older sessions</button>`;
       else if (isExpanded && sessList.length > 4) html += `<button type="button" class="tree-toggle-older-btn mono" data-pname="${escapeHtmlSafe(pName)}">▾ Hide older sessions</button>`;
@@ -237,9 +238,6 @@
     if (railEl) railEl.innerHTML = railHtml;
     treeEl.querySelector("#treeQueueNode")?.addEventListener("click", () => { expState.stageMode = "queue"; closeMobileDrawer(); renderSessionHeader(); renderLeftTree(); renderStage(); });
     treeEl.querySelectorAll(".tree-session-item").forEach((it) => it.addEventListener("click", () => { closeMobileDrawer(); selectSession(it.getAttribute("data-cid"), it.getAttribute("data-pname"), it.getAttribute("data-stitle")); }));
-    treeEl.querySelectorAll(".tree-upload-leaf").forEach((l) => l.addEventListener("click", (e) => { e.stopPropagation(); closeMobileDrawer(); expState.selectedBatchFolder = l.getAttribute("data-folder"); expState.stageMode = "batch"; renderSessionHeader(); renderLeftTree(); renderStage(); }));
-    treeEl.querySelectorAll(".tree-visuals-leaf").forEach((l) => l.addEventListener("click", (e) => { e.stopPropagation(); closeMobileDrawer(); expState.stageMode = "overview"; renderSessionHeader(); renderStage(); document.getElementById("secVisualArtifacts")?.scrollIntoView({ behavior: "smooth" }); }));
-    treeEl.querySelectorAll(".tree-art-leaf").forEach((l) => l.addEventListener("click", (e) => { e.stopPropagation(); closeMobileDrawer(); viewFile(l.getAttribute("data-path"), l.getAttribute("data-name"), "overview"); renderLeftTree(); }));
     treeEl.querySelectorAll(".tree-toggle-older-btn").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); const pn = b.getAttribute("data-pname"); if (expState.expandedProjects.has(pn)) expState.expandedProjects.delete(pn); else expState.expandedProjects.add(pn); renderLeftTree(); }));
     railEl?.querySelectorAll(".slim-project-pill").forEach((p) => p.addEventListener("click", () => { const cid = p.getAttribute("data-cid"); if (cid) selectSession(cid, p.getAttribute("data-pname"), p.getAttribute("data-stitle")); }));
   }
@@ -407,14 +405,15 @@
   function toggleSidebar(forceState) {
     const pane = document.getElementById("workspaceTreePane");
     if (!pane) return;
-    if (window.innerWidth < 780) { toggleMobileDrawer(); return; }
-    expState.isSidebarCollapsed = typeof forceState === "boolean" ? forceState : !expState.isSidebarCollapsed;
+    if (window.innerWidth <= 780) { toggleMobileDrawer(); return; }
+    const wasZen = expState.isZenMode;
+    if (wasZen) { expState.isZenMode = false; pane.classList.remove("zen"); document.getElementById("docZenBtn")?.classList.remove("active"); }
+    expState.isSidebarCollapsed = typeof forceState === "boolean" ? forceState : (wasZen ? false : !expState.isSidebarCollapsed);
     pane.classList.toggle("slim", expState.isSidebarCollapsed);
     const rail = document.getElementById("workspaceSlimRail"), full = document.getElementById("workspaceFullTree");
     if (rail && full) { rail.classList.toggle("hidden", !expState.isSidebarCollapsed); full.classList.toggle("hidden", expState.isSidebarCollapsed); }
     localStorage.setItem("nexus_ws_sidebar_collapsed", expState.isSidebarCollapsed ? "true" : "false");
   }
-
   function toggleZenMode() {
     const pane = document.getElementById("workspaceTreePane");
     expState.isZenMode = !expState.isZenMode;
@@ -470,7 +469,8 @@
       for (let i = 0; i < items.length; i++) { if (items[i].kind === "file") fileList.push(items[i].getAsFile()); }
       if (fileList.length > 0) handleFilesUpload(fileList, document.querySelector(".upload-tag-input")?.value || "", document.querySelector(".upload-status-lbl"));
     });
-    if (localStorage.getItem("nexus_ws_sidebar_collapsed") === "true" && window.innerWidth >= 780) toggleSidebar(true);
+    if (localStorage.getItem("nexus_ws_sidebar_collapsed") === "true" && window.innerWidth > 780) toggleSidebar(true);
+    window.WorkspaceResizer?.init?.();
   }
 
   function initWorkspace() { initExplorerEvents(); loadWorkspaceTree(); }

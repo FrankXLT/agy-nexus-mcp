@@ -4,6 +4,30 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.4] — 2026-11-19
+
+### Added
+- **Drag-Resizable 2-Pane Workspace Tree & Modular JS Extractions (`web/workspace_resizer.js`, `web/heatmap.js`, `web/index.html`, `web/workspace.css`, `web/styles.css`)**:
+  - Widened default `--tree-w` tokens (`D1: 320px`, `D2: 300px`, `D3: 280px`, `D4: 256px`), styled a subtle `thin` (`6px`) scrollbar with WCAG-compliant thumb contrast, and added `#workspaceResizer` (`220px–480px` drag + keyboard splitter persisted in `localStorage.nexus_tree_width`, double-click to reset).
+  - Extracted `web/heatmap.js` (<= 160L) and `web/workspace_resizer.js` (<= 140L) so `web/app.js` drops below `500` lines; registered both across `PWA_ASSETS` (`src/agy_nexus/web_routes.py`), `SHELL_ASSETS`/`SHELL_NAMES` (`web/sw.js`), and `web/index.html`.
+- **Direct `/web#workspace` Version Hydration (`src/agy_nexus/bucket_api.py`, `web/health.js`, `web/explorer.js`, `web/demo_data.js`)**:
+  - Included `"version"` and cached `"version_info"` in `/web/api/workspace/tree` (and `DEMO_WORKSPACE_TREE`) and extracted `updateVersionBadge()` in `web/health.js` so direct `/web#workspace` loads immediately show the current version dot and label without clobbering Analytics state.
+
+### Fixed
+- **Widescreen Desktop Docking & Analytics Expansion (`web/workspace.css`, `web/styles.css`)**:
+  - Removed `.workspace-main`'s `max-width: 1680px; margin: 0 auto;` centering so Workspace docks flush edge-to-edge under `.topbar` and keeps the `38px` slim rail aligned beneath `#sidebarToggleBtn` (`◧`).
+  - Expanded Analytics `.container` to `min(1960px, calc(100% - 32px))` so 4-up KPI footers (`Gemini Web / Cloud MCP`), the 53-week heatmap, and stacked bar charts scale cleanly on `1920px–3440px` monitors without side gutters.
+- **Stale HTML Service Worker Caching (`web/sw.js`, `src/agy_nexus/web_routes.py`, `web/app.js`)**:
+  - Removed `"/web"` from `SHELL_ASSETS` and `/web` + `/web/index.html` from `isCacheableShellAsset()`, set `Cache-Control: no-store, no-cache, must-revalidate` on `/web` HTML and `sw.js`, bumped `CACHE_NAME` to `"agy-nexus-overwatch-v3.2.4-b1"`, and added a guarded one-time `controllerchange` reload listener (`sessionStorage.nexus_sw_reloaded === "3.2.4"`).
+- **`Pure White` Surface Contrast & Muted Disabled `.btn-focal` (`web/styles.css`)**:
+  - Updated `[data-surface="white"]` (`--bg-canvas: #f8fafc`, `--bg-shell: #ffffff`, `--bg-card: #ffffff`, `--bg-elevated: #f1f5f9`) with subtle `--card-shadow` separation, and muted `.btn-focal:disabled` (`✦ Share Sheets`) to neutral slate when `0` items are selected.
+- **Readable 2-Line Tree Titles, Gallery `Per Sheet` Label & Clean Corner Badges (`web/workspace.css`, `web/gallery_view.js`, `web/explorer.js`, `web/index.html`)**:
+  - Updated `#workspaceTreeSearch` placeholder to `"Filter sessions..."`, wrapped `.tree-session-title` cleanly up to 2 lines, and removed the redundant inline `Artifacts` / `Uploads` sub-list under active tree items.
+  - Made `.visuals-strip-grid` responsive (`248px` at `>=1100px`, `210px` at `680–1099px`, `145px` mobile), switched `.thumb-lbl` to `overflow-wrap: anywhere`, renamed `Grid` $\rightarrow$ `Per Sheet`, replaced unselected `"✓"` badges with an empty ring, and hover-revealed `.gallery-zoom-btn` (`⤢`) on fine-pointer desktops.
+- **Missing `Jan` Month Header & `Year` `24h daily` Bar-Chart Alignment (`web/heatmap.js`, `src/agy_nexus/stats.py`, `src/agy_nexus/stats_series.py`, `web/charts.js`)**:
+  - Fixed `computeHeatmapMonthCols()` so `dayOfM === 1` (`Jan 1`) overrides a partial prior-month stub sharing column `0` (`Dec 29–31`), restoring all 12 month headers (`Jan`..`Dec`) on `2026 · 53 WEEKS`.
+  - Fixed `build_base_slot_grid()` and `stats.py` so `Year` (`ytd` & `last_year`) always emits `24h daily` bins across the full selected Year calendar span (`Jan 1 – Nov 19` / `52w`) instead of truncating to `12H BINS`, and added `ytd` showcase export support.
+
 ## [3.2.3] — 2026-11-18
 
 ### Added

@@ -13,8 +13,8 @@
   <link rel="icon" type="image/svg+xml" href="/web/icon.svg" />
   <link rel="apple-touch-icon" href="/web/icon-192.png" />
   <title>AGY-NEXUS-MCP — Usage, Quota &amp; Project Activity Dashboard</title>
-  <link rel="stylesheet" href="/web/styles.css?v=3.2.3" />
-  <link rel="stylesheet" href="/web/workspace.css?v=3.2.3" />
+  <link rel="stylesheet" href="/web/styles.css?v=3.2.4" />
+  <link rel="stylesheet" href="/web/workspace.css?v=3.2.4" />
 </head>
 <body>
   <!-- Top Navigation Bar -->
@@ -23,7 +23,7 @@
       <button type="button" class="btn btn-xs mono sidebar-toggle-btn hidden" id="sidebarToggleBtn" title="Toggle Tree (Ctrl+B)">◧</button>
       <span class="sq-dot"></span>
       <div>
-        <div class="brand-title mono">AGY-NEXUS <span class="version-tag" id="versionTag" title="Installed version"><span class="status-dot-6px cyan" id="versionDot"></span><span id="versionLabel">v3.2.3</span></span></div>
+        <div class="brand-title mono">AGY-NEXUS <span class="version-tag" id="versionTag" title="Installed version"><span class="status-dot-6px cyan" id="versionDot"></span><span id="versionLabel">v3.2.4</span></span></div>
         <div class="brand-sub" id="subtitleStatus">Usage, Model Quotas, Subagents, Tokens &amp; Project Activity</div>
       </div>
       <!-- Primary Surface Switcher -->
@@ -96,7 +96,7 @@
             <input type="text" id="chromiumCmdInput" class="pass-input mono" value="agy-nexus-app" readonly style="font-size:11px;padding:5px 8px;" />
             <button type="button" class="btn" id="copyChromiumCmdBtn">Copy</button>
           </div>
-          <div class="pop-divider" style="margin:8px 0;border-top:1px solid var(--border-color);"></div>
+          <div class="pop-divider" style="margin:8px 0;border-top:1px solid var(--border-hairline);"></div>
           <button type="button" class="btn" id="lockBtn" style="width:100%;justify-content:center;" title="Lock dashboard">Lock Bridge</button>
         </div>
       </div>
@@ -349,7 +349,7 @@
 
   <!-- Workspace Explorer Main Surface -->
   <main class="workspace-main hidden" id="workspaceMain">
-    <div class="workspace-layout">
+    <div class="workspace-layout" id="workspaceLayout">
       <!-- Left Tree Pane -->
       <aside class="workspace-tree-pane" id="workspaceTreePane">
         <!-- Slim Project Rail (38px width, visible when collapsed on >=780px) -->
@@ -358,15 +358,17 @@
           <button type="button" class="slim-rail-btn mono" id="slimRailQueueBtn" title="Visual Handoffs Queue">◈<span class="slim-q-badge mono" id="slimQueueBadge"></span></button>
           <div class="slim-rail-projects" id="slimRailProjects"></div>
         </div>
-        <!-- Full Tree Pane (240px) -->
+        <!-- Full Tree Pane (300px) -->
         <div class="workspace-full-tree" id="workspaceFullTree">
           <div class="tree-search-bar">
-            <input type="text" id="workspaceTreeSearch" class="input-text mono" placeholder="Filter projects / sessions..." />
+            <input type="text" id="workspaceTreeSearch" class="input-text mono" placeholder="Filter sessions..." aria-label="Filter sessions" />
             <button type="button" class="btn btn-xs mono tree-collapse-btn" id="treeCollapseBtn" title="Collapse to rail (Ctrl+B)">«</button>
           </div>
           <div class="tree-root-container" id="workspaceTreeRoot"></div>
         </div>
       </aside>
+
+      <div class="workspace-resizer" id="workspaceResizer" role="separator" aria-orientation="vertical" aria-label="Resize workspace sidebar" aria-valuemin="220" aria-valuemax="480" aria-valuenow="300" tabindex="0" title="Drag to resize · Double-click to reset"></div>
 
       <!-- Right Content Pane -->
       <section class="workspace-content-pane" id="workspaceContentPane">
@@ -464,18 +466,20 @@
     </div>
   </dialog>
 
-  <script src="/web/palettes.js?v=3.2.3"></script>
-  <script src="/web/charts.js?v=3.2.3"></script>
-  <script src="/web/demo_snapshot.js?v=3.2.3"></script>
-  <script src="/web/demo_data.js?v=3.2.3"></script>
-  <script src="/web/hierarchy.js?v=3.2.3"></script>
-  <script src="/web/markdown_renderer.js?v=3.2.3"></script>
-  <script src="/web/gallery_select.js?v=3.2.3"></script>
-  <script src="/web/sheet_builder.js?v=3.2.3"></script>
-  <script src="/web/gallery_view.js?v=3.2.3"></script>
-  <script src="/web/explorer.js?v=3.2.3"></script>
-  <script src="/web/uploads.js?v=3.2.3"></script>
-  <script src="/web/health.js?v=3.2.3"></script>
-  <script src="/web/app.js?v=3.2.3"></script>
+  <script src="/web/palettes.js?v=3.2.4"></script>
+  <script src="/web/charts.js?v=3.2.4"></script>
+  <script src="/web/demo_snapshot.js?v=3.2.4"></script>
+  <script src="/web/demo_data.js?v=3.2.4"></script>
+  <script src="/web/hierarchy.js?v=3.2.4"></script>
+  <script src="/web/markdown_renderer.js?v=3.2.4"></script>
+  <script src="/web/gallery_select.js?v=3.2.4"></script>
+  <script src="/web/sheet_builder.js?v=3.2.4"></script>
+  <script src="/web/gallery_view.js?v=3.2.4"></script>
+  <script src="/web/workspace_resizer.js?v=3.2.4"></script>
+  <script src="/web/explorer.js?v=3.2.4"></script>
+  <script src="/web/uploads.js?v=3.2.4"></script>
+  <script src="/web/health.js?v=3.2.4"></script>
+  <script src="/web/heatmap.js?v=3.2.4"></script>
+  <script src="/web/app.js?v=3.2.4"></script>
 </body>
 </html>

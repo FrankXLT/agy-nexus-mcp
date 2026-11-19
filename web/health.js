@@ -1,8 +1,9 @@
-// Code Health, Praxis Semantic Index & Modular Hygiene UI Renderer for /web Overwatch Dashboard (v3.2.3)
-function renderCodeHealth(ch, installedVer) {
-  installedVer = installedVer || "3.2.3";
+// Code Health, Praxis Semantic Index & Modular Hygiene UI Renderer for /web Overwatch Dashboard (v3.2.4)
+function updateVersionBadge(versionInfo, installedVer) {
+  const vInfo = versionInfo || {};
+  installedVer = installedVer || "3.2.4";
   let dotClass = "cyan";
-  const status = (ch && ch.version && ch.version.status) || "staged_locally";
+  const status = vInfo.status || "staged_locally";
   if (status === "up_to_date") dotClass = "green";
   else if (status === "update_available") dotClass = "amber";
   else if (status === "staged_locally") dotClass = "cyan";
@@ -12,12 +13,17 @@ function renderCodeHealth(ch, installedVer) {
   if (vDot) vDot.className = "status-dot-6px " + dotClass;
 
   const vLabel = document.getElementById("versionLabel");
-  if (vLabel) vLabel.textContent = `v${(ch && ch.version && ch.version.installed) || installedVer}`;
+  if (vLabel) vLabel.textContent = `v${vInfo.installed || installedVer}`;
 
   const vTag = document.getElementById("versionTag");
-  if (vTag) {
-    vTag.title = (ch && ch.version && ch.version.status_label) || `Installed version v${installedVer}`;
-  }
+  if (vTag) vTag.title = vInfo.status_label || `Installed version v${installedVer}`;
+  return dotClass;
+}
+
+function renderCodeHealth(ch, installedVer) {
+  installedVer = installedVer || "3.2.4";
+  const dotClass = updateVersionBadge(ch && ch.version, installedVer);
+  const status = (ch && ch.version && ch.version.status) || "staged_locally";
 
   if (!ch) return;
 
@@ -181,8 +187,9 @@ function renderCodeHealth(ch, installedVer) {
 }
 
 if (typeof window !== "undefined") {
+  window.updateVersionBadge = updateVersionBadge;
   window.renderCodeHealth = renderCodeHealth;
 }
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { renderCodeHealth };
+  module.exports = { updateVersionBadge, renderCodeHealth };
 }

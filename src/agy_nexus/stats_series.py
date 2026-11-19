@@ -81,9 +81,11 @@ def build_base_slot_grid(period_key: str, trimmed_days: list[str], today_iso: st
     """Generate calendar-aligned base slot groups (1h for Month/Quarter, 24h for Year) for adaptive client binning."""
     n_days = len(trimmed_days)
     pk_low = (period_key or "").strip().lower()
-    if pk_low in ("current_month", "last_month", "month") or n_days <= 31:
+    if pk_low in ("ytd", "last_year", "year_rolling", "year", "current_year") or pk_low.startswith("year_"):
+        step_h, res_lbl = 24, "24h daily"
+    elif pk_low in ("current_month", "last_month", "month") or pk_low.startswith("month_") or n_days <= 31:
         step_h, res_lbl = 1, "1h base slots"
-    elif pk_low in ("last_90d", "quarter", "90d") or n_days <= 92:
+    elif pk_low in ("last_90d", "quarter", "90d", "quarter_rolling") or pk_low.startswith("quarter_") or n_days <= 92:
         step_h, res_lbl = 1, "1h base slots"
     else:
         step_h, res_lbl = 24, "24h daily"

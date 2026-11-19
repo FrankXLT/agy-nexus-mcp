@@ -181,7 +181,12 @@ def build_session_zip(
 async def send_json(send: Any, status: int, data: dict[str, Any], extra_headers: list[tuple[bytes, bytes]] | None = None) -> None:
     """Serialize JSON payload and emit ASGI HTTP response."""
     body_b = json.dumps(data).encode("utf-8")
-    hdrs = [(b"content-type", b"application/json"), (b"content-length", str(len(body_b)).encode("ascii")), (b"cache-control", b"no-cache")]
+    hdrs = [
+        (b"content-type", b"application/json"),
+        (b"content-length", str(len(body_b)).encode("ascii")),
+        (b"cache-control", b"no-store, no-cache, private"),
+        (b"x-content-type-options", b"nosniff"),
+    ]
     if extra_headers:
         hdrs.extend(extra_headers)
     await send({"type": "http.response.start", "status": status, "headers": hdrs})
@@ -236,7 +241,8 @@ async def handle_download_zip(
     headers_out = [
         (b"content-type", ctype.encode("ascii")),
         (b"content-length", str(len(payload_b)).encode("ascii")),
-        (b"cache-control", b"no-cache"),
+        (b"cache-control", b"no-store, no-cache, private"),
+        (b"x-content-type-options", b"nosniff"),
     ]
     if status_code == 200 and ctype == "application/zip":
         headers_out.append((b"content-disposition", f'attachment; filename="{zip_name}"'.encode("ascii")))

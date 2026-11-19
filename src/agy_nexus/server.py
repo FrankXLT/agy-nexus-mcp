@@ -187,8 +187,8 @@ def _run_self_test_body() -> int:
         assert r_nex.status_code == 200 and len(nex_tools) == 11, f"agy-nexus-mcp expected 11 tools, got {len(nex_tools)}: {nex_tools}"
         assert "polyglot_map" not in nex_tools and len(r_nex.content) < 20_000, f"tools/list budget or isolation violated ({len(r_nex.content)} bytes)"
     node_bin = shutil.which("node")
-    for js_name in ("palettes.js", "charts.js", "demo_snapshot.js", "demo_data.js", "hierarchy.js", "uploads.js",
-                    "health.js", "markdown_renderer.js", "gallery_select.js", "sheet_builder.js", "gallery_view.js", "explorer.js", "app.js", "sw.js"):
+    for js_name in ("palettes.js", "charts.js", "demo_snapshot.js", "demo_data.js", "hierarchy.js", "uploads.js", "heatmap.js",
+                    "workspace_resizer.js", "health.js", "markdown_renderer.js", "gallery_select.js", "sheet_builder.js", "gallery_view.js", "explorer.js", "app.js", "sw.js"):
         js_path = app.web_dir / js_name
         assert js_path.is_file(), f"Missing web/{js_name}"
         js_text = js_path.read_text(encoding="utf-8")

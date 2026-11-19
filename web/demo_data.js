@@ -1,11 +1,11 @@
-// AGY-NEXUS Overwatch — Deterministic Multi-Window Demo Telemetry & Workspace Generator (v3.2.3)
+// AGY-NEXUS Overwatch — Deterministic Multi-Window Demo Telemetry & Workspace Generator (v3.2.4)
 
 const FALLBACK_CODE_HEALTH = {
   version: {
-    installed: "3.2.3",
-    remote: "v3.2.3",
+    installed: "3.2.4",
+    remote: "v3.2.4",
     status: "up_to_date",
-    status_label: "Up to Date (v3.2.3)",
+    status_label: "Up to Date (v3.2.4)",
     status_dot: "#10b981",
     repo: "github.com/FrankXLT/agy-nexus-mcp",
   },
@@ -45,7 +45,7 @@ const FALLBACK_CODE_HEALTH = {
   },
   polyglot_health: { indexed_files: 87, total_symbols: 412, long_functions_over_100: 2 },
   ast_integrity: { clean: true, undefined_count: 0, undefined_names: 0, scanned_files: 36, flagged_modules: 0, total_symbols: 412, details: {} },
-  local_lsp: { engine: "praxis+serena", installed: true, available: true, version: "v3.2.3", status: "ready" },
+  local_lsp: { engine: "praxis+serena", installed: true, available: true, version: "v3.2.4", status: "ready" },
 };
 const SAMPLE_CODE_HEALTH = (typeof window !== "undefined" && window.DEMO_SNAPSHOT && window.DEMO_SNAPSHOT.code_health) ? window.DEMO_SNAPSHOT.code_health : FALLBACK_CODE_HEALTH;
 
@@ -83,6 +83,7 @@ function generateDemoBundle(periodKey) {
     last_month:    { days: 31, stepH: 1, label: "Last Month · Oct 2026",    res: "1h sub-daily", nProj: 10, startIso: "2026-10-01" },
     last_90d:      { days: 90, stepH: 1, label: "Rolling 90 Days",          res: "1h sub-daily", nProj: 12, startIso: "2026-08-18" },
     last_year:     { days: 364, stepH: 24, label: "Rolling 52 Weeks",       res: "daily",        nProj: 12, startIso: "2025-11-17" },
+    ytd:           { days: 323, stepH: 24, label: "2026",                   res: "24h daily",    nProj: 12, startIso: "2026-01-01" },
   };
   const cfg = cfgMap[pk];
   const sParts = cfg.startIso.split("-").map(Number);
@@ -335,7 +336,7 @@ function generateDemoBundle(periodKey) {
   const winActiveDays = heatmap_series.filter((d) => d.in_window && d.steps > 0).length;
   return {
     server: "agy-nexus-mcp",
-    version: "3.2.3",
+    version: "3.2.4",
     period: { key: pk, label: cfg.label, resolution: cfg.res, active_days: winActiveDays, total_days: cfg.days },
     kpis: { total_conversations: builtProjs.reduce((a, p) => a + p.sessions.length, 0), total_subagents_spawned: 148, window_steps: totWinSteps, period_steps: totWinSteps, window_tool_calls: Math.round(totWinSteps * 0.51), window_tokens: totWinToks, active_days: winActiveDays },
     quota_and_pools: { active_tier_profile: "ultra-20x", pools: { google: { status: "HEALTHY" }, claude: { status: "HEALTHY" } }, partner_weekly_pacing: { day_of_week_index: 3, daily_target_pct: 14.28, recommended_cumulative_ceiling_pct: 42.8 } },
@@ -354,18 +355,20 @@ function generateDemoBundle(periodKey) {
     },
     routing_telemetry: { active_slots: 3, pinned_calls: 18, auto_resolved_calls: 7 },
     backup_321: { ok: true, short_sha: "55d0304", shas_match: true, age: "1h ago" },
-    project_session_tree: { ascii_tree: "AGY-NEXUS // DEMO PROJECT -> CHAT -> SESSION ID HIERARCHY\n[PROJECT 1] NexusMesh ANMS\n  ├─ [HANDOFF nexus-mesh-telemetry-01] IN-WORK -> claimed\n  └─ [#1] Canvas Node Optimization & Redis\n[PROJECT 2] Core Infrastructure & Container GitOps\n  ├─ [HANDOFF agy-nexus-mcp-02] STAGED (unclaimed / new chat)\n  └─ [#2] AGY-Nexus v3.2.3 Wire Caps & Surgical Fast-Path\n[PROJECT 3] quiet-ui-skills (0 sessions · 1 staged)\n  └─ [HANDOFF quiet-ui-skills-02] STAGED (unclaimed / new chat)" },
+    project_session_tree: { ascii_tree: "AGY-NEXUS // DEMO PROJECT -> CHAT -> SESSION ID HIERARCHY\n[PROJECT 1] NexusMesh ANMS\n  ├─ [HANDOFF nexus-mesh-telemetry-01] IN-WORK -> claimed\n  └─ [#1] Canvas Node Optimization & Redis\n[PROJECT 2] Core Infrastructure & Container GitOps\n  ├─ [HANDOFF agy-nexus-mcp-02] STAGED (unclaimed / new chat)\n  └─ [#2] AGY-Nexus v3.2.4 Wire Caps & Surgical Fast-Path\n[PROJECT 3] quiet-ui-skills (0 sessions · 1 staged)\n  └─ [HANDOFF quiet-ui-skills-02] STAGED (unclaimed / new chat)" },
     code_health: JSON.parse(JSON.stringify(SAMPLE_CODE_HEALTH)),
   };
 }
 
 const FALLBACK_WORKSPACE_TREE = {
   ok: true,
+  version: "3.2.4",
+  version_info: SAMPLE_CODE_HEALTH.version,
   selected_session: "b31d6672-9375-4a94-ae14-100000000100",
   queue: {
     staged_count: 1,
     tickets: [
-      { handoff_id: "agy-nexus-mcp-20", repo_slug: "agy-nexus-mcp", title: "v3.2.3 Real Depersonalized Showcase & Direct PNG Pass", status: "IN_WORK", execution_mode: "plan", handoff_mode: "feature_update", relative_age: "14m ago", handoff_file: "staged_handoffs/agy-nexus-mcp-20.md" },
+      { handoff_id: "agy-nexus-mcp-20", repo_slug: "agy-nexus-mcp", title: "v3.2.4 Real Depersonalized Showcase & Direct PNG Pass", status: "IN_WORK", execution_mode: "plan", handoff_mode: "feature_update", relative_age: "14m ago", handoff_file: "staged_handoffs/agy-nexus-mcp-20.md" },
       { handoff_id: "net-topology-anms-12", repo_slug: "net-topology-anms", title: "Canvas Engine, Bento Solver & Light UI Portal", status: "STAGED", execution_mode: "auto", handoff_mode: "feature_update", relative_age: "28m ago", handoff_file: "staged_handoffs/net-topology-anms-12.md" },
       { handoff_id: "agy-nexus-mcp-19", repo_slug: "agy-nexus-mcp", title: "Wire Caps, Praxis Repo-Map Budget & Surgical Fast-Path", status: "COMPLETED", execution_mode: "plan", handoff_mode: "feature_update", relative_age: "2h ago", handoff_file: "staged_handoffs/agy-nexus-mcp-19.md" },
     ],
@@ -375,7 +378,7 @@ const FALLBACK_WORKSPACE_TREE = {
       project_name: "AGY Nexus MCP",
       staged_count: 1,
       sessions: [
-        { conversation_id: "b31d6672-9375-4a94-ae14-100000000100", title: "AGY-Nexus MCP v3.2.3 — Real Showcase & Privacy Pass", status: "RUNNING", is_running: true, is_pinned: true, step_count: 496, capture_count: 4, relative_age: "5s ago", last_updated_ts: 1795050000 },
+        { conversation_id: "b31d6672-9375-4a94-ae14-100000000100", title: "AGY-Nexus MCP v3.2.4 — Real Showcase & Privacy Pass", status: "RUNNING", is_running: true, is_pinned: true, step_count: 496, capture_count: 4, relative_age: "5s ago", last_updated_ts: 1795050000 },
         { conversation_id: "b31d6672-9375-4a94-ae14-100000000101", title: "Wire Caps, Praxis Repo-Map & Surgical Fast-Path", status: "COMPLETED", is_pinned: true, step_count: 588, capture_count: 2, relative_age: "2h ago", last_updated_ts: 1795042800 },
       ],
     },
@@ -397,7 +400,7 @@ const FALLBACK_WORKSPACE_TREE = {
 };
 
 window.DEMO_WORKSPACE_TREE = (typeof window !== "undefined" && window.DEMO_SNAPSHOT && window.DEMO_SNAPSHOT.workspace_tree)
-  ? window.DEMO_SNAPSHOT.workspace_tree
+  ? Object.assign({ version: "3.2.4", version_info: SAMPLE_CODE_HEALTH.version }, window.DEMO_SNAPSHOT.workspace_tree)
   : FALLBACK_WORKSPACE_TREE;
 
 const demoTreeProjs = Array.isArray(window.DEMO_WORKSPACE_TREE.projects) ? window.DEMO_WORKSPACE_TREE.projects : [];
@@ -429,7 +432,7 @@ const DEMO_ARTIFACTS_BASE = [
 window.DEMO_SESSION_BUCKET = {
   ok: true,
   conversation_id: demoSelCid,
-  title: (demoSelSess && demoSelSess.title) || "AGY-Nexus MCP v3.2.3 — Real Showcase & Privacy Pass",
+  title: (demoSelSess && demoSelSess.title) || "AGY-Nexus MCP v3.2.4 — Real Showcase & Privacy Pass",
   project_name: (demoSelProj && demoSelProj.project_name) || "AGY Nexus MCP",
   repo_slug: "agy-nexus-mcp",
   rollover: { posture: (demoSelSess && demoSelSess.rollover_posture) || "SEAM_AWARE", reason: `${(demoSelSess && demoSelSess.step_count) || 496} steps · clean working tree`, should_rollover: false },
@@ -456,8 +459,8 @@ demoTreeProjs.forEach((dp) => {
 });
 
 window.DEMO_DOC_FILES = {
-  "walkthrough.md": "# AGY-Nexus v3.2.3 Showcase Walkthrough\n\n> [!TIP]\n> Real depersonalized 52w analytics, 16-workspace hierarchy, Praxis semantic index metrics, and 2-Pane Multi-Select PNG exports verified across Desktop (`1440x900`), Foldable (`900x1000`), and Mobile (`390x844`).\n\n## Verification Summary\n\n| Gate | Target | Result |\n| :--- | :--- | :--- |\n| `pytest` Suite | Regression, privacy & compaction suites | **100% PASS** |\n| `ag_bridge.py --self-test` | 11 Nexus + 6 Praxis MCP tools | **100% PASS** |\n| Modular Hygiene | `<= 500L` target / `650L` ceiling | **0 violations** |\n",
-  "implementation_plan.md": "# Implementation Plan — AGY-Nexus v3.2.3\n\n- [x] Praxis Repo-Map Budget (`<= 17.5 KB`) & IDE Client Classification (`polyglot_index.py`, `telemetry_scanner.py`)\n- [x] Proportional Surgical Fast-Path (`handoff_templates.py`, `handoff.py`)\n- [x] Test-Slot Isolation & 17.5 KB Session Tree Cap (`tests/conftest.py`, `config.py`, `tools_ops.py`)\n- [x] Real Depersonalized Showcase Exporter (`scripts/export_depersonalized_showcase.py`, `web/demo_snapshot.js`)\n",
+  "walkthrough.md": "# AGY-Nexus v3.2.4 Showcase Walkthrough\n\n> [!TIP]\n> Real depersonalized 52w analytics, 16-workspace hierarchy, Praxis semantic index metrics, and 2-Pane Multi-Select PNG exports verified across Desktop (`1440x900`), Foldable (`900x1000`), and Mobile (`390x844`).\n\n## Verification Summary\n\n| Gate | Target | Result |\n| :--- | :--- | :--- |\n| `pytest` Suite | Regression, privacy & compaction suites | **100% PASS** |\n| `ag_bridge.py --self-test` | 11 Nexus + 6 Praxis MCP tools | **100% PASS** |\n| Modular Hygiene | `<= 500L` target / `650L` ceiling | **0 violations** |\n",
+  "implementation_plan.md": "# Implementation Plan — AGY-Nexus v3.2.4\n\n- [x] Praxis Repo-Map Budget (`<= 17.5 KB`) & IDE Client Classification (`polyglot_index.py`, `telemetry_scanner.py`)\n- [x] Proportional Surgical Fast-Path (`handoff_templates.py`, `handoff.py`)\n- [x] Test-Slot Isolation & 17.5 KB Session Tree Cap (`tests/conftest.py`, `config.py`, `tools_ops.py`)\n- [x] Real Depersonalized Showcase Exporter (`scripts/export_depersonalized_showcase.py`, `web/demo_snapshot.js`)\n",
   "task.md": "# Session Task Checklist\n\n- [x] Scout repository via `agy-praxis-mcp`\n- [x] Generate depersonalized `DEMO_SNAPSHOT` & README ASCII tables\n- [x] Capture real desktop & mobile hero assets + run Intra-Google Dual-Review\n",
   "scratch/gemini_research_handoff.md": "# Gemini High Task Handoff (`agy-nexus-mcp-20`)\n\n- **Handoff Mode**: `feature_update`\n- **Execution Mode**: `plan`\n- **Workspace**: `/home/dev/agentic_workspace/projects/agy-nexus-mcp`\n\nReplace synthetic preview cards with real UI captures, hydrate `/web?demo=1` from depersonalized real workstation metrics, and verify `< 20 KB` wire budgets.\n",
 };

@@ -13,12 +13,14 @@ import urllib.parse
 
 import anyio
 
+from agy_nexus import __version__
 from agy_nexus.bucket_zip import (
     build_session_zip as _bz_build_session_zip,
     handle_download_zip as _handle_download_zip,
     resolve_zip_entry as _resolve_zip_entry,
     send_json as _send_json,
 )
+from agy_nexus.code_health import get_code_health_summary
 from agy_nexus.config import (
     AGY_BG_DIR,
     AGY_BRAIN_DIR,
@@ -332,8 +334,14 @@ def build_workspace_tree_payload() -> dict[str, Any]:
             "staged_handoffs": proj.get("staged_handoffs") or [],
         })
 
+    try:
+        version_info = get_code_health_summary().get("version") or {}
+    except Exception:
+        version_info = {}
     return {
         "ok": True,
+        "version": __version__,
+        "version_info": version_info,
         "queue": queue_node,
         "projects": projects_out,
         "selected_session": SESSION_STATE.get("selected_session", ""),

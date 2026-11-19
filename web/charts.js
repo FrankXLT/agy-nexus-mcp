@@ -8,7 +8,7 @@ const THEME_META = {
   "pure-white": { label: "Pure White", bg: "#ffffff", border: "#1d5bd6", themeColor: "#ffffff" },
 };
 const VALID_DENSITIES = ["D1", "D2", "D3", "D4"];
-const VALID_PERIODS = ["current_month", "last_month", "last_90d", "last_year"];
+const VALID_PERIODS = ["current_month", "last_month", "last_90d", "ytd", "last_year"];
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DOW_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const ALLOWED_BIN_HOURS = [1, 2, 3, 4, 6, 8, 12, 24, 48, 72, 168];
@@ -35,8 +35,9 @@ const initPeriodPref = VALID_PERIODS.includes(urlPeriod) ? urlPeriod : (VALID_PE
 const initDensityPref = VALID_DENSITIES.includes(urlDensity) ? urlDensity : (VALID_DENSITIES.includes(localStorage.getItem("nexus_density")) ? localStorage.getItem("nexus_density") : "D2");
 const periodPresetMap = {
   current_month: { timeframe: "month", horizon: "to_date", offset: 0 },
-  last_month: { timeframe: "month", horizon: "to_date", offset: 1 },
+  last_month: { timeframe: "month", horizon: "to_date", offset: -1 },
   last_90d: { timeframe: "quarter", horizon: "rolling", offset: 0 },
+  ytd: { timeframe: "year", horizon: "to_date", offset: 0 },
   last_year: { timeframe: "year", horizon: "rolling", offset: 0 },
 };
 const urlPeriodCfg = VALID_PERIODS.includes(urlPeriod) ? periodPresetMap[urlPeriod] : null;
@@ -107,9 +108,9 @@ function applyThemeAndDensity(surface, density) {
 
 function resolveDemoPeriodKey(explicitPeriod) {
   if (VALID_PERIODS.includes(explicitPeriod)) return explicitPeriod;
-  if (state.timeframe === "year") return "last_year";
+  if (state.timeframe === "year") return state.horizon_mode === "to_date" ? "ytd" : "last_year";
   if (state.timeframe === "quarter") return "last_90d";
-  if (Number(state.offset || 0) > 0) return "last_month";
+  if (Number(state.offset || 0) !== 0) return "last_month";
   return "current_month";
 }
 
@@ -167,7 +168,7 @@ async function fetchStats(period) {
     const hLbl = document.getElementById("horizonActiveLabel");
     if (hLbl && data.horizon_label) hLbl.textContent = data.horizon_label;
     const stepNext = document.getElementById("stepNextBtn");
-    if (stepNext) stepNext.disabled = (Number(state.offset || 0) === 0);
+    if (stepNext) stepNext.disabled = (Number(state.offset || 0) >= 0);
 
     document.getElementById("authOverlay").classList.add("hidden");
     const targetMain = state.surfaceView === "workspace" ? document.getElementById("workspaceMain") : document.getElementById("dashboardMain");

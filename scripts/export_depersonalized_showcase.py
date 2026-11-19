@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-scripts/export_depersonalized_showcase.py — Export Live Telemetry to Public v3.2.3 Showcases.
+scripts/export_depersonalized_showcase.py — Export Live Telemetry to Public v3.2.4 Showcases.
 
-Reads live workstation bundles (current_month, last_month, last_90d, last_year), the live
+Reads live workstation bundles (current_month, last_month, last_90d, ytd, last_year), the live
 Workspace Explorer tree, and Code Health, applies deterministic 1-to-1 SHA-256-keyed aliasing
 (zero cleartext private identifiers in source control), writes `web/demo_snapshot.js`, and
 regenerates all four `README.md` ASCII showcase blocks via `session_tree`, `ascii_default`,
@@ -380,13 +380,16 @@ def build_depersonalized_workspace_tree(dp: ShowcaseDepersonalizer, bundle_90d: 
             s["rollover_posture"] = str(s.get("rollover_posture") or "FRESH")
             s["upload_batches"] = []
             s["artifacts"] = []
-            if p["project_name"] == "AGY Nexus MCP" and (s.get("is_running") or "v3.2.3" in s.get("title", "")):
+            if p["project_name"] == "AGY Nexus MCP" and (s.get("is_running") or __version__ in s.get("title", "")):
                 s["capture_count"] = max(4, int(s.get("capture_count") or 4))
     projects_out.sort(key=lambda p: (-(float(p.get("last_updated_ts") or 0.0)), p["project_name"].lower()))
     sel_sess = next((p["sessions"][0]["conversation_id"] for p in projects_out if p["project_name"] == "AGY Nexus MCP" and p.get("sessions")), "")
     if not sel_sess and projects_out and projects_out[0].get("sessions"):
         sel_sess = projects_out[0]["sessions"][0]["conversation_id"]
-    return {"ok": True, "queue": q, "projects": projects_out, "selected_session": sel_sess}
+    ch_ver = (bundle_90d.get("code_health") or {}).get("version") or {
+        "installed": __version__, "remote": f"v{__version__}", "status": "up_to_date", "status_label": f"Up to Date (v{__version__})",
+    }
+    return {"ok": True, "version": __version__, "version_info": ch_ver, "queue": q, "projects": projects_out, "selected_session": sel_sess}
 
 
 def _build_showcase_session_tree_ascii(dp: ShowcaseDepersonalizer) -> str:
@@ -465,8 +468,9 @@ def main() -> None:
     def_ascii, qck_ascii, rich_ascii = render_ascii_default(dep_90), render_ascii_quick(dep_90), render_ascii_rich(dep_90)
     for ln in qck_ascii.splitlines():
         assert len(ln) <= 40, f"quick line >40 chars ({len(ln)}): {ln}"
+    export_periods = ("current_month", "last_month", "last_90d", "ytd", "last_year")
     bundles: dict[str, Any] = {}
-    for pk in ("current_month", "last_month", "last_90d", "last_year"):
+    for pk in export_periods:
         rb = raw_90 if pk == "last_90d" else build_nexus_stats_bundle(data_dir=AGY_DATA_DIR, brain_dir=AGY_BRAIN_DIR, db_file=AGY_DB_FILE, config_dir=AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR, period=pk, style="default")
         bundles[pk] = _trim_bundle_for_snapshot(depersonalize_stats_bundle(rb, dp), tree_ascii)
     date_vars = _collect_shared_dates(bundles)
@@ -481,7 +485,7 @@ def main() -> None:
         f"    code_health: {json.dumps(dep_90['code_health'], separators=(',', ':'), ensure_ascii=False)},",
         f"    workspace_tree: {json.dumps(ws_tree, separators=(',', ':'), ensure_ascii=False)},",
         "    bundles: {",
-        *[f'      "{pk}": {_to_compact_js(bundles[pk], date_vars)},' for pk in ("current_month", "last_month", "last_90d", "last_year")],
+        *[f'      "{pk}": {_to_compact_js(bundles[pk], date_vars)},' for pk in export_periods],
         "    },", "  };", "})();", "",
     ]
     snap_path = REPO_ROOT / "web" / "demo_snapshot.js"

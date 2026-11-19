@@ -34,6 +34,8 @@ PWA_ASSETS: dict[str, bytes] = {
     "hierarchy.js": b"application/javascript; charset=utf-8",
     "health.js": b"application/javascript; charset=utf-8",
     "app.js": b"application/javascript; charset=utf-8",
+    "heatmap.js": b"application/javascript; charset=utf-8",
+    "workspace_resizer.js": b"application/javascript; charset=utf-8",
     "uploads.js": b"application/javascript; charset=utf-8",
     "explorer.js": b"application/javascript; charset=utf-8",
     "gallery_select.js": b"application/javascript; charset=utf-8",
@@ -85,7 +87,7 @@ async def handle_web_request(
             "headers": [
                 (b"content-type", b"text/html; charset=utf-8"),
                 (b"content-length", str(len(html_bytes)).encode("ascii")),
-                (b"cache-control", b"no-cache"),
+                (b"cache-control", b"no-store, no-cache, must-revalidate"),
             ],
         })
         await send({"type": "http.response.body", "body": b"" if method == "HEAD" else html_bytes})
@@ -128,10 +130,11 @@ async def handle_web_request(
             asset_path = web_dir / asset_name
             if asset_path.is_file():
                 asset_bytes = asset_path.read_bytes()
+                cc_val = b"no-store, no-cache, must-revalidate" if asset_name == "sw.js" else b"no-cache"
                 resp_hdrs = [
                     (b"content-type", PWA_ASSETS[asset_name]),
                     (b"content-length", str(len(asset_bytes)).encode("ascii")),
-                    (b"cache-control", b"no-cache"),
+                    (b"cache-control", cc_val),
                     (b"x-content-type-options", b"nosniff"),
                 ]
                 if asset_name == "sw.js":

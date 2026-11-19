@@ -366,8 +366,11 @@ def build_nexus_stats_bundle(
         subagent_list.append({"role": rk, **rv})
 
     chart_days = [x for x in heatmap_series if not x.get("future") and s_iso <= x["date"] <= e_iso]
-    first_act_idx = next((idx for idx, x in enumerate(chart_days) if x["steps"] > 0), 0)
-    trimmed_days = [x["date"] for x in (chart_days[max(0, first_act_idx - 1) :] if len(chart_days) > 7 else chart_days)]
+    if tf == "year":
+        trimmed_days = [x["date"] for x in chart_days]
+    else:
+        first_act_idx = next((idx for idx, x in enumerate(chart_days) if x["steps"] > 0), 0)
+        trimmed_days = [x["date"] for x in (chart_days[max(0, first_act_idx - 1) :] if len(chart_days) > 7 else chart_days)]
 
     from agy_nexus.session_tree import build_project_session_tree
     tree_bundle = build_project_session_tree(active_only=False, limit=180, bg_dir=bg_dir)
