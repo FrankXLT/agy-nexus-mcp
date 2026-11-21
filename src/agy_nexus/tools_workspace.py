@@ -24,8 +24,7 @@ from agy_nexus.config import (
     mcp,
     pin_session_context,
 )
-from agy_nexus.polyglot_outline import build_file_outline
-from agy_nexus.hygiene import MAX_DIFF_CHARS, MAX_FILE_CHARS, MAX_TOTAL_FILE_CHARS, slice_git_diff
+from agy_nexus.hygiene import MAX_DIFF_CHARS, MAX_FILE_CHARS, MAX_TOTAL_FILE_CHARS, compact_payload_to_wire_budget, slice_git_diff
 from agy_nexus.routing import _resolve_session_identifier, _session_matches_workspace
 from agy_nexus.search import _get_configured_mcp_servers, _search_workspaces_and_history
 from agy_nexus.sessions import _get_selected_session_quick_status
@@ -77,7 +76,7 @@ def ask_workspace_readonly(
     workspace: str = "",
     spoken_passphrase: str = "",
 ) -> Any:
-    """Read-only explorer for 1..12 CSV files/virtual URIs (file:10-90, outline:file, polyglot:map[:pfx]|search:<q>, workflow:baseline, transcript:latest|step:N, brain:<subpath>, telemetry:stats[:period[:style]], image:#01@top, skill|agent|rule:<name>), git grep & FTS5."""
+    """Read 1..12 CSV files/URIs (file:10-90, outline:file, polyglot:map|search:<q>, workflow:baseline, transcript:latest, brain:*, telemetry:stats, image:#01@top, skill|agent|rule:<name>), git grep & FTS5."""
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
     raw_sub = file_subpath.strip()
@@ -168,44 +167,7 @@ def ask_workspace_readonly(
     if not raw_sub:
         out_ws["configured_mcp_servers"] = search_bundle["configured_mcp_servers"]
         out_ws["available_repositories"] = search_bundle["available_repositories"]
-    out_json = _compact_json(out_ws)
-    if len(out_json.encode("utf-8")) > 19200:
-        out_ws["historical_session_matches"] = out_ws.get("historical_session_matches", [])[:2]
-        out_ws["code_search_matches"] = out_ws.get("code_search_matches", [])[:5]
-        out_ws.pop("polyglot_symbol_matches", None)
-        out_json = _compact_json(out_ws)
-    if len(out_json.encode("utf-8")) > 19200 and isinstance(out_ws.get("file_details"), dict):
-        files_arr = out_ws["file_details"].get("files") or ([out_ws["file_details"]] if "path" in out_ws["file_details"] else [])
-        suffix_msg = "\n... [compacted for <20KB wire ceiling — use start_line/end_line for remaining lines]"
-        for _ in range(10):
-            cur_bytes = len(out_json.encode("utf-8"))
-            if cur_bytes <= 19200 or not files_arr:
-                break
-            largest = max(files_arr, key=lambda f: len(str(f.get("content", ""))))
-            content_str = str(largest.get("content", ""))
-            if len(content_str) <= 950:
-                for f_item in files_arr:
-                    pol = f_item.get("polyglot_outline")
-                    if isinstance(pol, dict) and isinstance(pol.get("symbols"), list) and len(pol["symbols"]) > 15:
-                        pol["symbols"] = pol["symbols"][:15] + ["... [symbols compacted]"]
-                out_json = _compact_json(out_ws)
-                break
-            excess = cur_bytes - 18600
-            new_len = max(800, len(content_str) - max(excess, 1500))
-            if new_len + len(suffix_msg) >= len(content_str):
-                new_len = max(400, len(content_str) // 2)
-            largest["content"] = content_str[:new_len] + suffix_msg
-            largest["truncated"] = True
-            if "polyglot_outline" not in largest and largest.get("path") and not str(largest.get("path")).startswith("virtual://"):
-                try:
-                    ol_fb = build_file_outline(Path(largest["path"]), max_chars=1200, include_callers=False)
-                    largest["polyglot_outline"] = {
-                        k: v for k, v in ol_fb.items() if k not in ("symbol_items", "formatted_outline")
-                    }
-                except Exception:
-                    pass
-            out_json = _compact_json(out_ws)
-    return out_json
+    return compact_payload_to_wire_budget(out_ws, serializer=_compact_json)
 
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def inspect_git_diff(
@@ -219,7 +181,7 @@ def inspect_git_diff(
     session_identifier: str = "",
     spoken_passphrase: str = "",
 ) -> str:
-    """Inspect repo git status, untracked files & diffs (workspace_override='ALL' or CSV repos for multi-repo drift, or session_identifier); pages file_path/lines."""
+    """Inspect repo git status, untracked files & diffs (workspace_override='ALL'|CSV repos for drift, or session_identifier); pages file_path/lines."""
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
     raw_override = workspace_override.strip()
@@ -231,14 +193,14 @@ def inspect_git_diff(
             workspace_override=raw_override,
             include_untracked=include_untracked,
         )
-        return _compact_json({
+        return compact_payload_to_wire_budget({
             "assistant_guidance": (
                 "Multi-repository drift audit completed in a single turn (all branch, status, and drift details included below). "
                 "Synthesize your report directly, or issue a sequential read-only follow-up call (one call at a time, never in parallel)."
             ),
             "selected_session_status": _get_selected_session_quick_status(conv_id),
             **drift_bundle,
-        })
+        }, serializer=_compact_json)
     conv_id, pinned_ws, _ = _resolve_pinned_context(session_identifier, raw_override, tool_name="inspect_git_diff")
     ws_str = str(pinned_ws) if (session_identifier.strip() or raw_override) else _resolve_workspace_str(raw_override)
     ws = Path(ws_str)
@@ -297,7 +259,7 @@ def inspect_git_diff(
                         diff_out=diff_proc.stdout, offset_chars=offset_chars, max_diff_chars=MAX_DIFF_CHARS,
                         file_path=safe_file_path, start_line=start_line, end_line=end_line,
                     )
-                    return _compact_json({
+                    return compact_payload_to_wire_budget({
                         "ok": True, "workspace": str(ws_res),
                         "assistant_guidance": "Git diff retrieved. Synthesize your report directly, or issue a sequential read-only follow-up call (one call at a time, never in parallel).",
                         "selected_session_status": _get_selected_session_quick_status(conv_id),
@@ -305,7 +267,7 @@ def inspect_git_diff(
                         "current_branch": current_branch, "status_short": status_proc.stdout.strip(),
                         "diff_stat": stat_proc.stdout.strip(), "untracked_files": untracked_files,
                         "target_branch": safe_branch, **diff_meta,
-                    })
+                    }, serializer=_compact_json)
             except Exception:
                 pass
     host_res = _host_git_inspect(ws_str, target_branch=safe_branch, include_untracked=include_untracked, summary_only=False, file_path=safe_file_path)
@@ -315,12 +277,12 @@ def inspect_git_diff(
             diff_out=str(host_res.get("diff", "")), offset_chars=offset_chars, max_diff_chars=MAX_DIFF_CHARS,
             file_path=safe_file_path, start_line=start_line, end_line=end_line,
         )
-        return _compact_json({
+        return compact_payload_to_wire_budget({
             "ok": True, "workspace": host_res.get("workspace", ws_str),
             "assistant_guidance": "Host git inspection complete. Synthesize your report directly, or issue a sequential read-only follow-up call (one call at a time, never in parallel).",
             "selected_session_status": _get_selected_session_quick_status(conv_id),
             "configured_mcp_servers": configured_mcps, "branch": br, "current_branch": br,
             "status_short": host_res.get("status_short", ""), "diff_stat": host_res.get("diff_stat", ""),
             "untracked_files": host_res.get("untracked_files", []), "target_branch": safe_branch, **diff_meta,
-        })
+        }, serializer=_compact_json)
     return _compact_json({"ok": False, "error": f"Unable to inspect git repository for workspace '{ws_str}'."})

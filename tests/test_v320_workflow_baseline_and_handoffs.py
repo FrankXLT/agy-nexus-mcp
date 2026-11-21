@@ -38,19 +38,19 @@ WEB_DIR = PROJECT_ROOT / "web"
 
 
 def test_v320_version_consistency() -> None:
-    """Verify package version is 3.2.4 across pyproject.toml, package, index.html, and sw.js."""
-    assert agy_nexus.__version__ == "3.2.4"
+    """Verify package version is 3.2.5 across pyproject.toml, package, index.html, and sw.js."""
+    assert agy_nexus.__version__ == "3.2.5"
 
     pyproject_text = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'version = "3.2.4"' in pyproject_text
+    assert 'version = "3.2.5"' in pyproject_text
 
     index_html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
-    assert "v3.2.4" in index_html
-    assert 'href="/web/styles.css?v=3.2.4"' in index_html
+    assert "v3.2.5" in index_html
+    assert 'href="/web/styles.css?v=3.2.5"' in index_html
 
     sw_js = (WEB_DIR / "sw.js").read_text(encoding="utf-8")
-    assert 'CACHE_NAME = "agy-nexus-overwatch-v3.2.4-b1"' in sw_js
-    assert '"/web/styles.css?v=3.2.4"' in sw_js
+    assert 'CACHE_NAME = "agy-nexus-overwatch-v3.2.5-b1"' in sw_js
+    assert '"/web/styles.css?v=3.2.5"' in sw_js
 
 
 def test_discover_project_workflows_on_repo(tmp_path: Path) -> None:

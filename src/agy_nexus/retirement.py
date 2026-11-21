@@ -90,14 +90,24 @@ def infer_continuity_intent(
     return "new_topic" if (is_clean_seam and (raw.startswith("#") or "handshake" in raw)) else "continuation"
 
 
-def get_closeout_directives(ws_path: str = "") -> str:
+def get_closeout_directives(
+    ws_path: str = "",
+    conv_id: str = "",
+    retire_after_closeout: bool = False,
+) -> str:
     """Generate Markdown directives for terminal session closeout and workspace cleanup."""
+    cid_hint = conv_id or "<conv_id>"
+    retire_line = (
+        f"- **Deferred Final-Step Retirement (`retire_after_closeout=True`)**: Do NOT retire mid-run. Only **AFTER** `git commit` and `git push` succeed, call `record_session_retirement('{cid_hint}', final_commit_sha=<HEAD_SHA>)` (or write `brain/{cid_hint}/RETIRED.json` with `retired_at` and `final_commit_sha=<HEAD_SHA>`)."
+        if retire_after_closeout
+        else f"- **Persist RETIRED.json**: Write `brain/{cid_hint}/RETIRED.json` with `retired_at` timestamp and `final_commit_sha`."
+    )
     directives = [
         "### Terminal Session Closeout & In-Place Retirement Directives",
         "- **Worktree Pruning**: Run `git worktree prune` to purge any detached or stale worktree references.",
         "- **Temp Cleanup**: Remove untracked verification temp files (e.g. scratch scripts and temporary logs).",
         "- **Mark Tickets Completed**: Ensure all active staged handoff tickets for this repository are marked `COMPLETED`.",
-        "- **Persist RETIRED.json**: Write `brain/<conv_id>/RETIRED.json` with `retired_at` timestamp and `final_commit_sha`.",
+        retire_line,
     ]
     if ws_path:
         directives.append(f"- **Workspace Scope**: `{ws_path}`")

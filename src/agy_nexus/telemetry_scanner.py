@@ -92,9 +92,11 @@ def detect_product_name(raw_product: str = "", user_agent: str = "", tool_name: 
         return "Gemini Mobile"
     if "web_ui" in tool_low or "web_stats" in tool_low or "mozilla" in s:
         return "Web Dashboard"
+    if "antigravity" in s or "agy" in s:
+        return "Antigravity IDE"
     if any(k in s for k in ("gemini", "google", "vertex", "http-client")):
         return "Gemini Web / Cloud MCP"
-    return "Antigravity IDE" if ("antigravity" in s or "agy" in s) else (raw_product.strip() or "Gemini MCP Client")
+    return raw_product.strip() or "Gemini MCP Client"
 
 def _is_handshake_record(rec: dict[str, Any]) -> bool:
     rpc_val = str(rec.get("rpc") or "").strip().lower()

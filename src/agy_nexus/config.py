@@ -5,6 +5,7 @@ agy_nexus.config — Environment, Paths, Deadbolt Authentication & FastMCP Insta
 
 from __future__ import annotations
 
+import contextvars
 import copy
 import fcntl
 import hashlib
@@ -466,3 +467,6 @@ def get_host_bridge_headers() -> dict[str, str]:
 def _compact_json(data: Any) -> str:
     """Serialize tool output with compact separators so large inventories/bundles stay well under Gemini's cloud proxy byte ceiling."""
     return json.dumps(data, separators=(",", ": "), ensure_ascii=False)
+
+
+_MCP_REQUEST_CTX: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar("_MCP_REQUEST_CTX", default=None)

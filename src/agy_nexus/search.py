@@ -301,11 +301,11 @@ def _search_workspaces_and_history(
     res: dict[str, Any] = {
         "available_repositories": available_repos,
         "configured_mcp_servers": configured_mcps,
-        "pinned_session_matches": pinned_matches[:10],
-        "polyglot_symbol_matches": polyglot_matches[:8],
-        "code_search_matches": grep_matches[:35],
-        "historical_session_matches": fts_matches[:8],
+        "pinned_session_matches": pinned_matches[:8],
+        "polyglot_symbol_matches": polyglot_matches[:6],
+        "code_search_matches": grep_matches[:25],
+        "historical_session_matches": fts_matches[:6],
     }
     if q and re.match(r"^[a-zA-Z_][a-zA-Z0-9_]{2,64}$", q) and primary_ws and primary_ws.is_dir():
-        res["symbol_callers"] = find_symbol_callers(q, primary_ws, max_refs=6)
+        res["symbol_callers"] = find_symbol_callers(q, primary_ws, max_refs=5)
     return res

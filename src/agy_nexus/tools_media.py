@@ -41,7 +41,9 @@ from agy_nexus.media import (
     ALLOWED_MEDIA_EXTENSIONS, discover_visual_artifacts, get_public_base_url,
     record_verified_public_origin, sign_media_url,
 )
+from agy_nexus.media_discovery import read_image_dimensions_fast
 from agy_nexus.routing import _resolve_session_identifier, _session_matches_workspace
+from agy_nexus.telemetry_scanner import detect_product_name
 from agy_nexus.workspace import _resolve_workspace_str
 
 MAX_SOURCE_IMAGE_BYTES = 45 * 1024 * 1024
@@ -301,6 +303,52 @@ def _resolve_conv_workspace(conv_id: str) -> str:
     return ""
 
 
+def _is_cloud_mcp_caller() -> tuple[bool, str]:
+    """Return (is_cloud_mcp, product_label) for the active HTTP MCP request context."""
+    ctx = cfg._MCP_REQUEST_CTX.get()
+    if not isinstance(ctx, dict):
+        return False, "local"
+    prod = detect_product_name(
+        str(ctx.get("product") or ""),
+        str(ctx.get("user_agent") or ""),
+        "inspect_visual_artifacts",
+        str(ctx.get("doorway") or ""),
+    )
+    return prod in ("Gemini Web / Cloud MCP", "Gemini Mobile"), prod
+
+
+def _build_visual_item(
+    item: dict[str, Any], *, skip_webp: bool, per_img_budget: int, max_edge: int, region: str, min_qual: int,
+) -> tuple[dict[str, Any], ImageContent | None]:
+    """Process one media artifact using header-only metadata on Cloud MCP or budgeted WebP locally."""
+    fpath: Path = item["abs_path"]
+    base_meta = {"seq": item["seq"], "name": item["name"], "rel_path": item["rel_path"]}
+    if fpath.suffix.lower() == ".svg":
+        try:
+            st_size = fpath.stat().st_size
+            if st_size > MAX_SOURCE_IMAGE_BYTES:
+                return {**base_meta, "error": "SVG exceeds 45 MB limit."}, None
+            svg_txt = fpath.read_text(encoding="utf-8", errors="replace")[:2200].encode("utf-8")[:2200].decode("utf-8", errors="ignore")
+            return {**base_meta, "signed_url": item["signed_url"], "source_bytes": st_size, "format": "svg_xml_text", "svg_excerpt": svg_txt}, None
+        except Exception as exc:
+            return {**base_meta, "error": str(exc)}, None
+    if skip_webp:
+        try:
+            st_size = fpath.stat().st_size
+            if st_size > MAX_SOURCE_IMAGE_BYTES:
+                return {**base_meta, "error": f"Image exceeds {MAX_SOURCE_IMAGE_BYTES // (1024 * 1024)} MB limit."}, None
+            dims = read_image_dimensions_fast(fpath)
+            px_str = f"{dims[0]}x{dims[1]}" if dims else "unknown"
+            return {**base_meta, "batch_folder": item["batch_folder"], "signed_url": item["signed_url"], "source_bytes": st_size, "original_px": px_str, "thumbnail_skipped": "cloud_mcp_metadata_fastpath"}, None
+        except Exception as exc:
+            return {**base_meta, "error": str(exc)}, None
+    try:
+        webp_bytes, enc_meta = encode_image_to_webp_budget(fpath, budget_bytes=per_img_budget, max_edge=max_edge, region=region, min_quality=min_qual)
+        return {**base_meta, "batch_folder": item["batch_folder"], "signed_url": item["signed_url"], **enc_meta}, McpImage(data=webp_bytes, format="webp").to_image_content()
+    except Exception as exc:
+        return {**base_meta, "error": str(exc)}, None
+
+
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def inspect_visual_artifacts(
     targets: str = "",
@@ -310,12 +358,12 @@ def inspect_visual_artifacts(
     offset: int = 0,
     limit: int = 2,
     workspace: str = "",
+    include_thumbnails: bool = False,
     spoken_passphrase: str = "",
 ) -> list[TextContent | ImageContent]:
-    """Inspect screenshots as <20 KB WebP ImageContent + 7-day HMAC-signed /web/media/ links (cloud adapters strip binary blocks on ingress; share signed_url). targets: '#01', '1-4', filename (max 4). region: full|top|upper|middle|lower|bottom|x,y,w,h."""
+    """Return 7-day signed /web/media/ links + WebP thumbnails (skipped on cloud adapters that strip binary blocks unless include_thumbnails=True). targets: '#01','1-4',name; region: full|top|middle|bottom|x,y,w,h."""
     if not is_unlocked(spoken_passphrase):
         return [TextContent(type="text", text=LOCKED_RESPONSE)]
-
     conv_id = _resolve_session_identifier(session_identifier.strip()) if session_identifier.strip() else str(SESSION_STATE.get("selected_session") or "")
     default_ws = AGY_PROJECTS_DIR if AGY_PROJECTS_DIR.is_dir() else AGY_GITLAB_DIR
     if workspace.strip():
@@ -327,14 +375,10 @@ def inspect_visual_artifacts(
     else:
         ws_str = _resolve_conv_workspace(conv_id) or str(SESSION_STATE.get("selected_workspace") or default_ws)
     ws_path = Path(ws_str) if ws_str else default_ws
-    allowed_ws_roots = (
-        *get_workspace_pillar_roots(),
-        (AGY_DATA_DIR / "worktrees").resolve(),
-    )
+    allowed_ws_roots = (*get_workspace_pillar_roots(), (AGY_DATA_DIR / "worktrees").resolve())
     ws_ok = ws_path.is_dir() and _is_strict_child(ws_path, allowed_ws_roots)
-    if workspace.strip() and not session_identifier.strip() and conv_id:
-        if not _session_matches_workspace(conv_id, ws_path):
-            conv_id = ""
+    if workspace.strip() and not session_identifier.strip() and conv_id and not _session_matches_workspace(conv_id, ws_path):
+        conv_id = ""
     if conv_id:
         pin_session_context(conv_id, workspace=str(ws_path.resolve()) if ws_ok else "", mode="PINNED (VISION)", last_tool="inspect_visual_artifacts", set_default=False)
 
@@ -348,51 +392,42 @@ def inspect_visual_artifacts(
             "available_preview": [{"seq": c["seq"], "name": c["name"], "rel_path": c["rel_path"]} for c in catalog[:10]],
         }))]
 
+    is_cloud_caller, client_product = _is_cloud_mcp_caller()
+    reg_norm = (region or "full").strip().lower() or "full"
+    skip_webp = bool(is_cloud_caller and (not include_thumbnails) and reg_norm == "full")
     count = len(selected)
     per_img_budget = max(2_800, MAX_TOTAL_RAW_WEBP_BYTES // count)
     max_edge = 960 if count == 1 else (840 if count == 2 else (560 if count == 3 else 460))
     min_qual = 58 if count <= 2 else 22
     image_blocks: list[ImageContent] = []
     items_meta: list[dict[str, Any]] = []
-
     for item in selected:
-        fpath: Path = item["abs_path"]
-        if fpath.suffix.lower() == ".svg":
-            if fpath.stat().st_size > MAX_SOURCE_IMAGE_BYTES:
-                items_meta.append({"seq": item["seq"], "name": item["name"], "rel_path": item["rel_path"], "error": "SVG exceeds 45 MB limit."})
-                continue
-            with fpath.open("r", encoding="utf-8", errors="replace") as fh:
-                svg_txt = fh.read(3500)
-            items_meta.append({"seq": item["seq"], "name": item["name"], "rel_path": item["rel_path"], "format": "svg_xml_text", "svg_excerpt": svg_txt})
-            continue
-        try:
-            webp_bytes, enc_meta = encode_image_to_webp_budget(
-                fpath, budget_bytes=per_img_budget, max_edge=max_edge, region=region, min_quality=min_qual
-            )
-            image_blocks.append(McpImage(data=webp_bytes, format="webp").to_image_content())
-            items_meta.append({
-                "seq": item["seq"], "name": item["name"], "rel_path": item["rel_path"],
-                "batch_folder": item["batch_folder"], "signed_url": item["signed_url"], **enc_meta,
-            })
-        except Exception as exc:
-            items_meta.append({"seq": item["seq"], "name": item["name"], "rel_path": item["rel_path"], "error": str(exc)})
+        meta, img_block = _build_visual_item(
+            item, skip_webp=skip_webp, per_img_budget=per_img_budget, max_edge=max_edge, region=region, min_qual=min_qual
+        )
+        items_meta.append(meta)
+        if img_block is not None:
+            image_blocks.append(img_block)
 
     next_off = (max(0, int(offset or 0)) + count) if not targets.strip() else None
     has_more = bool(next_off is not None and next_off < len(catalog))
     summary_payload: dict[str, Any] = {
         "ok": True, "conversation_id": conv_id, "returned_images": len(image_blocks),
-        "total_available": len(catalog), "has_more": has_more,
-        "next_offset": next_off if has_more else None,
-        "zoom_tip": "Pass region='top'|'middle'|'bottom' or 'x,y,w,h' with 1-2 targets for retina-level text legibility.",
+        "total_available": len(catalog), "has_more": has_more, "next_offset": next_off if has_more else None,
         "items": items_meta,
     }
-    if count > 2 and (region or "full").strip().lower() == "full":
-        summary_payload["zoom_warning"] = (
-            "Multi-image (count>2) full-frame thumbnails compress small UI text to stay <20 KB. "
-            "Pass limit=1 or limit=2 with region='top'|'middle'|'bottom' for crisp legibility."
-        )
-    summary_json = _compact_json(summary_payload)
-    return [TextContent(type="text", text=summary_json), *image_blocks]
+    if skip_webp and any(isinstance(m, dict) and m.get("thumbnail_skipped") for m in items_meta):
+        summary_payload["cloud_fast_path"] = True
+        summary_payload["client_product"] = client_product
+        summary_payload["note"] = "Cloud MCP strips binary ImageContent on ingress; WebP encoding skipped (<2ms header metadata + 7-day signed_url links). Pass include_thumbnails=True if thumbnails are needed."
+    elif image_blocks:
+        summary_payload["zoom_tip"] = "Pass region='top'|'middle'|'bottom' or 'x,y,w,h' with 1-2 targets for retina-level text legibility."
+        if count > 2 and reg_norm == "full":
+            summary_payload["zoom_warning"] = (
+                "Multi-image (count>2) full-frame thumbnails compress small UI text to stay <20 KB. "
+                "Pass limit=1 or limit=2 with region='top'|'middle'|'bottom' for crisp legibility."
+            )
+    return [TextContent(type="text", text=_compact_json(summary_payload)), *image_blocks]
 
 
 def run_multimodal_media_self_test(test_phrase: str, expected_hash: str) -> None:

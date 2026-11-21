@@ -1,4 +1,4 @@
-// AGY-NEXUS Overwatch — Drag-Resizable Workspace Tree Splitter & Width Persistence (v3.2.4)
+// AGY-NEXUS Overwatch — Drag-Resizable Workspace Tree Splitter & Width Persistence (v3.2.5)
 (function (root, factory) {
   if (typeof define === "function" && define.amd) {
     define([], factory);

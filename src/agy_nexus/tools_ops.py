@@ -35,8 +35,10 @@ from agy_nexus.hygiene import (
     MAX_TRANSCRIPT_TURNS,
     MODULAR_HYGIENE_STANDARDS,
     _summarize_jsonl_line,
+    compact_payload_to_wire_budget,
     parse_inline_line_spec,
     slice_file_content,
+    within_wire_budget,
 )
 from agy_nexus.inventory import (
     CUSTOMIZATION_SCOPE_POLICY,
@@ -59,16 +61,16 @@ from agy_nexus.stats import (
 from agy_nexus.workflows import export_notebook_bundle
 
 def _compact_session_tree_payload(out_payload: dict[str, Any], max_bytes: int = 17500) -> str:
-    """Guarantee get_session_tree inner JSON stays <= max_bytes so HTTP wire stays <20 KB."""
+    """Guarantee get_session_tree inner + escaped JSON stays strictly within wire budget."""
     out_s = _compact_json(out_payload)
-    if len(out_s.encode("utf-8")) <= max_bytes:
+    if within_wire_budget(out_s, max_raw_bytes=max_bytes, max_escaped_bytes=19600):
         return out_s
     rt = out_payload.get("routing_telemetry")
     if isinstance(rt, dict) and isinstance(rt.get("slots"), list):
         rt["slots"] = rt["slots"][:5]
     out_payload.pop("projects", None)
     out_s = _compact_json(out_payload)
-    if len(out_s.encode("utf-8")) <= max_bytes:
+    if within_wire_budget(out_s, max_raw_bytes=max_bytes, max_escaped_bytes=19600):
         return out_s
     if isinstance(rt, dict) and isinstance(rt.get("slots"), list):
         rt["slots"] = []
@@ -76,20 +78,14 @@ def _compact_session_tree_payload(out_payload: dict[str, Any], max_bytes: int = 
     if isinstance(qp, dict) and isinstance(qp.get("recent_quota_events"), list):
         qp["recent_quota_events"] = qp["recent_quota_events"][-2:]
     out_s = _compact_json(out_payload)
-    if len(out_s.encode("utf-8")) > max_bytes and isinstance(out_payload.get("ascii_tree"), str):
+    if not within_wire_budget(out_s, max_raw_bytes=max_bytes, max_escaped_bytes=19600) and isinstance(out_payload.get("ascii_tree"), str):
         suffix = "\n... [compacted for <20KB wire ceiling — pass project_filter='<name>' or limit=5]"
         lines = out_payload["ascii_tree"].splitlines()
-        while len(out_s.encode("utf-8")) > max_bytes and len(lines) > 6:
-            drop_n = max(1, (len(out_s.encode("utf-8")) - (max_bytes - 250)) // 48)
-            lines = lines[: max(6, len(lines) - drop_n)]
+        while not within_wire_budget(out_s, max_raw_bytes=max_bytes, max_escaped_bytes=19600) and len(lines) > 6:
+            lines = lines[: max(6, len(lines) - max(1, len(lines) // 4))]
             out_payload["ascii_tree"] = "\n".join(lines) + suffix
             out_s = _compact_json(out_payload)
-        if len(out_s.encode("utf-8")) > max_bytes:
-            cur_t = str(out_payload.get("ascii_tree") or "")
-            excess = len(out_s.encode("utf-8")) - (max_bytes - 100)
-            out_payload["ascii_tree"] = cur_t[: max(80, len(cur_t) - excess - len(suffix))] + suffix
-            out_s = _compact_json(out_payload)
-    return out_s
+    return compact_payload_to_wire_budget(out_payload, serializer=_compact_json, max_raw_bytes=max_bytes, max_escaped_bytes=19600)
 
 
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
@@ -102,7 +98,7 @@ def get_session_tree(
     style: str = "default",
     spoken_passphrase: str = "",
 ) -> str:
-    """Return 76-col Project->Chat->Session ID ASCII tree, slot telemetry, 3-2-1 backup, and optional stats (include_stats=True, period, style=default|quick|rich)."""
+    """Return 76-col Project->Chat->Session ID ASCII tree, slots & optional stats (include_stats=True, period, style=default|quick|rich)."""
     unlocked_now = is_unlocked(spoken_passphrase)
     if not unlocked_now and not (ALLOW_LOCKED_STATS and include_stats):
         return LOCKED_RESPONSE
@@ -152,7 +148,7 @@ def manage_background_run(
     client_tokens_reported: int = 0,
     spoken_passphrase: str = "",
 ) -> str:
-    """Get Quota/Heatmaps/Wire Telemetry (action=stats|telemetry, period=last_90d|current_month|last_month|last_year, style=default|quick|rich), tree (sessions), or export_notebook. Prefer load_session_into_gemini for check-ins."""
+    """Get Quota/Heatmaps/Wire Stats (action=stats|telemetry, period=last_90d|current_month|last_month|last_year, style=default|quick|rich), tree, or export_notebook."""
     action_clean = action.strip().lower()
     is_stats_action = action_clean in ("stats", "dashboard", "quota", "heatmap", "telemetry", "wire", "logs")
     if not is_unlocked(spoken_passphrase):
@@ -160,7 +156,7 @@ def manage_background_run(
             return LOCKED_RESPONSE
     if action_clean in ("sessions", "session_status", "session_tree", "tree"):
         tree_bundle = build_project_session_tree(active_only=(style.strip().lower() == "active"), project_filter=job_id.strip() if job_id.strip().lower() != "latest" else "", limit=max(5, min(tail_lines, 40)), bg_dir=AGY_BG_DIR)
-        return _compact_json({
+        return compact_payload_to_wire_budget({
             "ok": True, "action": action_clean,
             "assistant_guidance": (
                 "Display ascii_tree verbatim inside a fenced ```text code block first "
@@ -168,31 +164,31 @@ def manage_background_run(
                 "Sequential read-only follow-up calls are permitted (one call at a time, never in parallel)."
             ),
             **tree_bundle,
-        })
+        }, serializer=_compact_json)
     if action_clean in ("export_notebook", "notebook", "sync_notebook"):
         export_res = export_notebook_bundle(brain_dir=AGY_BRAIN_DIR, db_file=AGY_DB_FILE, bg_dir=AGY_BG_DIR, projects_map=_load_projects_map())
-        return _compact_json({
+        return compact_payload_to_wire_budget({
             "ok": True, "action": "export_notebook",
             "assistant_guidance": (
                 "Session walkthrough.md and implementation_plan.md artifacts have been exported with SHA-256 deduplication. "
                 "Sequential read-only follow-up calls are permitted (one call at a time, never in parallel)."
             ),
             **export_res,
-        })
+        }, serializer=_compact_json)
     if action_clean in ("stats", "dashboard", "quota", "heatmap"):
         bundle = build_nexus_stats_bundle(data_dir=AGY_DATA_DIR, brain_dir=AGY_BRAIN_DIR, db_file=AGY_DB_FILE, config_dir=AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR, period=period, style=style)
         drop_keys = {"heatmap_series", "velocity_series", "model_series", "workspace_series", "subagent_series", "project_hierarchy", "ascii_mobile_dashboard", "ascii_report_default", "ascii_report_quick", "ascii_report_rich", "summary", "project_session_tree"}
         compact_bundle = {k: v for k, v in bundle.items() if k not in drop_keys}
-        return _compact_json({
+        return compact_payload_to_wire_budget({
             "ok": True, "action": "stats",
             "assistant_guidance": (
                 "Display ascii_mobile_report inside a fenced ```text code block first followed by a concise 3-bullet summary of Google 20x Pool share, Partner Weekly Pacing vs Target, and Top Projects. "
                 "Sequential read-only follow-up calls are permitted (one call at a time, never in parallel)."
             ),
             **compact_bundle,
-        })
+        }, serializer=_compact_json)
     if action_clean in ("telemetry", "wire", "logs"):
-        return _compact_json({
+        return compact_payload_to_wire_budget({
             "ok": True, "action": "telemetry",
             "assistant_guidance": (
                 "Wire telemetry and quota summary retrieved below. "
@@ -200,7 +196,7 @@ def manage_background_run(
             ),
             "wire_telemetry": get_wire_telemetry_summary(AGY_BG_DIR, limit=25),
             "quota_and_pools": get_live_quota_and_pool_status(AGY_DATA_DIR, AGY_CONFIG_DIR),
-        })
+        }, serializer=_compact_json)
     conv_id = SESSION_STATE.get("selected_session", "")
     job_file: Path | None = None
     job_data: dict[str, Any] = {}
@@ -254,14 +250,14 @@ def manage_background_run(
     parsed_tail = [_summarize_jsonl_line(l) for l in raw_lines]
     pending_app = extract_pending_approval(transcript_file)
     if action_clean == "tail":
-        return json.dumps({
+        return compact_payload_to_wire_budget({
             "ok": True, "conversation_id": conv_id, "job_id": safe_job_id,
             "assistant_guidance": (
                 "Transcript tail retrieved below. "
                 "Sequential read-only follow-up calls are permitted (one call at a time, never in parallel)."
             ),
             "pending_approval": pending_app, "tail_lines_count": len(parsed_tail), "transcript_tail": parsed_tail,
-        }, indent=2)
+        }, serializer=_compact_json)
     if action_clean == "stop":
         if job_file and job_file.is_file():
             job_data["stopped_at"] = datetime.now(timezone.utc).isoformat()
@@ -271,7 +267,7 @@ def manage_background_run(
             "assistant_guidance": "STOP AND REPLY TO USER NOW.", "message": "Job status marked as stopped.",
         }, indent=2)
     stats_fallback = build_nexus_stats_bundle(data_dir=AGY_DATA_DIR, brain_dir=AGY_BRAIN_DIR, db_file=AGY_DB_FILE, config_dir=AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR, period=period or "last_90d")
-    return _compact_json({
+    return compact_payload_to_wire_budget({
         "ok": True, "action": "status", "conversation_id": conv_id, "job_id": safe_job_id,
         "assistant_guidance": (
             "Job and session status retrieved below. "
@@ -283,7 +279,7 @@ def manage_background_run(
         "job_metadata": job_data, "db_info": db_info, "pending_approval": pending_app,
         "has_gui_lock": (AGY_PRESENCE_DIR / f"{conv_id}.lock").is_file(),
         "recent_events_count": len(parsed_tail), "recent_sample": parsed_tail[-4:] if parsed_tail else [],
-    })
+    }, serializer=_compact_json)
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def list_models_and_agents(
     include_skills: bool = True,
@@ -292,7 +288,7 @@ def list_models_and_agents(
     inspect_name: str = "",
     spoken_passphrase: str = "",
 ) -> str:
-    """List Antigravity agents, skills (skill_scope_filter=core|all|plugin:<name>), rules, scope policy, hygiene standards, Quota Pacing & LS status. inspect_name slices 1 item."""
+    """List Antigravity agents, skills (skill_scope_filter=core|all|plugin:<name>), rules, scope policy, Quota Pacing & LS status. inspect_name slices 1 item."""
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
     ws_str = SESSION_STATE.get("selected_workspace") or str(get_antigravity_config_repo())
@@ -372,16 +368,15 @@ def list_models_and_agents(
     if inspected_item:
         out_payload["inspected_item"] = inspected_item
     out_json = _compact_json(out_payload)
-    if len(out_json.encode("utf-8")) > 19200 and inspected_item and isinstance(inspected_item.get("content"), str):
+    if not within_wire_budget(out_json) and inspected_item and isinstance(inspected_item.get("content"), str):
         content_s = inspected_item["content"]
-        excess = len(out_json.encode("utf-8")) - 18500
-        new_len = max(1200, len(content_s) - max(excess, 1500))
+        excess = len(out_json.encode("utf-8")) - 17500
+        new_len = max(900, len(content_s) - max(excess, 1500))
         inspected_item["content"] = content_s[:new_len] + "\n... [compacted for <20KB wire ceiling — use ask_workspace_readonly with start_line/end_line]"
         inspected_item["truncated"] = True
         out_json = _compact_json(out_payload)
-    if len(out_json.encode("utf-8")) > 19200 and isinstance(out_payload.get("skills"), list):
+    if not within_wire_budget(out_json) and isinstance(out_payload.get("skills"), list):
         for sk in out_payload["skills"]:
             if isinstance(sk, dict) and "description" in sk:
                 sk["description"] = str(sk["description"])[:60]
-        out_json = _compact_json(out_payload)
-    return out_json
+    return compact_payload_to_wire_budget(out_payload, serializer=_compact_json)

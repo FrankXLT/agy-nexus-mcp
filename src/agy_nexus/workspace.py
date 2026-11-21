@@ -223,7 +223,15 @@ def _resolve_and_read_files(
     top_auto_ws = ""
 
     for raw_sub in items_slice:
-        per_file_cap = min(max_chars_per_file, max(4000, remaining_total_chars))
+        if remaining_total_chars < 350 and files_list:
+            files_list.append({
+                "requested": raw_sub,
+                "truncated": True,
+                "skipped": "wire_budget_exhausted",
+                "content": "[skipped: batched wire budget exhausted by prior files — read separately or pass start_line/end_line]",
+            })
+            continue
+        per_file_cap = min(max_chars_per_file, max(350, remaining_total_chars))
         cleaned = re.sub(r"^file://", "", raw_sub.strip())
         outline_only = False
         if cleaned.startswith("outline:"):
@@ -244,7 +252,7 @@ def _resolve_and_read_files(
         )
         if virt_entry is not None:
             virt_entry["requested"] = raw_sub
-            remaining_total_chars = max(4000, remaining_total_chars - len(str(virt_entry.get("content", ""))))
+            remaining_total_chars = max(0, remaining_total_chars - len(str(virt_entry.get("content", ""))))
             files_list.append(virt_entry)
             continue
 
@@ -370,12 +378,14 @@ def _resolve_and_read_files(
             try:
                 full_text = target_path.read_text(encoding="utf-8", errors="replace")
                 if outline_only:
-                    ol = build_file_outline(target_path, full_text, ws_root=search_roots[0], max_chars=3800, include_callers=True)
+                    ol = build_file_outline(target_path, full_text, ws_root=search_roots[0], max_chars=min(3800, max(500, remaining_total_chars)), include_callers=True)
                     compact_ol = {k: v for k, v in ol.items() if k not in ("symbol_items", "formatted_outline")}
+                    ol_txt = str(ol.get("formatted_outline") or "")
+                    remaining_total_chars = max(0, remaining_total_chars - len(ol_txt) - len(json.dumps(compact_ol, separators=(",", ":"))))
                     entry_obj = {
                         "requested": raw_sub, "path": str(target_path), "bytes": target_path.stat().st_size,
                         "mode": "polyglot_outline", "total_lines": ol["total_lines"], "truncated": False,
-                        "polyglot_outline": compact_ol, "content": ol["formatted_outline"],
+                        "polyglot_outline": compact_ol, "content": ol_txt,
                     }
                     if auto_resolved_ws:
                         entry_obj["auto_resolved_workspace"] = auto_resolved_ws
@@ -386,16 +396,17 @@ def _resolve_and_read_files(
                         per_file_cap=per_file_cap, explicit_start_line=start_line, explicit_end_line=end_line,
                         inline_start_line=in_start, inline_end_line=in_end, center_line=in_center,
                     )
-                    remaining_total_chars = max(4000, remaining_total_chars - len(slice_meta.get("content", "")))
+                    remaining_total_chars = max(0, remaining_total_chars - len(slice_meta.get("content", "")))
                     entry_obj = {"requested": raw_sub, "path": str(target_path), "bytes": target_path.stat().st_size, **slice_meta}
                     is_full_head_read = (
                         start_line <= 1 and end_line == 0 and in_start <= 1 and in_end == 0 and in_center == 0
                     )
-                    if slice_meta.get("hit_char_cap") and is_full_head_read:
-                        ol_trunc = build_file_outline(target_path, full_text, ws_root=search_roots[0], max_chars=1400, include_callers=False)
+                    if slice_meta.get("hit_char_cap") and is_full_head_read and remaining_total_chars >= 1000:
+                        ol_trunc = build_file_outline(target_path, full_text, ws_root=search_roots[0], max_chars=1200, include_callers=False)
                         entry_obj["polyglot_outline"] = {
                             k: v for k, v in ol_trunc.items() if k not in ("symbol_items", "formatted_outline")
                         }
+                        remaining_total_chars = max(0, remaining_total_chars - len(json.dumps(entry_obj["polyglot_outline"], separators=(",", ":"))))
                     if auto_resolved_ws:
                         entry_obj["auto_resolved_workspace"] = auto_resolved_ws
                     files_list.append(entry_obj)

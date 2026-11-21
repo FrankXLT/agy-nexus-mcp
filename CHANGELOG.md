@@ -4,6 +4,23 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.5] — 2026-11-20
+
+### Added
+- **Cloud MCP Header-Only Visual Fast Path (`src/agy_nexus/media_discovery.py`, `src/agy_nexus/tools_media.py`)**:
+  - Added `<2ms` zero-pixel header dimension extraction (`read_image_dimensions_fast`) supporting PNG, JPEG SOFn, WebP (`VP8`/`VP8L`/`VP8X`), and GIF with lazy Pillow fallback.
+  - Updated `inspect_visual_artifacts(..., include_thumbnails=False)` to skip WebP encoding on Cloud MCP / Gemini Mobile callers when `region="full"` (`cloud_fast_path=True`, `returned_images=0`, `<4 KB` JSON with `original_px` and **7-day** signed `/web/media/` links), while still returning budgeted WebP `ImageContent` blocks for local callers, region crops, or `include_thumbnails=True`.
+- **100% `<= 500L` Modular Compliance (`src/agy_nexus/polyglot_lang_outliners.py`, `src/agy_nexus/handoff_queue_store.py`, `src/agy_nexus/bucket_scanner.py`)**:
+  - Extracted markup/config outliners (`polyglot_lang_outliners.py`), atomic flock ticket storage/slugifiers (`handoff_queue_store.py`), and session upload/artifact scanners + Markdown media rewriters (`bucket_scanner.py`) with full backward-compatible exports in `polyglot_outline.py`, `handoff_queue.py`, and `bucket_api.py` — achieving `0` modules above `500` lines across `src/agy_nexus/`, `host_bridge/`, and `web/`.
+
+### Changed
+- **Strict `< 20 KB` Outer JSON-Escaped Wire Caps & `tools/list` Compaction (`src/agy_nexus/hygiene.py`, `src/agy_nexus/middleware.py`, `src/agy_nexus/tools_workspace.py`, `src/agy_nexus/tools_session.py`, `src/agy_nexus/tools_ops.py`)**:
+  - Added dual raw/escaped wire enforcement (`within_wire_budget`, `compact_payload_to_wire_budget`: `<= 18.5 KB` inner UTF-8 / `<= 19.8 KB` JSON-escaped outer) across `ask_workspace_readonly`, `inspect_git_diff`, `load_session_into_gemini`, and `list_models_and_agents`.
+  - Added `_compact_tools_list_body()` in `BridgeCompatMiddleware` stripping empty FastMCP `_meta.fastmcp.tags` and redundant auto-generated `title` fields alongside trimmed tool docstrings, reducing `tools/list` to `<= 8.6 KB`.
+- **Multi-Feature `plan` Mode Coercion & Deferred Closeout Retirement (`src/agy_nexus/handoff_templates.py`, `src/agy_nexus/handoff.py`, `src/agy_nexus/retirement.py`)**:
+  - Added `resolve_execution_mode_with_reason()` coercing accidental `execution_mode="fast"` back to `"plan"` (`coerced_from_fast=True`) for `new_project` and multi-deliverable/complex `feature_update` handoffs (`>= 3` deliverables, `> 2,200` chars, or security scope), while preserving `"fast"` for compact non-security `bug_or_visual_fix` and `allow_chained_publish=True, resume_headless=True` runs.
+  - Added `retire_after_closeout=True` deferral on headless `release_closeout` + `retire_session=True` handoffs so `RETIRED.json` is written only after `git commit` and `git push` succeed (via `record_session_retirement(..., final_commit_sha=<HEAD_SHA>)`), while preserving immediate retirement for non-headless `retire_session=True`.
+
 ## [3.2.4] — 2026-11-19
 
 ### Added

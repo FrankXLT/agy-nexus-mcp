@@ -45,7 +45,7 @@ def polyglot_map(
     force_refresh: bool = False,
     max_bytes: int = 17500,
 ) -> str:
-    """Build or refresh the SHA-256 Polyglot index and return a byte-capped (<18 KB) semantic map with directory summary and top symbol spans."""
+    """Build/refresh SHA-256 Polyglot index and return byte-capped (<18 KB) map + directory summary & symbol spans."""
     res = polyglot_repo_map(
         workspace=workspace,
         path_prefix=path_prefix,
@@ -64,7 +64,7 @@ def polyglot_search(
     limit: int = 25,
     force_refresh: bool = False,
 ) -> str:
-    """Search indexed functions, classes, methods, Markdown headings, JSON/YAML keys, CSS rules, and 1-liner docstrings across a workspace, returning exact Lstart-Lend slice hints."""
+    """Search indexed functions, classes, headings, JSON/YAML keys & docstrings across workspace with Lstart-Lend hints."""
     res = polyglot_symbol_search(
         query=query,
         workspace=workspace,
@@ -81,7 +81,7 @@ def polyglot_outline(
     workspace: str = "",
     include_callers: bool = False,
 ) -> str:
-    """Return a rich Polyglot structural outline (Lstart-Lend spans, line counts, signatures, long-function flags, and 1-liner docstrings/comments) for a single file."""
+    """Return Polyglot structural outline (Lstart-Lend spans, line counts, >100L flags & 1-liners) for one file."""
     res = polyglot_file_outline(
         file_subpath=file_subpath,
         workspace=workspace,
@@ -97,7 +97,7 @@ def praxis_handoff_inbox(
     include_superseded: bool = True,
     limit: int = 25,
 ) -> str:
-    """List repo-prefixed Gemini handoffs (`<repo-slug>-01`, `<repo-slug>-02`, ...) across `STAGED` (unclaimed), `IN_WORK`, and `SUPERSEDED` states, prioritizing the active workspace."""
+    """List repo-prefixed Gemini handoffs (`<repo-slug>-NN`) across STAGED/IN_WORK/SUPERSEDED, prioritizing active workspace."""
     res = list_handoff_tickets(
         cfg.AGY_BG_DIR,
         workspace=workspace,
@@ -115,11 +115,7 @@ def praxis_claim_handoff(
     conversation_id: str = "",
     force: bool = False,
 ) -> str:
-    """Claim a staged Gemini handoff (`<repo-slug>-NN`) for execution in Antigravity IDE, transitioning it from `STAGED` (unclaimed) to `IN_WORK` and binding `conversation_id`.
-
-    - Pass `handoff_id` (e.g., `'quiet-ui-skills-01'`) to claim a specific ticket directly.
-    - Omit `handoff_id` and pass `workspace` (your Active Workspace path) to auto-claim when only 1 unclaimed `STAGED` ticket exists for that repository; if 2+ unclaimed tickets exist, returns `AMBIGUOUS_MULTIPLE_STAGED` with candidates so you can ask the user which one to run.
-    """
+    """Claim a STAGED `<repo-slug>-NN` handoff -> IN_WORK in IDE (`handoff_id` or `workspace` auto-pick; returns `AMBIGUOUS_MULTIPLE_STAGED` if 2+ staged)."""
     res = claim_handoff_for_ide(
         cfg.AGY_BG_DIR,
         cfg.AGY_BRAIN_DIR,
@@ -142,7 +138,7 @@ def praxis_update_handoff(
     conversation_id: str = "",
     notes: str = "",
 ) -> str:
-    """Update a handoff ticket's lifecycle state (`COMPLETED`, `IN_WORK`, `STAGED` to release back to unclaimed, or `SUPERSEDED`)."""
+    """Update handoff ticket state (COMPLETED, IN_WORK, STAGED to release, or SUPERSEDED)."""
     updated = mark_ticket_status(
         cfg.AGY_BG_DIR,
         handoff_id=handoff_id,

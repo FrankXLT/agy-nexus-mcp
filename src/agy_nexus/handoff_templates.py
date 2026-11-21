@@ -52,6 +52,58 @@ def should_inject_dual_review(research_markdown: str, handoff_mode: str = "") ->
     return bool(_SECURITY_SYMBOL_RE.search(cleaned) or _DUAL_REVIEW_CONTEXT_RE.search(cleaned))
 
 
+_DELIVERABLE_ITEM_RE = re.compile(
+    r"(?:^|\n)\s*(?:\d{1,2}[.)]|[-*]\s*\[\s*[xX ]?\s*\]|#{2,3}\s+\d{1,2}\.)\s+",
+)
+
+
+def count_deliverables(body_clean: str) -> int:
+    """Count numbered/checkbox/section deliverables in a handoff specification."""
+    return len(_DELIVERABLE_ITEM_RE.findall(body_clean or ""))
+
+
+def resolve_execution_mode_with_reason(
+    raw_exec_mode: str,
+    eff_handoff_mode: str,
+    body_clean: str,
+    allow_chained_publish: bool,
+    resume_headless: bool,
+) -> tuple[str, bool, str]:
+    """Resolve effective execution_mode plus (coerced_from_fast, advisory_reason)."""
+    mode_norm = (raw_exec_mode or "auto").strip().lower()
+    sec_hit = touches_security_boundary(body_clean)
+    deliv_count = count_deliverables(body_clean)
+    heavy_feature = (
+        eff_handoff_mode == "feature_update"
+        and (len(body_clean or "") > 2200 or deliv_count >= 3 or sec_hit)
+    )
+    if mode_norm == "plan":
+        return "plan", False, ""
+    if mode_norm == "fast":
+        if eff_handoff_mode == "new_project":
+            return "plan", True, "Coerced execution_mode='fast' -> 'plan' for new_project architecture."
+        if heavy_feature:
+            return (
+                "plan",
+                True,
+                f"Coerced execution_mode='fast' -> 'plan' for multi-deliverable/complex feature_update (chars={len(body_clean or '')}, deliverables={deliv_count}).",
+            )
+        return "fast", False, ""
+    if eff_handoff_mode == "new_project":
+        return "plan", False, ""
+    if allow_chained_publish and resume_headless and not heavy_feature and not sec_hit:
+        return "fast", False, ""
+    if eff_handoff_mode == "release_closeout" and not sec_hit:
+        return "fast", False, ""
+    if (
+        eff_handoff_mode == "bug_or_visual_fix"
+        and len(body_clean or "") < 6500
+        and not sec_hit
+    ):
+        return "fast", False, ""
+    return "plan", False, ""
+
+
 def resolve_effective_execution_mode(
     raw_exec_mode: str,
     eff_handoff_mode: str,
@@ -60,20 +112,10 @@ def resolve_effective_execution_mode(
     resume_headless: bool,
 ) -> str:
     """Resolve 'auto' execution mode proportionally to task scope and security risk."""
-    mode_norm = (raw_exec_mode or "auto").strip().lower()
-    if mode_norm in ("fast", "plan"):
-        return mode_norm
-    if allow_chained_publish and resume_headless:
-        return "fast"
-    if eff_handoff_mode == "release_closeout" and not touches_security_boundary(body_clean):
-        return "fast"
-    if (
-        eff_handoff_mode == "bug_or_visual_fix"
-        and len(body_clean or "") < 6500
-        and not touches_security_boundary(body_clean)
-    ):
-        return "fast"
-    return "plan"
+    eff_mode, _, _ = resolve_execution_mode_with_reason(
+        raw_exec_mode, eff_handoff_mode, body_clean, allow_chained_publish, resume_headless
+    )
+    return eff_mode
 
 
 def is_surgical_fast_path(eff_exec_mode: str, eff_handoff_mode: str, body_clean: str) -> bool:

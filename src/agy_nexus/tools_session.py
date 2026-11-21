@@ -34,6 +34,8 @@ from agy_nexus.hygiene import (
     MAX_TRANSCRIPT_TURNS,
     MODULAR_HYGIENE_STANDARDS,
     _compact_markdown,
+    compact_payload_to_wire_budget,
+    within_wire_budget,
 )
 from .media import discover_visual_artifacts
 from agy_nexus.routing import _resolve_session_identifier
@@ -57,7 +59,7 @@ from agy_nexus.workspace import _collect_git_summary, _resolve_and_read_files
 
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def unlock_sessions(spoken_passphrase: str, search_query: str = "", style: str = "default") -> str:
-    """Verify spoken passphrase against deadbolt, unlock sessions, list active chats/projects + stats, optional search."""
+    """Verify passphrase against deadbolt, unlock sessions, list active chats/projects + stats & optional search."""
     if not verify_passphrase(spoken_passphrase):
         return _compact_json({"ok": False, "locked": True, "error": "Passphrase verification failed. Deadbolt remains locked."})
     now = time.time()
@@ -104,7 +106,7 @@ def unlock_sessions(spoken_passphrase: str, search_query: str = "", style: str =
     }
     if search_query.strip():
         payload["search_results"] = _search_workspaces_and_history(search_query.strip())
-    return _compact_json(payload)
+    return compact_payload_to_wire_budget(payload, serializer=_compact_json)
 
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def lock_bridge() -> str:
@@ -118,7 +120,7 @@ def lock_bridge() -> str:
 def list_saved_sessions(
     limit: int = 15, status_filter: str = "ALL", include_subagents: bool = False, spoken_passphrase: str = ""
 ) -> str:
-    """List recent chats with status, project, workspace & steps. Prefer load_session_into_gemini('1'|'latest'|<keyword>) for check-ins."""
+    """List recent chats (status, project, workspace, steps). Prefer load_session_into_gemini('1'|'latest'|<kw>) for check-ins."""
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
     sessions = _list_saved_sessions_internal(limit=max(1, min(limit, 30)), status_filter=status_filter, include_subagents=include_subagents)
@@ -149,15 +151,11 @@ def list_saved_sessions(
         "count": len(sessions), "available_projects": list(projects_map.values()),
         "top_session_detail": top_detail, "sessions": sessions,
     }
-    out_s = _compact_json(out_obj)
-    if len(out_s.encode("utf-8")) > 19000:
-        out_obj.pop("top_session_detail", None)
-        out_s = _compact_json(out_obj)
-    return out_s
+    return compact_payload_to_wire_budget(out_obj, serializer=_compact_json)
 
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "", include_files: str = "") -> str:
-    """1-call session check-in returning execution_status, git_summary, visual_artifacts (7-day signed /web/media/ links), task/plan/walkthrough, project_workflows & recent turns. Page compacted turns sequentially via ask_workspace_readonly."""
+    """1-call check-in: execution_status, git_summary, visual_artifacts (7-day /web/media/ links), task/plan/walkthrough, workflows & turns. Page turns via ask_workspace_readonly."""
     if not is_unlocked(spoken_passphrase):
         return LOCKED_RESPONSE
     ident = session_identifier.strip()
@@ -343,22 +341,32 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
 
 def _shrink_optional_payload_fields(payload: dict[str, Any]) -> bool:
     """Trim lowest-priority auxiliary fields one notch inside load_session_into_gemini wire loop."""
-    inc_files = (payload.get("included_files") or {}).get("files") if isinstance(payload.get("included_files"), dict) else None
+    inc = payload.get("included_files")
+    inc_files = inc.get("files") if isinstance(inc, dict) and isinstance(inc.get("files"), list) else ([inc] if isinstance(inc, dict) and ("content" in inc or "polyglot_outline" in inc) else None)
     if isinstance(inc_files, list) and inc_files:
         last_f = inc_files[-1]
         if isinstance(last_f, dict) and len(str(last_f.get("content") or "")) > 500:
             last_f["content"] = str(last_f["content"])[:400] + "\n... [compacted]"
             last_f["truncated"] = True
+        elif isinstance(last_f, dict) and last_f.pop("polyglot_outline", None):
+            pass
+        elif isinstance(inc, dict) and isinstance(inc.get("files"), list):
+            inc["files"].pop()
         else:
-            inc_files.pop()
+            payload.pop("included_files", None)
         return True
     if isinstance(payload.get("scratch_upload_batches"), list) and payload["scratch_upload_batches"]:
         payload["scratch_upload_batches"].pop()
         return True
     gs = payload.get("git_summary")
-    if isinstance(gs, dict) and isinstance(gs.get("untracked_files"), list) and len(gs["untracked_files"]) > 5:
-        gs["untracked_files"] = gs["untracked_files"][:5]
-        return True
+    if isinstance(gs, dict):
+        if isinstance(gs.get("untracked_files"), list) and len(gs["untracked_files"]) > 5:
+            gs["untracked_files"] = gs["untracked_files"][:5]
+            return True
+        for gk in ("diff_stat", "status_short"):
+            if isinstance(gs.get(gk), str) and len(gs[gk]) > 220:
+                gs[gk] = gs[gk][:180] + "\n... [compacted]"
+                return True
     for k in ("walkthrough", "implementation_plan", "task_content", "latest_assistant_response"):
         val = str(payload.get(k) or "")
         if len(val) > 260:
@@ -387,7 +395,7 @@ def _compact_loaded_session_payload(
             payload["transcript_uri_hint"] = "Pass file_subpath='transcript:latest' (with start_line/end_line) to ask_workspace_readonly to page the full untruncated response."
 
     out_str = _compact_json(payload)
-    if len(out_str.encode("utf-8")) > 17600:
+    if not within_wire_budget(out_str, max_raw_bytes=17600, max_escaped_bytes=19600):
         for k_trim, raw_src, cap_trim, hint_trim in (
             ("walkthrough", walk_raw or str(payload.get("walkthrough") or ""), 750, "brain:walkthrough.md"),
             ("implementation_plan", plan_raw or str(payload.get("implementation_plan") or ""), 750, "brain:implementation_plan.md"),
@@ -397,16 +405,15 @@ def _compact_loaded_session_payload(
                 payload[k_trim] = _compact_markdown(raw_src, max_chars=cap_trim, source_hint=hint_trim)
         payload["recent_transcript_turns"] = recent_turns[-2:]
         out_str = _compact_json(payload)
-    if len(out_str.encode("utf-8")) > 17800:
+    if not within_wire_budget(out_str, max_raw_bytes=17800, max_escaped_bytes=19600):
         payload["recent_transcript_turns"] = []
         if isinstance(payload.get("project_workflows"), dict) and len(str(payload["project_workflows"].get("summary") or "")) > 500:
             payload["project_workflows"]["summary"] = str(payload["project_workflows"]["summary"])[:500] + "\n... [compacted]"
         if isinstance(payload.get("scratch_files"), list):
             payload["scratch_files"] = payload["scratch_files"][:4]
         out_str = _compact_json(payload)
-    while len(out_str.encode("utf-8")) > 17800 and _shrink_optional_payload_fields(payload):
+    while not within_wire_budget(out_str, max_raw_bytes=17800, max_escaped_bytes=19600) and _shrink_optional_payload_fields(payload):
         out_str = _compact_json(payload)
-    if len(out_str.encode("utf-8")) > 17800 and isinstance(payload.get("visual_artifacts"), list) and len(payload["visual_artifacts"]) > 4:
-        payload["visual_artifacts"] = payload["visual_artifacts"][:4]
-        out_str = _compact_json(payload)
-    return out_str
+    if not within_wire_budget(out_str, max_raw_bytes=17800, max_escaped_bytes=19600) and isinstance(payload.get("visual_artifacts"), list) and len(payload["visual_artifacts"]) > 2:
+        payload["visual_artifacts"] = payload["visual_artifacts"][:2]
+    return compact_payload_to_wire_budget(payload, serializer=_compact_json, max_raw_bytes=17800, max_escaped_bytes=19600)

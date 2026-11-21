@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import re
 import sqlite3
+import struct
 import subprocess
 from typing import Any
 import urllib.parse
@@ -324,3 +325,78 @@ def classify_repo_media(
     if len(rel_parts) <= 1 or "assets" in rel_parts[:-1]:
         return "repo_asset"
     return "session" if (is_latest or in_window) else "repo_asset"
+
+
+def _parse_jpeg_dims(fh: Any) -> tuple[int, int] | None:
+    """Scan up to 256 KB of JPEG SOFn segment headers for (width, height) without pixel decoding."""
+    sof_markers = frozenset((0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF))
+    fh.seek(0)
+    buf = fh.read(262144)
+    pos, total, markers = 2, len(buf), 0
+    while pos < total and markers < 96:
+        ff_idx = buf.find(b"\xff", pos)
+        if ff_idx < 0:
+            return None
+        pos = ff_idx + 1
+        while pos < total and buf[pos] == 0xFF:
+            pos += 1
+        if pos >= total:
+            return None
+        code = buf[pos]
+        pos += 1
+        markers += 1
+        if code in (0xD8, 0x00, 0x01) or (0xD0 <= code <= 0xD7):
+            continue
+        if code in (0xD9, 0xDA):
+            return None
+        if pos + 2 > total:
+            return None
+        seg_len = struct.unpack(">H", buf[pos : pos + 2])[0]
+        if seg_len < 2:
+            return None
+        if code in sof_markers:
+            if seg_len < 7 or pos + 7 > total:
+                return None
+            h, w = struct.unpack(">HH", buf[pos + 3 : pos + 7])
+            return (w, h) if (w > 0 and h > 0) else None
+        pos += seg_len
+    return None
+
+
+def read_image_dimensions_fast(file_path: Path) -> tuple[int, int] | None:
+    """Read (width, height) from PNG/JPEG/WebP/GIF headers in <2ms with lazy Pillow fallback (zero pixel decoding)."""
+    try:
+        with file_path.open("rb") as fh:
+            hdr = fh.read(32)
+            if len(hdr) >= 24 and hdr[:8] == b"\x89PNG\r\n\x1a\n" and hdr[12:16] == b"IHDR":
+                w, h = struct.unpack(">II", hdr[16:24])
+                return (w, h) if (w > 0 and h > 0) else None
+            if len(hdr) >= 10 and hdr[:6] in (b"GIF87a", b"GIF89a"):
+                w, h = struct.unpack("<HH", hdr[6:10])
+                return (w, h) if (w > 0 and h > 0) else None
+            if len(hdr) >= 30 and hdr[:4] == b"RIFF" and hdr[8:12] == b"WEBP":
+                chunk = hdr[12:16]
+                if chunk == b"VP8 " and hdr[23:26] == b"\x9d\x01\x2a":
+                    w, h = struct.unpack("<HH", hdr[26:30])
+                    w, h = (w & 0x3FFF, h & 0x3FFF)
+                    return (w, h) if (w > 0 and h > 0) else None
+                if chunk == b"VP8L" and hdr[20] == 0x2F:
+                    bits = int.from_bytes(hdr[21:25], "little")
+                    return ((bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1)
+                if chunk == b"VP8X":
+                    return (1 + int.from_bytes(hdr[24:27], "little"), 1 + int.from_bytes(hdr[27:30], "little"))
+            if len(hdr) >= 2 and hdr[:2] == b"\xff\xd8":
+                dims = _parse_jpeg_dims(fh)
+                if dims:
+                    return dims
+    except Exception:
+        pass
+    try:
+        from PIL import Image as PilImage
+        if not PilImage.MAX_IMAGE_PIXELS or PilImage.MAX_IMAGE_PIXELS > 40_000_000:
+            PilImage.MAX_IMAGE_PIXELS = 40_000_000
+        with PilImage.open(file_path) as im:
+            return int(im.size[0]), int(im.size[1])
+    except Exception:
+        return None
+

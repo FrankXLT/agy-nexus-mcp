@@ -1,4 +1,4 @@
-# `agy-nexus-mcp` — Connect Google Gemini to Your Antigravity IDE, 2-Pane Workspace & Usage Studio (`v3.2.4`)
+# `agy-nexus-mcp` — Connect Google Gemini to Your Antigravity IDE, 2-Pane Workspace & Usage Studio (`v3.2.5`)
 
 `agy-nexus-mcp` is a self-hosted **Dual-Doorway Model Context Protocol (MCP)** server connecting **Google Gemini** (Web, Mobile & Tasks) directly to your local **Google Antigravity IDE / CLI** workstation—paired with **`agy-praxis-mcp`** (deadbolt-free LAN-only semantic codebase index & `<repo-slug>-NN` handoff inbox) and a **Unified `42px` Chromium Studio (`/web` PWA)** with live **Analytics** and a **2-Pane Session Workspace Explorer**.
 
@@ -7,27 +7,27 @@
 ## Live `/web` Unified Studio App (`Analytics` + 2-Pane `Workspace`)
 
 ### 1. `Analytics` — Muted `Mon–Sun` Calendar Matrix, Sub-Daily Stacked Bars & Code Health
-![AGY-NEXUS v3.2.4 Analytics Surface — 42px Studio Topbar, Foldable KPIs, Single-Hue 52-Week Mon–Sun Calendar Matrix, Sub-Daily Stacked Bar Charts, Session Hierarchy & Code Health](docs/assets/dashboard-desktop.png)
+![AGY-NEXUS v3.2.5 Analytics Surface — 42px Studio Topbar, Foldable KPIs, Single-Hue 52-Week Mon–Sun Calendar Matrix, Sub-Daily Stacked Bar Charts, Session Hierarchy & Code Health](docs/assets/dashboard-desktop.png)
 
 ### 2. `Workspace` — 2-Pane Session Explorer, Editorial Reader & Direct PNG / Sheet Gallery
-![AGY-NEXUS v3.2.4 2-Pane Workspace Explorer — Resizable Recency Tree with 2-Line Titles & Age Pills, Editorial Document Cards, Inline Upload Trigger & Direct PNG / Per Sheet Toolbar](docs/assets/workspace-desktop.png)
+![AGY-NEXUS v3.2.5 2-Pane Workspace Explorer — Resizable Recency Tree with 2-Line Titles & Age Pills, Editorial Document Cards, Inline Upload Trigger & Direct PNG / Per Sheet Toolbar](docs/assets/workspace-desktop.png)
 
 <details>
 <summary><strong>📱 Mobile Layouts (<code>390px</code> Portrait — Analytics <code>26w</code> Matrix &amp; 1-Row Workspace Explorer)</strong></summary>
 
-![AGY-NEXUS v3.2.4 Mobile Analytics View](docs/assets/dashboard-mobile.png)
-![AGY-NEXUS v3.2.4 Mobile Workspace View](docs/assets/workspace-mobile.png)
+![AGY-NEXUS v3.2.5 Mobile Analytics View](docs/assets/dashboard-mobile.png)
+![AGY-NEXUS v3.2.5 Mobile Workspace View](docs/assets/workspace-mobile.png)
 
 </details>
 
 ---
 
-## Key Capabilities (`v3.2.4`)
+## Key Capabilities (`v3.2.5`)
 
 - **Dual-Doorway Parallel Isolation & `<repo-slug>-NN` Queue**: Concurrent Gemini Web/Mobile tabs work across separate repositories via `fcntl.flock` `active_contexts` slots (with automatic stale test-slot pruning), 3-pillar fail-closed resolution (`target_resolver.py`), same-repo concurrent writer detection (`MAIN WRITER` / `WORKTREE` / `SHARED`), and atomic `<slug>-NN` handoffs (`handoff_queue.py`) with proportional **Surgical Fast-Path** vs. Full Dual-Review execution (`handoff_templates.py`).
 - **`agy-praxis-mcp` Local IDE Doorway (`6` Tools)**: Incremental SHA-256 Polyglot semantic indexing (`polyglot_map` strictly `<= 17.5 KB` with `directory_summary` + `drilldown_hint`, `polyglot_search`, `polyglot_outline`) + `<repo-slug>-NN` handoff queue (`/praxis/{PRAXIS_MCP_TOKEN}/mcp`, legacy `/polyglot/` alias, or `--stdio`) with strict LAN-only `403` proxy/Origin rejection.
-- **Strict `< 20 KB` Wire Budget & Recency Indexing**: Sequential Read-Only Governance (`<= 4` hops/turn), `tools/list` (`~9.1 KB`), `get_session_tree` (`<= 17.5 KB` inner JSON), separated Praxis IDE & `protocol_handshakes` telemetry, `"0001-"` sentinel rescue (`last_updated_ts = max(db_ts, transcript, task_md, brain)`), and strict newest-first sorting.
-- **Continuity Rollover, In-Place Closeout & Job-First `"Yes"` Flow**: 5-tier context pressure (`FRESH` $\rightarrow$ `HARD_ROLLOVER`), `session_continuity="closeout"` with atomic `RETIRED.json` tombstones (`[RETIRED_SESSION_GUARD]`), automatic `docs/WORKFLOWS.md` discovery (`workflow:baseline`), and concrete `suggested_actions`.
+- **Strict `< 20 KB` Wire Budget & Recency Indexing**: Sequential Read-Only Governance (`<= 4` hops/turn), `tools/list` (`<= 8.6 KB`), `get_session_tree` (`<= 17.5 KB` inner JSON), `<= 18.5 KB` inner / `<= 19.8 KB` escaped outer wire caps across read/diff/session tools, Cloud MCP header-only visual fast path, separated Praxis IDE & `protocol_handshakes` telemetry, `"0001-"` sentinel rescue (`last_updated_ts = max(db_ts, transcript, task_md, brain)`), and strict newest-first sorting.
+- **Continuity Rollover, In-Place Closeout & Job-First `"Yes"` Flow**: 5-tier context pressure (`FRESH` $\rightarrow$ `HARD_ROLLOVER`), `session_continuity="closeout"` with atomic `RETIRED.json` tombstones (`[RETIRED_SESSION_GUARD]`), deferred `retire_after_closeout=True` on headless `release_closeout`, automatic `docs/WORKFLOWS.md` discovery (`workflow:baseline`), and concrete `suggested_actions`.
 - **Unified `42px` `/web` Studio & Visual Round-Trip**: 4 Themes × 4 Densities (`Obsidian`, `Dark Paper`, `Warm Paper`, `Pure White` with `#f8fafc`/`#ffffff` contrast), widescreen `1960px` Analytics (`Jan`..`Dec` `53w`/`26w` matrix, `24h` Year & `1h`–`12h` stacked bars), edge-to-edge **2-Pane Workspace** with drag-resizable `220–480px` 2-line tree & `.tree-age-pill`, `248px` desktop gallery cards, `Per Sheet 2/4/8` `3072px` PNG sheets, direct `.png` downloads (`⬇ Sheets`, `⬇ PNGs`, `⬇ ZIP`), and **7-day (`604,800s`)** `/web/media/` links.
 
 ---
@@ -47,16 +47,16 @@
 
 ---
 
-## Project Manager Mode & Plain-Language Handoffs (`v3.2.4`)
+## Project Manager Mode & Plain-Language Handoffs (`v3.2.5`)
 
 `agy-nexus-mcp` turns Google Gemini into a grounded **Engineering Project Manager**: Gemini scouts live state sequentially (`<= 4` calls/turn), stages `<repo-slug>-NN` handoffs with proportional `execution_mode="auto"` ceremony (`allow_chained_publish=False` for preview gates with 7-day `/web/media/` screenshots), and guides **Job-First `"Yes"`** transitions across `ready_to_run` (staged tickets), `in_flight` (running tasks), and `ready_to_ship` (in-place `retire_session=True` + `RETIRED.json` closeout).
 
 | `handoff_mode` | Purpose & Behavior | Antigravity Execution |
 | :--- | :--- | :--- |
-| **`feature_update`** *(Default)* | Add features or refine workflows with `WORKFLOWS.md` baseline parity. | Full 4-Step (`flash-scout` $\rightarrow$ `surgeon` $\rightarrow$ `flash-auditor` $\rightarrow$ Dual-Review / Visual Gate). |
-| **`new_project`** | Stand up greenfield repos/packages (`create_new_project=True`, `<= 500L` modules). | Blueprinted via `argon-architect`, scaffolded modularly with `pytest` & self-tests. |
+| **`feature_update`** *(Default)* | Add features or refine workflows with `WORKFLOWS.md` baseline parity. | Full 4-Step (`flash-scout` $\rightarrow$ `surgeon` $\rightarrow$ `flash-auditor` $\rightarrow$ Dual-Review / Visual Gate; multi-deliverable/complex `fast` coerces to `plan`). |
+| **`new_project`** | Stand up greenfield repos/packages (`create_new_project=True`, `<= 500L` modules). | Blueprinted via `argon-architect` (`plan` mode enforced), scaffolded modularly with `pytest` & self-tests. |
 | **`bug_or_visual_fix`** | Pinpoint broken behavior, exact viewports (`390px`/`900px`/`1440px`/`2560px`), and fix criteria. | **Surgical Fast-Path** for compact non-security diffs (`fast`), or Full Dual-Review on auth/UI boundaries. |
-| **`release_closeout`** | Verify tests, sync 3-2-1 backups, commit/tag/push, and write `RETIRED.json` tombstones. | Prunes worktrees, marks `<slug>-NN` tickets `COMPLETED`, locks retired session against drift. |
+| **`release_closeout`** | Verify tests, sync 3-2-1 backups, commit/tag/push, and write `RETIRED.json` tombstones. | Prunes worktrees, marks `<slug>-NN` tickets `COMPLETED`, defers `RETIRED.json` (`retire_after_closeout=True`) on headless runs until commit+push succeed. |
 
 ---
 
@@ -66,7 +66,7 @@ Call `get_session_tree()` (or `manage_background_run(action="sessions")`) to ren
 
 ```text
 ╔══════════════════════════════════════════════════════════════════════════╗
-║ AGY-NEXUS v3.2.4 // PROJECT -> CHAT -> SESSION ID HIERARCHY (COPY-READY) ║
+║ AGY-NEXUS v3.2.5 // PROJECT -> CHAT -> SESSION ID HIERARCHY (COPY-READY) ║
 ╠══════════════════════════════════════════════════════════════════════════╣
 ║ SLOTS: 3 | STAGED: 1 | IN-WORK: 3 | PINNED: 24 | TTL: 119.5m             ║
 ║ 3-2-1 BACKUP: f458f27 (SYNCED ✓ · 16445.3 KB · 4h ago)                   ║
@@ -152,13 +152,13 @@ Ask Gemini for your usage stats (`get_session_tree(include_stats=True, period="l
 | :--- | :---: | :--- | :--- |
 | **`style="default"`** | **72 cols** | Standard Desktop & Tablet Chat | Split summary header, 22-week `Mon–Sun` heatmap, 8-hour activity & project stack (`░▒▓█`), model quota bars (`┼`), Praxis/Polyglot health, and project & subagent tables. |
 | **`style="quick"`** | **`<= 40` cols** | Phone Screens (Portrait) | Fits strictly within 40 characters per line so it never wraps on mobile. Shows a 13-week heatmap, 8-hour pace curve, model quota bars, and top projects/subagents. |
-| **`style="rich"`** | **76 cols** | Widescreen Desktop Chat | Full box-drawn rig (`v3.2.4`) with side-by-side quota and token panels, 13-week 3-character heatmap with Peak Day card, 6-row 8-hour curve, and share gauges. |
+| **`style="rich"`** | **76 cols** | Widescreen Desktop Chat | Full box-drawn rig (`v3.2.5`) with side-by-side quota and token panels, 13-week 3-character heatmap with Peak Day card, 6-row 8-hour curve, and share gauges. |
 
 ### 1. `style="default"` (72-Column Standard Layout)
 
 ```text
 ════════════════════════════════════════╤═══════════════════════════════
-AGY-NEXUS v3.2.4 // 90d (Nov 19 ◄── Aug ┆ Up to Date (v3.2.4)           
+AGY-NEXUS v3.2.5 // 90d (Nov 19 ◄── Aug ┆ Up to Date (v3.2.5)           
 ════════════════════════════════════════╪═══════════════════════════════
 GOOGLE 20x :  99.4% [████████┼█] HEALTHY┆ 0x 429s | Ultra-20x (T:>=90%) 
 PARTNER 1x :  99.4% [░┼░░░░░░░░] ON PACE┆ 42.9% Wk Left | Lim <=14.3%/d 
@@ -229,7 +229,7 @@ SUBAGENTS (9)        RUNS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE
 
 ```text
 ════════════════════════════════════════
-AGY-NEXUS v3.2.4 // 90d (Nov 19 ◄── Aug 
+AGY-NEXUS v3.2.5 // 90d (Nov 19 ◄── Aug 
 ════════════════════════════════════════
 G-20x:  99% [████████┼█] OK | 0x 429s
 P-1x :  99% [░┼░░░░░░░░] OK | 43% WkLft
@@ -276,7 +276,7 @@ mail-triage-ui   10.1M   171k   1.20M
 
 ```text
 ╔══════════════════════════════════════════════════════════════════════════╗
-║ ▄▀█ █▀▀ █▄█ ▄▄ █▄░█ █▀▀ ▀▄▀ █░█ █▀   v3.2.4 // RICH TELEMETRY RIG        ║
+║ ▄▀█ █▀▀ █▄█ ▄▄ █▄░█ █▀▀ ▀▄▀ █░█ █▀   v3.2.5 // RICH TELEMETRY RIG        ║
 ║ █▀█ █▄█ ░█░ ░░ █░▀█ ██▄ █░█ █▄█ ▄█   WINDOW: 90d (Nov 19 ◄── Aug 21)     ║
 ╠════════════════════════════════════╦═════════════════════════════════════╣
 ║ QUOTA POOLS & 429 COOLDOWNS        │ STEP & TOOL VELOCITY                ║
@@ -290,8 +290,8 @@ mail-triage-ui   10.1M   171k   1.20M
 ║ Weekly: 15.3M tok/wk               │ Client: Web 61% · Prx 39% · Mob 0%  ║
 ╠════════════════════════════════════╦═════════════════════════════════════╣
 ║ VERSION & RELEASE STATUS           │ POLYGLOT & MODULAR CODE HEALTH      ║
-║ Installed: v3.2.4 (up_to_date)     │ Poly: 1520s | 58/61 <=500L 0>650L   ║
-║ Remote   : v3.2.4                  │ IDE MCP  : agy-praxis-mcp + Serena  ║
+║ Installed: v3.2.5 (up_to_date)     │ Poly: 1520s | 64/64 <=500L 0>650L   ║
+║ Remote   : v3.2.5                  │ IDE MCP  : agy-praxis-mcp + Serena  ║
 ╠════════════════════════════════════╩═════════════════════════════════════╣
 ║ DAILY ACTIVITY MATRIX (NOW: W01 ──► W13)     [·· 0  ░░ <1k  ▒▒ <4k  ██]  ║
 ║ Wk   W01 W02 W03 W04 W05 W06 W07 W08 W09 W10 W11 W12 W13  ┌─ PEAK DAY ─┐ ║
@@ -401,7 +401,7 @@ mail-triage-ui   10.1M   171k   1.20M
 
 ## Comparison with Typical Antigravity Bridges
 
-| Feature | Typical Community Bridges (`agy-bridge`, `meridian`, `ag-local-bridge`) | `agy-nexus-mcp` (`v3.2.4`) |
+| Feature | Typical Community Bridges (`agy-bridge`, `meridian`, `ag-local-bridge`) | `agy-nexus-mcp` (`v3.2.5`) |
 | :--- | :--- | :--- |
 | **Connection Architecture** | Local `stdio` pipe or single-chat Telegram/WhatsApp bot | **Dual-Doorway Streamable HTTP MCP** (`agy-nexus-mcp` for Gemini Web/Mobile/Tasks + LAN-only `agy-praxis-mcp` for local Antigravity IDE) |
 | **Zero-Trust Security** | None or static chat-ID allowlist | **5-Layer Defense**: Secret URL Path + Voice/Text Deadbolt + LAN-Only Praxis Gate + Sandboxed ZIP/File Readers + HMAC Host Bridge |
@@ -426,13 +426,13 @@ Subagent runs and token share automatically appear in the `/web` Analytics surfa
 
 ---
 
-## Repository Layout (`v3.2.4`)
+## Repository Layout (`v3.2.5`)
 
-*(See [`AGENTS.md`](AGENTS.md) for the complete 41-module line-by-line architecture reference.)*
+*(See [`AGENTS.md`](AGENTS.md) for the complete 44-module line-by-line architecture reference.)*
 
 ```text
 agy-nexus-mcp/
-├── src/agy_nexus/        # 41 modular backend/MCP modules (<=500L target, 650L ceiling):
+├── src/agy_nexus/        # 44 modular backend/MCP modules (100% <=500L target, 650L ceiling):
 │                         #   config, hygiene, polyglot_*, handoff_*, workflow_baseline, tools_praxis,
 │                         #   virtual_uris, telemetry_scanner, ascii_{default,rich}, session_{tree,status},
 │                         #   retirement, code_health, stats*, media*, bucket_*, web_routes, uploads,
@@ -447,7 +447,7 @@ agy-nexus-mcp/
 ├── docs/                 # DEPLOYMENT.md, WORKFLOWS.md & 2x hero assets/ (dashboard/workspace desktop+mobile)
 ├── scripts/              # setup.{sh,ps1}, init_secrets.py, export_depersonalized_showcase.py, publish/backup
 ├── systemd/ & .github/   # Service unit templates, depersonalized issue templates & PR checklist
-├── tests/                # Pytest regression suites + conftest STATE_FILE isolation (v2.6 – v3.2.4)
+├── tests/                # Pytest regression suites + conftest STATE_FILE isolation (v2.6 – v3.2.5)
 └── README.md, AGENTS.md, CHANGELOG.md, SECURITY.md, CONTRIBUTING.md, ACCESSIBILITY.md, LICENSE, NOTICE
 ```
 

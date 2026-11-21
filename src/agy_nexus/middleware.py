@@ -310,7 +310,35 @@ class BridgeCompatMiddleware:
         }
 
     @staticmethod
-    def _parse_rpc_request_body(full_body: bytes, rpc_summary: dict[str, Any]) -> None:
+    def _compact_tools_list_body(raw_body: bytes) -> bytes:
+        """Strip empty FastMCP _meta.fastmcp.tags and auto-generated title fields on tools/list responses."""
+        try:
+            doc = json.loads(raw_body.decode("utf-8"))
+        except Exception:
+            return raw_body
+        tools = ((doc.get("result") or {}).get("tools")) if isinstance(doc, dict) else None
+        if not isinstance(tools, list):
+            return raw_body
+        changed = False
+        for t in tools:
+            if not isinstance(t, dict):
+                continue
+            meta = t.get("_meta")
+            if isinstance(meta, dict) and meta == {"fastmcp": {"tags": []}}:
+                t.pop("_meta", None)
+                changed = True
+            name = str(t.get("name") or "")
+            if name and t.get("title") == name.replace("_", " ").title():
+                t.pop("title", None)
+                changed = True
+        if not changed:
+            return raw_body
+        return json.dumps(doc, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+    @staticmethod
+    def _parse_rpc_request_body(
+        full_body: bytes, rpc_summary: dict[str, Any], req_ctx: dict[str, str] | None = None
+    ) -> None:
         """Extract JSON-RPC method, tool name, client product, and reported tokens from POST payload."""
         try:
             rpc_summary["req_bytes"] = len(full_body)
@@ -331,7 +359,13 @@ class BridgeCompatMiddleware:
                 if t_args.get("client_product"):
                     rpc_summary["product"] = str(t_args.get("client_product"))
                 if t_args.get("client_tokens_reported"):
-                    rpc_summary["reported_tokens"] = int(t_args.get("client_tokens_reported") or 0)
+                    try:
+                        rpc_summary["reported_tokens"] = int(t_args.get("client_tokens_reported") or 0)
+                    except (TypeError, ValueError):
+                        pass
+            if req_ctx is not None:
+                req_ctx["product"] = str(rpc_summary.get("product") or "")
+                req_ctx["rpc"] = str(rpc_summary.get("rpc") or "")
         except Exception:
             pass
 
@@ -348,6 +382,16 @@ class BridgeCompatMiddleware:
         """Proxy MCP POST request through target ASGI app and persist compact wire telemetry."""
         rpc_summary = self._prepare_post_scope_and_summary(scope, method, headers)
         body_chunks: list[bytes] = []
+        is_praxis = target_asgi_app is self.praxis_app
+        req_ctx = {
+            "product": str(rpc_summary["product"] or ""),
+            "user_agent": str(rpc_summary["user_agent"] or ""),
+            "doorway": "praxis" if is_praxis else "nexus",
+            "rpc": "",
+        }
+        ctx_tok = cfg._MCP_REQUEST_CTX.set(req_ctx)
+        pending_start: dict[str, Any] | None = None
+        tools_list_chunks: list[bytes] = []
 
         async def wrapped_receive() -> dict[str, Any]:
             msg = await receive()
@@ -356,10 +400,11 @@ class BridgeCompatMiddleware:
                 if chunk:
                     body_chunks.append(chunk)
                 if not msg.get("more_body", False) and body_chunks:
-                    self._parse_rpc_request_body(b"".join(body_chunks), rpc_summary)
+                    self._parse_rpc_request_body(b"".join(body_chunks), rpc_summary, req_ctx=req_ctx)
             return msg
 
         async def wrapped_send(msg: dict[str, Any]) -> None:
+            nonlocal pending_start
             if msg.get("type") == "http.response.start":
                 rpc_summary["status"] = int(msg.get("status", 0))
                 resp_headers = list(msg.get("headers") or [])
@@ -369,15 +414,34 @@ class BridgeCompatMiddleware:
                 if b"cache-control" not in existing_keys:
                     resp_headers.append((b"cache-control", b"no-cache, no-transform"))
                 msg = {**msg, "headers": resp_headers}
+                if rpc_summary.get("rpc") == "tools/list" and rpc_summary["status"] == 200:
+                    pending_start = msg
+                    return
             elif msg.get("type") == "http.response.body":
+                if pending_start is not None:
+                    chunk = msg.get("body") or b""
+                    if chunk:
+                        tools_list_chunks.append(chunk)
+                    if msg.get("more_body", False):
+                        return
+                    compacted = self._compact_tools_list_body(b"".join(tools_list_chunks))
+                    hdrs = [
+                        (k, str(len(compacted)).encode("ascii") if k.lower() == b"content-length" else v)
+                        for k, v in pending_start["headers"]
+                    ]
+                    await send({**pending_start, "headers": hdrs})
+                    pending_start = None
+                    rpc_summary["bytes"] = len(compacted)
+                    await send({"type": "http.response.body", "body": compacted, "more_body": False})
+                    return
                 rpc_summary["bytes"] = int(rpc_summary["bytes"]) + len(msg.get("body") or b"")
             await send(msg)
 
-        is_praxis = target_asgi_app is self.praxis_app
         log_prefix = "[agy-praxis]" if is_praxis else "[agy-nexus]"
         try:
             await target_asgi_app(scope, wrapped_receive, wrapped_send)
         finally:
+            cfg._MCP_REQUEST_CTX.reset(ctx_tok)
             elapsed_ms = int((time.time() - t0) * 1000)
             rpc_method = str(rpc_summary["rpc"] or "-").strip()
             tool_label = str(rpc_summary["tool"] or "").strip() or (f"[rpc:{rpc_method}]" if rpc_method and rpc_method != "-" else "-")

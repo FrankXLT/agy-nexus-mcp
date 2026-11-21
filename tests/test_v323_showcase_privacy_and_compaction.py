@@ -143,7 +143,7 @@ def test_v323_showcase_asset_parity_readme_and_modular_budgets() -> None:
 
     sw_js = (WEB_DIR / "sw.js").read_text(encoding="utf-8")
     index_html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
-    assert 'CACHE_NAME = "agy-nexus-overwatch-v3.2.4-b1"' in sw_js
+    assert 'CACHE_NAME = "agy-nexus-overwatch-v3.2.5-b1"' in sw_js
     assert "demo_snapshot.js" in PWA_ASSETS and "demo_snapshot.js" in sw_js and "/web/demo_snapshot.js" in index_html
     for thumb in DEMO_THUMBS:
         assert thumb in PWA_ASSETS and thumb in sw_js, f"Missing showcase thumb {thumb} from PWA/SW"
@@ -159,7 +159,7 @@ def test_v323_showcase_asset_parity_readme_and_modular_budgets() -> None:
     quick_block, rich_block = blocks[2], blocks[3]
     for q_ln in quick_block.splitlines():
         assert len(q_ln) <= 40, f"Quick ASCII line exceeded 40 chars ({len(q_ln)}): {q_ln}"
-    assert "v3.2.4" in rich_block and "WORKSPACES (" in rich_block and "SUBAGENTS (" in rich_block
+    assert "v3.2.5" in rich_block and "WORKSPACES (" in rich_block and "SUBAGENTS (" in rich_block
     assert "v3.1.0" not in blocks[0] + blocks[1] + blocks[2] + blocks[3]
     snap_chk = subprocess.run(["node", "--check", str(WEB_DIR / "demo_snapshot.js")], capture_output=True, text=True, check=False)
     assert snap_chk.returncode == 0, snap_chk.stderr

@@ -1,4 +1,4 @@
-/* AGY-NEXUS Overwatch — 2-Pane Workspace Explorer, Multi-Select Gallery & Sheet Export (v3.2.4) */
+/* AGY-NEXUS Overwatch — 2-Pane Workspace Explorer, Multi-Select Gallery & Sheet Export (v3.2.5) */
 
 .workspace-main { padding: var(--pad-shell, 14px) var(--pad-shell, 16px) 48px; max-width: none; margin: 0; width: 100%; box-sizing: border-box; }
 .workspace-layout { display: grid; grid-template-columns: var(--ws-tree-custom-w, var(--tree-w, 300px)) 12px minmax(0, 1fr); gap: 0; align-items: start; }

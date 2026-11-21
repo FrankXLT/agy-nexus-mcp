@@ -1,4 +1,4 @@
-// AGY-NEXUS Overwatch — Mon-Sun Activity Heatmap & Collision-Safe Month Header Engine (v3.2.4)
+// AGY-NEXUS Overwatch — Mon-Sun Activity Heatmap & Collision-Safe Month Header Engine (v3.2.5)
 (function (root, factory) {
   if (typeof define === "function" && define.amd) {
     define([], factory);

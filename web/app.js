@@ -278,7 +278,7 @@ function renderDashboard(b) {
 
   renderAllTimePlots(b);
   if (typeof renderHierarchyPanel === "function") renderHierarchyPanel(b);
-  renderCodeHealth(b.code_health, b.version || "3.2.4");
+  renderCodeHealth(b.code_health, b.version || "3.2.5");
 
   const ph = b.project_hierarchy || {};
   let totalActiveHandoffs = 0;
@@ -408,7 +408,7 @@ if ("serviceWorker" in navigator && window.location.protocol.startsWith("http"))
   let swReloading = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     if (!hadCtrl || swReloading) return;
-    try { if (sessionStorage.getItem("nexus_sw_reloaded") === "3.2.4") return; sessionStorage.setItem("nexus_sw_reloaded", "3.2.4"); } catch (_) {}
+    try { if (sessionStorage.getItem("nexus_sw_reloaded") === "3.2.5") return; sessionStorage.setItem("nexus_sw_reloaded", "3.2.5"); } catch (_) {}
     swReloading = true; window.location.reload();
   });
   navigator.serviceWorker.register(basePrefix + "/web/sw.js", { scope: basePrefix ? (basePrefix + "/") : "/", updateViaCache: "none" }).catch(() => {});

@@ -271,3 +271,172 @@ def _summarize_jsonl_line(raw_line: str) -> dict[str, Any]:
         return summary
     except Exception:
         return {"raw": raw_line[:300]}
+
+
+WIRE_INNER_CAP_BYTES = int(os.getenv("WIRE_INNER_CAP_BYTES", "18500"))
+WIRE_ESCAPED_CAP_BYTES = int(os.getenv("WIRE_ESCAPED_CAP_BYTES", "19800"))
+
+
+def within_wire_budget(
+    raw_text: str,
+    max_raw_bytes: int = WIRE_INNER_CAP_BYTES,
+    max_escaped_bytes: int = WIRE_ESCAPED_CAP_BYTES,
+) -> bool:
+    """Return True when raw_text stays under both inner UTF-8 and JSON-RPC escaped outer wire caps."""
+    if len(raw_text.encode("utf-8")) > max_raw_bytes:
+        return False
+    return len(json.dumps(raw_text, ensure_ascii=False).encode("utf-8")) <= max_escaped_bytes
+
+
+def _wire_excess_bytes(raw_text: str, max_raw_bytes: int, max_escaped_bytes: int) -> int:
+    raw_over = len(raw_text.encode("utf-8")) - max_raw_bytes
+    esc_over = len(json.dumps(raw_text, ensure_ascii=False).encode("utf-8")) - max_escaped_bytes
+    return max(raw_over, esc_over)
+
+
+def _trim_drift_repos(repos: list[Any], max_repos: int, max_files: int) -> list[Any]:
+    out: list[Any] = []
+    txt_cap = max(120, max_files * 80)
+    for r in repos[:max_repos]:
+        if not isinstance(r, dict):
+            out.append(r)
+            continue
+        item = dict(r)
+        for lk in ("modified_files", "untracked_files", "changed_files", "files"):
+            if isinstance(item.get(lk), list) and len(item[lk]) > max_files:
+                item[lk] = item[lk][:max_files] + [f"... (+{len(item[lk]) - max_files})"]
+        for sk in ("status_short", "diff_stat"):
+            if isinstance(item.get(sk), str) and len(item[sk]) > txt_cap:
+                item[sk] = item[sk][:txt_cap] + "\n... [compacted]"
+        out.append(item)
+    return out
+
+
+def _shrink_aux_fields_step(payload: dict[str, Any]) -> bool:
+    insp = payload.get("inspected_item")
+    if isinstance(insp, dict) and isinstance(insp.get("content"), str) and len(insp["content"]) > 240:
+        insp["content"] = insp["content"][: max(120, len(insp["content"]) // 2)] + "\n... [compacted]"
+        insp["truncated"] = True
+        return True
+    for list_k, lim_n in (("skills", 10), ("plugin_skill_bundles", 8), ("agents", 8), ("transcript_tail", 6), ("sessions", 6)):
+        if isinstance(payload.get(list_k), list) and len(payload[list_k]) > lim_n:
+            payload[list_k] = payload[list_k][:lim_n]
+            return True
+    for drop_k in ("top_session_detail", "search_results", "available_projects", "projects", "rules_inventory", "wire_telemetry", "modular_hygiene", "code_health", "quota_and_pools"):
+        if drop_k in payload and payload[drop_k]:
+            payload.pop(drop_k, None)
+            return True
+    for txt_k in ("ascii_mobile_report", "ascii_tree", "diff_stat", "status_short"):
+        if isinstance(payload.get(txt_k), str) and len(payload[txt_k]) > 350:
+            payload[txt_k] = payload[txt_k][:260] + "\n... [compacted]"
+            return True
+    return False
+
+
+def _shrink_file_details_step(file_details: dict[str, Any], excess_bytes: int) -> bool:
+    files_arr = (
+        file_details.get("files")
+        if isinstance(file_details.get("files"), list)
+        else ([file_details] if any(k in file_details for k in ("content", "polyglot_outline", "existing_files_in_parent")) else [])
+    )
+    if not files_arr:
+        return False
+    for f_item in files_arr:
+        if isinstance(f_item, dict) and f_item.pop("existing_files_in_parent", None):
+            return True
+    suffix = "\n... [compacted for <20KB wire cap — use start_line/end_line]"
+    longest = max(
+        (f for f in files_arr if isinstance(f, dict) and isinstance(f.get("content"), str) and not str(f.get("content")).startswith("[omitted for <20KB")),
+        key=lambda f: len(str(f.get("content", ""))),
+        default=None,
+    )
+    if longest is not None and len(str(longest.get("content", ""))) > 120:
+        cur_c = str(longest["content"])
+        cut = max(excess_bytes, 900, len(cur_c) // 3)
+        new_len = max(0, len(cur_c) - cut)
+        longest["content"] = (cur_c[:new_len] + suffix) if new_len >= 120 else "[omitted for <20KB wire cap — read fewer files or use start_line/end_line]"
+        longest["truncated"] = True
+        return True
+    for f_item in files_arr:
+        if not isinstance(f_item, dict):
+            continue
+        pol = f_item.get("polyglot_outline")
+        if isinstance(pol, dict):
+            syms = pol.get("symbols")
+            if isinstance(syms, list) and len(syms) > 6:
+                pol["symbols"] = syms[:6] + ["... [compacted]"]
+                return True
+            f_item.pop("polyglot_outline", None)
+            return True
+    if isinstance(file_details.get("files"), list) and len(file_details["files"]) > 2:
+        file_details["files"].pop()
+        file_details["wire_compacted_files_omitted"] = int(file_details.get("wire_compacted_files_omitted") or 0) + 1
+        return True
+    return False
+
+
+def compact_payload_to_wire_budget(
+    payload: dict[str, Any],
+    serializer: Any = None,
+    max_raw_bytes: int = WIRE_INNER_CAP_BYTES,
+    max_escaped_bytes: int = WIRE_ESCAPED_CAP_BYTES,
+) -> str:
+    """Progressively trim secondary search lists, drift repos, diffs, and batched slices until payload fits <20KB wire limits."""
+    ser = serializer or (lambda obj: json.dumps(obj, separators=(",", ":"), ensure_ascii=False))
+    out_str = ser(payload)
+    if within_wire_budget(out_str, max_raw_bytes, max_escaped_bytes):
+        return out_str
+    trim_stages: tuple[tuple[str, int], ...] = (
+        ("historical_session_matches", 2), ("historical_session_matches", 0),
+        ("symbol_callers", 2), ("symbol_callers", 0),
+        ("polyglot_symbol_matches", 4), ("polyglot_symbol_matches", 0),
+        ("code_search_matches", 8), ("code_search_matches", 3), ("code_search_matches", 0),
+        ("pinned_session_matches", 4), ("pinned_session_matches", 1), ("pinned_session_matches", 0),
+        ("untracked_files", 20), ("untracked_files", 5), ("untracked_files", 0),
+        ("available_repositories", 0), ("configured_mcp_servers", 0),
+    )
+    for key, keep in trim_stages:
+        if within_wire_budget(out_str, max_raw_bytes, max_escaped_bytes):
+            return out_str
+        val = payload.get(key)
+        if not val:
+            continue
+        payload.pop(key, None) if keep <= 0 else (payload.__setitem__(key, val[:keep]) if isinstance(val, list) and len(val) > keep else None)
+        out_str = ser(payload)
+    for rkey in ("repositories", "repos"):
+        if not within_wire_budget(out_str, max_raw_bytes, max_escaped_bytes) and isinstance(payload.get(rkey), list):
+            for r_cap, f_cap in ((20, 4), (10, 2), (6, 0), (3, 0)):
+                payload[rkey] = _trim_drift_repos(payload[rkey], r_cap, f_cap)
+                payload["repos_wire_compacted"] = True
+                out_str = ser(payload)
+                if within_wire_budget(out_str, max_raw_bytes, max_escaped_bytes):
+                    return out_str
+    if not within_wire_budget(out_str, max_raw_bytes, max_escaped_bytes) and isinstance(payload.get("diff"), str):
+        for _ in range(10):
+            ex = _wire_excess_bytes(out_str, max_raw_bytes, max_escaped_bytes)
+            if ex <= 0 or not payload.get("diff"):
+                break
+            d_txt = str(payload["diff"])
+            keep_d = max(0, len(d_txt) - max(ex, 1200, len(d_txt) // 3))
+            payload["diff"] = d_txt[:keep_d] + ("\n... [diff compacted for <20KB wire cap — pass file_path or offset_chars]" if keep_d > 0 else "")
+            payload["diff_truncated"] = True
+            out_str = ser(payload)
+    for _ in range(48):
+        ex = _wire_excess_bytes(out_str, max_raw_bytes, max_escaped_bytes)
+        if ex <= 0:
+            break
+        fd = payload.get("file_details")
+        if isinstance(fd, dict) and _shrink_file_details_step(fd, ex):
+            out_str = ser(payload)
+            continue
+        if _shrink_aux_fields_step(payload):
+            out_str = ser(payload)
+            continue
+        break
+    if not within_wire_budget(out_str, max_raw_bytes, max_escaped_bytes):
+        payload.pop("assistant_guidance", None)
+        payload.pop("selected_session_status", None)
+        payload["wire_compacted"] = True
+        out_str = ser(payload)
+    return out_str
+
