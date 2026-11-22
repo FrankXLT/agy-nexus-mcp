@@ -169,7 +169,7 @@ def test_cost_ledger_preserves_pruned_brain_history_and_stats_rollup(tmp_path: P
 
 
 def test_hourly_whiskers_and_billing_comparison() -> None:
-    """Verify active-day Min/Avg/Max ordering, closed-window last_24h suppression, and 3-tier break-even math."""
+    """Verify active-day Min/Avg/Max ordering, closed-window last_24h suppression, and 4-tier break-even math."""
     s1_steps = {"2026-11-01T10": 10, "2026-11-02T10": 30, "2026-11-03T10": 20}
     s1_toks = {"2026-11-01T10": 1000, "2026-11-02T10": 3000, "2026-11-03T10": 2000}
     s1_cost = {"2026-11-01T10": 500_000, "2026-11-02T10": 1_500_000, "2026-11-03T10": 1_000_000}
@@ -188,9 +188,16 @@ def test_hourly_whiskers_and_billing_comparison() -> None:
         250_000_000, 500_000_000, window_days=30, active_days=10, active_profile="ultra-20x",
     )
     assert bill["historical_usd"] == 250.0 and bill["forecast_usd"] == 500.0 and bill["forecast_delta_pct"] == 100.0
-    assert len(bill["tiers"]) == 3
+    assert len(bill["tiers"]) == 4
+    plus = next(t for t in bill["tiers"] if t["id"] == "google_ai_plus")
+    pro = next(t for t in bill["tiers"] if t["id"] == "google_ai_pro")
+    ultra5 = next(t for t in bill["tiers"] if t["id"] == "google_ai_ultra_5x")
     ultra20 = next(t for t in bill["tiers"] if t["id"] == "google_ai_ultra_20x")
-    assert ultra20["value_multiplier"] == pytest.approx(250.0 / 99.99, rel=1e-2)
+    assert plus["monthly_usd"] == 4.99 and plus["storage"] == "400 GB"
+    assert pro["monthly_usd"] == 19.99 and pro["storage"] == "5 TB"
+    assert ultra5["monthly_usd"] == 99.99 and ultra5["storage"] == "20 TB"
+    assert ultra20["monthly_usd"] == 199.99 and ultra20["storage"] == "30 TB"
+    assert ultra20["value_multiplier"] == pytest.approx(250.0 / 199.99, rel=1e-2)
 
 
 def test_deadbolt_safe_models_ascii_vs_locked_boundaries(tmp_path: Path, monkeypatch) -> None:
@@ -217,6 +224,8 @@ def test_deadbolt_safe_models_ascii_vs_locked_boundaries(tmp_path: Path, monkeyp
     assert rep_a == rep_b
     for label in ("Carbon 4", "Neon 4", "Argon 4", "Hydrogen 4", "Flash 3.8", "Opus 5.5", "Sonnet 5.5", "GPT-OSS 120"):
         assert label in rep_a
+    for price in ("$4.99", "$19.99", "$99.99", "$199.99"):
+        assert price in rep_a, f"Missing tier price {price} in ascii_models report"
     assert not re.search(r"/home/(?!dev(?:/|$))[A-Za-z0-9_.-]+", rep_a)
     for ln in rep_a.splitlines():
         assert len(ln) <= 76, f"models report line > 76 ({len(ln)}): {ln}"

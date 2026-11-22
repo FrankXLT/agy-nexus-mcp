@@ -4,6 +4,16 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.1] — 2026-11-22
+
+### Fixed
+- **Official 4-Tier Google AI Subscription Pricing (`src/agy_nexus/data/model_catalog.json`, `src/agy_nexus/model_pricing.py`, `src/agy_nexus/ascii_models.py`, `docs/WORKFLOWS.md`)**:
+  - Corrected `google_ai_ultra_20x` monthly rate from `$99.99/mo` (`99,990,000` micro-USD) to its official US price of **`$199.99/mo`** (`199,990,000` micro-USD, `30 TB` storage, `20x` Pro limits, `$100/mo` developer credits), fixing prorated window cost and break-even multiplier math in `/web`, the static GitHub Pages showcase, and ASCII billing summaries.
+  - Added **`Google AI Plus`** (`google_ai_plus`, `$4.99/mo`, `4,990,000` micro-USD, `400 GB` storage, `2x Free` Gemini limits, `Hydrogen 4`) alongside `Google AI Pro` (`$19.99/mo`, `5 TB`, `$10/mo` credits) and `Google AI Ultra (5x)` (`$99.99/mo`, `20 TB`, `$40/mo` credits) in `subscription_tiers`, and exposed `pool_multiplier` and `storage` in `build_billing_comparison()`.
+  - Updated `render_ascii_models_status()` (`src/agy_nexus/ascii_models.py`) to format the `SUBSCRIPTION TIERS` box row dynamically from `model_catalog.json` (`Plus $4.99 | Pro $19.99 | 5x $99.99 | 20x $199.99`) within the strict `<= 72`-char inner / `76`-col outer box budget.
+- **PWA Cache & Public Showcase Refresh (`web/`, `web/demo_snapshot.js`, `web/demo_thumb_health.png`)**:
+  - Bumped PWA cache & query tags (`CACHE_NAME = "agy-nexus-v4.0.1"`, `?v=4.0.1`), refreshed real-data `demo_snapshot.js` + `build/gh-pages/` (`0` leaks) + `web/demo_thumb_health.png` with accurate 4-tier break-even metrics.
+
 ## [4.0.0] — 2026-11-22
 
 ### Added

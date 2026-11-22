@@ -5,12 +5,22 @@
   "tokens_per_rate_unit": 1000000,
   "subscription_tiers": [
     {
+      "id": "google_ai_plus",
+      "label": "Google AI Plus",
+      "monthly_usd_micros": 4990000,
+      "included_credits_usd_micros": 0,
+      "pool_multiplier": "2x Free",
+      "storage": "400 GB",
+      "notes": "$4.99/mo (400 GB, 2x Free Gemini limits, Hydrogen 4)"
+    },
+    {
       "id": "google_ai_pro",
       "label": "Google AI Pro",
       "monthly_usd_micros": 19990000,
       "included_credits_usd_micros": 10000000,
       "pool_multiplier": "1x",
-      "notes": "$19.99/mo ($10/mo Google AI credits)"
+      "storage": "5 TB",
+      "notes": "$19.99/mo ($199.99/yr annual, 5 TB, $10/mo dev credits)"
     },
     {
       "id": "google_ai_ultra_5x",
@@ -18,15 +28,17 @@
       "monthly_usd_micros": 99990000,
       "included_credits_usd_micros": 40000000,
       "pool_multiplier": "5x",
-      "notes": "$99.99/mo (5x tier, $40/mo Google AI credits)"
+      "storage": "20 TB",
+      "notes": "$99.99/mo (20 TB, 5x Pro limits, $40/mo dev credits)"
     },
     {
       "id": "google_ai_ultra_20x",
       "label": "Google AI Ultra (20x)",
-      "monthly_usd_micros": 99990000,
+      "monthly_usd_micros": 199990000,
       "included_credits_usd_micros": 100000000,
       "pool_multiplier": "20x",
-      "notes": "$99.99/mo (Ultra 20x tier, $100/mo credits)"
+      "storage": "30 TB",
+      "notes": "$199.99/mo (30 TB, 20x Pro limits, $100/mo dev credits)"
     }
   ],
   "fallback_token_split": {

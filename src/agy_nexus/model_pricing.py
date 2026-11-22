@@ -228,6 +228,8 @@ def build_billing_comparison(
             "label": str(t.get("label") or ""),
             "monthly_usd": round(mo_usd, 2),
             "included_credits_usd": round(int(t.get("included_credits_usd_micros") or 0) / 1_000_000.0, 2),
+            "pool_multiplier": str(t.get("pool_multiplier") or ""),
+            "storage": str(t.get("storage") or ""),
             "window_cost_usd": prorated_sub,
             "net_savings_usd": net_savings,
             "value_multiplier": mult,

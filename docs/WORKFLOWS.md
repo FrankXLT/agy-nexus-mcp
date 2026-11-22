@@ -149,19 +149,24 @@ Unclosed sessions leave stale Git worktrees, lingering temporary files, and tick
 
 ---
 
-## Workflow 6: Quiet UI `v9.3.0` Live `/web` Studio & Interactive GitHub Pages Showcase (`v4.0.0`)
+## Workflow 6: Quiet UI `v9.3.0` Live `/web` Studio & Interactive GitHub Pages Showcase (`v4.0.1`)
 
 ### User Goal
-Serve **Quiet UI Skills v9.3.0** directly as the primary live `/web` dashboard (preserving `/web/v9` compatibility) backed by live workstation 8-model telemetry, effective-dated micro-USD ledgers, and a zero-leak **GitHub Pages Interactive Showcase** (`gh-pages`).
+Serve **Quiet UI Skills v9.3.0** directly as the primary live `/web` dashboard (preserving `/web/v9` compatibility) backed by live workstation 8-model telemetry, effective-dated micro-USD ledgers, accurate 4-tier subscription break-even comparisons, and a zero-leak **GitHub Pages Interactive Showcase** (`gh-pages`).
 
 ### Architectural Invariants
 1. **Primary Live `/web` Cutover, Navbar Invariance & PWA Cache Integrity**:
    - `/web`, `/web/index.html`, `/web/v9`, and `/web/v9/index.html` serve Quiet UI `v9.3.0` HTML directly with `Cache-Control: no-store, no-cache, must-revalidate` in `src/agy_nexus/web_routes.py`.
-   - Every active asset (`web/v9/*.{css,js}`, `web/v9/vendor/*`, `demo_snapshot.js`, `gallery_select.js`, `sheet_builder.js`, `manifest.webmanifest`, `icon*`, and `demo_thumb_*.png`) is registered in `PWA_ASSETS` and `web/sw.js` (`CACHE_NAME = "agy-nexus-v4.0.0"`), matching both `/web/` and `/{PATH_SECRET}/web/`.
+   - Every active asset (`web/v9/*.{css,js}`, `web/v9/vendor/*`, `demo_snapshot.js`, `gallery_select.js`, `sheet_builder.js`, `manifest.webmanifest`, `icon*`, and `demo_thumb_*.png`) is registered in `PWA_ASSETS` and `web/sw.js` (`CACHE_NAME = "agy-nexus-v4.0.1"`), matching both `/web/` and `/{PATH_SECRET}/web/`.
    - Sticky topbar brand/tab X-coordinates remain identical (`0px` shift) between `#analytics` and `#workspace` (`50px` single row `>= 680px`; compact `<= 64px` 2-row sticky header `< 680px`), keeping `[◧]` menu, `AGY-NEXUS`, `Analytics | Workspace <N>`, active scope chip, compound period picker, and `[Steps | Tokens | $ Cost]` (or Workspace layout switches + `Upload`, hiding `Split`/`Captures` `< 760px`) pinned on scroll.
    - `#v9NavRail` is closed by default across ALL viewports (`390px`, `820px`, `1440px+`) and opens via `[◧]` / `Ctrl+B` as an opaque overlay over `#v9WsBackdrop`. It renders a borderless hairline tree (`36–38px` 1-line project rows, `5`-session initial cap + `Show <N> older...` expander), backed by Smart Context Memory and a `40px` pinned footer (`4` swatch-only theme circles + `[Compact | Comfortable]`).
-2. **Single-Call Boot, 8-Model Cost Ledger, Hourly Whiskers & Dedicated Project Analytics**:
+2. **Single-Call Boot, 8-Model Cost Ledger, 4-Tier Subscription Break-Even, Hourly Whiskers & Dedicated Project Analytics**:
    - `#analytics` boots with a single `/web/api/stats?...&include_ascii=0&compact_sessions=1` request; `src/agy_nexus/model_pricing.py` + `src/agy_nexus/cost_ledger.py` classify all **8 live models** (`Gemini 4 Carbon`, `Neon`, `Argon`, `Hydrogen`, `Gemini 3.8 Flash`, `Claude Opus 5.5`, `Claude Sonnet 5.5`, `GPT-OSS 120B`) using effective-dated integer micro-USD rates (`cost_ledger.json`), driving `Est. $` across KPIs, the 52w heatmap, `$ Cost` stacked bars, `Model Workload` & `Subagent Workload` (`booktabs`) tables, and `#v9BillingCard` (`v9_billing.js`).
+   - **Official US Subscription Tiers (`src/agy_nexus/data/model_catalog.json` & `src/agy_nexus/ascii_models.py`)**: Keep all 4 official US monthly tiers synced across `subscription_tiers`, `build_billing_comparison()`, and `render_ascii_models_status()`:
+     1. **`google_ai_plus`** (`Google AI Plus`): **`$4.99/mo`** (`4,990,000` micro-USD, `400 GB`, `2x Free` Gemini limits, `Hydrogen 4`, `$0/mo` dev credits)
+     2. **`google_ai_pro`** (`Google AI Pro`): **`$19.99/mo`** (`19,990,000` micro-USD, `$199.99/yr` annual, `5 TB`, `1x`, `$10/mo` dev credits)
+     3. **`google_ai_ultra_5x`** (`Google AI Ultra (5x)`): **`$99.99/mo`** (`99,990,000` micro-USD, `20 TB`, `5x` Pro limits, `$40/mo` dev credits)
+     4. **`google_ai_ultra_20x`** (`Google AI Ultra (20x)`): **`$199.99/mo`** (`199,990,000` micro-USD, `30 TB`, `20x` Pro limits, `$100/mo` dev credits)
    - **Activity by Hour of Day** renders active-day `Min / Avg / Max` range whiskers + a `Last 24h` dot over `00h..23h`, followed by full-width **MCP Wire Footprint vs. 20 KB Ceiling** scatter and collapsed **Code Health** drawer (`web/` + `web/v9/` modules `<= 500L`).
    - Selecting `Analytics` for a project (`?project=<id>#analytics` via `src/agy_nexus/project_stats.py` and `web/v9/v9_demo_adapter.js`) switches to Dedicated Project Analytics (`Steps | Tokens | $ Cost`, `Session Context Budget` vs `700`-step seam, Handoff Queue, `Project Sessions`, and Project Code Health).
    - Both `/web?demo=1` and the static showcase enable all 6 window presets (`MTD`, `QTD`, `YTD`, `30d`, `90d`, `52w`) + `Last Month` from real-distribution depersonalized `DEMO_SNAPSHOT` bundles (`V9.DemoAdapter.isPresetAvailable`) and serve bundled depersonalized Workspace docs (`V9.DemoDocs`).

@@ -215,7 +215,7 @@ def render_ascii_models_status(
     lines.extend([
         _box_full(f"Agent Parity: {synced_cnt}/{len(roster)} SYNCED (run sync_agents.py for host update)"),
         "╠══════════════════════════════════════════════════════════════════════════╣",
-        _box_full("SUBSCRIPTION TIERS: Pro $19.99/mo ($10cr) | 5x $99.99 ($40) | 20x ($100)"),
+        _box_full(_format_subscription_tiers_line(cat.get("subscription_tiers") or [])),
         _box_full(
             f"DRIFT 01:45: {str(drift.get('status') or 'NOT_RUN'):<12} Checked: {str(drift.get('checked_at') or 'never')[:16]:<16} Findings: {int(drift.get('drift_count') or 0)}"
         ),
@@ -223,3 +223,26 @@ def render_ascii_models_status(
         "╚══════════════════════════════════════════════════════════════════════════╝",
     ])
     return "\n".join(line[:76] for line in lines)
+
+
+def _short_tier_label(tier: dict[str, Any]) -> str:
+    tid = str(tier.get("id") or "").lower()
+    lbl = str(tier.get("label") or tid)
+    if "20x" in tid or "20x" in lbl.lower():
+        return "20x"
+    if "5x" in tid or "5x" in lbl.lower():
+        return "5x"
+    if lbl.lower().startswith("google ai "):
+        return lbl[10:].strip()
+    return lbl.split()[-1] if lbl else tid
+
+
+def _format_subscription_tiers_line(tiers: list[dict[str, Any]]) -> str:
+    """Format subscription tiers dynamically within the 72-char inner box limit."""
+    parts = [f"{_short_tier_label(t)} ${int(t.get('monthly_usd_micros') or 0) / 1_000_000.0:.2f}" for t in tiers]
+    joined = " | ".join(parts)
+    full = f"SUBSCRIPTION TIERS: {joined}"
+    if len(full) <= 72:
+        return full
+    compact = f"TIERS: {joined}"
+    return compact[:72]

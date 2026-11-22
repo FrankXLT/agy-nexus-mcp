@@ -179,6 +179,7 @@
 
     const tiers = Array.isArray(bc.tiers) ? bc.tiers : [];
     const activeProf = String(bc.active_profile || "");
+    const fmtExactUsd = (val) => `$${Math.abs(Number(val || 0)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const tierRows = tiers.map((tier) => {
       const tid = String(tier.id || "");
       const isCur = (activeProf.includes("20x") && tid.includes("20x")) || (activeProf.includes("5x") && tid.includes("5x"));
@@ -188,7 +189,7 @@
       const netCls = net >= 0 ? "v9-delta-pos" : "v9-delta-neg";
       return `<tr class="${isCur ? "is-solo" : ""}">
         <td><span class="v9-cell-main">${V9.escHtml(tier.label)}</span><div class="v9-cell-sub">${V9.escHtml(tier.notes || "")}</div></td>
-        <td class="num v9-mono-num">${V9.fmtUsd(subWin)}</td>
+        <td class="num v9-mono-num">${fmtExactUsd(subWin)}</td>
         <td class="num v9-mono-num"><span class="${netCls}">${net >= 0 ? "+" : "-"}${V9.fmtUsd(Math.abs(net))}</span></td>
         <td class="num v9-mono-num"><strong>${mult.toFixed(1)}x</strong></td>
       </tr>`;
