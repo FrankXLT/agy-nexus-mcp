@@ -330,7 +330,7 @@ dialog#uploadDialog::backdrop { background: rgba(0, 0, 0, 0.65); backdrop-filter
 
 /* Surface Switcher Buttons */
 .surface-switcher { display: inline-flex; align-items: center; background: var(--bg-elevated); border: 1px solid var(--border-grid); border-radius: 6px; padding: 2px; margin-left: 8px; }
-.surface-nav-btn { background: transparent; border: none; color: var(--text-secondary); padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+.surface-nav-btn { background: transparent; border: none; color: var(--text-secondary); padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; text-decoration: none; }
 .surface-nav-btn:hover { color: var(--text-main); }
 .surface-nav-btn.active { background: var(--bg-card); color: var(--accent-focal); box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
 .nav-badge { font-size: 9px; padding: 1px 5px; border-radius: 10px; background: var(--status-warn-bg); color: var(--status-warn); border: 1px solid var(--status-warn); font-weight: 700; }

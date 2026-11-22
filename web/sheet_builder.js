@@ -174,7 +174,8 @@
   function loadImageElement(url) {
     return new Promise((resolve) => {
       const img = new Image();
-      if (!String(url || "").startsWith("data:") && !String(url || "").startsWith("/")) img.crossOrigin = "anonymous";
+      const s = String(url || "");
+      if (!s.startsWith("data:") && !s.startsWith("/") && !s.startsWith("./")) img.crossOrigin = "anonymous";
       img.onload = () => resolve({ img, w: img.naturalWidth || 800, h: img.naturalHeight || 500, ok: true });
       img.onerror = () => resolve({ img: null, w: 800, h: 500, ok: false });
       img.src = url;

@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import time
 from typing import Any
+import urllib.parse
 
 import anyio
 
@@ -52,113 +53,189 @@ PWA_ASSETS: dict[str, bytes] = {
     "demo_thumb_foldable.png": b"image/png",
     "demo_thumb_mobile.png": b"image/png",
     "demo_thumb_health.png": b"image/png",
+    "v9/index.html": b"text/html; charset=utf-8",
+    "v9/v9_layers.css": b"text/css; charset=utf-8",
+    "v9/v9_shell.css": b"text/css; charset=utf-8",
+    "v9/v9_rail.css": b"text/css; charset=utf-8",
+    "v9/v9_analytics.css": b"text/css; charset=utf-8",
+    "v9/v9_workspace.css": b"text/css; charset=utf-8",
+    "v9/v9_state.js": b"application/javascript; charset=utf-8",
+    "v9/v9_demo_docs.js": b"application/javascript; charset=utf-8",
+    "v9/v9_demo_adapter.js": b"application/javascript; charset=utf-8",
+    "v9/v9_billing.js": b"application/javascript; charset=utf-8",
+    "v9/v9_charts.js": b"application/javascript; charset=utf-8",
+    "v9/v9_heatmap.js": b"application/javascript; charset=utf-8",
+    "v9/v9_analytics.js": b"application/javascript; charset=utf-8",
+    "v9/v9_project_view.js": b"application/javascript; charset=utf-8",
+    "v9/v9_hierarchy.js": b"application/javascript; charset=utf-8",
+    "v9/v9_markdown.js": b"application/javascript; charset=utf-8",
+    "v9/v9_workspace.js": b"application/javascript; charset=utf-8",
+    "v9/v9_gallery.js": b"application/javascript; charset=utf-8",
+    "v9/v9_lightbox.js": b"application/javascript; charset=utf-8",
+    "v9/v9_app.js": b"application/javascript; charset=utf-8",
+    "v9/vendor/echarts.min.js": b"application/javascript; charset=utf-8",
+    "v9/vendor/THIRD_PARTY_LICENSES.txt": b"text/plain; charset=utf-8",
+    "v9/vendor/quiet-ui-tokens.css": b"text/css; charset=utf-8",
+    "v9/vendor/quiet-evidence-bundle.css": b"text/css; charset=utf-8",
+    "v9/vendor/quiet-evidence-bundle.js": b"application/javascript; charset=utf-8",
+    "v9/vendor/echarts-layout-defaults.js": b"application/javascript; charset=utf-8",
+    "v9/vendor/echarts-layers.js": b"application/javascript; charset=utf-8",
+    "v9/vendor/echarts-schedule-heatmap.js": b"application/javascript; charset=utf-8",
+    "v9/vendor/echarts-quiet-adapter.js": b"application/javascript; charset=utf-8",
 }
 
 
+async def _serve_static_or_media(web_dir: Path, req_path: str, method: str, send: Any) -> bool:
+    """Serve signed /web/media/ files, PWA static assets, or JSON 404 for unknown non-API paths."""
+    if "/web/media/" in req_path:
+        target_file, mime_bytes, status_code, msg_text = verify_and_resolve_media(req_path)
+        if status_code == 200 and target_file is not None:
+            if target_file.stat().st_size > 45 * 1024 * 1024:
+                status_code, msg_text = 413, "Media file exceeds 45 MB limit."
+            else:
+                media_bytes = await anyio.to_thread.run_sync(target_file.read_bytes)
+                await send({
+                    "type": "http.response.start", "status": 200,
+                    "headers": [
+                        (b"content-type", mime_bytes), (b"content-length", str(len(media_bytes)).encode("ascii")),
+                        (b"cache-control", b"private, max-age=604800"), (b"x-content-type-options", b"nosniff"),
+                        (b"content-security-policy", b"default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox"),
+                    ],
+                })
+                await send({"type": "http.response.body", "body": b"" if method == "HEAD" else media_bytes})
+                return True
+        err_b = json.dumps({"ok": False, "error": msg_text}).encode("utf-8")
+        await send({
+            "type": "http.response.start", "status": status_code,
+            "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(err_b)).encode("ascii"))],
+        })
+        await send({"type": "http.response.body", "body": b"" if method == "HEAD" else err_b})
+        return True
+
+    asset_name = req_path.rsplit("/web/", 1)[-1]
+    if asset_name in PWA_ASSETS:
+        asset_path = web_dir / asset_name
+        if asset_path.is_file():
+            asset_bytes = asset_path.read_bytes()
+            cc_val = b"no-store, no-cache, must-revalidate" if asset_name == "sw.js" else b"no-cache"
+            resp_hdrs = [
+                (b"content-type", PWA_ASSETS[asset_name]),
+                (b"content-length", str(len(asset_bytes)).encode("ascii")),
+                (b"cache-control", cc_val),
+                (b"x-content-type-options", b"nosniff"),
+            ]
+            if asset_name == "sw.js":
+                resp_hdrs.append((b"service-worker-allowed", b"/"))
+            await send({"type": "http.response.start", "status": 200, "headers": resp_hdrs})
+            await send({"type": "http.response.body", "body": b"" if method == "HEAD" else asset_bytes})
+            return True
+
+    if "/api/" not in req_path:
+        nf_b = b'{"ok":false,"error":"Asset not found"}'
+        await send({
+            "type": "http.response.start", "status": 404,
+            "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(nf_b)).encode("ascii")), (b"x-content-type-options", b"nosniff")],
+        })
+        await send({"type": "http.response.body", "body": b"" if method == "HEAD" else nf_b})
+        return True
+    return False
+
+
+async def _handle_web_stats(headers: list[tuple[bytes, bytes]], raw_qs: str, t0: float, send: Any) -> bool:
+    """Authenticate and return /web/api/stats JSON bundle."""
+    supplied_pass = ""
+    for hk, hv in headers:
+        if hk.lower() == b"x-nexus-passphrase":
+            supplied_pass = hv.decode("utf-8", errors="ignore").strip()
+            break
+
+    qs_map = urllib.parse.parse_qs(raw_qs, keep_blank_values=True) if raw_qs else {}
+    period_val = (qs_map.get("period", ["current_month"])[0] or "current_month").strip()
+    timeframe_val = (qs_map.get("timeframe", [""])[0] or "").strip()
+    horizon_val = (qs_map.get("horizon_mode", [""])[0] or "").strip()
+    try:
+        offset_val = int((qs_map.get("offset", ["0"])[0] or "0").strip())
+    except ValueError:
+        offset_val = 0
+    anchor_val = (qs_map.get("anchor_date", [""])[0] or "").strip()
+    project_id_val = (qs_map.get("project_id", [""])[0] or "").strip()
+    include_ascii_val = (qs_map.get("include_ascii", ["1"])[0] or "1").strip().lower() not in ("0", "false", "no")
+    compact_sessions_val = (qs_map.get("compact_sessions", ["0"])[0] or "0").strip().lower() in ("1", "true", "yes")
+
+    if not verify_passphrase(supplied_pass):
+        err_b = json.dumps({"ok": False, "error": "Invalid spoken deadbolt passphrase."}).encode("utf-8")
+        await send({
+            "type": "http.response.start", "status": 401,
+            "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(err_b)).encode("ascii")), (b"cache-control", b"no-store")],
+        })
+        await send({"type": "http.response.body", "body": err_b})
+        print("[agy-nexus] http=GET rpc=web_stats_unauthorized tool=- status=401 bytes=0 ms=1", flush=True)
+        return True
+
+    bundle = await anyio.to_thread.run_sync(
+        functools.partial(
+            build_nexus_stats_bundle,
+            data_dir=AGY_DATA_DIR, brain_dir=AGY_BRAIN_DIR, db_file=AGY_DB_FILE,
+            config_dir=AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR, period=period_val,
+            timeframe=timeframe_val, horizon_mode=horizon_val, offset=offset_val,
+            anchor_date=anchor_val, project_id=project_id_val,
+            include_ascii=include_ascii_val, compact_sessions=compact_sessions_val,
+        )
+    )
+    ok_b = json.dumps({"ok": True, **bundle}).encode("utf-8")
+    await send({
+        "type": "http.response.start", "status": 200,
+        "headers": [
+            (b"content-type", b"application/json"), (b"content-length", str(len(ok_b)).encode("ascii")),
+            (b"cache-control", b"no-store, no-cache, private"), (b"x-content-type-options", b"nosniff"),
+        ],
+    })
+    await send({"type": "http.response.body", "body": ok_b})
+    elapsed_ms = int((time.time() - t0) * 1000)
+    safe_period = re.sub(r"[^a-z0-9_-]", "", (timeframe_val or period_val).lower())[:24] or "current_month"
+    print(f"[agy-nexus] http=GET rpc=web_stats tool={safe_period} status=200 bytes={len(ok_b)} ms={elapsed_ms}", flush=True)
+    return True
+
+
 async def handle_web_request(
-    scope: dict[str, Any],
-    receive: Any,
-    send: Any,
-    web_dir: Path,
-    req_path: str,
-    method: str,
-    headers: list[tuple[bytes, bytes]],
-    raw_qs: str = "",
+    scope: dict[str, Any], receive: Any, send: Any, web_dir: Path,
+    req_path: str, method: str, headers: list[tuple[bytes, bytes]], raw_qs: str = "",
 ) -> bool:
-    """Handle /web static assets, media endpoints, and Overwatch JSON APIs.
-
-    Returns True if the request was handled, False if it should pass to MCP.
-    """
+    """Handle /web static assets, media endpoints, and Overwatch JSON APIs."""
     t0 = time.time()
-
-    # 1. Root redirect GET / -> /web
     if method in ("GET", "HEAD") and req_path == "":
         await send({"type": "http.response.start", "status": 302, "headers": [(b"location", b"/web"), (b"content-length", b"0")]})
         await send({"type": "http.response.body", "body": b""})
         return True
 
-    # 2. Serve /web dashboard HTML
-    if method in ("GET", "HEAD") and (req_path.endswith("/web") or req_path.endswith("/web/index.html")):
-        html_file = web_dir / "index.html"
-        html_bytes = html_file.read_bytes() if html_file.is_file() else b"<h1>Dashboard not found</h1>"
-        await send({
-            "type": "http.response.start",
-            "status": 200,
-            "headers": [
-                (b"content-type", b"text/html; charset=utf-8"),
-                (b"content-length", str(len(html_bytes)).encode("ascii")),
-                (b"cache-control", b"no-store, no-cache, must-revalidate"),
-            ],
-        })
-        await send({"type": "http.response.body", "body": b"" if method == "HEAD" else html_bytes})
-        print(f"[agy-nexus] http={method} rpc=web_ui tool=- status=200 bytes={len(html_bytes)} ms=1", flush=True)
-        return True
+    if method in ("GET", "HEAD"):
+        target_html: Path | None = None
+        if req_path.endswith("/web/v9") or req_path.endswith("/web/v9/index.html"):
+            target_html = web_dir / "v9" / "index.html"
+        elif req_path.endswith("/web") or req_path.endswith("/web/index.html"):
+            target_html = web_dir / "index.html"
+        if target_html is not None:
+            html_bytes = target_html.read_bytes() if target_html.is_file() else b"<h1>Dashboard not found</h1>"
+            await send({
+                "type": "http.response.start", "status": 200,
+                "headers": [
+                    (b"content-type", b"text/html; charset=utf-8"),
+                    (b"content-length", str(len(html_bytes)).encode("ascii")),
+                    (b"cache-control", b"no-store, no-cache, must-revalidate"),
+                ],
+            })
+            await send({"type": "http.response.body", "body": b"" if method == "HEAD" else html_bytes})
+            print(f"[agy-nexus] http={method} rpc=web_ui tool=- status=200 bytes={len(html_bytes)} ms=1", flush=True)
+            return True
 
-    # 3. Serve PWA static assets & /web/media/
     if method in ("GET", "HEAD") and "/web/" in req_path and not req_path.endswith("/web/api/stats"):
-        # Ephemeral Media route
-        if "/web/media/" in req_path:
-            target_file, mime_bytes, status_code, msg_text = verify_and_resolve_media(req_path)
-            if status_code == 200 and target_file is not None:
-                if target_file.stat().st_size > 45 * 1024 * 1024:
-                    status_code, msg_text = 413, "Media file exceeds 45 MB limit."
-                else:
-                    media_bytes = await anyio.to_thread.run_sync(target_file.read_bytes)
-                    await send({
-                        "type": "http.response.start",
-                        "status": 200,
-                        "headers": [
-                            (b"content-type", mime_bytes),
-                            (b"content-length", str(len(media_bytes)).encode("ascii")),
-                            (b"cache-control", b"private, max-age=604800"),
-                            (b"x-content-type-options", b"nosniff"),
-                            (b"content-security-policy", b"default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox"),
-                        ],
-                    })
-                    await send({"type": "http.response.body", "body": b"" if method == "HEAD" else media_bytes})
-                    return True
-            err_b = json.dumps({"ok": False, "error": msg_text}).encode("utf-8")
-            await send({
-                "type": "http.response.start", "status": status_code,
-                "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(err_b)).encode("ascii"))],
-            })
-            await send({"type": "http.response.body", "body": b"" if method == "HEAD" else err_b})
+        if await _serve_static_or_media(web_dir, req_path, method, send):
             return True
 
-        asset_name = req_path.rsplit("/web/", 1)[-1]
-        if asset_name in PWA_ASSETS:
-            asset_path = web_dir / asset_name
-            if asset_path.is_file():
-                asset_bytes = asset_path.read_bytes()
-                cc_val = b"no-store, no-cache, must-revalidate" if asset_name == "sw.js" else b"no-cache"
-                resp_hdrs = [
-                    (b"content-type", PWA_ASSETS[asset_name]),
-                    (b"content-length", str(len(asset_bytes)).encode("ascii")),
-                    (b"cache-control", cc_val),
-                    (b"x-content-type-options", b"nosniff"),
-                ]
-                if asset_name == "sw.js":
-                    resp_hdrs.append((b"service-worker-allowed", b"/"))
-                await send({"type": "http.response.start", "status": 200, "headers": resp_hdrs})
-                await send({"type": "http.response.body", "body": b"" if method == "HEAD" else asset_bytes})
-                return True
-
-        # Check if asset request that is not an API
-        if not ("/api/" in req_path):
-            nf_b = b'{"ok":false,"error":"Asset not found"}'
-            await send({
-                "type": "http.response.start", "status": 404,
-                "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(nf_b)).encode("ascii")), (b"x-content-type-options", b"nosniff")],
-            })
-            await send({"type": "http.response.body", "body": b"" if method == "HEAD" else nf_b})
-            return True
-
-    # 4. Workspace Tree & Session Bucket APIs
     if ("/api/workspace/" in req_path or "/api/sessions/" in req_path) and not req_path.endswith("/upload"):
         await handle_bucket_api_request(scope, receive, send, req_path, method, headers, raw_qs=raw_qs)
         return True
 
-    # 5. Scratch Session Uploads
     if method == "POST" and ("/api/sessions/" in req_path and req_path.endswith("/upload")):
         m_conv = re.search(r"/api/sessions/([^/]+)/upload$", req_path)
         if m_conv:
@@ -169,74 +246,7 @@ async def handle_web_request(
             print(f"[agy-nexus] http=POST rpc=session_upload conv={safe_conv} ms={elapsed_ms}", flush=True)
             return True
 
-    # 6. /web/api/stats JSON
     if method in ("GET", "POST") and req_path.endswith("/web/api/stats"):
-        supplied_pass = ""
-        for hk, hv in headers:
-            if hk.lower() == b"x-nexus-passphrase":
-                supplied_pass = hv.decode("utf-8", errors="ignore").strip()
-                break
-
-        period_val = "current_month"
-        timeframe_val = ""
-        horizon_val = ""
-        offset_val = 0
-        anchor_val = ""
-
-        for kv in raw_qs.split("&"):
-            if kv.startswith("period="):
-                period_val = kv.split("=", 1)[1].strip() or "current_month"
-            elif kv.startswith("timeframe="):
-                timeframe_val = kv.split("=", 1)[1].strip()
-            elif kv.startswith("horizon_mode="):
-                horizon_val = kv.split("=", 1)[1].strip()
-            elif kv.startswith("offset="):
-                try:
-                    offset_val = int(kv.split("=", 1)[1].strip())
-                except ValueError:
-                    offset_val = 0
-            elif kv.startswith("anchor_date="):
-                anchor_val = kv.split("=", 1)[1].strip()
-
-        if not verify_passphrase(supplied_pass):
-            err_b = json.dumps({"ok": False, "error": "Invalid spoken deadbolt passphrase."}).encode("utf-8")
-            await send({
-                "type": "http.response.start", "status": 401,
-                "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(err_b)).encode("ascii")), (b"cache-control", b"no-store")],
-            })
-            await send({"type": "http.response.body", "body": err_b})
-            print("[agy-nexus] http=GET rpc=web_stats_unauthorized tool=- status=401 bytes=0 ms=1", flush=True)
-            return True
-
-        bundle = await anyio.to_thread.run_sync(
-            functools.partial(
-                build_nexus_stats_bundle,
-                data_dir=AGY_DATA_DIR,
-                brain_dir=AGY_BRAIN_DIR,
-                db_file=AGY_DB_FILE,
-                config_dir=AGY_CONFIG_DIR,
-                bg_dir=AGY_BG_DIR,
-                period=period_val,
-                timeframe=timeframe_val,
-                horizon_mode=horizon_val,
-                offset=offset_val,
-                anchor_date=anchor_val,
-            )
-        )
-        ok_b = json.dumps({"ok": True, **bundle}).encode("utf-8")
-        await send({
-            "type": "http.response.start", "status": 200,
-            "headers": [
-                (b"content-type", b"application/json"),
-                (b"content-length", str(len(ok_b)).encode("ascii")),
-                (b"cache-control", b"no-store, no-cache, private"),
-                (b"x-content-type-options", b"nosniff"),
-            ],
-        })
-        await send({"type": "http.response.body", "body": ok_b})
-        elapsed_ms = int((time.time() - t0) * 1000)
-        safe_period = re.sub(r"[^a-z0-9_-]", "", (timeframe_val or period_val).lower())[:24] or "current_month"
-        print(f"[agy-nexus] http=GET rpc=web_stats tool={safe_period} status=200 bytes={len(ok_b)} ms={elapsed_ms}", flush=True)
-        return True
+        return await _handle_web_stats(headers, raw_qs, t0, send)
 
     return False

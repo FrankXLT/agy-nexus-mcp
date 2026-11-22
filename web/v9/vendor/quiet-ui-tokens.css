@@ -1,0 +1,316 @@
+/* SPDX-License-Identifier: MIT */
+/* ==========================================================================
+   Quiet UI Skills — Canonical Design Tokens & Responsive Continuum Scale
+   Version: 9.0 (3-Pillar Continuum, 6 Domains x 18 Views, 21 Evidence Specimens,
+                 Fluid 4K Root, Concentric Radius Math, NASA & Smart-Glass Tokens)
+   License: MIT License
+   ========================================================================== */
+
+:root {
+  /* 0. Modern CSS Foundation & Fluid 4K Viewing-Distance Root Scale
+     16.0px <=1440px | 17.2px @ 1920px | 18.8px @ 2560px | 22.0px @ 3840px (1.375x <= 2.5x WCAG 1.4.4) */
+  font-size: clamp(16px, calc(12.4px + 0.25vw), 22px);
+  interpolate-size: allow-keywords;
+  text-wrap: pretty;
+  font-synthesis: none;
+  scrollbar-gutter: stable;
+  -webkit-font-smoothing: antialiased;
+
+  /* 1. Curated 3-Role Offline Font Stack & Tabular Numerals */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-serif: 'Newsreader', 'Charter', 'Source Serif 4', Georgia, serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  --font-nums: tabular-nums slashed-zero;
+
+  /* 1B. 7-Step Fluid rem Scale (--ts-*) with Hard >=11px Legibility Floor */
+  --ts-xs: max(11px, 0.6875rem);            /* 11px @ 16px -> 15.1px @ 4K */
+  --ts-sm: max(12px, 0.78125rem);           /* 12.5px @ 16px -> 17.2px @ 4K */
+  --ts-nav: max(12.5px, 0.8125rem);         /* 13px @ 16px -> 17.9px @ 4K */
+  --ts-base: max(13.5px, 0.875rem);         /* 14px @ 16px -> 19.25px @ 4K */
+  --ts-prose: max(15px, 0.96875rem);        /* 15.5px @ 16px -> 21.3px @ 4K */
+  --ts-md: max(15.5px, 1rem);               /* 16px @ 16px -> 22.0px @ 4K */
+  --ts-xl: clamp(1.25rem, 1.1rem + 0.45vw, 1.55rem);     /* Universal Page H1 & KPIs */
+  --ts-display: clamp(1.5rem, 1.3rem + 0.65vw, 1.9rem);  /* Doc-1 Monograph & Deck-1 Hero */
+
+  /* 2. Unified Orthogonal Density Dial (D2 Balanced Operational Default) */
+  --density-row-py: 0.4rem;
+  --density-row-px: 0.65rem;
+  --density-card-pad: 0.9rem;
+  --density-grid-gap: 0.75rem;
+  --density-font-scale: 0.875rem;
+  --density-meta-display: inline-flex;
+  /* Legacy alias parity */
+  --density-pad: var(--density-card-pad);
+  --density-gap: var(--density-grid-gap);
+
+  /* 3. Concentric 5-Stop Corner Radius Math: R_inner = max(0px, R_outer - Inset) */
+  --inset-pad: 4px;
+  --radius-card: 8px;
+  --radius-sm: 6px;
+  --radius-xs: 2px;
+  --radius-inner: max(0px, calc(var(--radius-card, 8px) - var(--inset-pad, 4px)));
+  --radius-trough-pill: max(0px, calc(var(--radius-sm, 6px) - 2px));
+  --radius-pill: 999px;
+
+  /* 4. Container Ceilings, Touch Ergonomics & Telemetry Fill Defaults */
+  --measure-prose: 72ch;
+  --stage-editorial-max: 116rem;
+  --stage-workspace-max: 96rem;
+  --res-touch-min: 32px;
+  --res-grid-cols: 3;
+  --pct: 75%;
+  --share-pct: 50%;
+  --expected-pct: 66%;
+
+  /* 5. Crew Circadian & Workload Pacing Tokens (Tier 13 App-5) */
+  --state-anchor: #475569;
+  --state-buffer: #4D7C0F;
+  --state-held: #B45309;
+  --state-breathing: rgba(148, 163, 184, 0.16);
+
+  /* 6. Optical Viewport HUD Smoked-Glass Tokens (Tier 15 HUD-1) */
+  --hud-pod-bg: rgba(9, 14, 24, 0.72);
+  --hud-pod-border: rgba(226, 232, 240, 0.26);
+  --hud-pod-text: #F8FAFC;
+  --hud-pod-muted: #CBD5E1;
+  --hud-pod-accent: #38BDF8;
+}
+
+/* 7. Cohesive Page-Wide Chart Palette (--chart-1..5) */
+:root, [data-theme] {
+  --chart-1: var(--accent-primary);
+  --chart-2: var(--tint-indigo-fg);
+  --chart-3: var(--tint-emerald-fg);
+  --chart-4: var(--tint-amber-fg);
+  --chart-5: var(--text-muted);
+}
+
+h1, h2, h3, h4, .wf-title { text-wrap: balance; }
+
+/* Concentric 5-Stop Corner Radius Dial (`data-corners="auto|sharp|subtle|rounded|soft"`) */
+:root[data-corners="auto"]    { --radius-card: 8px;  --radius-sm: 6px;  --radius-xs: 2px; --radius-inner: max(0px, calc(var(--radius-card) - var(--inset-pad))); --radius-trough-pill: max(0px, calc(var(--radius-sm) - 2px)); }
+:root[data-corners="sharp"]   { --radius-card: 0px;  --radius-sm: 0px;  --radius-xs: 0px; --radius-inner: 0px; --radius-trough-pill: 0px; }
+:root[data-corners="subtle"]  { --radius-card: 6px;  --radius-sm: 4px;  --radius-xs: 2px; --radius-inner: max(0px, calc(var(--radius-card) - var(--inset-pad))); --radius-trough-pill: max(0px, calc(var(--radius-sm) - 2px)); }
+:root[data-corners="rounded"] { --radius-card: 12px; --radius-sm: 8px;  --radius-xs: 2px; --radius-inner: max(0px, calc(var(--radius-card) - var(--inset-pad))); --radius-trough-pill: max(0px, calc(var(--radius-sm) - 2px)); }
+:root[data-corners="soft"]    { --radius-card: 18px; --radius-sm: 10px; --radius-xs: 2px; --radius-inner: max(0px, calc(var(--radius-card) - var(--inset-pad))); --radius-trough-pill: max(0px, calc(var(--radius-sm) - 2px)); }
+
+/* ==========================================================================
+   4 Surface Polarity Themes (white [Default], paper, dark-paper, dark)
+   ========================================================================== */
+
+:root,
+[data-theme="white"] {
+  --bg-shell: #EEF2F6;
+  --bg-canvas: #FFFFFF;
+  --bg-surface: #FFFFFF;
+  --bg-card: var(--bg-surface);
+  --bg-elevated: #F8FAFC;
+  --bg-subtle: #F1F5F9;
+  --bg-header: var(--bg-elevated);
+  --bg-glass: rgba(255, 255, 255, 0.88);
+  --text-primary: #0F172A;
+  --text-main: var(--text-primary);
+  --text-secondary: #334155;
+  --text-dim: var(--text-secondary);
+  --text-muted: #475569;
+  --border-hairline: #E2E8F0;
+  --border-grid: var(--border-hairline);
+  --border-subtle: var(--border-hairline);
+  --border-strong: #CBD5E1;
+  --accent-primary: #1D4ED8;
+  --accent-focal: var(--accent-primary);
+  --status-ok: #15803D;
+  --status-ok-bg: #ECFDF5;
+  --status-warn: #B45309;
+  --status-warn-bg: #FFFBEB;
+  --status-danger: #B91C1C;
+  --status-err: var(--status-danger);
+  --status-err-bg: #FFF1F2;
+  --tint-indigo-bg: #EEF2FF;  --tint-indigo-fg: #3730A3;
+  --tint-emerald-bg: #ECFDF5; --tint-emerald-fg: #065F46;
+  --tint-amber-bg: #FFFBEB;   --tint-amber-fg: #92400E;
+  --tint-rose-bg: #FFF1F2;    --tint-rose-fg: #9F1239;
+  --tint-violet-bg: #F5F3FF;  --tint-violet-fg: #5B21B6;
+}
+
+[data-theme="paper"] {
+  --bg-shell: #EAE5DC;
+  --bg-canvas: #F6F4EF;
+  --bg-surface: #FCFBF8;
+  --bg-card: var(--bg-surface);
+  --bg-elevated: #EFECE5;
+  --bg-subtle: #EAE5DC;
+  --bg-header: var(--bg-elevated);
+  --bg-glass: rgba(252, 251, 248, 0.90);
+  --text-primary: #1C1917;
+  --text-main: var(--text-primary);
+  --text-secondary: #44403C;
+  --text-dim: var(--text-secondary);
+  --text-muted: #57534E;
+  --border-hairline: #E5E0D6;
+  --border-grid: var(--border-hairline);
+  --border-subtle: var(--border-hairline);
+  --border-strong: #D6CFC5;
+  --accent-primary: #1E40AF;
+  --accent-focal: var(--accent-primary);
+  --status-ok: #15803D;
+  --status-ok-bg: #E8F5EE;
+  --status-warn: #92400E;
+  --status-warn-bg: #FDF5E6;
+  --status-danger: #9F1239;
+  --status-err: var(--status-danger);
+  --status-err-bg: #FCEEEF;
+  --tint-indigo-bg: #EBF0FA;  --tint-indigo-fg: #312E81;
+  --tint-emerald-bg: #E8F5EE; --tint-emerald-fg: #065F46;
+  --tint-amber-bg: #FDF5E6;   --tint-amber-fg: #92400E;
+  --tint-rose-bg: #FCEEEF;    --tint-rose-fg: #9F1239;
+  --tint-violet-bg: #F1EEFA;  --tint-violet-fg: #5B21B6;
+}
+
+[data-theme="dark-paper"] {
+  --bg-shell: #0D0C0B;
+  --bg-canvas: #141312;
+  --bg-surface: #1C1B19;
+  --bg-card: var(--bg-surface);
+  --bg-elevated: #252421;
+  --bg-subtle: #282623;
+  --bg-header: var(--bg-elevated);
+  --bg-glass: rgba(28, 27, 25, 0.88);
+  --text-primary: #F0EDE8;
+  --text-main: var(--text-primary);
+  --text-secondary: #C7C2BA;
+  --text-dim: var(--text-secondary);
+  --text-muted: #A19B93;
+  --border-hairline: #2E2C29;
+  --border-grid: var(--border-hairline);
+  --border-subtle: var(--border-hairline);
+  --border-strong: #46433E;
+  --accent-primary: #60A5FA;
+  --accent-focal: var(--accent-primary);
+  --status-ok: #4ADE80;
+  --status-ok-bg: rgba(34, 197, 94, 0.15);
+  --status-warn: #FBBF24;
+  --status-warn-bg: rgba(245, 158, 11, 0.15);
+  --status-danger: #F87171;
+  --status-err: var(--status-danger);
+  --status-err-bg: rgba(239, 68, 68, 0.15);
+  --tint-indigo-bg: rgba(99, 102, 241, 0.16); --tint-indigo-fg: #C7D2FE;
+  --tint-emerald-bg: rgba(16, 185, 129, 0.16); --tint-emerald-fg: #A7F3D0;
+  --tint-amber-bg: rgba(245, 158, 11, 0.16);   --tint-amber-fg: #FDE68A;
+  --tint-rose-bg: rgba(244, 63, 94, 0.16);     --tint-rose-fg: #FECDD3;
+  --tint-violet-bg: rgba(139, 92, 246, 0.16);  --tint-violet-fg: #DDD6FE;
+}
+
+[data-theme="dark"] {
+  --bg-shell: #05070B;
+  --bg-canvas: #090D16;
+  --bg-surface: #0F1624;
+  --bg-card: var(--bg-surface);
+  --bg-elevated: #172135;
+  --bg-subtle: #162033;
+  --bg-header: var(--bg-elevated);
+  --bg-glass: rgba(15, 22, 36, 0.88);
+  --text-primary: #F1F5F9;
+  --text-main: var(--text-primary);
+  --text-secondary: #CBD5E1;
+  --text-dim: var(--text-secondary);
+  --text-muted: #94A3B8;
+  --border-hairline: #1E293B;
+  --border-grid: var(--border-hairline);
+  --border-subtle: var(--border-hairline);
+  --border-strong: #334155;
+  --accent-primary: #38BDF8;
+  --accent-focal: var(--accent-primary);
+  --status-ok: #4ADE80;
+  --status-ok-bg: rgba(34, 197, 94, 0.16);
+  --status-warn: #FBBF24;
+  --status-warn-bg: rgba(245, 158, 11, 0.16);
+  --status-danger: #F87171;
+  --status-err: var(--status-danger);
+  --status-err-bg: rgba(239, 68, 68, 0.16);
+  --tint-indigo-bg: rgba(99, 102, 241, 0.18); --tint-indigo-fg: #C7D2FE;
+  --tint-emerald-bg: rgba(16, 185, 129, 0.18); --tint-emerald-fg: #A7F3D0;
+  --tint-amber-bg: rgba(245, 158, 11, 0.18);   --tint-amber-fg: #FDE68A;
+  --tint-rose-bg: rgba(244, 63, 94, 0.18);     --tint-rose-fg: #FECDD3;
+  --tint-violet-bg: rgba(139, 92, 246, 0.18);  --tint-violet-fg: #DDD6FE;
+}
+
+/* C1 Quiet Monochrome Override */
+[data-chromatic="c1"],
+[data-color-policy="c1"] {
+  --status-ok: var(--text-secondary);
+  --status-warn: var(--text-primary);
+  --status-danger: var(--text-primary);
+  --tint-indigo-bg: var(--bg-elevated);  --tint-indigo-fg: var(--text-primary);
+  --tint-emerald-bg: var(--bg-elevated); --tint-emerald-fg: var(--text-primary);
+  --tint-amber-bg: var(--bg-elevated);   --tint-amber-fg: var(--text-primary);
+  --tint-rose-bg: var(--bg-elevated);    --tint-rose-fg: var(--text-primary);
+  --tint-violet-bg: var(--bg-elevated);  --tint-violet-fg: var(--text-primary);
+}
+
+/* Orthogonal Density Stops (D1 Spacious | D2 Default | D3 Compact | D4 Hairline) */
+[data-density="d1"] {
+  --density-row-py: 0.65rem;
+  --density-row-px: 0.9rem;
+  --density-card-pad: 1.35rem;
+  --density-grid-gap: 1.15rem;
+}
+[data-density="d3"] {
+  --density-row-py: 0.25rem;
+  --density-row-px: 0.5rem;
+  --density-card-pad: 0.65rem;
+  --density-grid-gap: 0.5rem;
+}
+[data-density="d4"] {
+  --density-row-py: 0.125rem;
+  --density-row-px: 0.4rem;
+  --density-card-pad: 0.45rem;
+  --density-grid-gap: 0.3rem;
+  --density-meta-display: none;
+}
+
+/* Coarse Pointer & Stage-Portal Touch Parity (44px handsets; 34px >=768px foldables) */
+@media (max-width: 1099px) { :root { --res-grid-cols: 2; } }
+@media (pointer: coarse) and (min-width: 768px) { :root { --res-touch-min: 34px; } }
+@media (max-width: 699px), (pointer: coarse) and (max-width: 767px) { :root { --res-touch-min: 44px; } }
+@media (max-width: 640px) { :root { --res-touch-min: 44px; --res-grid-cols: 1; } }
+:root[data-form-factor="touch"] { --res-touch-min: 44px; }
+
+/* Zero-Override Core Token Utilities (@layer tokens sits below @layer utilities .hidden) */
+@layer tokens {
+  .va-nums { font-variant-numeric: var(--font-nums); }
+  .va-kicker {
+    font-family: var(--font-sans);
+    font-size: var(--ts-xs);
+    font-weight: 600;
+    letter-spacing: 0.055em;
+    text-transform: uppercase;
+    line-height: 1.35;
+    color: var(--text-muted);
+  }
+  .va-pill-btn {
+    border-radius: var(--radius-sm);
+    min-block-size: var(--res-touch-min, 32px);
+    padding: 0.25rem 0.75rem;
+    font-family: var(--font-sans);
+    font-size: var(--ts-sm);
+    font-weight: 600;
+    border: 1px solid var(--border-strong);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    cursor: pointer;
+  }
+  .va-hud-pod,
+  .va-glass-panel {
+    background: var(--hud-pod-bg);
+    backdrop-filter: blur(18px) saturate(150%);
+    -webkit-backdrop-filter: blur(18px) saturate(150%);
+    border: 1px solid var(--hud-pod-border);
+    border-radius: var(--radius-card);
+    color: var(--hud-pod-text);
+    padding: var(--density-card-pad);
+  }
+}

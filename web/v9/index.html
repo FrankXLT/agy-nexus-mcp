@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en" data-theme="white" data-density="d2" data-medium="m3">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#FFFFFF" />
+  <title>AGY-NEXUS — Telemetry Overwatch &amp; Session Workspace</title>
+  <link rel="icon" type="image/svg+xml" href="/web/icon.svg" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/web/icon-192.png" />
+  <link rel="apple-touch-icon" href="/web/icon-192.png" />
+  <link rel="manifest" id="v9ManifestLink" href="/web/manifest.webmanifest" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <link rel="stylesheet" href="/web/v9/v9_layers.css?v=4.0.0" />
+  <link rel="stylesheet" href="/web/v9/vendor/quiet-ui-tokens.css?v=4.0.0" />
+  <link rel="stylesheet" href="/web/v9/vendor/quiet-evidence-bundle.css?v=4.0.0" />
+  <link rel="stylesheet" href="/web/v9/v9_shell.css?v=4.0.0" />
+  <link rel="stylesheet" href="/web/v9/v9_rail.css?v=4.0.0" />
+  <link rel="stylesheet" href="/web/v9/v9_analytics.css?v=4.0.0" />
+  <link rel="stylesheet" href="/web/v9/v9_workspace.css?v=4.0.0" />
+</head>
+<body>
+  <header class="v9-topbar">
+    <div class="v9-topbar-left">
+      <button type="button" id="v9MenuBtn" class="v9-ghost-btn v9-menu-btn hidden" aria-label="Open Projects and Sessions menu" aria-expanded="false" aria-controls="v9NavRail" title="Projects &amp; Sessions menu (Ctrl+B)">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" stroke-width="1.5"/><line x1="6" y1="2.5" x2="6" y2="13.5" stroke="currentColor" stroke-width="1.5"/></svg>
+        <span id="v9RailBtnBadge" class="v9-rail-btn-badge hidden"></span>
+      </button>
+      <a href="#analytics" class="v9-brand-link" id="v9BrandLink">
+        <svg class="v9-brand-mark" viewBox="0 0 20 20" aria-hidden="true" fill="none">
+          <rect x="2.5" y="2.5" width="15" height="15" rx="3" stroke="currentColor" stroke-width="1.8" />
+          <rect x="6.5" y="6.5" width="7" height="7" rx="1.2" fill="currentColor" />
+        </svg>
+        <span class="v9-brand-text">AGY-NEXUS</span>
+      </a>
+      <div class="va-tab-strip v9-tab-strip" role="tablist" aria-label="Dashboard surfaces">
+        <button type="button" role="tab" id="v9TabAnalytics" class="va-tab v9-tab-btn" aria-selected="true" tabindex="0">Analytics</button>
+        <button type="button" role="tab" id="v9TabWorkspace" class="va-tab v9-tab-btn" aria-selected="false" tabindex="-1">Workspace <span class="v9-tab-count" id="v9WsCount">0</span></button>
+      </div>
+    </div>
+
+    <div class="v9-topbar-right hidden" id="v9TopbarRight">
+      <div id="v9TopbarAnalyticsCtrl" class="v9-topbar-mode-grp">
+        <span id="v9ActiveProjWrap" class="v9-active-filter hidden">
+          <span id="v9ActiveProjDot" class="v9-swatch-dot"></span>
+          <span id="v9ActiveProjName" class="v9-active-filter-name"></span>
+          <button type="button" id="v9ResetProjBtn" class="v9-chip-clear" aria-label="Clear project scope" title="Back to All Projects">
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+        </span>
+        <div class="v9-topbar-right-tools">
+          <div class="v9-period-wrap" id="v9PeriodWrap">
+            <div class="va-tb-group v9-period-stepper" role="group" aria-label="Time window">
+              <button type="button" id="v9PrevPeriodBtn" class="va-tb-btn v9-step-btn" aria-label="Previous period">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5L5.5 8L10 12.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <button type="button" id="v9PeriodPickerBtn" class="va-tb-btn v9-period-trigger" aria-haspopup="menu" aria-expanded="false" aria-controls="v9PeriodPopover">
+                <span id="v9PeriodTriggerLabel" class="v9-period-trigger-txt">—</span>
+                <svg class="v9-caret-down" width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <button type="button" id="v9NextPeriodBtn" class="va-tb-btn v9-step-btn" aria-label="Next period">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5L10.5 8L6 12.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
+            <div id="v9PeriodPopover" class="v9-popover v9-period-popover hidden" role="menu" aria-labelledby="v9PeriodPickerBtn">
+              <div class="v9-period-group" role="group" aria-label="Calendar (Current)">
+                <div class="v9-pop-label" aria-hidden="true">Calendar (Current)</div>
+                <button type="button" class="v9-period-opt" role="menuitemradio" aria-checked="true" data-v9-tf="month" data-v9-mode="to_date">
+                  <svg class="v9-period-check" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <span class="v9-period-opt-title">This Month (MTD)</span>
+                  <span class="v9-period-opt-hint">MTD</span>
+                </button>
+                <button type="button" class="v9-period-opt" role="menuitemradio" aria-checked="false" data-v9-tf="quarter" data-v9-mode="to_date">
+                  <svg class="v9-period-check" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <span class="v9-period-opt-title">This Quarter (QTD)</span>
+                  <span class="v9-period-opt-hint">QTD</span>
+                </button>
+                <button type="button" class="v9-period-opt" role="menuitemradio" aria-checked="false" data-v9-tf="year" data-v9-mode="to_date">
+                  <svg class="v9-period-check" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <span class="v9-period-opt-title">This Year (YTD)</span>
+                  <span class="v9-period-opt-hint">YTD</span>
+                </button>
+              </div>
+              <hr class="v9-menu-sep" />
+              <div class="v9-period-group" role="group" aria-label="Rolling Window">
+                <div class="v9-pop-label" aria-hidden="true">Rolling Window</div>
+                <button type="button" class="v9-period-opt" role="menuitemradio" aria-checked="false" data-v9-tf="month" data-v9-mode="rolling">
+                  <svg class="v9-period-check" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <span class="v9-period-opt-title">Last 30 Days</span>
+                  <span class="v9-period-opt-hint">30d</span>
+                </button>
+                <button type="button" class="v9-period-opt" role="menuitemradio" aria-checked="false" data-v9-tf="quarter" data-v9-mode="rolling">
+                  <svg class="v9-period-check" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <span class="v9-period-opt-title">Last 90 Days</span>
+                  <span class="v9-period-opt-hint">90d</span>
+                </button>
+                <button type="button" class="v9-period-opt" role="menuitemradio" aria-checked="false" data-v9-tf="year" data-v9-mode="rolling">
+                  <svg class="v9-period-check" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <span class="v9-period-opt-title">Last 52 Weeks</span>
+                  <span class="v9-period-opt-hint">52w</span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <button type="button" id="v9PeriodTodayBtn" class="v9-ghost-btn v9-period-today hidden" title="Return to current window">Today</button>
+          <div class="va-tb-group" role="group" aria-label="Primary metric unit">
+            <button type="button" class="va-tb-btn" data-v9-metric="steps" aria-pressed="true" aria-label="Steps"><span class="v9-metric-full">Steps</span><span class="v9-metric-short" aria-hidden="true">Step</span></button>
+            <button type="button" class="va-tb-btn" data-v9-metric="tokens" aria-pressed="false" aria-label="Tokens"><span class="v9-metric-full">Tokens</span><span class="v9-metric-short" aria-hidden="true">Tok</span></button>
+            <button type="button" class="va-tb-btn" data-v9-metric="cost" aria-pressed="false" aria-label="Estimated Cost"><span class="v9-metric-full">$ Cost</span><span class="v9-metric-short" aria-hidden="true">$</span></button>
+          </div>
+        </div>
+      </div>
+
+      <div id="v9TopbarWorkspaceCtrl" class="v9-topbar-mode-grp hidden">
+        <div class="va-tb-group" role="group" aria-label="Workspace layout">
+          <button type="button" class="va-tb-btn" data-v9-wsmode="split" aria-pressed="true">Split</button>
+          <button type="button" class="va-tb-btn" data-v9-wsmode="docs" aria-pressed="false">Docs</button>
+          <button type="button" class="va-tb-btn" data-v9-wsmode="captures" aria-pressed="false">Captures</button>
+        </div>
+        <button type="button" id="v9OpenUploadBtn" class="v9-nav-btn">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 10V2.5M5 5.5L8 2.5L11 5.5M2.5 11.5V13.5H13.5V11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Upload</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section id="v9AuthOverlay" class="v9-auth-wrap" aria-label="Deadbolt authentication">
+      <div class="va-kicker">Deadbolt Access Gate</div>
+      <h1 class="v9-auth-title">Unlock Session Telemetry</h1>
+      <p class="v9-auth-desc">Enter your workstation passphrase to query live token metering, quotas, and workspace artifacts, or open offline demo preview.</p>
+      <form id="v9UnlockForm" class="v9-input-row">
+        <input id="v9UserInput" name="username" type="text" autocomplete="username" value="nexus-operator" readonly class="hidden" aria-hidden="true" tabindex="-1" />
+        <input id="v9PassInput" class="v9-input" type="password" placeholder="Passphrase..." autocomplete="current-password" />
+        <button type="submit" class="v9-nav-btn v9-btn-primary">Unlock</button>
+      </form>
+      <div class="v9-input-row">
+        <button type="button" id="v9PreviewDemoBtn" class="v9-nav-btn">Preview Demo Snapshot</button>
+      </div>
+      <div id="v9AuthStatus" class="v9-auth-status" role="status" aria-live="polite"></div>
+    </section>
+
+    <div id="v9AppShell" class="v9-app-shell hidden">
+      <aside id="v9NavRail" class="v9-nav-rail" aria-label="Projects and sessions menu"></aside>
+
+      <div class="v9-main-stage" id="v9MainStage">
+        <section id="v9AnalyticsView" class="v9-stage hidden" role="tabpanel" aria-labelledby="v9TabAnalytics">
+          <div id="v9KpiGrid" class="va-kpi-gauge-grid" aria-label="Operational key metrics"></div>
+
+          <section class="v9-card" aria-labelledby="v9HeatHeading">
+            <div class="v9-card-head">
+              <h2 id="v9HeatHeading" class="v9-card-title">Activity Heatmap</h2>
+              <div class="v9-analytics-bar-grp">
+                <span id="v9HeatSummary" class="v9-card-sub"></span>
+                <button type="button" id="v9HeatWeeksBtn" class="v9-ghost-btn v9-ghost-btn-sm hidden">26w / 53w</button>
+              </div>
+            </div>
+            <div id="v9HeatHost" class="v9-heat-outer"></div>
+          </section>
+
+          <div class="v9-daily-stack" id="v9DailyStack" data-plot-align="daily-column" aria-label="Daily workload timelines">
+            <article class="va-card v9-card" aria-labelledby="v9ModelPlotTitle">
+              <div class="v9-card-head">
+                <h2 id="v9ModelPlotTitle" class="v9-card-title">Model Workload (Daily)</h2>
+                <span id="v9ModelPlotSub" class="v9-card-sub"></span>
+              </div>
+              <div id="v9ModelChart" class="v9-echarts-host v9-echarts-host-daily"></div>
+              <div class="va-table-wrap v9-table-scroll" tabindex="0" role="region" aria-label="Model workload summary">
+                <table class="v9-table booktabs">
+                  <thead><tr><th>Model</th><th class="v9-col-secondary">Pool · Calls · Rate</th><th>Share</th><th class="num">Guide<span class="v9-col-secondary"> / Delta</span></th><th class="num">Tokens</th><th class="num">Est. $</th></tr></thead>
+                  <tbody id="v9ModelTableBody"></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="va-card v9-card" aria-labelledby="v9SubPlotTitle">
+              <div class="v9-card-head">
+                <h2 id="v9SubPlotTitle" class="v9-card-title">Subagent Workload (Daily)</h2>
+                <span id="v9SubPlotSub" class="v9-card-sub"></span>
+              </div>
+              <div id="v9SubagentChart" class="v9-echarts-host v9-echarts-host-daily"></div>
+              <div class="va-table-wrap v9-table-scroll" tabindex="0" role="region" aria-label="Subagent role summary">
+                <table class="v9-table booktabs">
+                  <thead><tr><th>Role</th><th class="v9-col-secondary">Model</th><th>Share</th><th class="num">Runs</th><th class="num">Tokens</th><th class="num v9-col-secondary">Avg Tok/Run</th><th class="num">Est. $</th></tr></thead>
+                  <tbody id="v9SubagentTableBody"></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="va-card v9-card" aria-labelledby="v9ProjPlotTitle">
+              <div class="v9-card-head">
+                <h2 id="v9ProjPlotTitle" class="v9-card-title">Top Projects (Daily)</h2>
+                <span id="v9ProjPlotSub" class="v9-card-sub"></span>
+              </div>
+              <div id="v9ProjectChart" class="v9-echarts-host v9-echarts-host-daily"></div>
+              <div id="v9ProjTableWrap" class="va-table-wrap v9-table-scroll" tabindex="0" role="region" aria-label="Projects and sessions breakdown"></div>
+              <div id="v9ProjFoot" class="v9-card-sub"></div>
+            </article>
+          </div>
+
+          <div class="v9-secondary-pair" id="v9SecondaryPair" aria-label="Activity by hour of day and subscription billing comparison">
+            <article id="v9CadenceCard" class="va-card v9-card" aria-labelledby="v9CadenceTitle">
+              <div class="v9-card-head">
+                <h2 id="v9CadenceTitle" class="v9-card-title">Activity by Hour of Day</h2>
+                <span id="v9CadenceSub" class="v9-card-sub"></span>
+              </div>
+              <div id="v9CadenceChart" class="v9-echarts-host v9-echarts-host-compact"></div>
+              <div id="v9CadenceFoot" class="v9-card-sub">Local workstation clock (00h–23h)</div>
+            </article>
+
+            <article id="v9BillingCard" class="va-card v9-card" aria-labelledby="v9BillingTitle">
+              <div class="v9-card-head">
+                <h2 id="v9BillingTitle" class="v9-card-title">Subscription Break-Even &amp; Client Billing</h2>
+                <span id="v9BillingSub" class="v9-card-sub"></span>
+              </div>
+              <div id="v9BillingBody"></div>
+              <div id="v9BillingFoot" class="v9-card-sub"></div>
+            </article>
+          </div>
+
+          <article id="v9WireCard" class="va-card v9-card" data-plot-align="wire-solo" aria-labelledby="v9WireTitle">
+            <div class="v9-card-head">
+              <h2 id="v9WireTitle" class="v9-card-title">MCP Wire Footprint vs. 20 KB Ceiling</h2>
+              <span id="v9WireSub" class="v9-card-sub"></span>
+            </div>
+            <div id="v9WireScatterWrap" class="v9-echarts-host v9-echarts-host-compact"></div>
+            <div id="v9WireFoot" class="v9-wire-foot">
+              <div id="v9WireClientHost" class="v9-wire-summary"></div>
+              <details id="v9WireCallsDrawer">
+                <summary class="v9-meta-inline">Recent MCP Wire Calls</summary>
+                <div id="v9WireCallsHost" class="va-table-wrap v9-table-scroll" tabindex="0" role="region" aria-label="Recent wire calls"></div>
+              </details>
+            </div>
+          </article>
+
+          <details class="v9-card v9-audit-drawer" id="v9HealthDrawer">
+            <summary>
+              <span id="v9HealthDrawerTitle">Workstation Code Health, Routing &amp; 3-2-1 Backup</span>
+              <span id="v9HealthSummary" class="v9-card-sub"></span>
+            </summary>
+            <div id="v9HealthBody"></div>
+          </details>
+        </section>
+
+        <section id="v9WorkspaceView" class="v9-ws-wrap hidden" role="tabpanel" aria-labelledby="v9TabWorkspace">
+          <div class="v9-ws-context" id="v9WsContextBar">
+            <button type="button" id="v9WsProjBtn" class="v9-ws-proj-btn hidden" title="Open Project Analytics">
+              <span id="v9WsProjDot" class="v9-swatch-dot"></span>
+              <span id="v9WsProjName" class="v9-ws-proj-name"></span>
+            </button>
+            <span id="v9WsSep" class="v9-ws-sep hidden" aria-hidden="true">/</span>
+            <h1 id="v9WsTitle" class="v9-ws-title">Loading latest session...</h1>
+            <span id="v9WsShortId" class="v9-ws-sid"></span>
+            <button type="button" id="v9CopySessBtn" class="v9-ghost-btn v9-ghost-btn-sm" title="Copy full session ID">Copy ID</button>
+          </div>
+
+          <div class="v9-workbench-shell" id="v9WsWorkbench">
+            <div id="v9WsSplit" class="v9-ws-split" data-ws-mode="split">
+              <article id="v9DocPane" class="va-pane v9-doc-pane" aria-label="Markdown document reader">
+                <div class="va-pane-hdr v9-doc-hdr">
+                  <div id="v9DocTabs" class="va-tab-strip v9-doc-tabs" role="tablist" aria-label="Session markdown files"></div>
+                  <div id="v9DocModeActions" class="v9-doc-actions">
+                    <button type="button" id="v9OpenCapturesBtn" class="v9-ghost-btn v9-ghost-btn-sm hidden" title="Open session captures">Captures (<span id="v9CapturesBtnCount">0</span>)</button>
+                    <button type="button" id="v9DocRawBtn" class="v9-ghost-btn v9-ghost-btn-sm" aria-pressed="false" title="Toggle raw markdown">Raw</button>
+                    <button type="button" id="v9DocPrintBtn" class="v9-ghost-btn v9-ghost-btn-sm" aria-label="Print document" title="Print">
+                      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 6V2.5H11.5V6M4.5 11.5H2.5V7.5C2.5 6.67 3.17 6 4 6H12C12.83 6 13.5 6.67 13.5 7.5V11.5H11.5M4.5 9.5H11.5V13.5H4.5V9.5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="va-pane-body v9-doc-body">
+                  <div id="v9DocContent" class="v9-md-prose"></div>
+                  <div id="v9DocMeta" class="va-meta-inline v9-doc-foot"></div>
+                </div>
+              </article>
+
+              <article id="v9GalPane" class="va-pane v9-gal-pane" aria-label="Screenshot gallery">
+                <div class="va-pane-hdr v9-gal-hdr">
+                  <div id="v9GalToolbar" class="v9-gal-toolbar" role="toolbar" aria-label="Gallery controls"></div>
+                </div>
+                <div class="va-pane-body v9-gal-body">
+                  <div id="v9GalStatus" class="va-meta-inline" role="status" aria-live="polite"></div>
+                  <div id="v9GalGrid" class="v9-gal-grid"></div>
+                  <details id="v9RepoAssetsDrawer">
+                    <summary class="va-meta-inline">Shared Repo Assets (<span id="v9RepoAssetsCount">0</span>)</summary>
+                    <div id="v9RepoAssetsGrid" class="v9-gal-grid"></div>
+                  </details>
+                </div>
+              </article>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+    <div id="v9WsBackdrop" class="v9-ws-backdrop hidden"></div>
+  </main>
+
+  <dialog id="v9CapturesDialog" class="v9-dialog v9-dialog-wide" closedby="any" aria-labelledby="v9CapturesTitle">
+    <div class="v9-dialog-hdr">
+      <h2 id="v9CapturesTitle" class="v9-dialog-title">Session Captures</h2>
+      <button type="button" id="v9CapturesCloseBtn" class="v9-nav-btn" aria-label="Close captures">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <span>Close</span>
+      </button>
+    </div>
+    <div id="v9CapturesDialogBody" class="v9-dialog-body v9-cap-dialog-body"></div>
+  </dialog>
+
+  <dialog id="v9LightboxDialog" class="v9-dialog v9-dialog-wide" closedby="any" aria-labelledby="v9LbTitle">
+    <div class="v9-dialog-hdr">
+      <h2 id="v9LbTitle" class="v9-dialog-title">Image Preview</h2>
+      <div class="v9-analytics-bar-grp">
+        <div class="va-tb-group" role="group" aria-label="Zoom mode">
+          <button type="button" id="v9LbFitBtn" class="va-tb-btn" aria-pressed="true">Fit</button>
+          <button type="button" id="v9LbNativeBtn" class="va-tb-btn" aria-pressed="false">1:1</button>
+          <button type="button" id="v9LbCompareBtn" class="va-tb-btn" aria-pressed="false">Compare</button>
+        </div>
+        <button type="button" id="v9LbPrevBtn" class="v9-nav-btn">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5L5.5 8L10 12.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Prev</span>
+        </button>
+        <button type="button" id="v9LbNextBtn" class="v9-nav-btn">
+          <span>Next</span>
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5L10.5 8L6 12.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button type="button" id="v9LbSelBtn" class="v9-nav-btn">Select</button>
+        <button type="button" id="v9LbCopyLinkBtn" class="v9-nav-btn">Copy 7d Link</button>
+        <button type="button" id="v9LbCloseBtn" class="v9-nav-btn" aria-label="Close preview">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          <span>Close</span>
+        </button>
+      </div>
+    </div>
+    <div id="v9LbBody" class="v9-dialog-body">
+      <div id="v9LbMeta" class="va-meta-inline"></div>
+      <div id="v9LbStage" class="v9-lb-stage"></div>
+    </div>
+  </dialog>
+
+  <dialog id="sheetExportDialog" class="v9-dialog v9-dialog-wide" closedby="any" aria-labelledby="sheetExportTitle">
+    <div class="v9-dialog-hdr">
+      <h2 id="sheetExportTitle" class="v9-dialog-title">Contact Sheet Export</h2>
+      <button type="button" id="sheetExportCloseBtn" class="v9-nav-btn" aria-label="Close sheet export">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <span>Close</span>
+      </button>
+    </div>
+    <div class="v9-dialog-body">
+      <div id="sheetExportBatchBar" class="v9-analytics-bar-grp v9-sheet-batch"></div>
+      <div id="sheetPreviewGrid" class="v9-sheet-grid"></div>
+    </div>
+  </dialog>
+
+  <dialog id="v9UploadDialog" class="v9-dialog" closedby="any" aria-labelledby="v9UploadTitle">
+    <div class="v9-dialog-hdr">
+      <h2 id="v9UploadTitle" class="v9-dialog-title">Stage Session Captures</h2>
+      <button type="button" id="v9UploadCloseBtn" class="v9-nav-btn" aria-label="Close upload">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <span>Close</span>
+      </button>
+    </div>
+    <div class="v9-dialog-body">
+      <div id="v9UploadDrop" class="v9-upload-drop" tabindex="0" role="button">Drop PNG/WebP/MD files here or click to choose</div>
+      <input type="file" id="v9UploadInput" class="hidden" multiple accept="image/*,.md,.txt,.json,.log,.csv" />
+      <label class="va-meta-inline">Batch Label (optional)
+        <input type="text" id="v9UploadLabelInput" class="v9-input" placeholder="e.g. mobile_audit_r2" />
+      </label>
+      <div id="v9UploadList" class="va-meta-inline">No files queued.</div>
+      <div id="v9UploadResult" class="va-meta-inline"></div>
+    </div>
+    <div class="v9-dialog-ftr">
+      <button type="button" id="v9UploadCancelBtn" class="v9-nav-btn">Cancel</button>
+      <button type="button" id="v9UploadSubmitBtn" class="v9-nav-btn v9-btn-primary" disabled>Upload Batch</button>
+    </div>
+  </dialog>
+
+  <div id="v9Toast" class="v9-toast hidden" role="status" aria-live="polite"></div>
+
+  <script src="/web/v9/vendor/echarts.min.js?v=4.0.0"></script>
+  <script src="/web/v9/vendor/quiet-evidence-bundle.js?v=4.0.0"></script>
+  <script src="/web/v9/vendor/echarts-layout-defaults.js?v=4.0.0"></script>
+  <script src="/web/v9/vendor/echarts-quiet-adapter.js?v=4.0.0"></script>
+  <script src="/web/demo_snapshot.js?v=4.0.0"></script>
+  <script src="/web/gallery_select.js?v=4.0.0"></script>
+  <script src="/web/sheet_builder.js?v=4.0.0"></script>
+  <script src="/web/v9/v9_state.js?v=4.0.0"></script>
+  <script src="/web/v9/v9_demo_docs.js?v=4.0.0"></script>
+  <script src="/web/v9/v9_demo_adapter.js?v=4.0.0"></script>
+  <script src="/web/v9/v9_billing.js?v=4.0.0"></script>
+  <script src="/web/v9/v9_charts.js?v=4.0.0"></script>
+  <script src="/web/v9/v9_heatmap.js?v=4.0.0"></script>
+  <script src="/web/v9/v9_project_view.js?v=4.0.0"></script>
+  <script src="/web/v9/v9_analytics.js?v=4.0.0"></script>
+  <script src="/web/v9/v9_hierarchy.js?v=4.0.0"></script>
+  <script src="/web/v9/v9_markdown.js?v=4.0.0"></script>
+  <script src="/web/v9/v9_workspace.js?v=4.0.0"></script>
+  <script src="/web/v9/v9_gallery.js?v=4.0.0"></script>
+  <script src="/web/v9/v9_lightbox.js?v=4.0.0"></script>
+  <script src="/web/v9/v9_app.js?v=4.0.0"></script>
+</body>
+</html>

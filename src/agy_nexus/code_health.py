@@ -183,6 +183,7 @@ def get_modular_hygiene_summary(pkg_dir: Path | None = None) -> dict[str, Any]:
         (pkg_dir, "*.py", "src/agy_nexus/"),
         (repo_root / "host_bridge", "*.py", "host_bridge/"),
         (repo_root / "web", "*.js", "web/"),
+        (repo_root / "web" / "v9", "*.js", "web/v9/"),
     ]
 
     for dir_path, glob_pat, prefix in scan_targets:

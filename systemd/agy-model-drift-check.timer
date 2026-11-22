@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AGY-Nexus Model Drift Check Daily at 01:45 AM Local Time
+
+[Timer]
+OnCalendar=*-*-* 01:45:00
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

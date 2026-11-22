@@ -1,29 +1,23 @@
 #!/usr/bin/env python3
 """
-scripts/export_depersonalized_showcase.py — Export Live Telemetry to Public v3.2.5 Showcases.
+scripts/export_depersonalized_showcase.py — Export Live Telemetry to Public v4.0.0 Showcases.
 
-Reads live workstation bundles (current_month, last_month, last_90d, ytd, last_year), the live
-Workspace Explorer tree, and Code Health, applies deterministic 1-to-1 SHA-256-keyed aliasing
-(zero cleartext private identifiers in source control), writes `web/demo_snapshot.js`, and
-regenerates all four `README.md` ASCII showcase blocks via `session_tree`, `ascii_default`,
-and `ascii_rich`.
+Reads live workstation bundles (current_month, last_month, qtd, ytd, last_30d, last_90d, last_year),
+Workspace Explorer tree, bundled demo docs, and Code Health, applies deterministic 1-to-1 SHA-256-keyed
+aliasing, writes `web/demo_snapshot.js`, and regenerates the four `README.md` ASCII showcase blocks.
 """
 from __future__ import annotations
 
-import copy
-import hashlib
-import hmac
-import json
-import os
+import copy, hashlib, hmac, json, os, re, sys
 from pathlib import Path
-import re
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC_DIR = REPO_ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+SCRIPTS_DIR = REPO_ROOT / "scripts"
+for _p in (str(SRC_DIR), str(SCRIPTS_DIR)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from agy_nexus import __version__
 from agy_nexus.ascii_default import render_ascii_default, render_ascii_quick
@@ -48,17 +42,18 @@ _WS_HASH_ALIASES: dict[str, tuple[str, str]] = {
     "2f23e841e448": ("scratch-prototypes", "Scratch Prototypes"), "81df0b8858d1": ("scratch-prototypes", "General Prototypes"),
     "d6ae5d4f33c5": ("container-gitops", "Container GitOps"), "e25f1cb29a5e": ("rf-dsp-modem", "RF DSP Modem"),
     "a6e9ab25d0a2": ("audio-synth-studio", "Audio Synth Studio"), "5639308b1ddd": ("astro-sky-mapper", "Astro Sky Mapper"),
-    "5c61d4f74fd5": ("civic-map-engine", "Civic Map Engine"), "251615180347": ("civic-map-engine", "Civic Map Engine"),
+    "5c61d4f74fd5": ("civic-map-engine", "Civic Map Engine"), "251615180347": ("civic-map-engine", "Civic Map Engine"), "51f3746109d1": ("civic-map-engine", "Civic Map Engine"),
 }
 
 _SCRUB_TOKEN_REPLACEMENTS: dict[str, str] = {
-    "d14f94143998": "example.invalid", "8a802bc9956a": "edge-node", "43a90bfe213e": "nas-01", "13398c7a9455": "nas-01",
+    "d14f94143998": "example.invalid", "d7b198e6b435": "example.invalid", "8a802bc9956a": "edge-node", "43a90bfe213e": "nas-01", "13398c7a9455": "nas-01",
     "8c214ac536b7": "nas-02", "2a6574634363": "nas-02", "b1426473816d": "ip-cam", "8ba6d143eee8": "relay-hub",
     "07a07ff2a800": "oidc-sso", "d98970309b28": "doc-archive", "ce29c26322ab": "container-host",
     "422068e530b9": "SCL", "306f3216ffb6": "SCL-Core", "1d19d799bfb7": "SCL-Arch", "8d66bc0b2ba7": "SCL-Portal",
-    "b4da5cf46e4c": "SCL-Chem", "aa50c46bd048": "SCL-RF", "706b7e095944": "task-queue-engine",
-    "6f85b417c3da": "edge-iot", "0bcd728f4324": "home-telemetry", "1cca6683e2c3": "mail-triage",
-    "68ed130a8c40": "net-topology", "5639308b1ddd": "astro-mapper", "d6ae5d4f33c5": "container-gitops",
+    "b4da5cf46e4c": "SCL-Chem", "aa50c46bd048": "SCL-RF", "706b7e095944": "task-queue-engine", "51f3746109d1": "civic-map",
+    "6f85b417c3da": "edge-iot", "0bcd728f4324": "home-telemetry", "03aac20b09f0": "home-telemetry", "fa232a37422c": "home-telemetry",
+    "1cca6683e2c3": "mail-triage", "68ed130a8c40": "net-topology", "ace3ceff4857": "net-topology", "5639308b1ddd": "astro-mapper",
+    "d6ae5d4f33c5": "container-gitops", "c96d8cec0414": "scl-lab", "29478196cd2c": "scl-lab", "ac56ac1145af": "scl-lab",
 }
 
 _DOMAIN_TITLES: dict[str, list[str]] = {
@@ -178,12 +173,12 @@ class ShowcaseDepersonalizer:
                 out = out.replace(sec, "showcase_token")
         out = re.sub(r"\b[a-z0-9-]+\.lan\b", "app-node.local", out, flags=re.I)
         out = re.sub(r"\b(?:192\.168|10\.\d+|172\.(?:1[6-9]|2\d|3[01]))\.\d+\.\d+\b", "10.0.0.10", out)
-        for tok in set(re.findall(r"[A-Za-z0-9][A-Za-z0-9&._-]{2,}", out)):
-            hx = _h12(tok)
-            if hx in _WS_HASH_ALIASES:
-                out = re.sub(rf"\b{re.escape(tok)}\b", _WS_HASH_ALIASES[hx][0], out)
-            elif hx in _SCRUB_TOKEN_REPLACEMENTS:
-                out = re.sub(rf"\b{re.escape(tok)}\b", _SCRUB_TOKEN_REPLACEMENTS[hx], out)
+        for tok in set(re.findall(r"[A-Za-z0-9][A-Za-z0-9&._:/-]{2,}", out)):
+            for part in [tok] + [p for p in re.split(r"[-_./:]", tok) if len(p) >= 3]:
+                hx = _h12(part)
+                rep = _WS_HASH_ALIASES[hx][0] if hx in _WS_HASH_ALIASES else _SCRUB_TOKEN_REPLACEMENTS.get(hx)
+                if rep:
+                    out = re.sub(rf"(?<![A-Za-z0-9]){re.escape(part)}(?![A-Za-z0-9])", rep, out)
         out = re.sub(r"\[([A-Za-z0-9]{2,5})-", lambda m: f"[{_SCRUB_TOKEN_REPLACEMENTS.get(_h12(m.group(1)), m.group(1))}-", out)
         return out
 
@@ -195,8 +190,7 @@ class ShowcaseDepersonalizer:
         aliased_repo = self.alias_repo(repo_slug_hint or (parts[-2] if "worktrees" in parts and len(parts) >= 2 else parts[-1]))
         if "worktrees" in parts:
             idx_w = parts.index("worktrees")
-            repo_part = parts[idx_w + 1] if idx_w + 1 < len(parts) else aliased_repo
-            aliased_repo = self.alias_repo(repo_part)
+            aliased_repo = self.alias_repo(parts[idx_w + 1] if idx_w + 1 < len(parts) else aliased_repo)
             leaf = parts[idx_w + 2] if idx_w + 2 < len(parts) else "feat"
             clean_leaf = leaf if aliased_repo in PUBLIC_REPOS else _CLEAN_WORKTREE_LEAVES[int(_h12(leaf), 16) % len(_CLEAN_WORKTREE_LEAVES)]
             return f"/home/dev/.gemini/antigravity/worktrees/{aliased_repo}/{clean_leaf}"
@@ -210,12 +204,10 @@ class ShowcaseDepersonalizer:
         if repo_slug in PUBLIC_REPOS and "Home" not in raw_title and ".lan" not in raw_title:
             return self.scrub_text(raw_title)
         if repo_slug == "quiet-ui-skills":
-            cleaned = re.sub(r"\bHome\s+[A-Za-z]+\b", "Smart Telemetry", raw_title)
-            return self.scrub_text(cleaned)
+            return self.scrub_text(re.sub(r"\bHome\s+[A-Za-z]+\b", "Smart Telemetry", raw_title))
         pool = _DOMAIN_TITLES.get(repo_slug)
         if pool:
-            pick = int(_h12(key_hint or raw_title or str(idx_fallback)), 16) % len(pool)
-            return pool[pick]
+            return pool[int(_h12(key_hint or raw_title or str(idx_fallback)), 16) % len(pool)]
         return self.scrub_text(raw_title)
 
     def alias_handoff_id(self, raw_hid: str) -> str:
@@ -226,12 +218,8 @@ class ShowcaseDepersonalizer:
 
 
 def _scrub_handoff_record(
-    rec: dict[str, Any],
-    dp: ShowcaseDepersonalizer,
-    fallback_slug: str,
-    idx_rec: int,
-    pid_override: str = "",
-    pname_override: str = "",
+    rec: dict[str, Any], dp: ShowcaseDepersonalizer, fallback_slug: str, idx_rec: int,
+    pid_override: str = "", pname_override: str = "",
 ) -> dict[str, Any]:
     new_repo = dp.alias_repo(str(rec.get("repo_slug") or fallback_slug))
     hid = dp.alias_handoff_id(str(rec.get("handoff_id") or rec.get("ticket_id") or ""))
@@ -243,6 +231,9 @@ def _scrub_handoff_record(
     for k_id in ("ticket_id", "topic_slug"):
         if k_id in rec:
             rec[k_id] = hid
+    for bk in ("default_branch", "branch"):
+        if rec.get(bk):
+            rec[bk] = dp.scrub_text(str(rec[bk]))
     for k_uuid in ("claimed_by_conversation_id", "target_conversation_id", "rollover_from"):
         if rec.get(k_uuid):
             rec[k_uuid] = dp.uuid_alias(str(rec[k_uuid]))
@@ -302,6 +293,8 @@ def depersonalize_stats_bundle(raw_bundle: dict[str, Any], dp: ShowcaseDepersona
             old_m = ws_ser.get(map_k) or {}
             ws_ser[map_k] = {dp.alias_repo(k): v for k, v in old_m.items()}
     ph = b.get("project_hierarchy") or {}
+    if ph.get("latest_session_id"):
+        ph["latest_session_id"] = dp.uuid_alias(str(ph["latest_session_id"]))
     for pk in ("top_projects", "idle_projects"):
         ph[pk] = [_depersonalize_project_group(pg, dp) for pg in (ph.get(pk) or [])]
     if isinstance(ph.get("other_projects"), dict):
@@ -325,8 +318,9 @@ def depersonalize_stats_bundle(raw_bundle: dict[str, Any], dp: ShowcaseDepersona
     for sub_k in ("polyglot_health", "local_lsp", "ast_integrity"):
         if sub_k in ch:
             ch[sub_k] = scrub_obj(ch[sub_k])
-    if "wire_telemetry" in b:
-        b["wire_telemetry"] = scrub_obj(b["wire_telemetry"])
+    for sk in ("wire_telemetry", "model_drift_status"):
+        if sk in b:
+            b[sk] = scrub_obj(b[sk])
     bk = b.get("backup_321") or {}
     if bk.get("head_sha"):
         bk["head_sha"] = dp.sha_alias(str(bk["head_sha"]))
@@ -410,7 +404,7 @@ def _build_showcase_session_tree_ascii(dp: ShowcaseDepersonalizer) -> str:
 
 
 def _trim_bundle_for_snapshot(b: dict[str, Any], ascii_tree_str: str) -> dict[str, Any]:
-    out = {k: b.get(k) for k in ("period", "kpis", "quota_and_pools", "model_usage_vs_target", "subagent_role_breakdown", "subagent_list", "all_workspaces", "top_workspaces", "velocity_series", "model_series", "subagent_series", "project_hierarchy", "heatmap_series", "wire_telemetry")}
+    out = {k: b.get(k) for k in ("period", "kpis", "quota_and_pools", "model_usage_vs_target", "subagent_role_breakdown", "subagent_list", "all_workspaces", "top_workspaces", "velocity_series", "model_series", "subagent_series", "project_hierarchy", "heatmap_series", "wire_telemetry", "hourly_whiskers", "billing_comparison", "model_drift_status")}
     out.update({"server": b.get("server", "agy-nexus-mcp"), "version": __version__, "routing_telemetry": {"active_slots": 3, "pinned_calls": 24, "auto_resolved_calls": 11}, "project_session_tree": {"ascii_tree": ascii_tree_str}})
     out["backup_321"] = {k: v for k, v in (b.get("backup_321") or {}).items() if k in ("ok", "short_sha", "shas_match", "age", "bundle_size_kb", "status_label")}
     return out
@@ -468,25 +462,30 @@ def main() -> None:
     def_ascii, qck_ascii, rich_ascii = render_ascii_default(dep_90), render_ascii_quick(dep_90), render_ascii_rich(dep_90)
     for ln in qck_ascii.splitlines():
         assert len(ln) <= 40, f"quick line >40 chars ({len(ln)}): {ln}"
-    export_periods = ("current_month", "last_month", "last_90d", "ytd", "last_year")
+    export_specs = (
+        ("current_month", "month", "to_date", 0), ("last_month", "month", "to_date", -1),
+        ("qtd", "quarter", "to_date", 0), ("ytd", "year", "to_date", 0),
+        ("last_30d", "month", "rolling", 0), ("last_90d", "quarter", "rolling", 0), ("last_year", "year", "rolling", 0),
+    )
     bundles: dict[str, Any] = {}
-    for pk in export_periods:
-        rb = raw_90 if pk == "last_90d" else build_nexus_stats_bundle(data_dir=AGY_DATA_DIR, brain_dir=AGY_BRAIN_DIR, db_file=AGY_DB_FILE, config_dir=AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR, period=pk, style="default")
+    for pk, tf, hm, off in export_specs:
+        rb = raw_90 if pk == "last_90d" else build_nexus_stats_bundle(data_dir=AGY_DATA_DIR, brain_dir=AGY_BRAIN_DIR, db_file=AGY_DB_FILE, config_dir=AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR, timeframe=tf, horizon_mode=hm, offset=off, style="default")
         bundles[pk] = _trim_bundle_for_snapshot(depersonalize_stats_bundle(rb, dp), tree_ascii)
     date_vars = _collect_shared_dates(bundles)
     ws_tree = build_depersonalized_workspace_tree(dp, dep_90)
+    from build_github_showcase import build_demo_sessions
+    demo_sessions = build_demo_sessions(dp, ws_tree, bundles)
     snap_lines = [
         f"// Auto-generated depersonalized live showcase snapshot (v{__version__})",
         "(() => {",
         "  const _z = (n, p) => { const a = new Array(n).fill(0); for (let i = 0; i < p.length; i += 2) a[p[i]] = p[i + 1]; return a; };",
         *[f"  const {var_n} = {json.dumps(list(dt_tup), separators=(',', ':'))};" for dt_tup, var_n in date_vars.items()],
-        "  window.DEMO_SNAPSHOT = {",
-        f'    version: "{__version__}",',
+        "  window.DEMO_SNAPSHOT = {", f'    version: "{__version__}",',
         f"    code_health: {json.dumps(dep_90['code_health'], separators=(',', ':'), ensure_ascii=False)},",
         f"    workspace_tree: {json.dumps(ws_tree, separators=(',', ':'), ensure_ascii=False)},",
-        "    bundles: {",
-        *[f'      "{pk}": {_to_compact_js(bundles[pk], date_vars)},' for pk in export_periods],
-        "    },", "  };", "})();", "",
+        f"    demo_sessions: {json.dumps(demo_sessions, separators=(',', ':'), ensure_ascii=False)},",
+        "    bundles: {", *[f'      "{pk}": {_to_compact_js(bundles[pk], date_vars)},' for pk, _, _, _ in export_specs], "    },",
+        "  };", "})();", "",
     ]
     snap_path = REPO_ROOT / "web" / "demo_snapshot.js"
     snap_path.write_text("\n".join(snap_lines), encoding="utf-8")

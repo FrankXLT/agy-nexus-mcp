@@ -347,7 +347,10 @@ document.querySelectorAll("#heatWeeksToggle button").forEach((btn) => {
   });
 });
 
-// Primary Surface Switcher
+function syncV9CrossLink() {
+  const link = document.getElementById("navV9Link");
+  if (link) link.href = `${window.location.pathname.replace(/\/web(?:\/index\.html)?\/?$/, "")}/web/v9${state.demoMode ? "?demo=1" : ""}#${state.surfaceView === "workspace" ? "workspace" : "analytics"}`;
+}
 function switchSurface(view) {
   state.surfaceView = view;
   const navAn = document.getElementById("navAnalyticsBtn"), navWs = document.getElementById("navWorkspaceBtn");
@@ -369,11 +372,12 @@ function switchSurface(view) {
     wsMain?.classList.add("hidden");
     anCtrl?.classList.remove("hidden"); ctrCenter?.classList.remove("hidden"); sideBtn?.classList.add("hidden");
   }
+  syncV9CrossLink();
 }
-
 document.getElementById("navAnalyticsBtn")?.addEventListener("click", () => switchSurface("analytics"));
 document.getElementById("navWorkspaceBtn")?.addEventListener("click", () => switchSurface("workspace"));
 window.addEventListener("hashchange", () => switchSurface(window.location.hash === "#workspace" ? "workspace" : "analytics"));
+syncV9CrossLink();
 
 const settingsMenuWrap = document.getElementById("settingsMenuWrap") || document.getElementById("styleMenuWrap");
 const settingsMenuBtn = document.getElementById("settingsMenuBtn") || document.getElementById("styleMenuBtn");
@@ -437,18 +441,18 @@ function clearSensitiveView() {
 }
 
 document.getElementById("unlockForm").addEventListener("submit", (e) => {
-  e.preventDefault(); state.demoMode = false; localStorage.removeItem("nexus_demo_mode");
+  e.preventDefault(); state.demoMode = false; localStorage.removeItem("nexus_demo_mode"); syncV9CrossLink();
   state.passphrase = document.getElementById("passInput").value.trim(); fetchStats(state.period);
 });
 document.getElementById("previewDemoBtn").addEventListener("click", () => {
-  state.demoMode = true; localStorage.setItem("nexus_demo_mode", "1");
+  state.demoMode = true; localStorage.setItem("nexus_demo_mode", "1"); syncV9CrossLink();
   document.getElementById("authOverlay").classList.add("hidden");
   document.getElementById(state.surfaceView === "workspace" ? "workspaceMain" : "dashboardMain")?.classList.remove("hidden");
   fetchStats(urlPeriod ? state.period : undefined);
 });
 document.getElementById("lockBtn").addEventListener("click", () => {
   localStorage.removeItem("nexus_passphrase"); sessionStorage.removeItem("nexus_passphrase"); localStorage.removeItem("nexus_demo_mode");
-  state.passphrase = ""; state.demoMode = false; clearSensitiveView();
+  state.passphrase = ""; state.demoMode = false; clearSensitiveView(); syncV9CrossLink();
   document.getElementById("passInput").value = "";
   document.getElementById("authOverlay").classList.remove("hidden");
   document.getElementById("dashboardMain").classList.add("hidden");

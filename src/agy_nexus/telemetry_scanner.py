@@ -5,9 +5,11 @@ agy-nexus-mcp — Wire Telemetry Ledger, Quota Pool Pacing & Transcript Mtime Sc
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
+import tempfile
 import threading
 import time
 from datetime import datetime, timezone
@@ -15,8 +17,14 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-CACHE_VERSION = 6
+from agy_nexus.model_pricing import (
+    classify_model_key, compute_step_cost_micros, get_canonical_model_keys,
+    get_placeholder_map, get_target_allocation_map, split_estimated_tokens,
+)
+
+CACHE_VERSION = 8
 _WIRE_RING_LOCK = threading.Lock()
+_CACHE_LOCK = threading.Lock()
 WIRE_TELEMETRY_RING: list[dict[str, Any]] = []
 MAX_WIRE_RING = 200
 MODEL_CHANGE_RE = re.compile(
@@ -24,29 +32,33 @@ MODEL_CHANGE_RE = re.compile(
     re.MULTILINE,
 )
 
-ANTIGRAVITY_MODEL_PLACEHOLDERS: dict[str, dict[str, str]] = {
-    "MODEL_PLACEHOLDER_M417": {"id": "MODEL_PLACEHOLDER_M417", "model_key": "carbon", "label": "Gemini 4 Carbon", "pool": "20x Google Ultra", "subagent_inherit": "Gemini 4 Carbon"},
-    "MODEL_PLACEHOLDER_M427": {"id": "MODEL_PLACEHOLDER_M427", "model_key": "carbon", "label": "Gemini 4 Carbon", "pool": "20x Google Ultra", "subagent_inherit": "Gemini 4 Carbon"},
-    "MODEL_PLACEHOLDER_M322": {"id": "MODEL_PLACEHOLDER_M322", "model_key": "flash", "label": "Gemini 3.8 Flash", "pool": "20x Google Ultra", "subagent_inherit": "Gemini 3.8 Flash"},
-}
+ANTIGRAVITY_MODEL_PLACEHOLDERS: dict[str, dict[str, str]] = get_placeholder_map()
+
 
 def get_active_mainchat_model(data_dir: Path | None = None) -> dict[str, Any]:
     """Read last_selected_agent_model from antigravity_state.pbtxt and resolve physical model metadata."""
     base = data_dir or Path(os.getenv("AGY_DATA_DIR", str(Path.home() / ".gemini/antigravity"))).expanduser()
     pb_file = base / "antigravity_state.pbtxt"
-    raw_ph, switched_iso = "MODEL_PLACEHOLDER_M417", ""
+    raw_ph, switched_iso = "MODEL_PLACEHOLDER_M427", ""
     if pb_file.is_file():
         try:
             txt = pb_file.read_text(encoding="utf-8", errors="replace")
             m = re.search(r"last_selected_agent_model:\s*([A-Za-z0-9_.-]+)", txt)
-            if m: raw_ph = m.group(1).strip()
+            if m:
+                raw_ph = m.group(1).strip()
             switched_iso = datetime.fromtimestamp(pb_file.stat().st_mtime, tz=timezone.utc).strftime("%Y-%m-%d")
         except Exception:
             pass
-    is_carb = any(k in raw_ph.lower() for k in ("417", "427", "carbon"))
-    info = dict(ANTIGRAVITY_MODEL_PLACEHOLDERS.get(raw_ph, {"id": raw_ph, "model_key": classify_model_key(raw_ph, ""), "label": "Gemini 4 Carbon" if is_carb else "Gemini 4 Argon (Pro)", "pool": "20x Google Ultra", "subagent_inherit": "Gemini 4 Carbon" if is_carb else "Gemini 4 Argon"}))
+    ph_map = get_placeholder_map()
+    if raw_ph in ph_map:
+        info = dict(ph_map[raw_ph])
+    else:
+        mk = classify_model_key(raw_ph, "")
+        tmap = get_target_allocation_map("ultra-20x").get(mk) or {"label": "Gemini 4 Argon", "pool": "Google 20x"}
+        info = {"id": raw_ph, "model_key": mk, "label": str(tmap["label"]), "pool": str(tmap["pool"]), "subagent_inherit": str(tmap["label"])}
     info["state_updated_date"] = switched_iso
     return info
+
 
 def get_display_tz() -> Any:
     tz_env = (os.getenv("AGY_TIMEZONE") or os.getenv("TZ") or "").strip()
@@ -62,27 +74,17 @@ def get_display_tz() -> Any:
         return ZoneInfo("America/New_York")
     except Exception:
         return timezone.utc
+
+
 DISPLAY_TZ = get_display_tz()
 MODEL_TARGET_ALLOCATION = {
-    "ultra-20x": {
-        "carbon": {"label": "Gemini 4 Carbon", "pool": "20x Google Ultra", "target_pct": 25.0},
-        "argon_pro": {"label": "Gemini 4 Argon (Pro)", "pool": "20x Google Ultra", "target_pct": 40.0},
-        "flash": {"label": "Gemini 3.8 Flash", "pool": "20x Google Ultra", "target_pct": 25.0},
-        "claude_partner": {"label": "Claude Sonnet/Opus 5.5", "pool": "Partner Pool (Weekly)", "target_pct": 8.0},
-        "gpt_oss": {"label": "GPT-OSS 120B", "pool": "Partner Pool (Failover)", "target_pct": 2.0},
-    },
-    "ultra-5x": {
-        "carbon": {"label": "Gemini 4 Carbon", "pool": "5x Google Pool", "target_pct": 15.0},
-        "argon_pro": {"label": "Gemini 4 Argon (Pro)", "pool": "5x Google Pool", "target_pct": 25.0},
-        "flash": {"label": "Gemini 3.8 Flash", "pool": "5x Google Pool", "target_pct": 35.0},
-        "claude_partner": {"label": "Claude Sonnet/Opus 5.5", "pool": "Partner Pool (Weekly)", "target_pct": 20.0},
-        "gpt_oss": {"label": "GPT-OSS 120B", "pool": "Partner Pool (Failover)", "target_pct": 5.0},
-    },
+    "ultra-20x": get_target_allocation_map("ultra-20x"),
+    "ultra-5x": get_target_allocation_map("ultra-5x"),
 }
+
+
 def detect_product_name(raw_product: str = "", user_agent: str = "", tool_name: str = "", doorway: str = "") -> str:
-    raw_low = (raw_product or "").lower()
-    tool_low = (tool_name or "").lower()
-    door_low = (doorway or "").lower()
+    raw_low, tool_low, door_low = (raw_product or "").lower(), (tool_name or "").lower(), (doorway or "").lower()
     if door_low == "praxis" or "praxis" in raw_low or "polyglot" in raw_low or tool_low.startswith(("polyglot_", "praxis_")):
         return "Antigravity IDE (Praxis MCP)"
     if "antigravity" in raw_low:
@@ -98,6 +100,7 @@ def detect_product_name(raw_product: str = "", user_agent: str = "", tool_name: 
         return "Gemini Web / Cloud MCP"
     return raw_product.strip() or "Gemini MCP Client"
 
+
 def _is_handshake_record(rec: dict[str, Any]) -> bool:
     rpc_val = str(rec.get("rpc") or "").strip().lower()
     tool_val = str(rec.get("tool") or "").strip()
@@ -105,13 +108,23 @@ def _is_handshake_record(rec: dict[str, Any]) -> bool:
         return True
     return tool_val == "-" or tool_val.startswith("[rpc:")
 
+
 def _effective_record_product(rec: dict[str, Any]) -> str:
     tool_val = str(rec.get("tool") or "").strip().lower()
     if tool_val.startswith(("polyglot_", "praxis_")) or str(rec.get("doorway") or "").lower() == "praxis":
         return "Antigravity IDE (Praxis MCP)"
     return str(rec.get("product") or "Gemini MCP Client")
 
-def record_wire_telemetry(tool_or_event: str | dict[str, Any], payload_or_bg_dir: Any = "", duration_ms: float = 0.0, *, bg_dir: Path | None = None, product: str = "", reported_tokens: int = 0) -> dict[str, Any]:
+
+def record_wire_telemetry(
+    tool_or_event: str | dict[str, Any],
+    payload_or_bg_dir: Any = "",
+    duration_ms: float = 0.0,
+    *,
+    bg_dir: Path | None = None,
+    product: str = "",
+    reported_tokens: int = 0,
+) -> dict[str, Any]:
     """Record wire payload size, estimated context tokens, product source, and latency for MCP calls."""
     req_bytes, user_agent, rpc_kind, doorway = 0, "", "", ""
     if isinstance(tool_or_event, dict):
@@ -128,7 +141,12 @@ def record_wire_telemetry(tool_or_event: str | dict[str, Any], payload_or_bg_dir
         rpc_kind = "tools/call" if tool_name not in ("-", "") and not tool_name.startswith("[rpc:") else ""
     est_tokens = reported_tokens if reported_tokens > 0 else max(1, round((byte_len + req_bytes) / 4.0))
     eff_rpc = rpc_kind or ("tools/call" if tool_name != "-" and not tool_name.startswith("[rpc:") else "")
-    entry = {"ts": datetime.now(timezone.utc).isoformat(), "rpc": eff_rpc, "tool": tool_name, "product": detect_product_name(product, user_agent, tool_name, doorway=doorway), "bytes": byte_len, "kb": round(byte_len / 1024.0, 2), "est_tokens": est_tokens, "under_20kb_budget": byte_len <= 20480, "duration_ms": round(dur, 1)}
+    entry = {
+        "ts": datetime.now(timezone.utc).isoformat(), "rpc": eff_rpc, "tool": tool_name,
+        "product": detect_product_name(product, user_agent, tool_name, doorway=doorway),
+        "bytes": byte_len, "kb": round(byte_len / 1024.0, 2), "est_tokens": est_tokens,
+        "under_20kb_budget": byte_len <= 20480, "duration_ms": round(dur, 1),
+    }
     with _WIRE_RING_LOCK:
         WIRE_TELEMETRY_RING.append(entry)
         if len(WIRE_TELEMETRY_RING) > MAX_WIRE_RING:
@@ -141,6 +159,7 @@ def record_wire_telemetry(tool_or_event: str | dict[str, Any], payload_or_bg_dir
     except Exception:
         pass
     return entry
+
 
 def get_wire_telemetry_summary(bg_dir_or_limit: Any = None, limit: int = 25) -> dict[str, Any]:
     """Return summary metrics, product breakdown, handshake totals, and recent entries from wire telemetry."""
@@ -160,21 +179,23 @@ def get_wire_telemetry_summary(bg_dir_or_limit: Any = None, limit: int = 25) -> 
         return {"total_recorded_calls": 0, "avg_kb": 0.0, "max_kb": 0.0, "total_mcp_tokens": 0, "budget_compliance_pct": 100.0, "by_product": {}, "protocol_handshakes": empty_hs, "recent_calls": []}
     tool_recs = [x for x in records if not _is_handshake_record(x)]
     hs_recs = [x for x in records if _is_handshake_record(x)]
-    recent = [{**r, "product": _effective_record_product(r)} for r in reversed(records[-max(1, min(lim, 100)) :])]
+    recent = [{**r, "product": _effective_record_product(r)} for r in reversed(records[-max(1, min(lim, 100)):])]
     tl_recs = [x for x in hs_recs if str(x.get("rpc") or "").strip().lower() == "tools/list" or str(x.get("tool") or "").strip() == "[rpc:tools/list]"]
     hs_bytes = sum(int(x.get("bytes", 0)) for x in hs_recs)
     hs_tokens = sum(int(x.get("est_tokens", 0) or round(int(x.get("bytes", 0)) / 4.0)) for x in hs_recs)
     protocol_handshakes = {"calls": len(hs_recs), "bytes": hs_bytes, "tokens": hs_tokens, "tools_list_kb": round(float(tl_recs[-1].get("kb", 0.0)), 2) if tl_recs else 0.0}
     if not tool_recs:
         return {"total_recorded_calls": 0, "avg_kb": 0.0, "max_kb": 0.0, "total_mcp_tokens": 0, "budget_compliance_pct": 100.0, "by_product": {}, "protocol_handshakes": protocol_handshakes, "recent_calls": recent}
-    metric_recs = tool_recs
-    kb_vals, compliant = [float(x.get("kb", 0.0)) for x in metric_recs], sum(1 for x in metric_recs if x.get("under_20kb_budget", True))
-    tot_tokens = sum(int(x.get("est_tokens", 0) or round(int(x.get("bytes", 0)) / 4.0)) for x in metric_recs)
+    kb_vals, compliant = [float(x.get("kb", 0.0)) for x in tool_recs], sum(1 for x in tool_recs if x.get("under_20kb_budget", True))
+    tot_tokens = sum(int(x.get("est_tokens", 0) or round(int(x.get("bytes", 0)) / 4.0)) for x in tool_recs)
     by_prod: dict[str, dict[str, int]] = {}
-    for x in metric_recs:
+    for x in tool_recs:
         rec = by_prod.setdefault(_effective_record_product(x), {"calls": 0, "tokens": 0, "bytes": 0})
-        rec["calls"], rec["tokens"], rec["bytes"] = rec["calls"] + 1, rec["tokens"] + int(x.get("est_tokens", 0) or round(int(x.get("bytes", 0)) / 4.0)), rec["bytes"] + int(x.get("bytes", 0))
-    return {"total_recorded_calls": len(metric_recs), "avg_kb": round(sum(kb_vals) / len(kb_vals), 2), "max_kb": round(max(kb_vals), 2), "total_mcp_tokens": tot_tokens, "budget_compliance_pct": round((compliant / len(metric_recs)) * 100.0, 1), "by_product": by_prod, "protocol_handshakes": protocol_handshakes, "recent_calls": recent}
+        rec["calls"] += 1
+        rec["tokens"] += int(x.get("est_tokens", 0) or round(int(x.get("bytes", 0)) / 4.0))
+        rec["bytes"] += int(x.get("bytes", 0))
+    return {"total_recorded_calls": len(tool_recs), "avg_kb": round(sum(kb_vals) / len(kb_vals), 2), "max_kb": round(max(kb_vals), 2), "total_mcp_tokens": tot_tokens, "budget_compliance_pct": round((compliant / len(tool_recs)) * 100.0, 1), "by_product": by_prod, "protocol_handshakes": protocol_handshakes, "recent_calls": recent}
+
 
 def extract_pending_approval(transcript_or_brain_dir: Path, conv_id: str = "") -> dict[str, Any] | None:
     """Inspect transcript.jsonl tail to extract exact tool call details when waiting/running."""
@@ -206,6 +227,7 @@ def extract_pending_approval(transcript_or_brain_dir: Path, conv_id: str = "") -
         return None
     return None
 
+
 def get_live_quota_and_pool_status(data_or_config_dir: Path, config_dir: Path | None = None) -> dict[str, Any]:
     """Read live Dual-Pool Quota Pacing (`ultra-20x` vs `ultra-5x`), active Main-Chat model, 429 cooldowns, and Partner Pool weekly pace."""
     agy_config_dir = config_dir if config_dir is not None else data_or_config_dir
@@ -230,15 +252,15 @@ def get_live_quota_and_pool_status(data_or_config_dir: Path, config_dir: Path | 
         rem = max(0, int(pi.get("cooldown_until", 0) or 0) - now_epoch)
         pools_out[pk] = {"status": "COOLDOWN_429" if rem > 0 else "HEALTHY", "cooldown_remaining_seconds": rem, "total_429_count": int(pi.get("count_429", 0) or 0), "last_reason": str(pi.get("last_reason", ""))}
     day_idx = datetime.now(timezone.utc).weekday() + 1
-    return {"active_tier_profile": active_profile, "active_mainchat_model": get_active_mainchat_model(data_dir), "pools": pools_out, "partner_weekly_pacing": {"day_of_week_index": day_idx, "daily_target_pct": 14.28, "recommended_cumulative_ceiling_pct": round(min(100.0, day_idx * 14.28), 1)}, "target_model_allocation": MODEL_TARGET_ALLOCATION.get(active_profile, MODEL_TARGET_ALLOCATION["ultra-20x"]), "recent_quota_events": (state_data.get("events") or [])[-8:]}
+    return {
+        "active_tier_profile": active_profile,
+        "active_mainchat_model": get_active_mainchat_model(data_dir),
+        "pools": pools_out,
+        "partner_weekly_pacing": {"day_of_week_index": day_idx, "daily_target_pct": 14.28, "recommended_cumulative_ceiling_pct": round(min(100.0, day_idx * 14.28), 1)},
+        "target_model_allocation": MODEL_TARGET_ALLOCATION.get(active_profile, MODEL_TARGET_ALLOCATION["ultra-20x"]),
+        "recent_quota_events": (state_data.get("events") or [])[-8:],
+    }
 
-def classify_model_key(raw_model: str, agent_name: str = "") -> str:
-    s = f"{raw_model or ''} {agent_name or ''}".lower()
-    if any(k in s for k in ("claude", "sonnet", "opus")): return "claude_partner"
-    if "gpt" in s or "120b" in s: return "gpt_oss"
-    if "flash" in s or "m322" in s: return "flash"
-    if any(k in s for k in ("carbon", "m417", "m427")): return "carbon"
-    return "argon_pro"
 
 def normalize_workspace_name(ws_raw: str) -> str:
     parts = [p for p in (ws_raw or "").rstrip("/").split("/") if p and p != ".git"]
@@ -248,6 +270,7 @@ def normalize_workspace_name(ws_raw: str) -> str:
     else:
         ws_name = parts[-1] if parts else "unassigned"
     return re.sub(r"-wt-\d+$", "", ws_name)
+
 
 def to_1h_slot(c_str: str, fallback_mtime: float) -> tuple[str, str, str]:
     if c_str:
@@ -263,9 +286,153 @@ def to_1h_slot(c_str: str, fallback_mtime: float) -> tuple[str, str, str]:
     day_fb = dt_fb.strftime("%Y-%m-%d")
     return day_fb, f"{day_fb}T{dt_fb.hour:02d}", f"{day_fb}T{(dt_fb.hour // 4) * 4:02d}"
 
+
 def to_4h_slot(c_str: str, fallback_mtime: float) -> tuple[str, str]:
     d, _, s4 = to_1h_slot(c_str, fallback_mtime)
     return d, s4
+
+
+def _extract_tool_and_subagent_calls(
+    obj: dict[str, Any],
+    cur_mk: str,
+    day_s: str,
+    d_tools: dict[str, int],
+    d_models: dict[str, dict[str, int]],
+    m_counts: dict[str, int],
+) -> tuple[int, int]:
+    """Compute tool-call character count and count subagent spawns for one transcript row."""
+    tcs = obj.get("tool_calls")
+    if not isinstance(tcs, list) or not tcs:
+        return 0, 0
+    extra_chars, subs_added = 0, 0
+    d_tools[day_s] = d_tools.get(day_s, 0) + len(tcs)
+    for tc in tcs:
+        if not isinstance(tc, dict):
+            continue
+        extra_chars += len(str(tc.get("arguments") or tc.get("args") or ""))
+        if tc.get("name") == "invoke_subagent":
+            args = tc.get("arguments") or tc.get("args") or {}
+            for s in (args.get("Subagents") if isinstance(args, dict) else []) or []:
+                if not isinstance(s, dict):
+                    continue
+                subs_added += 1
+                raw_sm, role_s = str(s.get("Model") or ""), str(s.get("TypeName") or s.get("Role") or "")
+                is_inh = raw_sm.lower() in ("inherit", "") and not any(
+                    k in role_s.lower()
+                    for k in ("claude", "sonnet", "opus", "flash", "argon", "hydrogen", "neon", "carbon", "gpt")
+                )
+                mk = cur_mk if is_inh else classify_model_key(raw_sm, role_s)
+                m_counts[mk] = m_counts.get(mk, 0) + 1
+                dm = d_models.setdefault(day_s, {})
+                dm[mk] = dm.get(mk, 0) + 1
+    return extra_chars, subs_added
+
+
+def _compute_step_tokens_and_cost(
+    obj: dict[str, Any],
+    cur_mk: str,
+    day_s: str,
+    step_chars: int,
+    bg_dir: Path,
+) -> tuple[bool, int, int, int, int, int, int]:
+    """Compute token split (uncached, cached, output) and effective-dated micro-USD step cost."""
+    is_planner = obj.get("type") == "PLANNER_RESPONSE"
+    u_in = int(obj.get("input_tokens") or 0)
+    c_in = int(obj.get("cache_read_tokens") or 0)
+    out_t = int(obj.get("output_tokens") or 0)
+    if is_planner and (u_in + c_in + out_t) > 0:
+        est_tok = u_in + c_in + out_t
+    else:
+        est_tok = max(12, round(step_chars / 4.0))
+        u_in, c_in, out_t = split_estimated_tokens(est_tok) if is_planner else (0, 0, 0)
+    if not is_planner:
+        return False, est_tok, u_in, c_in, out_t, 0, 0
+    step_cost = compute_step_cost_micros(cur_mk, day_s, u_in, c_in, out_t, bg_dir=bg_dir)
+    step_fore = compute_step_cost_micros(cur_mk, day_s, u_in, c_in, out_t, forecast=True, bg_dir=bg_dir)
+    return True, est_tok, u_in, c_in, out_t, step_cost, step_fore
+
+
+def _scan_single_transcript(
+    t_path: Path,
+    mtime: float,
+    fsize: int,
+    main_mk: str,
+    main_switch_date: str,
+    bg_dir: Path,
+) -> dict[str, Any]:
+    """Parse one transcript JSONL into daily/1h counts, 8-model attribution, token splits, and cost."""
+    m_keys = get_canonical_model_keys()
+    d_steps: dict[str, int] = {}
+    d_tools: dict[str, int] = {}
+    d_tokens: dict[str, int] = {}
+    d_cost: dict[str, int] = {}
+    slot_steps: dict[str, int] = {}
+    d_models: dict[str, dict[str, int]] = {}
+    d_mtoks: dict[str, dict[str, int]] = {}
+    d_mcost: dict[str, dict[str, int]] = {}
+    d_mfore: dict[str, dict[str, int]] = {}
+    d_msplits: dict[str, dict[str, list[int]]] = {}
+    s1_steps: dict[str, int] = {}
+    s1_toks: dict[str, int] = {}
+    s1_cost: dict[str, int] = {}
+    s1_psplits: dict[str, list[int]] = {}
+    s1_models: dict[str, dict[str, int]] = {}
+    s1_mtoks: dict[str, dict[str, int]] = {}
+    s1_mcost: dict[str, dict[str, int]] = {}
+    m_counts = {k: 0 for k in m_keys}
+    m_tokens = {k: 0 for k in m_keys}
+    m_cost = {k: 0 for k in m_keys}
+    m_fore = {k: 0 for k in m_keys}
+    tok_split = [0, 0, 0]
+    subs_cnt, active_conv_mk, last_mod_seen = 0, "", ""
+
+    with open(t_path, "r", encoding="utf-8", errors="replace") as f:
+        for line in f:
+            if not line.startswith("{"):
+                continue
+            obj = json.loads(line)
+            day_s, s1, slot_s = to_1h_slot(str(obj.get("created_at") or ""), mtime)
+            c_txt = str(obj.get("content") or "")
+            if "Model Selection" in c_txt:
+                m_hits = MODEL_CHANGE_RE.findall(c_txt)
+                if m_hits:
+                    active_conv_mk = classify_model_key(m_hits[-1], "")
+            raw_m = str(obj.get("model") or "")
+            cur_mk = classify_model_key(raw_m, "") if raw_m else (active_conv_mk or (main_mk if (main_mk and main_switch_date and day_s >= main_switch_date) else "argon"))
+            last_mod_seen = cur_mk
+            d_steps[day_s], slot_steps[slot_s], s1_steps[s1] = d_steps.get(day_s, 0) + 1, slot_steps.get(slot_s, 0) + 1, s1_steps.get(s1, 0) + 1
+            extra_chars, subs_added = _extract_tool_and_subagent_calls(obj, cur_mk, day_s, d_tools, d_models, m_counts)
+            subs_cnt += subs_added
+            step_chars = len(c_txt) + len(str(obj.get("thinking") or "")) + extra_chars
+            is_planner, est_tok, u_in, c_in, out_t, step_cost, step_fore = _compute_step_tokens_and_cost(obj, cur_mk, day_s, step_chars, bg_dir)
+
+            d_tokens[day_s], s1_toks[s1] = d_tokens.get(day_s, 0) + est_tok, s1_toks.get(s1, 0) + est_tok
+            d_cost[day_s], s1_cost[s1] = d_cost.get(day_s, 0) + step_cost, s1_cost.get(s1, 0) + step_cost
+            sm_map, smt_map, smc_map = s1_models.setdefault(s1, {}), s1_mtoks.setdefault(s1, {}), s1_mcost.setdefault(s1, {})
+            sm_map[cur_mk], smt_map[cur_mk], smc_map[cur_mk] = sm_map.get(cur_mk, 0) + 1, smt_map.get(cur_mk, 0) + est_tok, smc_map.get(cur_mk, 0) + step_cost
+
+            if is_planner:
+                m_counts[cur_mk], m_tokens[cur_mk], m_cost[cur_mk], m_fore[cur_mk] = m_counts.get(cur_mk, 0) + 1, m_tokens.get(cur_mk, 0) + est_tok, m_cost.get(cur_mk, 0) + step_cost, m_fore.get(cur_mk, 0) + step_fore
+                tok_split[0], tok_split[1], tok_split[2] = tok_split[0] + u_in, tok_split[1] + c_in, tok_split[2] + out_t
+                sp_p = s1_psplits.setdefault(s1, [0, 0, 0])
+                sp_p[0], sp_p[1], sp_p[2] = sp_p[0] + u_in, sp_p[1] + c_in, sp_p[2] + out_t
+                d_models.setdefault(day_s, {})[cur_mk] = d_models.get(day_s, {}).get(cur_mk, 0) + 1
+                d_mtoks.setdefault(day_s, {})[cur_mk] = d_mtoks.get(day_s, {}).get(cur_mk, 0) + est_tok
+                d_mcost.setdefault(day_s, {})[cur_mk] = d_mcost.get(day_s, {}).get(cur_mk, 0) + step_cost
+                d_mfore.setdefault(day_s, {})[cur_mk] = d_mfore.get(day_s, {}).get(cur_mk, 0) + step_fore
+                sp_cur = d_msplits.setdefault(day_s, {}).setdefault(cur_mk, [0, 0, 0])
+                sp_cur[0], sp_cur[1], sp_cur[2] = sp_cur[0] + u_in, sp_cur[1] + c_in, sp_cur[2] + out_t
+
+    return {
+        "mtime": mtime, "size": fsize, "day_steps": d_steps, "day_tools": d_tools, "day_tokens": d_tokens, "day_cost_micros": d_cost,
+        "slot_steps": slot_steps, "slot_1h_steps": s1_steps, "slot_1h_tokens": s1_toks, "slot_1h_cost_micros": s1_cost,
+        "slot_1h_planner_splits": s1_psplits, "slot_1h_models": s1_models, "slot_1h_model_tokens": s1_mtoks,
+        "slot_1h_model_cost_micros": s1_mcost, "day_models": d_models, "day_model_tokens": d_mtoks, "day_model_cost_micros": d_mcost,
+        "day_model_forecast_micros": d_mfore, "day_model_token_splits": d_msplits, "model_counts": m_counts, "model_tokens": m_tokens,
+        "model_cost_micros": m_cost, "model_forecast_micros": m_fore, "token_breakdown": tok_split,
+        "subagents_spawned": subs_cnt, "last_conv_model": active_conv_mk or last_mod_seen,
+    }
+
 
 def scan_transcript_stats(brain_dir: Path, bg_dir: Path) -> dict[str, Any]:
     cache_file = bg_dir / "nexus_stats_cache.json"
@@ -273,76 +440,57 @@ def scan_transcript_stats(brain_dir: Path, bg_dir: Path) -> dict[str, Any]:
     if cache_file.exists():
         try:
             loaded = json.loads(cache_file.read_text(encoding="utf-8"))
-            if loaded.get("cache_version") == CACHE_VERSION: cache = loaded
+            if loaded.get("cache_version") == CACHE_VERSION:
+                cache = loaded
         except Exception:
             pass
     main_info = get_active_mainchat_model(brain_dir.parent if brain_dir else None)
-    main_mk, main_switch_date = str(main_info.get("model_key") or "argon_pro"), str(main_info.get("state_updated_date") or "")
+    main_mk, main_switch_date = str(main_info.get("model_key") or "argon"), str(main_info.get("state_updated_date") or "")
     conv_cache, updated = cache.setdefault("conversations", {}), False
     if brain_dir.exists():
         for entry in brain_dir.iterdir():
-            if not entry.is_dir() or entry.name.startswith("."): continue
+            if not entry.is_dir() or entry.name.startswith("."):
+                continue
             t_path = entry / ".system_generated" / "logs" / "transcript.jsonl"
-            if not t_path.exists(): continue
+            if not t_path.exists():
+                continue
             try:
                 st = t_path.stat()
                 mtime, fsize = round(st.st_mtime, 2), st.st_size
             except Exception:
                 continue
             cached = conv_cache.get(entry.name)
-            if cached and cached.get("mtime") == mtime and cached.get("size") == fsize: continue
-            d_steps, d_tools, d_tokens, slot_steps, d_models, d_mtoks = {}, {}, {}, {}, {}, {}
-            s1_steps, s1_toks, s1_models, s1_mtoks = {}, {}, {}, {}
-            m_counts = {"carbon": 0, "argon_pro": 0, "flash": 0, "claude_partner": 0, "gpt_oss": 0}
-            m_tokens = {"carbon": 0, "argon_pro": 0, "flash": 0, "claude_partner": 0, "gpt_oss": 0}
-            subs_cnt, active_conv_mk = 0, ""
+            if cached and cached.get("mtime") == mtime and cached.get("size") == fsize:
+                continue
             try:
-                with open(t_path, "r", encoding="utf-8", errors="replace") as f:
-                    for line in f:
-                        if not line.startswith("{"): continue
-                        obj = json.loads(line)
-                        day_s, s1, slot_s = to_1h_slot(str(obj.get("created_at") or ""), mtime)
-                        c_txt = str(obj.get("content") or "")
-                        if "Model Selection" in c_txt:
-                            m_hits = MODEL_CHANGE_RE.findall(c_txt)
-                            if m_hits: active_conv_mk = classify_model_key(m_hits[-1], "")
-                        raw_m = str(obj.get("model") or "")
-                        cur_mk = classify_model_key(raw_m, "") if raw_m else (active_conv_mk or (main_mk if (main_mk == "carbon" and main_switch_date and day_s >= main_switch_date) else "argon_pro"))
-                        d_steps[day_s], slot_steps[slot_s], s1_steps[s1] = d_steps.get(day_s, 0) + 1, slot_steps.get(slot_s, 0) + 1, s1_steps.get(s1, 0) + 1
-                        step_chars = len(c_txt) + len(str(obj.get("thinking") or ""))
-                        tcs = obj.get("tool_calls")
-                        if isinstance(tcs, list) and tcs:
-                            d_tools[day_s] = d_tools.get(day_s, 0) + len(tcs)
-                            for tc in tcs:
-                                if isinstance(tc, dict):
-                                    step_chars += len(str(tc.get("arguments") or tc.get("args") or ""))
-                                    if tc.get("name") == "invoke_subagent":
-                                        args = tc.get("arguments") or tc.get("args") or {}
-                                        for s in (args.get("Subagents") if isinstance(args, dict) else []) or []:
-                                            if isinstance(s, dict):
-                                                subs_cnt += 1
-                                                raw_sm, role_s = str(s.get("Model") or ""), str(s.get("TypeName") or s.get("Role") or "")
-                                                is_inh = raw_sm.lower() in ("inherit", "") and not any(k in role_s.lower() for k in ("claude", "flash", "argon", "gpt"))
-                                                mk = cur_mk if is_inh else classify_model_key(raw_sm, role_s)
-                                                m_counts[mk] = m_counts.get(mk, 0) + 1
-                                                dm = d_models.setdefault(day_s, {})
-                                                dm[mk] = dm.get(mk, 0) + 1
-                        est_tok = max(12, round(step_chars / 4.0))
-                        d_tokens[day_s], s1_toks[s1] = d_tokens.get(day_s, 0) + est_tok, s1_toks.get(s1, 0) + est_tok
-                        sm_map, smt_map = s1_models.setdefault(s1, {}), s1_mtoks.setdefault(s1, {})
-                        sm_map[cur_mk], smt_map[cur_mk] = sm_map.get(cur_mk, 0) + 1, smt_map.get(cur_mk, 0) + est_tok
-                        if obj.get("type") == "PLANNER_RESPONSE":
-                            m_counts[cur_mk], m_tokens[cur_mk] = m_counts.get(cur_mk, 0) + 1, m_tokens.get(cur_mk, 0) + est_tok
-                            dm, dtk = d_models.setdefault(day_s, {}), d_mtoks.setdefault(day_s, {})
-                            dm[cur_mk], dtk[cur_mk] = dm.get(cur_mk, 0) + 1, dtk.get(cur_mk, 0) + est_tok
-                conv_cache[entry.name] = {"mtime": mtime, "size": fsize, "day_steps": d_steps, "day_tools": d_tools, "day_tokens": d_tokens, "slot_steps": slot_steps, "slot_1h_steps": s1_steps, "slot_1h_tokens": s1_toks, "slot_1h_models": s1_models, "slot_1h_model_tokens": s1_mtoks, "day_models": d_models, "day_model_tokens": d_mtoks, "model_counts": m_counts, "model_tokens": m_tokens, "subagents_spawned": subs_cnt, "last_conv_model": active_conv_mk}
+                conv_cache[entry.name] = _scan_single_transcript(t_path, mtime, fsize, main_mk, main_switch_date, bg_dir)
                 updated = True
             except Exception:
                 continue
     if updated:
         try:
             bg_dir.mkdir(parents=True, exist_ok=True)
-            cache_file.write_text(json.dumps(cache), encoding="utf-8")
+            with _CACHE_LOCK, open(bg_dir / ".nexus_stats_cache.lock", "a+", encoding="utf-8") as lf:
+                fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+                fd, tmp_name = tempfile.mkstemp(prefix=".nexus_stats_cache.", dir=str(bg_dir))
+                try:
+                    os.fchmod(fd, 0o600)
+                    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                        fd = -1
+                        json.dump(cache, fh)
+                    os.replace(tmp_name, cache_file)
+                except Exception:
+                    if fd >= 0:
+                        try:
+                            os.close(fd)
+                        except OSError:
+                            pass
+                    try:
+                        os.unlink(tmp_name)
+                    except OSError:
+                        pass
+                finally:
+                    fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
         except Exception:
             pass
     return conv_cache

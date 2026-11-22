@@ -8,12 +8,38 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from agy_nexus.model_pricing import format_usd, get_model_specs_map
 from . import __version__
+
+
+def is_google_pool_model(m: dict[str, Any]) -> bool:
+    """Classify a model breakdown entry into Google vs Partner pool dynamically without hardcoded keys."""
+    pk = str(m.get("pool_key") or "").strip().lower()
+    if pk:
+        return pk == "google"
+    pool = str(m.get("pool") or "").lower()
+    if "google" in pool or "20x" in pool:
+        return True
+    return "gemini" in str(m.get("quota_group") or "").lower()
+
+
+def get_model_short_labels() -> tuple[dict[str, str], dict[str, str]]:
+    """Return (short_11_map, short_7_map) dynamically from model_catalog.json."""
+    specs = get_model_specs_map()
+    s11: dict[str, str] = {}
+    s7: dict[str, str] = {}
+    for mk, sp in specs.items():
+        lbl = str(sp.get("short_label") or sp.get("label") or mk)
+        s11[mk] = str(sp.get("short_11") or lbl[:11]).ljust(11)[:11]
+        s7[mk] = str(sp.get("short_7") or lbl[:7]).ljust(7)[:7]
+    return s11, s7
 
 def fmt_tok(val: int | float, tilde: bool = True) -> str:
     v, p = float(val or 0), ("~" if tilde else "")
     if v <= 0:
         return "0"
+    if v >= 1_000_000_000:
+        return f"{p}{v / 1_000_000_000.0:.1f}B"
     if v >= 1_000_000:
         return f"{p}{v / 1_000_000.0:.1f}M"
     if v >= 100_000:
@@ -26,6 +52,8 @@ def fmt_rate(val: int | float) -> str:
     v = float(val or 0)
     if v <= 0:
         return "0"
+    if v >= 1_000_000_000:
+        return f"{v / 1_000_000_000.0:.2f}B"
     if v >= 10_000_000:
         return f"{v / 1_000_000.0:.1f}M"
     if v >= 1_000_000:
@@ -119,6 +147,61 @@ def build_reversed_8h_stack_canvas(
                 grid[r][c] = "─"
     return ["".join(r) for r in grid], col_dates, peak_v, avg_v
 
+def _build_default_tables_72(
+    models: list[dict[str, Any]],
+    billing: dict[str, Any],
+    workspaces: list[dict[str, Any]],
+    subagents: list[dict[str, Any]],
+) -> list[str]:
+    """Render dynamic 8-model quota/cost table, billing comparison, workspaces, and subagents (<= 72 cols)."""
+    s11, _ = get_model_short_labels()
+    lines = [
+        "────────────────────────────────────────────────────────────────────────",
+        "MODEL       [QUOTA ┼ TARGET] SHARE    CALLS     TOK    EST.$  DLT  STAT",
+    ]
+    for m in models:
+        mk = str(m.get("model_key", ""))
+        ml = s11.get(mk, str(m.get("short_label") or m.get("label") or mk)[:11].ljust(11))
+        ap, tp, dp = float(m.get("actual_pct", 0.0)), float(m.get("target_pct", 0.0)), float(m.get("delta_pct", 0.0))
+        b14 = build_quota_bar_with_pin(ap, tp, width=14)
+        calls = int(m.get("actual_calls", 0))
+        tks = fmt_tok(int(m.get("est_tokens", 0)), False)
+        usd_s = format_usd(float(m.get("est_cost_usd", 0.0) or 0.0))
+        stat = "OK  " if abs(dp) <= 12.0 else "WARN"
+        lines.append(f"{ml} [{b14}] {ap:>4.1f}% {calls:>7,} {tks:>7} {usd_s:>7} {dp:>+4.0f}% {stat}"[:72])
+
+    if billing:
+        h_u, f_u = float(billing.get("historical_usd", 0.0) or 0.0), float(billing.get("forecast_usd", 0.0) or 0.0)
+        d_pct = float(billing.get("forecast_delta_pct", 0.0) or 0.0)
+        tiers = billing.get("tiers") or []
+        u20 = next((t for t in tiers if "20x" in str(t.get("id") or "")), tiers[-1] if tiers else {})
+        mult = float(u20.get("value_multiplier", 0.0) or 0.0)
+        lines.append(
+            f"BILLING    Hist:{format_usd(h_u)} API | NextRate:{format_usd(f_u)} ({d_pct:+.0f}%) | 20x:{mult:.1f}x"[:72]
+        )
+
+    lines.extend(["────────────────────────────────────────────────────────────────────────", f"{f'WORKSPACES ({len(workspaces)})':<17}CHATS  STEPS    TOK   TOK/D   TOK/WK   EST.$  SHARE"[:72]])
+    for idx, w in enumerate(workspaces, start=1):
+        wn = f"{idx}. {str(w.get('workspace', 'root'))}"[:16].ljust(16)
+        usd_w = format_usd(float(w.get("est_cost_usd", 0.0) or 0.0))
+        lines.append(
+            f"{wn} {int(w.get('sessions', 0)):>3}c {int(w.get('steps', 0)):>6,} {fmt_tok(w.get('tokens', 0), False):>7} "
+            f"{fmt_rate(w.get('tok_per_day', 0)):>6} {fmt_rate(w.get('tok_per_week', 0)):>7} {usd_w:>7} {float(w.get('share_pct', 0.0)):>5.1f}%"[:72]
+        )
+
+    if subagents:
+        lines.extend(["────────────────────────────────────────────────────────────────────────", f"{f'SUBAGENTS ({len(subagents)})':<17} RUNS  STEPS    TOK   TOK/D   TOK/WK   EST.$  SHARE"[:72]])
+        for idx, sa in enumerate(subagents, start=1):
+            sn = f"{idx}. {str(sa.get('role', 'subagent'))}"[:16].ljust(16)
+            usd_s = format_usd(float(sa.get("est_cost_usd", 0.0) or 0.0))
+            lines.append(
+                f"{sn} {int(sa.get('runs', 0)):>3}r {int(sa.get('steps', 0)):>6,} {fmt_tok(sa.get('tokens', 0), False):>7} "
+                f"{fmt_rate(sa.get('tok_per_day', 0)):>6} {fmt_rate(sa.get('tok_per_week', 0)):>7} {usd_s:>7} {float(sa.get('share_pct', 0.0)):>5.1f}%"[:72]
+            )
+    lines.append("════════════════════════════════════════════════════════════════════════")
+    return lines
+
+
 def render_ascii_default(bundle: dict[str, Any]) -> str:
     """Render Default 72-Column Stats: 2-col split header (40┆31), then full-width 72-col sections."""
     kpis, period = bundle.get("kpis") or {}, bundle.get("period") or {}
@@ -127,6 +210,7 @@ def render_ascii_default(bundle: dict[str, Any]) -> str:
     workspaces = bundle.get("all_workspaces") or bundle.get("top_workspaces") or []
     subagents = bundle.get("subagent_list") or []
     series = bundle.get("heatmap_series") or []
+    billing = bundle.get("billing_comparison") or {}
 
     s_dt, e_dt = fmt_short_date(str(period.get("start_date") or "")), fmt_short_date(str(period.get("end_date") or ""))
     act_days = max(1, int(kpis.get("active_days", period.get("active_days", 1)) or 1))
@@ -134,8 +218,10 @@ def render_ascii_default(bundle: dict[str, Any]) -> str:
     tot_steps, tot_tools = int(kpis.get("window_steps", 0)), int(kpis.get("window_tool_calls", 0))
     tot_chats, tot_subs = int(kpis.get("total_conversations", 0)), int(kpis.get("total_subagents_spawned", 0))
     tot_tok = int(kpis.get("window_tokens", 0))
+    tot_cost = float(kpis.get("window_cost_usd", 0.0) or 0.0)
+    cost_d = float(kpis.get("cost_per_day_usd", tot_cost / act_days) or 0.0)
 
-    g_pct = sum(float(m.get("actual_pct", 0.0)) for m in models if m.get("model_key") in ("carbon", "argon_pro", "flash"))
+    g_pct = sum(float(m.get("actual_pct", 0.0)) for m in models if is_google_pool_model(m))
     p_used = max(0.0, 100.0 - g_pct)
     p_rem = max(0.0, 100.0 - p_used)
     g_bar, p_bar = build_quota_bar_with_pin(g_pct, 90.0, 10), build_quota_bar_with_pin(p_used, 10.0, 10)
@@ -158,12 +244,12 @@ def render_ascii_default(bundle: dict[str, Any]) -> str:
 
     lines = [
         "════════════════════════════════════════╤═══════════════════════════════",
-        _sr(f"AGY-NEXUS v{__version__} // 90d ({e_dt} ◄── {s_dt})", f" {rel_label[:30]}"),
+        _sr(f"AGY-NEXUS v{__version__} // {cal_days}d ({e_dt} ◄── {s_dt})", f" {rel_label[:30]}"),
         "════════════════════════════════════════╪═══════════════════════════════",
         _sr(f"GOOGLE 20x : {g_pct:>5.1f}% [{g_bar}] {g_stat}", f" {g_429}x 429s | Ultra-20x (T:>=90%)"),
         _sr(f"PARTNER 1x : {p_rem:>5.1f}% [{p_bar}] ON PACE", f" {wk_left:>4.1f}% Wk Left | Lim <=14.3%/d"),
         _sr(f"STEPS/TOOLS: {tot_steps:,}s | {tot_tools:,}t | {tot_chats}c", f" {tot_steps // act_days:,} s/act-d | {tot_steps // cal_days:,} s/cal-d"),
-        _sr(f"TOKEN BURN : {fmt_tok(tot_tok)} Total ({tot_subs} sub runs)", f" {fmt_rate(tot_tok / act_days)} tok/d   | {fmt_rate(tot_tok / max(1.0, act_days / 7.0))} tok/wk"),
+        _sr(f"TOKEN BURN : {fmt_tok(tot_tok)} | ${tot_cost:,.2f}", f" {fmt_rate(tot_tok / act_days)}/d | ${cost_d:,.2f}/d ({tot_subs}r)"),
         _sr(f"MCP WIRE   : {w_pct}% <20KB (avg {w_avg:.1f}/{w_max:.1f}KB)", f" {w_calls} req ({w_tok} tok) | {w_client}"),
         _sr(
             f"CODE HEALTH: Poly {int((code_health.get('polyglot_health') or ast_info).get('total_symbols', 0))} syms | {m_info.get('compliant_500', m_info.get('compliant_300', 0))}/{m_info.get('total_modules', 0)} <=500L",
@@ -202,31 +288,9 @@ def render_ascii_default(bundle: dict[str, Any]) -> str:
     leg = [f"[{s}] {str(w.get('workspace', ''))[:13]} ({float(w.get('share_pct', 0.0)):.0f}%)" for s, w in zip(["█", "▓", "▒"], workspaces[:3])]
     if leg:
         lines.append(("      Stack: " + "  ".join(leg))[:72])
-    lines.extend([
-        "────────────────────────────────────────────────────────────────────────",
-        "MODEL QUOTA vs TARGET (┼ = Target Pin)      CALLS   EST TOK  DELTA  STAT",
-    ])
-    sm = {"carbon": "Carbon 4   ", "argon_pro": "Argon 4 Pro", "flash": "Flash 3.8  ", "claude_partner": "Claude 5.5 ", "gpt_oss": "GPT-OSS 120"}
-    for m in models:
-        mk = str(m.get("model_key", ""))
-        ml = sm.get(mk, str(m.get("label", ""))[:11]).ljust(11)
-        ap, tp, dp = float(m.get("actual_pct", 0.0)), float(m.get("target_pct", 0.0)), float(m.get("delta_pct", 0.0))
-        b20 = build_quota_bar_with_pin(ap, tp, width=20)
-        tks = "FastTier" if mk == "flash" and int(m.get("est_tokens", 0)) == 0 else fmt_tok(int(m.get("est_tokens", 0)))
-        lines.append(f"{ml} [{b20}] {ap:>5.1f}%  {int(m.get('actual_calls', 0)):>7,}  {tks:>8} {dp:>+5.1f}%  {'OK' if abs(dp) <= 12.0 else 'WARN'}"[:72])
+    lines.extend(_build_default_tables_72(models, billing, workspaces, subagents))
+    return "\n".join(line[:72] for line in lines)
 
-    lines.extend(["────────────────────────────────────────────────────────────────────────", f"{f'WORKSPACES ({len(workspaces)})':<20}CHATS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE"[:72]])
-    for idx, w in enumerate(workspaces, start=1):
-        wn = f"{idx}. {str(w.get('workspace', 'root'))}"[:19].ljust(19)
-        lines.append(f"{wn} {int(w.get('sessions', 0)):>3}c {int(w.get('steps', 0)):>7,}  {fmt_tok(w.get('tokens', 0)):>9}  {fmt_rate(w.get('tok_per_day', 0)):>7}  {fmt_rate(w.get('tok_per_week', 0)):>7}  {float(w.get('share_pct', 0.0)):>5.1f}%"[:72])
-
-    if subagents:
-        lines.extend(["────────────────────────────────────────────────────────────────────────", f"{f'SUBAGENTS ({len(subagents)})':<20} RUNS   STEPS   TOTAL TOK  TOK/DAY   TOK/WK   SHARE"[:72]])
-        for idx, sa in enumerate(subagents, start=1):
-            sn = f"{idx}. {str(sa.get('role', 'subagent'))}"[:19].ljust(19)
-            lines.append(f"{sn} {int(sa.get('runs', 0)):>3}r {int(sa.get('steps', 0)):>7,}  {fmt_tok(sa.get('tokens', 0)):>9}  {fmt_rate(sa.get('tok_per_day', 0)):>7}  {fmt_rate(sa.get('tok_per_week', 0)):>7}  {float(sa.get('share_pct', 0.0)):>5.1f}%"[:72])
-    lines.append("════════════════════════════════════════════════════════════════════════")
-    return "\n".join(lines)
 
 def render_ascii_quick(bundle: dict[str, Any]) -> str:
     """Render Quick 40-Column Mobile Stats (strictly <= 40 chars per line)."""
@@ -234,11 +298,13 @@ def render_ascii_quick(bundle: dict[str, Any]) -> str:
     quota, models = bundle.get("quota_and_pools") or {}, bundle.get("model_usage_vs_target") or []
     workspaces = bundle.get("all_workspaces") or bundle.get("top_workspaces") or []
     subagents, series = bundle.get("subagent_list") or [], bundle.get("heatmap_series") or []
+    _, s7 = get_model_short_labels()
 
     s_dt, e_dt = fmt_short_date(str(period.get("start_date") or "")), fmt_short_date(str(period.get("end_date") or ""))
-    act_days = max(1, int(kpis.get("active_days", period.get("active_days", 1)) or 1))
+    act_days, cal_days = max(1, int(kpis.get("active_days", period.get("active_days", 1)) or 1)), max(1, int(period.get("total_days", 90) or 90))
     tot_steps, tot_tools, tot_tok = int(kpis.get("window_steps", 0)), int(kpis.get("window_tool_calls", 0)), int(kpis.get("window_tokens", 0))
-    g_pct = sum(float(m.get("actual_pct", 0.0)) for m in models if m.get("model_key") in ("carbon", "argon_pro", "flash"))
+    tot_cost = float(kpis.get("window_cost_usd", 0.0) or 0.0)
+    g_pct = sum(float(m.get("actual_pct", 0.0)) for m in models if is_google_pool_model(m))
     p_rem = max(0.0, 100.0 - max(0.0, 100.0 - g_pct))
     g_bar, p_bar = build_quota_bar_with_pin(g_pct, 90.0, 10), build_quota_bar_with_pin(100.0 - g_pct, 10.0, 10)
     g_429 = int(((quota.get("pools") or {}).get("google") or {}).get("total_429_count", 0))
@@ -249,12 +315,12 @@ def render_ascii_quick(bundle: dict[str, Any]) -> str:
 
     lines = [
         "════════════════════════════════════════",
-        f"AGY-NEXUS v{__version__} // 90d ({e_dt} ◄── {s_dt})"[:40],
+        f"AGY-NEXUS v{__version__} // {cal_days}d ({e_dt} ◄── {s_dt})"[:40],
         "════════════════════════════════════════",
         f"G-20x:{g_pct:>4.0f}% [{g_bar}] OK | {g_429}x 429s"[:40],
         f"P-1x :{p_rem:>4.0f}% [{p_bar}] OK | {wk_left}% WkLft"[:40],
         f"Steps:{fmt_k(tot_steps):>6} | Tools:{fmt_k(tot_tools):>5} | Act:{act_days}d"[:40],
-        f"Burns:{fmt_tok(tot_tok):>6} | {fmt_rate(tot_tok / act_days)}/d | {fmt_rate(tot_tok / max(1.0, act_days / 7.0))}/wk"[:40],
+        f"Burn:{fmt_tok(tot_tok, False):>5} | {format_usd(tot_cost)} | {fmt_rate(tot_tok / act_days)}/d"[:40],
         f"Health: Poly {int(poly_info.get('total_symbols', 0))}s | {m_info.get('compliant_500', m_info.get('compliant_300', 0))}/{m_info.get('total_modules', 0)} <=500L | {v_info.get('status', 'OK')[:6]}"[:40],
         "────────────────────────────────────────",
         "HEATMAP (NOW ──► 13w Ago)  │ PEAK & VOL",
@@ -265,7 +331,7 @@ def render_ascii_quick(bundle: dict[str, Any]) -> str:
         f"Pk: {str(pk.get('date') or '')[-5:].replace('-', '/')}",
         f"{int(pk.get('steps') or 0):,} stp",
         f"Avg:{tot_steps // act_days:,}/d",
-        f"Chats: {int(kpis.get('total_conversations', 0))}c",
+        f"Cost: {format_usd(tot_cost)}",
         f"Subs : {int(kpis.get('total_subagents_spawned', 0))}r",
         f"Tok/d:{fmt_rate(tot_tok / act_days)}",
         f"Tok/w:{fmt_rate(tot_tok / max(1.0, act_days / 7.0))}",
@@ -283,19 +349,21 @@ def render_ascii_quick(bundle: dict[str, Any]) -> str:
         f"{fmt_k(avg_8h):>4}┼{c_rows[2]}"[:40],
         f"   0╵{c_rows[3]}"[:40],
         "────────────────────────────────────────",
-        "MODEL QUOTA (┼=Target)  PCT   TOK   DLT",
+        "MODEL   [PIN]    PCT   TOK  EST.$   DLT",
     ])
-    sm_q = {"carbon": "Carbon4", "argon_pro": "Argon 4", "flash": "Flash38", "claude_partner": "Claude5", "gpt_oss": "GPT-120"}
     for m in models:
         mk = str(m.get("model_key", ""))
-        b10 = build_quota_bar_with_pin(float(m.get("actual_pct", 0.0)), float(m.get("target_pct", 0.0)), 10)
-        tk_q = "Fast" if mk == "flash" and int(m.get("est_tokens", 0)) == 0 else fmt_tok(m.get("est_tokens", 0), False)
-        lines.append(f"{sm_q.get(mk, mk[:7]):<7} [{b10}]{float(m.get('actual_pct', 0.0)):>4.0f}% {tk_q:>5} {float(m.get('delta_pct', 0.0)):>+4.0f}%"[:40])
+        b8 = build_quota_bar_with_pin(float(m.get("actual_pct", 0.0)), float(m.get("target_pct", 0.0)), 8)
+        tk_q = fmt_tok(m.get("est_tokens", 0), False)
+        usd_q = format_usd(float(m.get("est_cost_usd", 0.0) or 0.0))
+        lines.append(f"{s7.get(mk, mk[:7]):<7} [{b8}]{float(m.get('actual_pct', 0.0)):>3.0f}% {tk_q:>5} {usd_q:>6} {float(m.get('delta_pct', 0.0)):>+3.0f}"[:40])
 
-    lines.extend(["────────────────────────────────────────", "WORKSPACES & SUBS  TOK   TOK/D   TOK/WK"])
+    lines.extend(["────────────────────────────────────────", "WORKSPACES & SUBS  TOK   EST.$  TOK/WK"])
     for w in workspaces[:6]:
-        lines.append(f"{str(w.get('workspace', 'root'))[:16]:<16} {fmt_tok(w.get('tokens', 0), False):>5} {fmt_rate(w.get('tok_per_day', 0)):>6} {fmt_rate(w.get('tok_per_week', 0)):>7}"[:40])
+        usd_w = format_usd(float(w.get("est_cost_usd", 0.0) or 0.0))
+        lines.append(f"{str(w.get('workspace', 'root'))[:15]:<15} {fmt_tok(w.get('tokens', 0), False):>5} {usd_w:>7} {fmt_rate(w.get('tok_per_week', 0)):>7}"[:40])
     for sa in subagents[:3]:
-        lines.append(f"{('*' + str(sa.get('role', 'sub')))[:16]:<16} {fmt_tok(sa.get('tokens', 0), False):>5} {fmt_rate(sa.get('tok_per_day', 0)):>6} {fmt_rate(sa.get('tok_per_week', 0)):>7}"[:40])
+        usd_s = format_usd(float(sa.get("est_cost_usd", 0.0) or 0.0))
+        lines.append(f"{('*' + str(sa.get('role', 'sub')))[:15]:<15} {fmt_tok(sa.get('tokens', 0), False):>5} {usd_s:>7} {fmt_rate(sa.get('tok_per_week', 0)):>7}"[:40])
     lines.append("════════════════════════════════════════")
     return "\n".join(line[:40] for line in lines)

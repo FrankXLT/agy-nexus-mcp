@@ -217,14 +217,14 @@ const GV = require({json.dumps(str(WEB_DIR / "gallery_view.js"))});
 
 
 def test_sw_cache_bust_and_workflows_docs() -> None:
-    """Verify SW cache version bump, ?v=3.2.5 parity, clean gallery_view.js labels, and updated docs."""
+    """Verify SW cache version bump, ?v=4.0.0 parity, clean gallery labels, and updated docs."""
     sw_text = (WEB_DIR / "sw.js").read_text(encoding="utf-8")
     html_text = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     gv_text = (WEB_DIR / "gallery_view.js").read_text(encoding="utf-8")
     wf_text = (PROJECT_ROOT / "docs" / "WORKFLOWS.md").read_text(encoding="utf-8")
 
-    assert 'CACHE_NAME = "agy-nexus-overwatch-v3.2.5-b1"' in sw_text
-    for asset in ("gallery_select.js?v=3.2.5", "sheet_builder.js?v=3.2.5", "gallery_view.js?v=3.2.5", "explorer.js?v=3.2.5", "workspace.css?v=3.2.5", "demo_data.js?v=3.2.5"):
+    assert 'CACHE_NAME = "agy-nexus-v4.0.0"' in sw_text
+    for asset in ("gallery_select.js?v=4.0.0", "sheet_builder.js?v=4.0.0", "v9/v9_gallery.js?v=4.0.0", "v9/v9_workspace.js?v=4.0.0", "v9/v9_workspace.css?v=4.0.0", "demo_snapshot.js?v=4.0.0"):
         assert asset in sw_text
         assert asset in html_text
 

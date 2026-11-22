@@ -119,7 +119,7 @@ def scan_session_artifacts(conv_id: str) -> list[dict[str, Any]]:
     return _bs_scan_session_artifacts(conv_id, brain_dir=AGY_BRAIN_DIR)
 
 
-def build_workspace_tree_payload() -> dict[str, Any]:
+def build_workspace_tree_payload(include_captures: bool = True) -> dict[str, Any]:
     """Build complete hierarchical tree for /web#workspace using human-readable names only."""
     tree_bundle = build_project_session_tree(active_only=False, limit=120)
     inbox = list_handoff_tickets(AGY_BG_DIR, include_superseded=True, limit=60)
@@ -159,6 +159,11 @@ def build_workspace_tree_payload() -> dict[str, Any]:
                 step_count=int(s.get("step_count") or 0),
                 has_uncommitted_work=uncommitted_cache[ws_s],
             )
+            cap_val: int | None = (
+                count_brain_visual_captures(cid, ALLOWED_MEDIA_EXTENSIONS, AGY_BRAIN_DIR)
+                if include_captures
+                else None
+            )
             sessions_out.append({
                 "conversation_id": cid,
                 "title": title,
@@ -169,7 +174,7 @@ def build_workspace_tree_payload() -> dict[str, Any]:
                 "relative_age": str(s.get("relative_age") or ""),
                 "last_updated_ts": float(s.get("last_updated_ts") or 0.0),
                 "rollover_posture": posture.get("posture", "FRESH"),
-                "capture_count": count_brain_visual_captures(cid, ALLOWED_MEDIA_EXTENSIONS, AGY_BRAIN_DIR),
+                "capture_count": cap_val,
                 "upload_batches": uploads,
                 "artifacts": artifacts,
             })
@@ -181,6 +186,7 @@ def build_workspace_tree_payload() -> dict[str, Any]:
             "staged_count": int(proj.get("staged_count") or 0),
             "in_work_count": int(proj.get("in_work_handoff_count") or 0),
             "completed_count": int(proj.get("completed_count") or 0),
+            "captures_loaded": bool(include_captures),
             "sessions": sessions_out,
             "staged_handoffs": proj.get("staged_handoffs") or [],
         })
@@ -193,9 +199,36 @@ def build_workspace_tree_payload() -> dict[str, Any]:
         "ok": True,
         "version": __version__,
         "version_info": version_info,
+        "captures_included": bool(include_captures),
         "queue": queue_node,
         "projects": projects_out,
         "selected_session": SESSION_STATE.get("selected_session", ""),
+    }
+
+
+def get_project_captures_payload(project_id: str) -> dict[str, Any]:
+    """Lazily count brain visual captures for every session belonging to project_id."""
+    pid = (project_id or "").strip()
+    if not pid:
+        return {"ok": False, "error": "Missing project_id"}
+    tree_bundle = build_project_session_tree(active_only=False, limit=180)
+    counts: dict[str, int] = {}
+    matched = False
+    for proj in tree_bundle.get("projects") or []:
+        cand_id = str(proj.get("project_id") or "")
+        if cand_id != pid and cand_id.lower() != pid.lower():
+            continue
+        matched = True
+        for s in proj.get("sessions") or []:
+            cid = str(s.get("conversation_id") or "")
+            if cid and validate_conv_id(cid):
+                counts[cid] = count_brain_visual_captures(cid, ALLOWED_MEDIA_EXTENSIONS, AGY_BRAIN_DIR)
+    return {
+        "ok": True,
+        "project_id": pid,
+        "matched": matched,
+        "counts": counts,
+        "total_captures": sum(counts.values()),
     }
 
 
@@ -339,7 +372,19 @@ async def handle_bucket_api_request(
         return
 
     if req_path.endswith("/web/api/workspace/tree") or req_path.endswith("/api/workspace/tree"):
-        await _send_json(send, 200, await anyio.to_thread.run_sync(build_workspace_tree_payload))
+        qs_map = urllib.parse.parse_qs(raw_qs, keep_blank_values=True)
+        inc_raw = (qs_map.get("include_captures", ["1"])[0] or "1").strip().lower()
+        include_captures = inc_raw not in ("0", "false", "no")
+        await _send_json(send, 200, await anyio.to_thread.run_sync(build_workspace_tree_payload, include_captures))
+        return
+
+    if req_path.endswith("/web/api/workspace/project-captures") or req_path.endswith("/api/workspace/project-captures"):
+        qs_map = urllib.parse.parse_qs(raw_qs, keep_blank_values=True)
+        pid_req = (qs_map.get("project_id", [""])[0] or "").strip()
+        if not pid_req:
+            await _send_json(send, 400, {"ok": False, "error": "Missing project_id"})
+            return
+        await _send_json(send, 200, await anyio.to_thread.run_sync(get_project_captures_payload, pid_req))
         return
 
     for pattern, kind in (

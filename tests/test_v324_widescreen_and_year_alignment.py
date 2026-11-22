@@ -145,26 +145,26 @@ def test_year_timeframe_24h_slots_and_full_calendar_alignment(tmp_path: Path, mo
 
 
 def test_web_routes_no_store_headers_and_pwa_assets_parity() -> None:
-    """/web HTML & sw.js must send no-store headers and register v3.2.5 modular JS assets."""
-    assert "heatmap.js" in web_routes.PWA_ASSETS
-    assert "workspace_resizer.js" in web_routes.PWA_ASSETS
+    """/web HTML & sw.js must send no-store headers and register v4.0.0 Quiet UI JS assets."""
+    assert "v9/v9_heatmap.js" in web_routes.PWA_ASSETS
+    assert "v9/v9_workspace.js" in web_routes.PWA_ASSETS
 
-    for route in ("/web", "/web/index.html", "/web/sw.js"):
+    for route in ("/web", "/web/index.html", "/web/v9", "/web/sw.js"):
         st, hdrs, _body = _asgi_get(route)
         assert st == 200
         assert hdrs.get("cache-control") == "no-store, no-cache, must-revalidate"
         if route.endswith("sw.js"):
             assert hdrs.get("service-worker-allowed") == "/"
 
-    for asset in ("/web/heatmap.js", "/web/workspace_resizer.js"):
+    for asset in ("/web/v9/v9_heatmap.js", "/web/v9/v9_workspace.js"):
         st, hdrs, body = _asgi_get(asset)
         assert st == 200
         assert "application/javascript" in hdrs.get("content-type", "")
         assert len(body) > 200
 
     html_txt = (REPO_ROOT / "web" / "index.html").read_text(encoding="utf-8")
-    assert '/web/heatmap.js?v=3.2.5' in html_txt
-    assert '/web/workspace_resizer.js?v=3.2.5' in html_txt
+    assert '/web/v9/v9_heatmap.js?v=4.0.0' in html_txt
+    assert '/web/v9/v9_workspace.js?v=4.0.0' in html_txt
 
 
 def test_sw_excludes_root_html_from_shell_cache(tmp_path: Path) -> None:
@@ -183,16 +183,17 @@ const ctx = {
 };
 vm.runInNewContext(swCode + "; globalThis.__sw = { CACHE_NAME, SHELL_ASSETS, SHELL_NAMES, isCacheableShellAsset };", ctx);
 const sw = ctx.__sw;
-assert.ok(sw.CACHE_NAME.includes("3.2.5"));
+assert.ok(sw.CACHE_NAME.includes("4.0.0"));
 assert.ok(!sw.SHELL_ASSETS.includes("/web"));
 assert.ok(!sw.SHELL_ASSETS.includes("/web/index.html"));
-assert.ok(sw.SHELL_ASSETS.includes("/web/heatmap.js?v=3.2.5"));
-assert.ok(sw.SHELL_ASSETS.includes("/web/workspace_resizer.js?v=3.2.5"));
+assert.ok(sw.SHELL_ASSETS.includes("/web/v9/v9_heatmap.js?v=4.0.0"));
+assert.ok(sw.SHELL_ASSETS.includes("/web/v9/v9_workspace.js?v=4.0.0"));
 const bareReq = { headers: new Map() };
 assert.strictEqual(sw.isCacheableShellAsset(new URL("https://nexus.example.com/web"), bareReq), false);
 assert.strictEqual(sw.isCacheableShellAsset(new URL("https://nexus.example.com/web/index.html"), bareReq), false);
-assert.strictEqual(sw.isCacheableShellAsset(new URL("https://nexus.example.com/web/heatmap.js"), bareReq), true);
-assert.strictEqual(sw.isCacheableShellAsset(new URL("https://nexus.example.com/web/heatmap.js"), { headers: new Map([["X-Nexus-Passphrase", "abc"]]) }), false);
+assert.strictEqual(sw.isCacheableShellAsset(new URL("https://nexus.example.com/web/v9/v9_heatmap.js"), bareReq), true);
+assert.strictEqual(sw.isCacheableShellAsset(new URL("https://nexus.example.com/secret_tok/web/v9/v9_heatmap.js"), bareReq), true);
+assert.strictEqual(sw.isCacheableShellAsset(new URL("https://nexus.example.com/web/v9/v9_heatmap.js"), { headers: new Map([["X-Nexus-Passphrase", "abc"]]) }), false);
 console.log("SW_OK");
 """,
     )
@@ -407,7 +408,7 @@ console.log("CHARTS_OK");
     assert "@supports not (scrollbar-color: auto)" in ws_css
     assert "scrollbar-width: auto;" in ws_css
     assert "-webkit-line-clamp: 2" in ws_css and "line-clamp: 2" in ws_css
-    assert 'id="workspaceResizer"' in index_html
-    assert 'placeholder="Filter sessions..."' in index_html
+    assert 'id="v9NavRail"' in index_html and 'id="v9WsSplit"' in index_html
+    assert 'id="v9PassInput"' in index_html
     assert "tree-session-children" not in explorer_js
     assert "no-store, no-cache, private" in bzip_py

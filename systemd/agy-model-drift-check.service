@@ -1,0 +1,15 @@
+[Unit]
+Description=AGY-Nexus Nightly Read-Only Model ID & Pricing Drift Check
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/agentic_workspace/projects/agy-nexus-mcp
+ExecStart=/usr/bin/env python3 %h/agentic_workspace/projects/agy-nexus-mcp/scripts/check_model_drift.py --check-only
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=%h/.gemini/antigravity/sidecar_data
+
+[Install]
+WantedBy=default.target

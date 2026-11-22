@@ -5,9 +5,6 @@ agy-nexus-mcp — Usage, Quota, 1h Adaptive Stacked Series, Token Metering & Thr
 
 from __future__ import annotations
 
-import json
-import sqlite3
-import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -16,11 +13,37 @@ from agy_nexus.ascii_default import render_ascii_default, render_ascii_quick
 from agy_nexus.ascii_rich import render_ascii_rich
 from . import __version__
 from .code_health import get_code_health_summary
+from agy_nexus.cost_ledger import (
+    compute_hourly_whiskers,
+    load_cost_ledger,
+    merge_and_persist_cost_ledger,
+    read_model_drift_status,
+)
+from agy_nexus.model_pricing import (
+    build_billing_comparison,
+    get_canonical_model_keys,
+    get_model_specs_map,
+    resolve_rate_epoch,
+)
+from agy_nexus.project_stats import (
+    build_fleet_project_index,
+    build_project_scope_payload,
+    build_project_sessions_series,
+    compact_project_hierarchy_sessions,
+    filter_project_conversations,
+    resolve_target_project_id,
+)
+from agy_nexus.stats_aggregator import (
+    fold_live_conversations,
+    fold_orphaned_and_archived,
+    init_agg_state,
+    load_agent_target_map,
+    load_db_conversations,
+)
 from agy_nexus.stats_series import (
     MODEL_SHORT_LABELS,
     build_series_and_project_hierarchy,
     load_projects_meta,
-    resolve_root_conversation,
     resolve_subagent_model,
 )
 from agy_nexus.telemetry_scanner import (
@@ -57,40 +80,26 @@ def _pick_primary_workspace(uris: list[str], title: str, project_id: str = "") -
 
 def render_ascii_stats(bundle: dict[str, Any], style: str = "default") -> str:
     """Dispatch telemetry bundle to the requested ASCII style: 'default' (72c), 'quick' (40c), or 'rich' (76c)."""
-    sk = (style or "default").strip().lower()
-    if sk in ("quick", "mobile", "40", "compact"):
+    st = (style or "default").strip().lower()
+    if st in ("quick", "compact", "narrow", "40", "mobile"):
         return render_ascii_quick(bundle)
-    if sk in ("rich", "tui", "76", "full"):
+    if st in ("rich", "wide", "desktop", "full", "76"):
         return render_ascii_rich(bundle)
     return render_ascii_default(bundle)
 
 
-def build_nexus_stats_bundle(
-    brain_dir: Path | None = None, db_file: Path | None = None, agy_config_dir: Path | None = None,
-    bg_dir: Path | None = None, period: str = "last_90d", *, style: str = "default",
-    data_dir: Path | None = None, config_dir: Path | None = None,
-    timeframe: str = "", horizon_mode: str = "", offset: int = 0, anchor_date: str = "",
-) -> dict[str, Any]:
-    """Build complete multi-window telemetry, heatmap, adaptive stacked series, canonical project hierarchy & ASCII reports."""
-    base_data = data_dir or Path.home() / ".gemini/antigravity"
-    brain_dir = brain_dir or (base_data / "brain")
-    db_file = db_file or (base_data / "conversation_summaries.db")
-    agy_config_dir = agy_config_dir or config_dir or (Path.home() / ".gemini/config")
-    bg_dir = bg_dir or (base_data / "sidecar_data/ag-bridge-bg")
-    now_loc = datetime.now(DISPLAY_TZ)
-    today = now_loc.date()
-
+def _resolve_window_bounds(
+    period: str, timeframe: str, horizon_mode: str, offset: int, anchor_date: str, today: date,
+) -> tuple[date, date, str, str, str, str, date]:
     anchor = today
     if anchor_date:
         try:
             anchor = datetime.strptime(anchor_date.strip()[:10], "%Y-%m-%d").date()
         except Exception:
             anchor = today
-
     pk_raw = (period or "last_90d").strip().lower()
     if timeframe:
-        tf = timeframe.strip().lower()
-        hm = horizon_mode.strip().lower() if horizon_mode else "to_date"
+        tf, hm = timeframe.strip().lower(), horizon_mode.strip().lower() if horizon_mode else "to_date"
     elif pk_raw in ("current_month", "this_month", "mtd"):
         tf, hm = "month", "to_date"
     elif pk_raw == "last_month":
@@ -103,316 +112,302 @@ def build_nexus_stats_bundle(
         tf, hm = "quarter", "to_date"
     else:
         tf, hm = "quarter", "rolling"
+    hm = hm if hm in ("to_date", "rolling") else "to_date"
+    tf = tf if tf in ("month", "quarter", "year") else "quarter"
 
-    if hm not in ("to_date", "rolling"):
-        hm = "to_date"
-    if tf not in ("month", "quarter", "year"):
-        tf = "quarter"
-
-    # Compute start_d and end_d for the active window
     if hm == "to_date":
         if tf == "month":
             m_idx = anchor.year * 12 + (anchor.month - 1) + int(offset)
-            tgt_year, tgt_month = m_idx // 12, (m_idx % 12) + 1
-            start_d = date(tgt_year, tgt_month, 1)
-            next_m_idx = m_idx + 1
-            next_first = date(next_m_idx // 12, (next_m_idx % 12) + 1, 1)
-            last_day = next_first - timedelta(days=1)
-            end_d = min(today, last_day) if (tgt_year == today.year and tgt_month == today.month) else last_day
-            p_label = f"{start_d.strftime('%b %Y')}"
-            pk = "current_month" if (tgt_year == today.year and tgt_month == today.month) else f"month_{tgt_year}_{tgt_month:02d}"
-        elif tf == "quarter":
-            q_cur = (anchor.month - 1) // 3
-            q_idx = anchor.year * 4 + q_cur + int(offset)
-            tgt_year, tgt_q = q_idx // 4, (q_idx % 4) + 1
-            start_month = (tgt_q - 1) * 3 + 1
-            start_d = date(tgt_year, start_month, 1)
-            end_month = start_month + 2
-            next_m = date(tgt_year + 1, 1, 1) if end_month == 12 else date(tgt_year, end_month + 1, 1)
-            last_day = next_m - timedelta(days=1)
-            is_cur_q = (tgt_year == today.year and (today.month - 1) // 3 + 1 == tgt_q)
-            end_d = min(today, last_day) if is_cur_q else last_day
-            p_label = f"{tgt_year} Q{tgt_q}"
-            pk = f"quarter_{tgt_year}_q{tgt_q}"
-        else:
-            tgt_year = anchor.year + int(offset)
-            start_d = date(tgt_year, 1, 1)
-            last_day = date(tgt_year, 12, 31)
-            end_d = min(today, last_day) if tgt_year == today.year else last_day
-            p_label = f"{tgt_year}"
-            pk = "ytd" if tgt_year == today.year else f"year_{tgt_year}"
-    else:
-        # Rolling
-        if tf == "month":
-            roll_end = min(today, anchor + timedelta(days=int(offset) * 30))
-            start_d = roll_end - timedelta(days=29)
-            end_d = roll_end
-            p_label = f"Rolling 30D ({start_d.strftime('%b %d')}–{end_d.strftime('%b %d')})"
-            pk = "month_rolling"
-        elif tf == "quarter":
-            roll_end = min(today, anchor + timedelta(days=int(offset) * 91))
-            start_d = roll_end - timedelta(days=90)
-            end_d = roll_end
-            p_label = "Rolling 90 Days" if int(offset) == 0 else f"Rolling 91D ({start_d.strftime('%b %d')}–{end_d.strftime('%b %d')})"
-            pk = "last_90d" if int(offset) == 0 else "quarter_rolling"
-        else:
-            roll_end = min(today, anchor + timedelta(days=int(offset) * 364))
-            start_d = roll_end - timedelta(days=363)
-            end_d = roll_end
-            p_label = "Rolling 52 Weeks" if int(offset) == 0 else f"Rolling 52W ({start_d.strftime('%b %d, %Y')}–{end_d.strftime('%b %d, %Y')})"
-            pk = "last_year" if int(offset) == 0 else "year_rolling"
+            ty, tm = m_idx // 12, (m_idx % 12) + 1
+            start_d = date(ty, tm, 1)
+            nm = m_idx + 1
+            last_d = date(nm // 12, (nm % 12) + 1, 1) - timedelta(days=1)
+            end_d = min(today, last_d) if (ty == today.year and tm == today.month) else last_d
+            return start_d, end_d, start_d.strftime("%b %Y"), ("current_month" if (ty == today.year and tm == today.month) else f"month_{ty}_{tm:02d}"), tf, hm, anchor
+        if tf == "quarter":
+            q_idx = anchor.year * 4 + ((anchor.month - 1) // 3) + int(offset)
+            ty, tq = q_idx // 4, (q_idx % 4) + 1
+            sm = (tq - 1) * 3 + 1
+            start_d = date(ty, sm, 1)
+            em = sm + 2
+            last_d = (date(ty + 1, 1, 1) if em == 12 else date(ty, em + 1, 1)) - timedelta(days=1)
+            end_d = min(today, last_d) if (ty == today.year and ((today.month - 1) // 3 + 1) == tq) else last_d
+            return start_d, end_d, f"{ty} Q{tq}", f"quarter_{ty}_q{tq}", tf, hm, anchor
+        ty = anchor.year + int(offset)
+        start_d, last_d = date(ty, 1, 1), date(ty, 12, 31)
+        return start_d, (min(today, last_d) if ty == today.year else last_d), f"{ty}", ("ytd" if ty == today.year else f"year_{ty}"), tf, hm, anchor
 
-    s_iso, e_iso = start_d.strftime("%Y-%m-%d"), end_d.strftime("%Y-%m-%d")
-    quota_info = get_live_quota_and_pool_status(base_data, agy_config_dir)
-    main_info = quota_info.get("active_mainchat_model") or {}
-    main_mk, main_switch_date = str(main_info.get("model_key") or "argon_pro"), str(main_info.get("state_updated_date") or "")
+    if tf == "month":
+        end_d = min(today, anchor + timedelta(days=int(offset) * 30))
+        start_d = end_d - timedelta(days=29)
+        return start_d, end_d, f"Rolling 30D ({start_d.strftime('%b %d')}–{end_d.strftime('%b %d')})", "month_rolling", tf, hm, anchor
+    if tf == "quarter":
+        end_d = min(today, anchor + timedelta(days=int(offset) * 91))
+        start_d = end_d - timedelta(days=90)
+        p_lbl = "Rolling 90 Days" if int(offset) == 0 else f"Rolling 91D ({start_d.strftime('%b %d')}–{end_d.strftime('%b %d')})"
+        return start_d, end_d, p_lbl, ("last_90d" if int(offset) == 0 else "quarter_rolling"), tf, hm, anchor
+    end_d = min(today, anchor + timedelta(days=int(offset) * 364))
+    start_d = end_d - timedelta(days=363)
+    p_lbl = "Rolling 52 Weeks" if int(offset) == 0 else f"Rolling 52W ({start_d.strftime('%b %d, %Y')}–{end_d.strftime('%b %d, %Y')})"
+    return start_d, end_d, p_lbl, ("last_year" if int(offset) == 0 else "year_rolling"), tf, hm, anchor
 
-    conv_cache = scan_transcript_stats(brain_dir, bg_dir)
-    projects_map = load_projects_meta(agy_config_dir)
-    parent_model_map = {cid: str(cd.get("last_conv_model") or "") for cid, cd in conv_cache.items() if cd.get("last_conv_model")}
-    db_convs: dict[str, dict[str, Any]] = {}
-    if db_file.exists():
-        try:
-            conn = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True, timeout=3.0)
-            try:
-                conn.row_factory = sqlite3.Row
-                cols = {str(r[1]) for r in conn.execute("PRAGMA table_info(conversation_summaries)").fetchall()}
-                proj_col = ", project_id" if "project_id" in cols else ""
-                rows = conn.execute(f"SELECT conversation_id, title, step_count, last_modified_time, workspace_uris, status, parent_conversation_id, agent_name{proj_col} FROM conversation_summaries").fetchall()
-            finally:
-                conn.close()
-            for r in rows:
-                cid, parent_id, agent_name = str(r["conversation_id"]), str(r["parent_conversation_id"] or ""), str(r["agent_name"] or "").strip()
-                uris = json.loads(r["workspace_uris"] or "[]") if isinstance(r["workspace_uris"], str) and r["workspace_uris"].startswith("[") else []
-                title_str = str(r["title"] or cid[:8])
-                pid_val = str(r["project_id"] or "") if "project_id" in cols else ""
-                db_convs[cid] = {"title": title_str, "step_count": int(r["step_count"] or 0), "last_modified": str(r["last_modified_time"] or ""), "workspace": _pick_primary_workspace(uris, title_str), "status": str(r["status"] or "IDLE"), "is_subagent": bool(parent_id), "parent_id": parent_id, "agent_name": agent_name or "subagent", "project_id": pid_val}
-            for cid, info in db_convs.items():
-                if info["parent_id"] and info["parent_id"] in db_convs:
-                    p_obj = db_convs[info["parent_id"]]
-                    if p_obj.get("workspace"): info["workspace"] = p_obj["workspace"]
-                    if p_obj.get("project_id") and not info.get("project_id"): info["project_id"] = p_obj["project_id"]
-        except Exception:
-            pass
 
-    subagent_roles: dict[str, dict[str, Any]] = {}
-    role_model_votes: dict[str, dict[str, int]] = {}
-    role_inherited: dict[str, bool] = {}
-    model_totals = {"carbon": 0, "argon_pro": 0, "flash": 0, "claude_partner": 0, "gpt_oss": 0}
-    model_tokens = {"carbon": 0, "argon_pro": 0, "flash": 0, "claude_partner": 0, "gpt_oss": 0}
-    daily_steps, daily_tools, daily_tokens, daily_sessions = {}, {}, {}, {}
-    s1_tot_steps, s1_tot_toks, ws_map = {}, {}, {}
-    s1_mod_steps: dict[str, dict[str, int]] = {mk: {} for mk in model_totals}
-    s1_mod_toks: dict[str, dict[str, int]] = {mk: {} for mk in model_totals}
-    s1_sub_steps: dict[str, dict[str, int]] = {}
-    s1_sub_toks: dict[str, dict[str, int]] = {}
-    s1_ws_steps: dict[str, dict[str, int]] = {}
-    root_sess_stats: dict[str, dict[str, Any]] = {}
-    active_parent_convs = 0
-
-    for cid, cdata in conv_cache.items():
-        meta = db_convs.get(cid, {})
-        is_sub, agent_role = bool(meta.get("is_subagent")), str(meta.get("agent_name") or "subagent")
-        root_cid = resolve_root_conversation(cid, db_convs) if is_sub else cid
-        root_meta = db_convs.get(root_cid, meta)
-        ws_name = normalize_workspace_name(root_meta.get("workspace") or meta.get("workspace") or "") or "unassigned"
-        win_steps, win_toks = 0, 0
-        for ds, cnt in (cdata.get("day_steps") or {}).items():
-            daily_steps[ds] = daily_steps.get(ds, 0) + cnt
-            daily_sessions.setdefault(ds, set()).add(root_cid)
-            if s_iso <= ds <= e_iso: win_steps += cnt
-        for ds, tok_c in (cdata.get("day_tokens") or {}).items():
-            daily_tokens[ds] = daily_tokens.get(ds, 0) + tok_c
-            if s_iso <= ds <= e_iso: win_toks += tok_c
-        for ds, tcnt in (cdata.get("day_tools") or {}).items():
-            daily_tools[ds] = daily_tools.get(ds, 0) + tcnt
-
-        r_stat = root_sess_stats.setdefault(root_cid, {"win_steps": 0, "win_tokens": 0, "sub_runs": 0, "s1_steps": {}, "s1_toks": {}})
-        r_stat["win_steps"], r_stat["win_tokens"] = r_stat["win_steps"] + win_steps, r_stat["win_tokens"] + win_toks
-        if is_sub and win_steps > 0: r_stat["sub_runs"] += 1
-
-        s1_st_src = cdata.get("slot_1h_steps") or cdata.get("slot_steps") or {}
-        s1_tk_src = cdata.get("slot_1h_tokens") or {}
-        for sl_k, sl_cnt in s1_st_src.items():
-            if s_iso <= sl_k[:10] <= e_iso:
-                s1_tot_steps[sl_k] = s1_tot_steps.get(sl_k, 0) + sl_cnt
-                s1_ws_steps.setdefault(ws_name, {})[sl_k] = s1_ws_steps.get(ws_name, {}).get(sl_k, 0) + sl_cnt
-                r_stat["s1_steps"][sl_k] = r_stat["s1_steps"].get(sl_k, 0) + sl_cnt
-                if is_sub:
-                    s1_sub_steps.setdefault(agent_role, {})[sl_k] = s1_sub_steps.get(agent_role, {}).get(sl_k, 0) + sl_cnt
-                    smk, _ = resolve_subagent_model(agent_role, root_cid, parent_model_map, main_mk, main_switch_date, sl_k)
-                    s1_mod_steps[smk][sl_k] = s1_mod_steps[smk].get(sl_k, 0) + sl_cnt
-        for sl_k, sl_tk in s1_tk_src.items():
-            if s_iso <= sl_k[:10] <= e_iso:
-                s1_tot_toks[sl_k] = s1_tot_toks.get(sl_k, 0) + sl_tk
-                r_stat["s1_toks"][sl_k] = r_stat["s1_toks"].get(sl_k, 0) + sl_tk
-                if is_sub:
-                    s1_sub_toks.setdefault(agent_role, {})[sl_k] = s1_sub_toks.get(agent_role, {}).get(sl_k, 0) + sl_tk
-                    smk, _ = resolve_subagent_model(agent_role, root_cid, parent_model_map, main_mk, main_switch_date, sl_k)
-                    s1_mod_toks[smk][sl_k] = s1_mod_toks[smk].get(sl_k, 0) + sl_tk
-        if not is_sub:
-            for sl_k, m_dict in (cdata.get("slot_1h_models") or {}).items():
-                if s_iso <= sl_k[:10] <= e_iso and isinstance(m_dict, dict):
-                    for mk, mv in m_dict.items(): s1_mod_steps.setdefault(mk, {})[sl_k] = s1_mod_steps.get(mk, {}).get(sl_k, 0) + int(mv)
-            for sl_k, mt_dict in (cdata.get("slot_1h_model_tokens") or {}).items():
-                if s_iso <= sl_k[:10] <= e_iso and isinstance(mt_dict, dict):
-                    for mk, mtv in mt_dict.items(): s1_mod_toks.setdefault(mk, {})[sl_k] = s1_mod_toks.get(mk, {}).get(sl_k, 0) + int(mtv)
-
-        for ds, dm_map in (cdata.get("day_models") or {}).items():
-            if s_iso <= ds <= e_iso and isinstance(dm_map, dict):
-                if is_sub:
-                    smk, is_inh = resolve_subagent_model(agent_role, root_cid, parent_model_map, main_mk, main_switch_date, ds)
-                    c_sum = sum(int(v) for v in dm_map.values())
-                    model_totals[smk] = model_totals.get(smk, 0) + c_sum
-                    role_model_votes.setdefault(agent_role, {})[smk] = role_model_votes.get(agent_role, {}).get(smk, 0) + c_sum
-                    if is_inh: role_inherited[agent_role] = True
-                else:
-                    for mk, mval in dm_map.items(): model_totals[mk] = model_totals.get(mk, 0) + int(mval)
-        for ds, dtk_map in (cdata.get("day_model_tokens") or {}).items():
-            if s_iso <= ds <= e_iso and isinstance(dtk_map, dict):
-                if is_sub:
-                    smk, _ = resolve_subagent_model(agent_role, root_cid, parent_model_map, main_mk, main_switch_date, ds)
-                    model_tokens[smk] = model_tokens.get(smk, 0) + sum(int(v) for v in dtk_map.values())
-                else:
-                    for mk, mtok in dtk_map.items(): model_tokens[mk] = model_tokens.get(mk, 0) + int(mtok)
-
-        if win_steps > 0:
-            we = ws_map.setdefault(ws_name, {"workspace": ws_name, "sessions": 0, "steps": 0, "tokens": 0})
-            if not is_sub:
-                we["sessions"], active_parent_convs = we["sessions"] + 1, active_parent_convs + 1
-            else:
-                rec = subagent_roles.setdefault(agent_role, {"runs": 0, "steps": 0, "tokens": 0})
-                rec["runs"], rec["steps"], rec["tokens"] = rec["runs"] + 1, rec["steps"] + win_steps, rec["tokens"] + win_toks
-            we["steps"], we["tokens"] = we["steps"] + win_steps, we["tokens"] + win_toks
-
-    for cid, meta in db_convs.items():
-        if meta.get("is_subagent") and cid not in conv_cache and int(meta.get("step_count") or 0) > 0:
-            d_str, s1_str, _ = to_1h_slot(str(meta.get("last_modified") or ""), time.time())
-            if len(d_str) == 10 and s_iso <= d_str <= e_iso:
-                role, st_c = str(meta.get("agent_name") or "subagent"), int(meta["step_count"])
-                tok_est = st_c * 380
-                root_cid = resolve_root_conversation(cid, db_convs)
-                ws_n = normalize_workspace_name((db_convs.get(root_cid) or meta).get("workspace") or "") or "unassigned"
-                smk, is_inh = resolve_subagent_model(role, root_cid, parent_model_map, main_mk, main_switch_date, d_str)
-                daily_steps[d_str], daily_tokens[d_str] = daily_steps.get(d_str, 0) + st_c, daily_tokens.get(d_str, 0) + tok_est
-                s1_tot_steps[s1_str], s1_tot_toks[s1_str] = s1_tot_steps.get(s1_str, 0) + st_c, s1_tot_toks.get(s1_str, 0) + tok_est
-                s1_sub_steps.setdefault(role, {})[s1_str] = s1_sub_steps.get(role, {}).get(s1_str, 0) + st_c
-                s1_sub_toks.setdefault(role, {})[s1_str] = s1_sub_toks.get(role, {}).get(s1_str, 0) + tok_est
-                s1_ws_steps.setdefault(ws_n, {})[s1_str] = s1_ws_steps.get(ws_n, {}).get(s1_str, 0) + st_c
-                s1_mod_steps[smk][s1_str] = s1_mod_steps[smk].get(s1_str, 0) + st_c
-                s1_mod_toks[smk][s1_str] = s1_mod_toks[smk].get(s1_str, 0) + tok_est
-                r_stat = root_sess_stats.setdefault(root_cid, {"win_steps": 0, "win_tokens": 0, "sub_runs": 0, "s1_steps": {}, "s1_toks": {}})
-                r_stat["win_steps"], r_stat["win_tokens"], r_stat["sub_runs"] = r_stat["win_steps"] + st_c, r_stat["win_tokens"] + tok_est, r_stat["sub_runs"] + 1
-                r_stat["s1_steps"][s1_str], r_stat["s1_toks"][s1_str] = r_stat["s1_steps"].get(s1_str, 0) + st_c, r_stat["s1_toks"].get(s1_str, 0) + tok_est
-                rec = subagent_roles.setdefault(role, {"runs": 0, "steps": 0, "tokens": 0})
-                rec["runs"], rec["steps"], rec["tokens"] = rec["runs"] + 1, rec["steps"] + st_c, rec["tokens"] + tok_est
-                we = ws_map.setdefault(ws_n, {"workspace": ws_n, "sessions": 0, "steps": 0, "tokens": 0})
-                we["steps"], we["tokens"] = we["steps"] + st_c, we["tokens"] + tok_est
-                model_totals[smk], model_tokens[smk] = model_totals.get(smk, 0) + st_c, model_tokens.get(smk, 0) + tok_est
-                role_model_votes.setdefault(role, {})[smk] = role_model_votes.get(role, {}).get(smk, 0) + st_c
-                if is_inh: role_inherited[role] = True
-
-    cur, win_steps_sum, win_tools_sum, win_tokens_sum, active_days, peak = start_d, 0, 0, 0, 0, {"date": "", "steps": 0}
+def _build_heatmap_and_tables(
+    agg: dict[str, Any], *, start_d: date, end_d: date, today: date, hm: str,
+    quota_info: dict[str, Any], parent_model_map: dict[str, str], main_mk: str,
+    main_switch_date: str, agent_target_map: dict[str, str], bg_dir: Path,
+) -> dict[str, Any]:
+    cur, win_st, win_tl, win_tk, win_cs, act_days, peak = start_d, 0, 0, 0, 0, 0, {"date": "", "steps": 0}
     while cur <= end_d:
         ds = cur.strftime("%Y-%m-%d")
-        st_c, tl_c, tk_c = daily_steps.get(ds, 0), daily_tools.get(ds, 0), daily_tokens.get(ds, 0)
-        win_steps_sum, win_tools_sum, win_tokens_sum = win_steps_sum + st_c, win_tools_sum + tl_c, win_tokens_sum + tk_c
-        if st_c > 0: active_days += 1
-        if st_c >= peak["steps"]: peak = {"date": ds, "steps": st_c}
+        st_c, tl_c = agg["daily_steps"].get(ds, 0), agg["daily_tools"].get(ds, 0)
+        tk_c, cs_c = agg["daily_tokens"].get(ds, 0), agg["daily_cost"].get(ds, 0)
+        win_st, win_tl, win_tk, win_cs = win_st + st_c, win_tl + tl_c, win_tk + tk_c, win_cs + cs_c
+        if st_c > 0:
+            act_days += 1
+        if st_c >= peak["steps"]:
+            peak = {"date": ds, "steps": st_c}
         cur += timedelta(days=1)
 
-    if hm == "to_date":
-        ref_year = end_d.year
-        heat_cal_start = date(ref_year, 1, 1)
-        heat_cal_end = date(ref_year, 12, 31)
-    else:
-        heat_cal_end = end_d
-        heat_cal_start = heat_cal_end - timedelta(days=363)
-
-    heat_start_d = heat_cal_start - timedelta(days=heat_cal_start.weekday())
-    heat_end_d = heat_cal_end + timedelta(days=(6 - heat_cal_end.weekday()))
-    global_nz = sorted(v for v in daily_steps.values() if v > 0)
-    q1, q2, q3 = (global_nz[max(0, int(len(global_nz) * 0.25) - 1)], global_nz[max(0, int(len(global_nz) * 0.50) - 1)], global_nz[max(0, int(len(global_nz) * 0.75) - 1)]) if global_nz else (25, 100, 300)
-    heatmap_series, h_cur = [], heat_start_d
-    while h_cur <= heat_end_d:
+    h_cal_s = date(end_d.year, 1, 1) if hm == "to_date" else (end_d - timedelta(days=363))
+    h_cal_e = date(end_d.year, 12, 31) if hm == "to_date" else end_d
+    h_cur, h_end = h_cal_s - timedelta(days=h_cal_s.weekday()), h_cal_e + timedelta(days=(6 - h_cal_e.weekday()))
+    nz = sorted(v for v in agg["daily_steps"].values() if v > 0)
+    q1, q2, q3 = (nz[max(0, int(len(nz) * 0.25) - 1)], nz[max(0, int(len(nz) * 0.50) - 1)], nz[max(0, int(len(nz) * 0.75) - 1)]) if nz else (25, 100, 300)
+    heatmap_series: list[dict[str, Any]] = []
+    while h_cur <= h_end:
         ds, is_fut = h_cur.strftime("%Y-%m-%d"), h_cur > today
-        st_c = 0 if is_fut else daily_steps.get(ds, 0)
+        st_c = 0 if is_fut else agg["daily_steps"].get(ds, 0)
         lvl = -1 if is_fut else (0 if st_c == 0 else (1 if st_c <= q1 else (2 if st_c <= q2 else (3 if st_c <= q3 else 4))))
         heatmap_series.append({
             "date": ds, "weekday": h_cur.weekday(), "steps": st_c,
-            "tools": 0 if is_fut else daily_tools.get(ds, 0),
-            "tokens": 0 if is_fut else daily_tokens.get(ds, 0),
-            "sessions": 0 if is_fut else len(daily_sessions.get(ds, set())),
+            "tools": 0 if is_fut else agg["daily_tools"].get(ds, 0),
+            "tokens": 0 if is_fut else agg["daily_tokens"].get(ds, 0),
+            "cost_usd": 0.0 if is_fut else round(agg["daily_cost"].get(ds, 0) / 1_000_000.0, 4),
+            "sessions": 0 if is_fut else len(agg["daily_sessions"].get(ds, set())),
             "level": lvl, "future": is_fut, "in_window": start_d <= h_cur <= end_d,
         })
         h_cur += timedelta(days=1)
 
-    act_d, act_w = max(1, active_days), max(1.0, max(1, active_days) / 7.0)
-    ws_step_sum = max(1, sum(int(w.get("steps", 0)) for w in ws_map.values()))
-    all_ws_list = sorted(ws_map.values(), key=lambda x: x["steps"], reverse=True)
+    act_d, act_w = max(1, act_days), max(1.0, max(1, act_days) / 7.0)
+    ws_sum = max(1, sum(int(w.get("steps", 0)) for w in agg["ws_map"].values()))
+    all_ws_list = sorted(agg["ws_map"].values(), key=lambda x: x["steps"], reverse=True)
     for w in all_ws_list:
-        tk, st_w = int(w.get("tokens", 0)), int(w.get("steps", 0))
-        w["tok_per_day"], w["tok_per_week"], w["share_pct"] = round(tk / act_d), round(tk / act_w), round((st_w / ws_step_sum) * 100.0, 1)
+        tk, st_w, cm_w = int(w.get("tokens", 0)), int(w.get("steps", 0)), int(w.get("cost_usd_micros", 0))
+        w.update({"tok_per_day": round(tk / act_d), "tok_per_week": round(tk / act_w), "share_pct": round((st_w / ws_sum) * 100.0, 1), "est_cost_usd": round(cm_w / 1_000_000.0, 2)})
 
-    sa_step_sum = max(1, sum(int(v.get("steps", 0)) for v in subagent_roles.values()))
-    subagent_list = []
-    for rk, rv in sorted(subagent_roles.items(), key=lambda kv: kv[1]["steps"], reverse=True):
-        tk, st_s = int(rv.get("tokens", 0)), int(rv.get("steps", 0))
-        votes = role_model_votes.get(rk) or {}
-        dom_mk = max(votes.items(), key=lambda kv: kv[1])[0] if votes else resolve_subagent_model(rk, "", parent_model_map, main_mk, main_switch_date, e_iso)[0]
-        dom_lbl = MODEL_SHORT_LABELS.get(dom_mk, dom_mk) + (" (inherit)" if role_inherited.get(rk) else "")
-        rv["tok_per_day"], rv["tok_per_week"], rv["share_pct"] = round(tk / act_d), round(tk / act_w), round((st_s / sa_step_sum) * 100.0, 1)
-        rv["dominant_model_key"], rv["dominant_model_label"] = dom_mk, dom_lbl
+    sa_sum = max(1, sum(int(v.get("steps", 0)) for v in agg["subagent_roles"].values()))
+    subagent_list: list[dict[str, Any]] = []
+    e_iso = end_d.strftime("%Y-%m-%d")
+    for rk, rv in sorted(agg["subagent_roles"].items(), key=lambda kv: kv[1]["steps"], reverse=True):
+        tk, st_s, runs, cm_s = int(rv.get("tokens", 0)), int(rv.get("steps", 0)), int(rv.get("runs", 0)), int(rv.get("cost_usd_micros", 0))
+        votes = agg["role_model_votes"].get(rk) or {}
+        dom_mk = max(votes.items(), key=lambda kv: kv[1])[0] if votes else resolve_subagent_model(rk, "", parent_model_map, main_mk, main_switch_date, e_iso, agent_target_map)[0]
+        dom_lbl = MODEL_SHORT_LABELS.get(dom_mk, dom_mk) + (" (inherit)" if agg["role_inherited"].get(rk) else "")
+        rv.update({
+            "tok_per_day": round(tk / act_d), "tok_per_week": round(tk / act_w),
+            "avg_tokens_per_run": round(tk / max(1, runs)), "cost_usd_micros": cm_s, "est_cost_usd": round(cm_s / 1_000_000.0, 2),
+            "share_pct": round((st_s / sa_sum) * 100.0, 1), "dominant_model_key": dom_mk, "dominant_model_label": dom_lbl,
+        })
         subagent_list.append({"role": rk, **rv})
 
+    targets, specs = quota_info["target_model_allocation"], get_model_specs_map()
+    tot_calls = max(1, sum(agg["model_totals"].values()))
+    model_comp = []
+    for mk in get_canonical_model_keys():
+        sp = specs.get(mk, {})
+        tm = targets.get(mk, {"label": sp.get("label", mk), "pool": sp.get("pool_label", "Unknown"), "pool_key": sp.get("pool_key", "google"), "quota_group": sp.get("quota_group", "Gemini Models"), "target_pct": 0.0})
+        ac, tk_m, cm_m, fm_m = int(agg["model_totals"].get(mk, 0)), int(agg["model_tokens"].get(mk, 0)), int(agg["model_cost"].get(mk, 0)), int(agg["model_fore"].get(mk, 0))
+        ap, tp = round((ac / tot_calls) * 100.0, 1), float(tm.get("target_pct", 0.0))
+        dp = round(ap - tp, 1)
+        epoch = resolve_rate_epoch(mk, e_iso, bg_dir=bg_dir)
+        model_comp.append({
+            "model_key": mk, "label": str(tm.get("label") or sp.get("label") or mk),
+            "short_label": str(sp.get("short_label") or MODEL_SHORT_LABELS.get(mk, mk)),
+            "pool": str(tm.get("pool") or sp.get("pool_label") or "Unknown"),
+            "pool_key": str(tm.get("pool_key") or sp.get("pool_key") or "google"),
+            "quota_group": str(tm.get("quota_group") or sp.get("quota_group") or "Gemini Models"),
+            "rate_label": f"${epoch['input_micros'] / 1_000_000:.2f}/${epoch['output_micros'] / 1_000_000:.2f}",
+            "actual_calls": ac, "est_tokens": tk_m, "cost_usd_micros": cm_m, "est_cost_usd": round(cm_m / 1_000_000.0, 2),
+            "forecast_cost_micros": fm_m, "forecast_cost_usd": round(fm_m / 1_000_000.0, 2),
+            "actual_pct": ap, "target_pct": tp, "delta_pct": dp,
+            "status": "ON_TARGET" if abs(dp) <= 12.0 else ("OVER_TARGET" if dp > 12.0 else "UNDER_TARGET"),
+        })
+
+    return {
+        "win_steps_sum": win_st, "win_tools_sum": win_tl, "win_tokens_sum": win_tk, "win_cost_sum": win_cs,
+        "active_days": act_days, "act_d": act_d, "act_w": act_w, "peak": peak,
+        "heatmap_series": heatmap_series, "all_ws_list": all_ws_list, "subagent_list": subagent_list, "model_comp": model_comp,
+    }
+
+
+def build_nexus_stats_bundle(
+    brain_dir: Path | None = None, db_file: Path | None = None, agy_config_dir: Path | None = None,
+    bg_dir: Path | None = None, period: str = "last_90d", *, style: str = "default",
+    data_dir: Path | None = None, config_dir: Path | None = None,
+    timeframe: str = "", horizon_mode: str = "", offset: int = 0, anchor_date: str = "",
+    project_id: str = "", include_ascii: bool = True, compact_sessions: bool = False,
+) -> dict[str, Any]:
+    """Build complete multi-window telemetry, 8-model USD ledger, whiskers, canonical hierarchy & ASCII reports."""
+    base_data = data_dir or Path.home() / ".gemini/antigravity"
+    brain_dir = brain_dir or (base_data / "brain")
+    db_file = db_file or (base_data / "conversation_summaries.db")
+    agy_config_dir = agy_config_dir or config_dir or (Path.home() / ".gemini/config")
+    bg_dir = bg_dir or (base_data / "sidecar_data/ag-bridge-bg")
+    now_loc = datetime.now(DISPLAY_TZ)
+    today = now_loc.date()
+
+    start_d, end_d, p_label, pk, tf, hm, anchor = _resolve_window_bounds(period, timeframe, horizon_mode, offset, anchor_date, today)
+    s_iso, e_iso = start_d.strftime("%Y-%m-%d"), end_d.strftime("%Y-%m-%d")
+    quota_info = get_live_quota_and_pool_status(base_data, agy_config_dir)
+    main_info = quota_info.get("active_mainchat_model") or {}
+    main_mk, main_switch_date = str(main_info.get("model_key") or "argon"), str(main_info.get("state_updated_date") or "")
+
+    full_conv_cache = scan_transcript_stats(brain_dir, bg_dir)
+    full_db_convs = load_db_conversations(db_file)
+    projects_map = load_projects_meta(agy_config_dir)
+    agent_target_map = load_agent_target_map(agy_config_dir)
+    default_live_bg = (Path.home() / ".gemini/antigravity/sidecar_data/ag-bridge-bg").resolve()
+    can_persist = (bg_dir.resolve() != default_live_bg) or any((brain_dir / cid).is_dir() for cid in full_conv_cache)
+    parent_model_map = {cid: str(cd.get("last_conv_model") or "") for cid, cd in full_conv_cache.items() if cd.get("last_conv_model")}
+    ledger = (
+        merge_and_persist_cost_ledger(
+            bg_dir, full_conv_cache, full_db_convs, projects_map=projects_map,
+            parent_model_map=parent_model_map, main_mk=main_mk,
+            main_switch_date=main_switch_date, agent_target_map=agent_target_map,
+        )
+        if can_persist
+        else load_cost_ledger(bg_dir)
+    )
+    full_live_cids = set(full_conv_cache.keys())
+
+    from agy_nexus.session_tree import build_project_session_tree
+    tree_bundle = build_project_session_tree(active_only=False, limit=180, bg_dir=bg_dir)
+    live_sess_map = {str(s["conversation_id"]): s for tp in (tree_bundle.get("projects") or []) for s in (tp.get("sessions") or []) if s.get("conversation_id")}
+    conv_cache, db_convs = full_conv_cache, full_db_convs
+    fleet_idx, target_pid = None, ""
+    if (project_id or "").strip():
+        fleet_idx = build_fleet_project_index(full_conv_cache, full_db_convs, live_sess_map, projects_map, tree_bundle, s_iso, e_iso)
+        target_pid = resolve_target_project_id(project_id, fleet_idx["proj_meta"], projects_map)
+        conv_cache, db_convs = filter_project_conversations(full_conv_cache, full_db_convs, live_sess_map, projects_map, target_pid)
+
+    agg = init_agg_state()
+    fold_live_conversations(
+        agg, conv_cache, db_convs, s_iso=s_iso, e_iso=e_iso, parent_model_map=parent_model_map,
+        main_mk=main_mk, main_switch_date=main_switch_date, agent_target_map=agent_target_map, bg_dir=bg_dir,
+    )
+    archived_convs = fold_orphaned_and_archived(
+        agg, db_convs, conv_cache, ledger, full_live_cids, s_iso=s_iso, e_iso=e_iso, target_pid=target_pid,
+        parent_model_map=parent_model_map, main_mk=main_mk, main_switch_date=main_switch_date,
+        agent_target_map=agent_target_map, bg_dir=bg_dir,
+    )
+    tbl = _build_heatmap_and_tables(
+        agg, start_d=start_d, end_d=end_d, today=today, hm=hm, quota_info=quota_info,
+        parent_model_map=parent_model_map, main_mk=main_mk, main_switch_date=main_switch_date,
+        agent_target_map=agent_target_map, bg_dir=bg_dir,
+    )
+    heatmap_series = tbl["heatmap_series"]
     chart_days = [x for x in heatmap_series if not x.get("future") and s_iso <= x["date"] <= e_iso]
     if tf == "year":
         trimmed_days = [x["date"] for x in chart_days]
     else:
-        first_act_idx = next((idx for idx, x in enumerate(chart_days) if x["steps"] > 0), 0)
-        trimmed_days = [x["date"] for x in (chart_days[max(0, first_act_idx - 1) :] if len(chart_days) > 7 else chart_days)]
+        first_idx = next((idx for idx, x in enumerate(chart_days) if x["steps"] > 0), 0)
+        trimmed_days = [x["date"] for x in (chart_days[max(0, first_idx - 1) :] if len(chart_days) > 7 else chart_days)]
 
-    from agy_nexus.session_tree import build_project_session_tree
-    tree_bundle = build_project_session_tree(active_only=False, limit=180, bg_dir=bg_dir)
+    tree_for_series = {"projects": [tp for tp in (tree_bundle.get("projects") or []) if str(tp.get("project_id") or "") == target_pid]} if target_pid else tree_bundle
+    sess_s1_steps = {rcid: rs["s1_steps"] for rcid, rs in agg["root_sess_stats"].items()} if target_pid else {}
+    sess_s1_toks = {rcid: rs["s1_toks"] for rcid, rs in agg["root_sess_stats"].items()} if target_pid else {}
+    sess_s1_cost = {rcid: rs["s1_cost"] for rcid, rs in agg["root_sess_stats"].items()} if target_pid else {}
     series_pkg = build_series_and_project_hierarchy(
         period_key=pk, trimmed_days=trimmed_days, today_iso=today.strftime("%Y-%m-%d"), now_hour=now_loc.hour,
-        s1_tot_steps=s1_tot_steps, s1_tot_toks=s1_tot_toks, s1_mod_steps=s1_mod_steps, s1_mod_toks=s1_mod_toks,
-        s1_sub_steps=s1_sub_steps, s1_sub_toks=s1_sub_toks, s1_ws_steps=s1_ws_steps,
-        all_ws_list=all_ws_list, subagent_list=subagent_list, root_sess_stats=root_sess_stats,
-        db_convs=db_convs, projects_map=projects_map, tree_bundle=tree_bundle,
+        s1_tot_steps=agg["s1_tot_steps"], s1_tot_toks=agg["s1_tot_toks"], s1_tot_cost=agg["s1_tot_cost"],
+        s1_mod_steps=agg["s1_mod_steps"], s1_mod_toks=agg["s1_mod_toks"], s1_mod_cost=agg["s1_mod_cost"],
+        s1_sub_steps=agg["s1_sub_steps"], s1_sub_toks=agg["s1_sub_toks"], s1_sub_cost=agg["s1_sub_cost"],
+        s1_ws_steps=agg["s1_ws_steps"], all_ws_list=tbl["all_ws_list"], subagent_list=tbl["subagent_list"],
+        root_sess_stats=agg["root_sess_stats"], db_convs=db_convs, projects_map=projects_map, tree_bundle=tree_for_series,
+    )
+    slot_groups, p_hier = series_pkg.pop("groups", []), series_pkg["project_hierarchy"]
+    if target_pid and fleet_idx is not None:
+        p_hier["total_sessions_count"], p_hier["latest_session_id"] = fleet_idx["total_sessions_count"], fleet_idx["latest_session_id"]
+    elif compact_sessions:
+        compact_project_hierarchy_sessions(p_hier)
+    return _assemble_stats_output(
+        agg=agg, tbl=tbl, series_pkg=series_pkg, slot_groups=slot_groups, p_hier=p_hier, heatmap_series=heatmap_series,
+        tree_bundle=tree_bundle, quota_info=quota_info, db_convs=db_convs, projects_map=projects_map, fleet_idx=fleet_idx,
+        target_pid=target_pid, archived_convs=archived_convs, sess_s1_steps=sess_s1_steps, sess_s1_toks=sess_s1_toks,
+        sess_s1_cost=sess_s1_cost, start_d=start_d, end_d=end_d, today=today, now_loc=now_loc, anchor=anchor, pk=pk,
+        p_label=p_label, s_iso=s_iso, e_iso=e_iso, tf=tf, hm=hm, offset=offset, style=style, bg_dir=bg_dir, include_ascii=include_ascii,
     )
 
-    targets, tot_calls = quota_info["target_model_allocation"], max(1, sum(model_totals.values()))
-    model_comp = []
-    for mk in ("carbon", "argon_pro", "flash", "claude_partner", "gpt_oss"):
-        tm, ac = targets.get(mk, {"label": mk, "pool": "Unknown", "target_pct": 0.0}), model_totals.get(mk, 0)
-        ap, tp = round((ac / tot_calls) * 100.0, 1), float(tm["target_pct"])
-        dp = round(ap - tp, 1)
-        model_comp.append({"model_key": mk, "label": tm["label"], "pool": tm["pool"], "actual_calls": ac, "est_tokens": model_tokens.get(mk, 0), "actual_pct": ap, "target_pct": tp, "delta_pct": dp, "status": "ON_TARGET" if abs(dp) <= 12.0 else ("OVER_TARGET" if dp > 12.0 else "UNDER_TARGET")})
 
-    parent_cnt = active_parent_convs or sum(1 for v in db_convs.values() if not v.get("is_subagent"))
-    kpis_obj = {"total_conversations": parent_cnt, "total_subagents_spawned": sum(v["runs"] for v in subagent_roles.values()), "window_steps": win_steps_sum, "period_steps": win_steps_sum, "window_tool_calls": win_tools_sum, "period_tool_calls": win_tools_sum, "window_tokens": win_tokens_sum, "active_days": active_days, "avg_daily_steps": round(win_steps_sum / act_d, 1), "tok_per_day": round(win_tokens_sum / act_d), "tok_per_week": round(win_tokens_sum / act_w), "peak_day": peak}
+def _assemble_stats_output(
+    *, agg: dict[str, Any], tbl: dict[str, Any], series_pkg: dict[str, Any], slot_groups: list[list[str]],
+    p_hier: dict[str, Any], heatmap_series: list[dict[str, Any]], tree_bundle: dict[str, Any],
+    quota_info: dict[str, Any], db_convs: dict[str, dict[str, Any]], projects_map: dict[str, dict[str, Any]],
+    fleet_idx: dict[str, Any] | None, target_pid: str, archived_convs: int, sess_s1_steps: dict[str, dict[str, int]],
+    sess_s1_toks: dict[str, dict[str, int]], sess_s1_cost: dict[str, dict[str, int]],
+    start_d: date, end_d: date, today: date, now_loc: datetime, anchor: date,
+    pk: str, p_label: str, s_iso: str, e_iso: str, tf: str, hm: str, offset: int,
+    style: str, bg_dir: Path, include_ascii: bool,
+) -> dict[str, Any]:
+    win_cost_micros = max(int(tbl["win_cost_sum"]), sum(int(v) for v in agg["model_cost"].values()))
+    win_fore_micros = max(win_cost_micros, sum(int(v) for v in agg["model_fore"].values()))
+    parent_cnt = (agg["active_parent_convs"] + archived_convs) or sum(1 for v in db_convs.values() if not v.get("is_subagent"))
+    act_d, act_w = tbl["act_d"], tbl["act_w"]
+    drift_status = read_model_drift_status(bg_dir)
+    hourly_whiskers = compute_hourly_whiskers(agg["s1_tot_steps"], agg["s1_tot_toks"], agg["s1_tot_cost"], start_d, end_d, today, now_loc.hour)
+    billing_cmp = build_billing_comparison(
+        win_cost_micros, win_fore_micros, window_days=max(1, (end_d - start_d).days + 1),
+        active_days=tbl["active_days"], active_profile=str(quota_info.get("active_tier_profile") or quota_info.get("active_profile") or "ultra-20x"), drift_status=drift_status,
+    )
+    win_cost_usd = round(win_cost_micros / 1_000_000.0, 2)
+    kpis_obj = {
+        "total_conversations": parent_cnt, "total_subagents_spawned": sum(v["runs"] for v in agg["subagent_roles"].values()),
+        "window_steps": tbl["win_steps_sum"], "period_steps": tbl["win_steps_sum"],
+        "window_tool_calls": tbl["win_tools_sum"], "period_tool_calls": tbl["win_tools_sum"],
+        "window_tokens": tbl["win_tokens_sum"], "active_days": tbl["active_days"],
+        "avg_daily_steps": round(tbl["win_steps_sum"] / act_d, 1), "tok_per_day": round(tbl["win_tokens_sum"] / act_d),
+        "tok_per_week": round(tbl["win_tokens_sum"] / act_w), "peak_day": tbl["peak"],
+        "window_cost_micros": win_cost_micros, "window_cost_usd": win_cost_usd,
+        "forecast_cost_micros": win_fore_micros, "forecast_cost_usd": round(win_fore_micros / 1_000_000.0, 2),
+        "cost_per_day_usd": round(win_cost_usd / act_d, 2), "cost_per_week_usd": round(win_cost_usd / act_w, 2),
+        "uncached_input_tokens": int(agg["tok_split"][0]), "cached_input_tokens": int(agg["tok_split"][1]), "output_tokens": int(agg["tok_split"][2]),
+    }
     res_label = series_pkg["resolution"]
-    bundle = {
+    bundle: dict[str, Any] = {
         "server": "agy-nexus-mcp", "version": __version__, "generated_at": now_loc.isoformat(), "style": (style or "default").strip().lower(),
         "period": {
             "key": pk, "label": p_label, "start_date": s_iso, "end_date": e_iso,
             "total_days": len([x for x in heatmap_series if x.get("in_window")]),
-            "active_days": active_days, "resolution": res_label,
+            "active_days": tbl["active_days"], "resolution": res_label,
             "timeframe": tf, "horizon_mode": hm, "offset": int(offset), "anchor_date": anchor.strftime("%Y-%m-%d"),
         },
-        "kpis": kpis_obj, "summary": kpis_obj, "quota_and_pools": quota_info, "model_usage_vs_target": model_comp, "subagent_role_breakdown": subagent_roles,
-        "subagent_list": subagent_list, "all_workspaces": all_ws_list, "top_workspaces": all_ws_list[:10],
+        "kpis": kpis_obj, "summary": kpis_obj, "quota_and_pools": quota_info, "model_usage_vs_target": tbl["model_comp"],
+        "subagent_role_breakdown": agg["subagent_roles"], "subagent_list": tbl["subagent_list"],
+        "all_workspaces": tbl["all_ws_list"], "top_workspaces": tbl["all_ws_list"][:10],
         "velocity_series": series_pkg["velocity_series"], "model_series": series_pkg["model_series"],
         "workspace_series": series_pkg["workspace_series"], "subagent_series": series_pkg["subagent_series"],
-        "project_hierarchy": series_pkg["project_hierarchy"],
-        "heatmap_series": heatmap_series, "wire_telemetry": get_wire_telemetry_summary(bg_dir, limit=15),
-        "project_session_tree": tree_bundle, "routing_telemetry": tree_bundle.get("routing_telemetry", {}), "backup_321": tree_bundle.get("backup_321", {}),
+        "project_hierarchy": p_hier, "heatmap_series": heatmap_series, "hourly_whiskers": hourly_whiskers,
+        "billing_comparison": billing_cmp, "model_drift_status": drift_status,
+        "wire_telemetry": get_wire_telemetry_summary(bg_dir, limit=15),
+        "routing_telemetry": tree_bundle.get("routing_telemetry", {}), "backup_321": tree_bundle.get("backup_321", {}),
         "code_health": get_code_health_summary(),
     }
-    bundle["ascii_report_default"], bundle["ascii_report_quick"], bundle["ascii_report_rich"] = render_ascii_default(bundle), render_ascii_quick(bundle), render_ascii_rich(bundle)
-    bundle["ascii_mobile_dashboard"] = bundle["ascii_mobile_report"] = render_ascii_stats(bundle, style=style)
+    if target_pid and fleet_idx is not None:
+        pb_match = next((p for p in [*(p_hier.get("top_projects") or []), *(p_hier.get("idle_projects") or [])] if p.get("project_id") == target_pid), None)
+        proj_meta = (fleet_idx.get("proj_meta") or {}).get(target_pid) or {"project_id": target_pid, "project_name": (projects_map.get(target_pid) or {}).get("name") or target_pid}
+        bundle["project_sessions_series"] = build_project_sessions_series(
+            pb_match, series_pkg["velocity_series"]["dates"], slot_groups, series_pkg["step_hours"], res_label, sess_s1_steps, sess_s1_toks, sess_s1_cost,
+        )
+        bundle["project_scope"] = build_project_scope_payload(
+            target_pid, proj_meta, fleet_idx, pb_match, tbl["win_steps_sum"], tbl["win_tokens_sum"], tbl["active_days"], win_cost_micros=win_cost_micros,
+        )
+    if include_ascii:
+        bundle["project_session_tree"] = tree_bundle
+        bundle["ascii_report_default"], bundle["ascii_report_quick"], bundle["ascii_report_rich"] = render_ascii_default(bundle), render_ascii_quick(bundle), render_ascii_rich(bundle)
+        bundle["ascii_mobile_dashboard"] = bundle["ascii_mobile_report"] = render_ascii_stats(bundle, style=style)
     return bundle
+
 
 
 get_quota_and_stats_bundle = build_nexus_stats_bundle

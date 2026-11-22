@@ -1,25 +1,31 @@
 #!/usr/bin/env python3
-"""Create a GitHub repository via the GitHub REST API and push a clean, single-commit export.
+"""Create/sync GitHub repo, orphan gh-pages showcase branch, Pages config, and matching Release.
 
 Security & Privacy Guarantees:
-1. Reads GITHUB_TOKEN from ~/.config/ag-bridge-mcp/secrets.env or the GITHUB_TOKEN environment variable
-   (never requires passing secrets in chat or storing tokens in .git/config).
-2. Builds a fresh orphan commit from the current depersonalized working tree so historical GitLab commits
-   are never exposed in public `git log -p` history on GitHub.
-3. Defaults commit author email to `<github-login>@users.noreply.github.com` so personal email addresses
-   are not leaked in public commit metadata.
+1. Reads GITHUB_TOKEN from ~/.config/ag-bridge-mcp/secrets.env or the GITHUB_TOKEN environment variable.
+2. Builds fresh orphan commits on both `main` and `gh-pages` so historical commits are never exposed.
+3. Defaults commit author email to `<github-login>@users.noreply.github.com`.
+4. Always builds and passes `build_github_showcase.scan_showcase_privacy()` before pushing or `--dry-run`.
 """
+from __future__ import annotations
 
 import argparse
 import base64
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
 import urllib.error
 import urllib.request
+
+SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+from build_github_showcase import build_showcase
 
 
 def _load_token_from_env_files() -> str:
@@ -55,13 +61,10 @@ def _github_api(method: str, path: str, token: str, payload: dict | None = None)
     url = f"https://api.github.com{path}"
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     req = urllib.request.Request(
-        url,
-        data=data,
+        url, data=data,
         headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "agy-nexus-mcp-publisher",
+            "Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "agy-nexus-mcp-publisher",
             "Content-Type": "application/json",
         },
         method=method,
@@ -79,16 +82,13 @@ def _github_api(method: str, path: str, token: str, payload: dict | None = None)
         return e.code, err_json
 
 
-import re
-
-
 def _read_package_version(src_root: Path) -> str:
     pyproject = src_root / "pyproject.toml"
     if pyproject.is_file():
         m = re.search(r'^version\s*=\s*"([^"]+)"', pyproject.read_text(encoding="utf-8"), re.M)
         if m:
             return m.group(1).strip()
-    return "3.1.0"
+    return "4.0.0"
 
 
 def _extract_changelog_section(src_root: Path, version: str) -> str:
@@ -103,168 +103,171 @@ def _extract_changelog_section(src_root: Path, version: str) -> str:
     return f"## AGY Nexus v{version}"
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Create/sync GitHub repo and publish matching GitHub Release.")
-    parser.add_argument("--repo", default="agy-nexus-mcp", help="Target GitHub repository name (default: agy-nexus-mcp)")
-    parser.add_argument(
-        "--description",
-        default="Streamable HTTP MCP server, Unified 2-Pane Workspace & Analytics PWA, local Praxis MCP doorway, and 3-tier ASCII telemetry connecting Google Gemini to Antigravity IDE.",
-        help="GitHub repository description",
-    )
-    parser.add_argument("--private", action="store_true", help="Create the GitHub repository as private (default: public)")
-    parser.add_argument("--author-name", default="", help="Override Git author name (defaults to GitHub login)")
-    parser.add_argument("--author-email", default="", help="Override Git author email (defaults to <login>@users.noreply.github.com)")
-    parser.add_argument("--message", default="", help="Custom Git commit message")
-    parser.add_argument("--release-title", default="", help="Custom GitHub Release title")
-    parser.add_argument("--no-release", action="store_true", help="Skip creating/updating the GitHub Release tag")
-    args = parser.parse_args()
-
-    token = _load_token_from_env_files()
-    if not token:
-        print(
-            "ERROR: No GITHUB_TOKEN found.\n"
-            "Add GITHUB_TOKEN=<your_pat> to ~/.config/ag-bridge-mcp/secrets.env (chmod 600) and re-run.",
-            file=sys.stderr,
-        )
-        return 1
-
-    status_user, user_data = _github_api("GET", "/user", token)
-    if status_user != 200 or not user_data.get("login"):
-        print(f"ERROR: GitHub authentication failed (HTTP {status_user}): {user_data.get('message')}", file=sys.stderr)
-        return 1
-
-    gh_login = str(user_data["login"])
-    gh_id = user_data.get("id", "")
-    print(f"[*] Authenticated to GitHub as: {gh_login}")
-
-    repo_name = args.repo.strip()
-    status_repo, repo_data = _github_api("GET", f"/repos/{gh_login}/{repo_name}", token)
-    if status_repo == 404:
-        print(f"[*] Creating {'private' if args.private else 'public'} GitHub repository {gh_login}/{repo_name}...")
-        status_create, repo_data = _github_api(
-            "POST",
-            "/user/repos",
-            token,
-            {
-                "name": repo_name,
-                "description": args.description,
-                "private": bool(args.private),
-                "has_issues": True,
-                "has_wiki": False,
-                "auto_init": False,
-            },
-        )
-        if status_create not in (200, 201):
-            print(f"ERROR: Failed creating repository (HTTP {status_create}): {repo_data.get('message')}", file=sys.stderr)
+def _ensure_repo(gh_login: str, repo_name: str, description: str, private: bool, token: str) -> int:
+    st_repo, _ = _github_api("GET", f"/repos/{gh_login}/{repo_name}", token)
+    if st_repo == 200:
+        _github_api("PATCH", f"/repos/{gh_login}/{repo_name}", token, {
+            "name": repo_name, "description": description, "private": bool(private),
+            "homepage": f"https://{gh_login}.github.io/{repo_name}/",
+        })
+        print(f"[✓] Verified GitHub repo: https://github.com/{gh_login}/{repo_name}")
+        return 0
+    if st_repo == 404:
+        st_cr, cr_data = _github_api("POST", "/user/repos", token, {
+            "name": repo_name, "description": description, "private": bool(private),
+            "auto_init": False, "has_issues": True, "has_projects": False, "has_wiki": False,
+            "homepage": f"https://{gh_login}.github.io/{repo_name}/",
+        })
+        if st_cr not in (200, 201):
+            print(f"ERROR: Failed creating repository (HTTP {st_cr}): {cr_data.get('message')}", file=sys.stderr)
             return 1
-        print(f"[+] Created repository: {repo_data.get('html_url')}")
-    elif status_repo == 200:
-        print(f"[*] Repository already exists: {repo_data.get('html_url')}")
-    else:
-        print(f"ERROR: Unexpected response checking repo (HTTP {status_repo}): {repo_data.get('message')}", file=sys.stderr)
-        return 1
+        print(f"[✓] Created repository: {cr_data.get('html_url')}")
+        return 0
+    print(f"ERROR: Unexpected HTTP {st_repo} inspecting repo.", file=sys.stderr)
+    return 1
 
-    src_root = Path(__file__).resolve().parent.parent
-    pkg_version = _read_package_version(src_root)
-    tag_name = f"v{pkg_version.lstrip('vV')}"
-    author_name = args.author_name.strip() or gh_login
-    author_email = args.author_email.strip() or (
-        f"{gh_id}+{gh_login}@users.noreply.github.com" if gh_id else f"{gh_login}@users.noreply.github.com"
-    )
-    basic_auth = base64.b64encode(f"x-access-token:{token}".encode("utf-8")).decode("ascii")
-    auth_header = f"http.https://github.com/.extraheader=AUTHORIZATION: basic {basic_auth}"
-    remote_url = f"https://github.com/{gh_login}/{repo_name}.git"
 
+def _git_auth_env(auth_header_value: str) -> dict[str, str]:
+    env = dict(os.environ)
+    env["GIT_CONFIG_COUNT"] = "1"
+    env["GIT_CONFIG_KEY_0"] = "http.https://github.com/.extraheader"
+    env["GIT_CONFIG_VALUE_0"] = auth_header_value
+    return env
+
+
+def _scrub_secrets(text: str, *secrets: str) -> str:
+    out = text or ""
+    for sec in secrets:
+        if sec and len(sec) >= 4:
+            out = out.replace(sec, "[REDACTED]")
+    return out
+
+
+def _sync_branch(
+    src_dir: Path, branch: str, remote_url: str, auth_header_value: str,
+    author_name: str, author_email: str, commit_msg: str, *, force_orphan: bool = False,
+) -> int:
+    git_env = _git_auth_env(auth_header_value)
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
-        subprocess.run(["git", "init", "-b", "main"], cwd=str(tmp_path), check=True, capture_output=True)
+        subprocess.run(["git", "init", "-b", branch], cwd=str(tmp_path), check=True, capture_output=True)
         subprocess.run(["git", "config", "user.name", author_name], cwd=str(tmp_path), check=True)
         subprocess.run(["git", "config", "user.email", author_email], cwd=str(tmp_path), check=True)
-
-        fetch_proc = subprocess.run(
-            ["git", "-c", auth_header, "fetch", "--depth=1", remote_url, "main"],
-            cwd=str(tmp_path),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        has_existing_main = fetch_proc.returncode == 0
-        if has_existing_main:
-            subprocess.run(["git", "checkout", "-B", "main", "FETCH_HEAD"], cwd=str(tmp_path), check=True, capture_output=True)
-
-        subprocess.run(
-            [
-                "rsync", "-a", "--delete",
-                "--exclude=.git/",
-                "--exclude=.venv/",
-                "--exclude=__pycache__/",
-                "--exclude=*.pyc",
-                "--exclude=.pytest_cache/",
-                "--exclude=.env",
-                "--exclude=secrets.env",
-                f"{src_root}/",
-                f"{tmp_path}/",
-            ],
-            check=True,
-        )
+        if not force_orphan:
+            fetch_proc = subprocess.run(
+                ["git", "fetch", "--depth=1", remote_url, branch],
+                cwd=str(tmp_path), env=git_env, capture_output=True, text=True, check=False,
+            )
+            if fetch_proc.returncode == 0:
+                subprocess.run(["git", "checkout", "-B", branch, "FETCH_HEAD"], cwd=str(tmp_path), check=True, capture_output=True)
+        subprocess.run([
+            "rsync", "-a", "--delete", "--exclude=.git/", "--exclude=.venv/", "--exclude=build/",
+            "--exclude=__pycache__/", "--exclude=*.pyc", "--exclude=.pytest_cache/",
+            "--exclude=.env", "--exclude=secrets.env", f"{src_dir}/", f"{tmp_path}/",
+        ], check=True)
         subprocess.run(["git", "add", "-A"], cwd=str(tmp_path), check=True)
         status_proc = subprocess.run(["git", "status", "--porcelain"], cwd=str(tmp_path), capture_output=True, text=True, check=True)
         if status_proc.stdout.strip():
-            commit_msg = args.message.strip() or (
-                f"chore(release): sync agy-nexus-mcp {tag_name}"
-                if has_existing_main
-                else f"feat: initial public release of agy-nexus-mcp ({tag_name})"
-            )
             subprocess.run(["git", "commit", "-m", commit_msg], cwd=str(tmp_path), check=True, capture_output=True)
-            push_proc = subprocess.run(
-                ["git", "-c", auth_header, "push", remote_url, "main:main"],
-                cwd=str(tmp_path),
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            push_cmd = ["git", "push", *(["--force"] if force_orphan else []), remote_url, f"{branch}:{branch}"]
+            push_proc = subprocess.run(push_cmd, cwd=str(tmp_path), env=git_env, capture_output=True, text=True, check=False)
             if push_proc.returncode != 0:
-                print(f"ERROR: git push failed:\n{push_proc.stderr}", file=sys.stderr)
+                safe_err = _scrub_secrets(push_proc.stderr, auth_header_value, auth_header_value.split(" ")[-1])
+                print(f"ERROR: git push {branch} failed:\n{safe_err}", file=sys.stderr)
                 return 1
-            print(f"[✓] Pushed main branch to https://github.com/{gh_login}/{repo_name}")
+            print(f"[✓] Pushed {branch} branch -> {remote_url[:-4]}")
         else:
-            print(f"[✓] Branch main on https://github.com/{gh_login}/{repo_name} is already up to date.")
+            print(f"[✓] Branch {branch} already up to date.")
+    return 0
 
+
+def _configure_github_pages(gh_login: str, repo_name: str, token: str) -> None:
+    st_get, pages_info = _github_api("GET", f"/repos/{gh_login}/{repo_name}/pages", token)
+    payload = {"source": {"branch": "gh-pages", "path": "/"}}
+    if st_get == 404:
+        st_op, data = _github_api("POST", f"/repos/{gh_login}/{repo_name}/pages", token, payload)
+    else:
+        st_op, data = _github_api("PUT", f"/repos/{gh_login}/{repo_name}/pages", token, payload)
+    if st_op in (200, 201, 204):
+        print(f"[✓] GitHub Pages configured: https://{gh_login}.github.io/{repo_name}/")
+    else:
+        url = (pages_info or {}).get("html_url") or f"https://{gh_login}.github.io/{repo_name}/"
+        print(f"[i] GitHub Pages API returned HTTP {st_op} ({data.get('message', '')}) -> {url}")
+
+
+def _upsert_release(src_root: Path, gh_login: str, repo_name: str, pkg_version: str, title: str, token: str) -> int:
+    tag_name = f"v{pkg_version}"
+    rel_body = _extract_changelog_section(src_root, pkg_version)
+    st_existing, existing_rel = _github_api("GET", f"/repos/{gh_login}/{repo_name}/releases/tags/{tag_name}", token)
+    if st_existing == 200 and existing_rel.get("id"):
+        st_op, data = _github_api("PATCH", f"/repos/{gh_login}/{repo_name}/releases/{existing_rel['id']}", token, {
+            "name": title, "body": rel_body, "draft": False, "prerelease": False,
+        })
+    else:
+        st_op, data = _github_api("POST", f"/repos/{gh_login}/{repo_name}/releases", token, {
+            "tag_name": tag_name, "target_commitish": "main", "name": title, "body": rel_body, "draft": False, "prerelease": False,
+        })
+    if st_op not in (200, 201):
+        print(f"ERROR: Failed publishing GitHub release {tag_name} (HTTP {st_op}): {data.get('message')}", file=sys.stderr)
+        return 1
+    print(f"[✓] Published GitHub Release: {data.get('html_url')}")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Sync GitHub repo, gh-pages static showcase, Pages API, and Release.")
+    parser.add_argument("--repo", default="agy-nexus-mcp", help="Target GitHub repository name")
+    parser.add_argument(
+        "--description",
+        default="AGY-Nexus v4.0.0: Quiet UI v9.3.0 Telemetry & Workspace Studio, 8-Model Cost Ledger, Praxis Semantic Gateway, and Multi-Agent Orchestrator for Google Antigravity.",
+        help="GitHub repository description",
+    )
+    parser.add_argument("--private", action="store_true", help="Create repository as private (default: public)")
+    parser.add_argument("--author-name", default="", help="Override Git author name")
+    parser.add_argument("--author-email", default="", help="Override Git author email")
+    parser.add_argument("--message", default="", help="Custom Git commit message")
+    parser.add_argument("--release-title", default="", help="Custom GitHub Release title")
+    parser.add_argument("--no-release", action="store_true", help="Skip creating/updating the GitHub Release tag")
+    parser.add_argument("--no-pages", action="store_true", help="Skip gh-pages showcase push and GitHub Pages API setup")
+    parser.add_argument("--dry-run", action="store_true", help="Build showcase & verify privacy gate locally without pushing")
+    args = parser.parse_args()
+
+    src_root = Path(__file__).resolve().parent.parent
+    pkg_version = _read_package_version(src_root)
+    tag_name = f"v{pkg_version}"
+    rel_title = args.release_title.strip() or f"{tag_name} — Quiet UI v9.3.0 Live /web Studio, 8-Model Micro-USD Cost Ledger & Public Interactive Showcase"
+    showcase_dir = src_root / "build" / "gh-pages"
+    pages_res = build_showcase(showcase_dir, refresh=False) if not args.no_pages else {"files": 0, "bytes": 0, "privacy_findings": 0}
+    if args.dry_run:
+        print(f"[✓] DRY RUN: version={tag_name}, repo={args.repo}, showcase={showcase_dir} ({pages_res['files']} files, 0 leaks)")
+        print(f"[✓] DRY RUN Release Title: {rel_title}")
+        print("[✓] DRY RUN Plan: push main + orphan gh-pages -> POST/PUT /repos/<owner>/<repo>/pages -> publish release")
+        return 0
+
+    token = _load_token_from_env_files()
+    if not token:
+        print("ERROR: No GITHUB_TOKEN found in ~/.config/ag-bridge-mcp/secrets.env or GITHUB_TOKEN.", file=sys.stderr)
+        return 1
+    status, user_info = _github_api("GET", "/user", token)
+    if status != 200 or not user_info.get("login"):
+        print(f"ERROR: GitHub auth failed (HTTP {status}): {user_info.get('message', 'Unknown error')}", file=sys.stderr)
+        return 1
+    gh_login = str(user_info["login"])
+    if _ensure_repo(gh_login, args.repo.strip(), args.description.strip(), args.private, token) != 0:
+        return 1
+    author_name = args.author_name.strip() or gh_login
+    author_email = args.author_email.strip() or f"{gh_login}@users.noreply.github.com"
+    auth_header_value = f"AUTHORIZATION: basic {base64.b64encode(f'x-access-token:{token}'.encode()).decode('ascii')}"
+    remote_url = f"https://github.com/{gh_login}/{args.repo.strip()}.git"
+    msg_main = args.message.strip() or f"chore(release): sync {args.repo.strip()} {tag_name}"
+    if _sync_branch(src_root, "main", remote_url, auth_header_value, author_name, author_email, msg_main) != 0:
+        return 1
+    if not args.no_pages:
+        if _sync_branch(showcase_dir, "gh-pages", remote_url, auth_header_value, author_name, author_email, f"chore(pages): publish {tag_name} static showcase", force_orphan=True) != 0:
+            return 1
+        _configure_github_pages(gh_login, args.repo.strip(), token)
     if not args.no_release:
-        rel_title = args.release_title.strip() or f"{tag_name} — Unified 42px Studio Shell, 2-Pane Workspace Explorer, Multi-Select Gallery & In-Place Session Closeout"
-        rel_body = _extract_changelog_section(src_root, pkg_version)
-        st_existing, existing_rel = _github_api("GET", f"/repos/{gh_login}/{repo_name}/releases/tags/{tag_name}", token)
-        if st_existing == 200 and existing_rel.get("id"):
-            rel_id = existing_rel["id"]
-            st_upd, upd_data = _github_api(
-                "PATCH",
-                f"/repos/{gh_login}/{repo_name}/releases/{rel_id}",
-                token,
-                {"name": rel_title, "body": rel_body, "draft": False, "prerelease": False},
-            )
-            if st_upd not in (200, 201):
-                print(f"ERROR: Failed updating GitHub release {tag_name} (HTTP {st_upd}): {upd_data.get('message')}", file=sys.stderr)
-                return 1
-            print(f"[✓] Updated GitHub Release: {upd_data.get('html_url')}")
-        else:
-            st_rel, rel_data = _github_api(
-                "POST",
-                f"/repos/{gh_login}/{repo_name}/releases",
-                token,
-                {
-                    "tag_name": tag_name,
-                    "target_commitish": "main",
-                    "name": rel_title,
-                    "body": rel_body,
-                    "draft": False,
-                    "prerelease": False,
-                },
-            )
-            if st_rel not in (200, 201):
-                print(f"ERROR: Failed creating GitHub release {tag_name} (HTTP {st_rel}): {rel_data.get('message')}", file=sys.stderr)
-                return 1
-            print(f"[✓] Published GitHub Release: {rel_data.get('html_url')}")
-
+        return _upsert_release(src_root, gh_login, args.repo.strip(), pkg_version, rel_title, token)
     return 0
 
 

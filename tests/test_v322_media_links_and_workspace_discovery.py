@@ -65,8 +65,8 @@ def _make_test_db(db_path: Path, conv_id: str, ws_uri: str, title: str = "Quiet 
 
 
 def test_v322_seven_day_media_docstrings_and_version() -> None:
-    """Verify media-link docstrings advertise 7-day links (zero 30-min media claims) and version is 3.2.5."""
-    assert agy_nexus.__version__ == "3.2.5"
+    """Verify media-link docstrings advertise 7-day links (zero 30-min media claims) and version is 4.0.0."""
+    assert agy_nexus.__version__ == "4.0.0"
     for target in (load_session_into_gemini, inspect_visual_artifacts, sign_media_url, media_mod):
         doc = (target.__doc__ or "").lower()
         assert "7-day" in doc, f"Missing 7-day description on {target}"

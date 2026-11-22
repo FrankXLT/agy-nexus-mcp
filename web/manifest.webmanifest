@@ -1,8 +1,8 @@
 {
   "id": "/web",
-  "name": "AGY-NEXUS Overwatch Dashboard",
+  "name": "AGY-NEXUS Studio",
   "short_name": "AGY-NEXUS",
-  "description": "Usage, Model Quotas, Subagents, Tokens & Project Activity Dashboard for Antigravity Nexus MCP",
+  "description": "Quiet UI Telemetry, 8-Model Cost Ledger & Session Workspace for Antigravity Nexus MCP",
   "start_url": "/web",
   "scope": "/",
   "display": "standalone",
@@ -12,8 +12,8 @@
     "client_mode": ["navigate-existing", "auto"]
   },
   "orientation": "any",
-  "background_color": "#0b0d10",
-  "theme_color": "#101318",
+  "background_color": "#F8FAFC",
+  "theme_color": "#FFFFFF",
   "categories": ["developer", "productivity", "utilities"],
   "icons": [
     {
