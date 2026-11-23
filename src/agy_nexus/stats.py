@@ -169,10 +169,14 @@ def _build_heatmap_and_tables(
             peak = {"date": ds, "steps": st_c}
         cur += timedelta(days=1)
 
-    h_cal_s = date(end_d.year, 1, 1) if hm == "to_date" else (end_d - timedelta(days=363))
-    h_cal_e = date(end_d.year, 12, 31) if hm == "to_date" else end_d
+    h_cal_s = min(start_d, end_d - timedelta(days=363))
+    h_cal_e = end_d
     h_cur, h_end = h_cal_s - timedelta(days=h_cal_s.weekday()), h_cal_e + timedelta(days=(6 - h_cal_e.weekday()))
-    nz = sorted(v for v in agg["daily_steps"].values() if v > 0)
+    s_strip_iso, e_strip_iso = h_cur.strftime("%Y-%m-%d"), min(h_end, today).strftime("%Y-%m-%d")
+    s_win_iso, e_win_iso = start_d.strftime("%Y-%m-%d"), min(end_d, today).strftime("%Y-%m-%d")
+    in_win_nz = sorted(v for ds, v in agg["daily_steps"].items() if v > 0 and s_win_iso <= ds <= e_win_iso)
+    strip_nz = sorted(v for ds, v in agg["daily_steps"].items() if v > 0 and s_strip_iso <= ds <= e_strip_iso)
+    nz = in_win_nz if len(in_win_nz) >= 4 else (strip_nz or sorted(v for v in agg["daily_steps"].values() if v > 0))
     q1, q2, q3 = (nz[max(0, int(len(nz) * 0.25) - 1)], nz[max(0, int(len(nz) * 0.50) - 1)], nz[max(0, int(len(nz) * 0.75) - 1)]) if nz else (25, 100, 300)
     heatmap_series: list[dict[str, Any]] = []
     while h_cur <= h_end:

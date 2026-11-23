@@ -4,6 +4,18 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.2] — 2026-11-22
+
+### Fixed
+- **Activity Heatmap Quartiles Across Metrics (`web/v9/v9_heatmap.js`, `src/agy_nexus/stats.py`)**:
+  - Replaced linear max-day threshold ratios (`0.16 / 0.38 / 0.65`) on `Tokens` and `$ Cost` with uniform empirical non-zero quartiles (`computeQuartiles`, `P25 / P50 / P75`) over active in-window days (falling back to non-future 52-week strip days when `< 4` positive days exist in window), eliminating October/early-November washout on spike days so `Steps`, `Tokens`, and `$ Cost` match `Model Workload (Daily)`.
+- **Out-of-Window Desaturation & Contrast (`web/v9/v9_analytics.css`, `web/v9/v9_heatmap.js`)**:
+  - Updated `.v9-heat-cell.is-out` (`filter: grayscale(0.92); opacity: 0.28;`, `0.42` for `data-level="0"`, restoring `grayscale(0.25); opacity: 0.85;` on hover) across all 4 themes (`Pure White`, `Warm Paper`, `Dark Paper`, `Obsidian`) so out-of-window cells clearly recede behind vibrant in-window days.
+- **Full-Width Trailing 52w Strip & 1st-of-Month Headers (`src/agy_nexus/stats.py`, `web/v9/v9_heatmap.js`, `web/v9/v9_analytics.css`)**:
+  - Anchored trailing `364`-day (`52w–53w` Mon–Sun) heatmap strip at `end_d` for both `to_date` (`MTD` / `QTD` / `YTD` / `Last Month`) and `rolling` presets without popping into `47w` or leaving a right-hand gap (`repeat(keepCols, minmax(10px, 1fr))` shared across `.v9-heat-months` and `.v9-heat-grid`, `2px` mobile gap for `<= 560px` `26w` zero-scroll fit), and anchored `buildMonthLabels(cols)` directly onto the week containing the `1st` (`"-01"`) of each month.
+- **Docs, Cache & Showcase Refresh (`docs/WORKFLOWS.md`, `web/sw.js`, `web/demo_snapshot.js`)**:
+  - Documented Activity Heatmap invariants in `docs/WORKFLOWS.md` Workflow 6, bumped PWA cache (`agy-nexus-v4.0.2`, `?v=4.0.2`), refreshed `demo_snapshot.js`, `build/gh-pages/` (`0` leaks), and dashboard screenshots.
+
 ## [4.0.1] — 2026-11-22
 
 ### Fixed

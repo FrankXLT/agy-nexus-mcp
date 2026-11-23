@@ -82,46 +82,49 @@
   .v9-heat-layout { display: flex; align-items: flex-start; gap: 0.4rem; inline-size: 100%; min-inline-size: 0; }
   .v9-heat-dow {
     display: grid;
-    grid-template-rows: repeat(7, minmax(0, 1fr));
-    gap: 2px;
-    padding-block-start: 1.2rem;
+    grid-template-rows: repeat(7, 14px);
+    gap: 3px;
+    padding-block-start: calc(1.15rem + 3px);
     font-family: var(--font-mono);
     font-size: var(--ts-xs);
     color: var(--text-muted);
     flex-shrink: 0;
   }
-  .v9-heat-dow > span { block-size: 13px; line-height: 13px; }
+  .v9-heat-dow > span { block-size: 14px; line-height: 14px; }
   .v9-heat-main { flex: 1 1 auto; min-inline-size: 0; }
   .v9-heat-months {
     display: grid;
-    gap: 2px;
+    gap: 3px;
+    inline-size: 100%;
     block-size: 1.15rem;
     font-family: var(--font-mono);
     font-size: var(--ts-xs);
     color: var(--text-muted);
-    margin-block-end: 2px;
+    margin-block-end: 3px;
   }
   .v9-heat-month-cell { white-space: nowrap; overflow: visible; }
   .v9-heat-grid {
     display: grid;
-    grid-template-rows: repeat(7, 13px);
+    grid-template-rows: repeat(7, 14px);
     grid-auto-flow: column;
-    grid-auto-columns: minmax(9px, 22px);
-    justify-content: start;
-    gap: 2px;
+    grid-auto-columns: minmax(10px, 1fr);
+    inline-size: 100%;
+    gap: 3px;
   }
   .v9-heat-cell {
     border-radius: 2px;
     background: var(--v9-heat-0);
     border: 1px solid transparent;
     cursor: pointer;
-    min-block-size: 13px;
+    min-block-size: 14px;
   }
   .v9-heat-cell[data-level="1"] { background: var(--v9-heat-1); }
   .v9-heat-cell[data-level="2"] { background: var(--v9-heat-2); }
   .v9-heat-cell[data-level="3"] { background: var(--v9-heat-3); }
   .v9-heat-cell[data-level="4"] { background: var(--v9-heat-4); }
-  .v9-heat-cell.is-out { opacity: 0.68; }
+  .v9-heat-cell.is-out { filter: grayscale(0.92); opacity: 0.28; }
+  .v9-heat-cell.is-out[data-level="0"] { opacity: 0.42; }
+  .v9-heat-cell.is-out:hover { filter: grayscale(0.25); opacity: 0.85; }
   .v9-heat-cell.is-future { background: transparent; border: 1px dotted var(--border-subtle); opacity: 0.3; }
   .v9-heat-cell:hover { border-color: var(--text-primary); }
   .v9-heat-foot {
@@ -472,6 +475,11 @@
     .v9-stage .v9-inline-share { min-inline-size: 0; gap: 0; }
     .v9-stage .v9-inline-share .va-inline-bar { display: none; }
     .v9-stage .v9-inline-pct { min-inline-size: auto; }
+    .v9-stage .v9-heat-dow,
+    .v9-stage .v9-heat-months,
+    .v9-stage .v9-heat-grid { gap: 2px; }
+    .v9-stage .v9-heat-dow { padding-block-start: calc(1.15rem + 2px); }
+    .v9-stage .v9-heat-months { margin-block-end: 2px; }
     .v9-stage .v9-heat-dow > span:nth-child(even) { visibility: hidden; }
   }
   @media (max-width: 349px) {

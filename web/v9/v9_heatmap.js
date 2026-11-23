@@ -20,45 +20,52 @@
 
   function buildMonthLabels(cols) {
     const out = new Array(cols.length).fill("");
-    let lastMonth = -1;
     let lastShownCol = -4;
     cols.forEach((week, colIdx) => {
-      const firstReal = week.find((d) => d && d.date);
-      if (!firstReal) return;
-      const m = Number(String(firstReal.date).slice(5, 7)) - 1;
-      if (m !== lastMonth) {
-        lastMonth = m;
-        if (colIdx > 0 && colIdx < 3 && lastShownCol === 0 && out[0]) {
-          out[0] = "";
-          out[colIdx] = MONTHS[m] || "";
-          lastShownCol = colIdx;
-        } else if (colIdx - lastShownCol >= 3 && (cols.length < 2 || cols.length - colIdx >= 2)) {
-          out[colIdx] = MONTHS[m] || "";
-          lastShownCol = colIdx;
-        }
+      const firstOfMonth = week.find((d) => d && d.date && String(d.date).endsWith("-01"));
+      const targetDay = firstOfMonth || (colIdx === 0 ? week.find((d) => d && d.date) : null);
+      if (!targetDay) return;
+      const m = Number(String(targetDay.date).slice(5, 7)) - 1;
+      const lbl = MONTHS[m] || "";
+      if (!lbl) return;
+      if (colIdx > 0 && colIdx < 3 && lastShownCol === 0 && out[0]) {
+        out[0] = "";
+        out[colIdx] = lbl;
+        lastShownCol = colIdx;
+      } else if (colIdx - lastShownCol >= 3 && (cols.length < 2 || cols.length - colIdx >= 2)) {
+        out[colIdx] = lbl;
+        lastShownCol = colIdx;
       }
     });
     return out;
   }
 
-  function computeMetricLevel(cell, maxTokens, maxCost) {
-    if (V9.state.metric === "cost") {
-      const c = Number(cell.cost_usd || 0);
-      if (c <= 0 || maxCost <= 0) return 0;
-      const ratio = c / maxCost;
-      if (ratio > 0.65) return 4;
-      if (ratio > 0.38) return 3;
-      if (ratio > 0.16) return 2;
-      return 1;
-    }
-    if (V9.state.metric !== "tokens") return Number(cell.level || 0);
-    const tok = Number(cell.tokens || 0);
-    if (tok <= 0 || maxTokens <= 0) return 0;
-    const ratio = tok / maxTokens;
-    if (ratio > 0.65) return 4;
-    if (ratio > 0.38) return 3;
-    if (ratio > 0.16) return 2;
-    return 1;
+  function getMetricValue(cell, metric) {
+    if (!cell) return 0;
+    if (metric === "cost") return Number(cell.cost_usd || 0);
+    if (metric === "tokens") return Number(cell.tokens || 0);
+    return Number(cell.steps || 0);
+  }
+
+  function computeQuartiles(vals) {
+    const nz = (Array.isArray(vals) ? vals : [])
+      .map((v) => Number(v || 0))
+      .filter((v) => Number.isFinite(v) && v > 0)
+      .sort((a, b) => a - b);
+    if (!nz.length) return [0, 0, 0];
+    const pick = (p) => nz[Math.max(0, Math.floor(nz.length * p) - 1)];
+    return [pick(0.25), pick(0.5), pick(0.75)];
+  }
+
+  function computeMetricLevel(cell, metric, quartiles) {
+    const val = getMetricValue(cell, metric);
+    if (val <= 0) return 0;
+    const q = Array.isArray(quartiles) && quartiles.length === 3 ? quartiles : [0, 0, 0];
+    if (q[2] <= 0) return 1;
+    if (val <= q[0]) return 1;
+    if (val <= q[1]) return 2;
+    if (val <= q[2]) return 3;
+    return 4;
   }
 
   function renderHeatmap(b) {
@@ -86,9 +93,12 @@
     }
     const { cols, keepCols } = buildWeeksMatrix(raw, isMobile ? V9.state.heatWeeks : 53);
     const monthLabels = buildMonthLabels(cols);
-    const maxTok = raw.reduce((mx, d) => Math.max(mx, Number(d.tokens || 0)), 0);
-    const maxCost = raw.reduce((mx, d) => Math.max(mx, Number(d.cost_usd || 0)), 0);
-    const activeCount = raw.filter((d) => d.in_window && !d.future && Number(d.steps || 0) > 0).length;
+    const metric = V9.state.metric || "steps";
+    const nonFuture = raw.filter((d) => d && !d.future);
+    const winVals = nonFuture.filter((d) => d.in_window).map((d) => getMetricValue(d, metric)).filter((v) => v > 0);
+    const poolVals = winVals.length >= 4 ? winVals : nonFuture.map((d) => getMetricValue(d, metric)).filter((v) => v > 0);
+    const quartiles = computeQuartiles(poolVals);
+    const activeCount = nonFuture.filter((d) => d.in_window && Number(d.steps || 0) > 0).length;
     if (summaryEl) summaryEl.textContent = `${keepCols}w view · ${activeCount} active days in window`;
 
     const monthCellsHtml = monthLabels.map((lbl) => `<span class="v9-heat-month-cell">${V9.escHtml(lbl)}</span>`).join("");
@@ -100,15 +110,17 @@
           gridHtml += `<span class="v9-heat-cell is-future" aria-hidden="true"></span>`;
           continue;
         }
-        const lvl = d.future ? 0 : computeMetricLevel(d, maxTok, maxCost);
+        const lvl = d.future ? 0 : computeMetricLevel(d, metric, quartiles);
         const cls = ["v9-heat-cell"];
         if (d.future) cls.push("is-future");
         else if (!d.in_window) cls.push("is-out");
-        const desc = `${d.date}: ${V9.fmtNum(d.steps)} steps, ${V9.fmtNum(d.tokens)} tok, ${V9.fmtUsd(d.cost_usd || 0)}, ${d.sessions || 0} chats`;
+        const outNote = d.in_window || d.future ? "" : " (outside window)";
+        const desc = `${d.date}: ${V9.fmtNum(d.steps)} steps, ${V9.fmtNum(d.tokens)} tok, ${V9.fmtUsd(d.cost_usd || 0)}, ${d.sessions || 0} chats${outNote}`;
         gridHtml += `<span class="${cls.join(" ")}" data-level="${lvl}" data-idx="${colIdx}-${r}" data-desc="${V9.escHtml(desc)}" title="${V9.escHtml(desc)}"></span>`;
       }
     });
 
+    const trackCols = `grid-template-columns:repeat(${keepCols},minmax(10px,1fr))`;
     host.innerHTML = `
       <div class="v9-heat-scroll" tabindex="0" role="region" aria-label="Activity heatmap">
         <div class="v9-heat-layout">
@@ -116,8 +128,8 @@
             <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
           </div>
           <div class="v9-heat-main">
-            <div class="v9-heat-months" style="grid-template-columns:repeat(${keepCols},minmax(9px,22px))">${monthCellsHtml}</div>
-            <div class="v9-heat-grid">${gridHtml}</div>
+            <div class="v9-heat-months" style="${trackCols}">${monthCellsHtml}</div>
+            <div class="v9-heat-grid" style="${trackCols}">${gridHtml}</div>
           </div>
         </div>
       </div>
@@ -144,5 +156,5 @@
     });
   }
 
-  V9.Heatmap = { renderHeatmap };
+  V9.Heatmap = { renderHeatmap, buildWeeksMatrix, buildMonthLabels, computeQuartiles, computeMetricLevel };
 })();

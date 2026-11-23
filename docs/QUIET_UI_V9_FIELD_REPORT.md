@@ -1,8 +1,8 @@
-# AGY-Nexus `v4.0.1` (`/web` Cutover) — Quiet UI `v9.3.0` Production Field Report
+# AGY-Nexus `v4.0.2` (`/web` Cutover) — Quiet UI `v9.3.0` Production Field Report
 
 ## 1. Executive Summary & Production Cutover
 
-Originally evaluated at `/web/v9`, the **Quiet UI Skills v9.3.0** Studio (`quiet-ui`, `quiet-evidence`, `quiet-bridge`) is now the primary live **`/web`** interface in **`v4.0.1`** (while retaining `/web/v9` route compatibility), grounded strictly in `/web/api/*` 8-model cost ledgers, hourly active-day whiskers, and session artifact contracts without external CDNs, Playwright, or `!important` CSS overrides.
+Originally evaluated at `/web/v9`, the **Quiet UI Skills v9.3.0** Studio (`quiet-ui`, `quiet-evidence`, `quiet-bridge`) is now the primary live **`/web`** interface in **`v4.0.2`** (while retaining `/web/v9` route compatibility), grounded strictly in `/web/api/*` 8-model cost ledgers, hourly active-day whiskers, and session artifact contracts without external CDNs, Playwright, or `!important` CSS overrides.
 
 After iterative polish rounds spanning folded phone (`390×844`), Pixel Fold (`820×1080`), desktop (`1440×900`), and widescreen (`2560×1440`), `/web` delivers **Quiet Cockpit** single-row toolbar simplicity, 1-column aligned daily timelines, active-day hourly whisker distributions, responsive wrapped mobile document tabs + `[Captures (N)]` modal, and verified compliance with `audit_quiet_html.py`, `verify_visual_contract.py`, and the public static GitHub Pages showcase (`scripts/build_github_showcase.py`).
 
@@ -23,13 +23,13 @@ After iterative polish rounds spanning folded phone (`390×844`), Pixel Fold (`8
 
 ---
 
-## 3. Data-to-Widget Binding Map (`v4.0.1`)
+## 3. Data-to-Widget Binding Map (`v4.0.2`)
 
 | Panel / Widget | Source Endpoints & Fields | Rendering & Honesty Contract |
 | :--- | :--- | :--- |
 | **Compound Period Stepper & 6-Preset Menu** | `stats.{period}`, `DEMO_SNAPSHOT.bundles` | `[ ‹ | Period · Date Span ▾ | › ]` + all 6 presets (`MTD`, `QTD`, `YTD`, `30d`, `90d`, `52w`) + `Last Month` enabled in both live & `?demo=1`/static showcase (`V9.DemoAdapter.isPresetAvailable`). |
 | **KPI Cards (Throughput, Tokens & $, Pools)** | `kpis`, `quota_and_pools`, `model_usage_vs_target`, `partner_weekly_pacing` | Trackless Step/Token/$ KPIs; Google `20x` call share vs Partner weekly pacing (`14.28%/d` ceiling). |
-| **Activity Heatmap** | `heatmap_series[]` | Adaptive `53w`/`26w` mobile matrix, trimmed future columns, hover/tap inspection. |
+| **Activity Heatmap** | `heatmap_series[]` | Trailing `52w`/`53w` (`26w` mobile) full-width grid, uniform `P25/P50/P75` quartiles (`Steps`/`Tokens`/`$ Cost`), desaturated `.is-out`, `1st`-of-month headers. |
 | **Daily Spine 1–3 (`Steps / Tokens / $ Cost`)** | `model_series`, `subagent_series`, `project_hierarchy`, `cost_ledger` | Full 8-model classification + `Est. $` & `Avg Tok/Run` `.booktabs` tables (`0px` overflow `< 640px`). |
 | **Secondary Pair Left: Activity by Hour of Day** | `hourly_whiskers.{hours,min,avg,max,last_24h}` | Active-day `Min / Avg / Max` whisker plot + `Last 24h` dot across `Steps`, `Tokens`, & `$ Cost`. |
 | **Secondary Pair Right: Subscription Break-Even** | `billing_comparison.{historical_usd,forecast_usd,tiers}`, `model_drift_status` | API retail equivalent vs Dec Rate Forecast, cache split, `Plus / Pro / Ultra 5x / Ultra 20x` value multipliers, and quiet `01:45 AM` drift badge. |
@@ -40,7 +40,7 @@ After iterative polish rounds spanning folded phone (`390×844`), Pixel Fold (`8
 
 ## 4. Offline Vendoring & Public GitHub Pages Showcase (`gh-pages`)
 
-- Zero external CDNs: all styles, ECharts `v5.6.0`, and Quiet UI `v9.3.0` adapters load from `/web/v9/vendor/` (cached in `web/sw.js` `CACHE_NAME = "agy-nexus-v4.0.1"`) or relative `./v9/vendor/` in the static GitHub Pages showcase (`build/gh-pages/` via `scripts/build_github_showcase.py`).
+- Zero external CDNs: all styles, ECharts `v5.6.0`, and Quiet UI `v9.3.0` adapters load from `/web/v9/vendor/` (cached in `web/sw.js` `CACHE_NAME = "agy-nexus-v4.0.2"`) or relative `./v9/vendor/` in the static GitHub Pages showcase (`build/gh-pages/` via `scripts/build_github_showcase.py`).
 - All showcase outputs pass PNG chunk metadata scrubbing (`tEXt`/`iTXt`/`zTXt`/`eXIf`/`tIME` removed) and automated fail-closed `scan_showcase_privacy()` (`0` private slugs/domains/LAN IPs/UUIDs).
 
 ---

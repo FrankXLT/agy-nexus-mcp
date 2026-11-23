@@ -1,6 +1,6 @@
 [project]
 name = "agy-nexus-mcp"
-version = "4.0.1"
+version = "4.0.2"
 description = "AGY-NEXUS-MCP & AGY-PRAXIS-MCP: Antigravity Mission Control, Local IDE Praxis Doorway, Repo-Prefixed Handoff Queue, Polyglot Semantic Index & Quiet UI v9.2.2 Studio"
 readme = "README.md"
 license = { file = "LICENSE" }

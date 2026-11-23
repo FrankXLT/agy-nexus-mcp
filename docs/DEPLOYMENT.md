@@ -215,7 +215,7 @@ AG_BRIDGE_PASSPHRASE="<your passphrase>" \
 uv run python3 tests/run_permutation_suite.py
 ```
 
-### Build & Publish Interactive GitHub Pages Showcase (`v4.0.1`)
+### Build & Publish Interactive GitHub Pages Showcase (`v4.0.2`)
 Generate a zero-leak depersonalized static showcase in `build/gh-pages/` (stripping PNG metadata, aliasing private identifiers via SHA-256, and running `scan_showcase_privacy()`), preview locally, or dry-run/sync GitHub `main` + `gh-pages` + Release:
 ```bash
 python3 scripts/build_github_showcase.py --refresh
