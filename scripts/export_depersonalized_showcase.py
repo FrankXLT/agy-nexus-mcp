@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-scripts/export_depersonalized_showcase.py — Export Live Telemetry to Public v4.0.4 Showcases.
+scripts/export_depersonalized_showcase.py — Export Live Telemetry to Public v4.0.5 Showcases.
 
 Reads live workstation bundles (current_month, last_month, qtd, ytd, last_30d, last_90d, last_year),
 Workspace Explorer tree, bundled demo docs, and Code Health, applies deterministic 1-to-1 SHA-256-keyed

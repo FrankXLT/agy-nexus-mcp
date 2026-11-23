@@ -145,7 +145,7 @@ def test_year_timeframe_24h_slots_and_full_calendar_alignment(tmp_path: Path, mo
 
 
 def test_web_routes_no_store_headers_and_pwa_assets_parity() -> None:
-    """/web HTML & sw.js must send no-store headers and register v4.0.4 Quiet UI JS assets."""
+    """/web HTML & sw.js must send no-store headers and register v4.0.5 Quiet UI JS assets."""
     assert "v9/v9_heatmap.js" in web_routes.PWA_ASSETS
     assert "v9/v9_workspace.js" in web_routes.PWA_ASSETS
 
@@ -163,8 +163,8 @@ def test_web_routes_no_store_headers_and_pwa_assets_parity() -> None:
         assert len(body) > 200
 
     html_txt = (REPO_ROOT / "web" / "index.html").read_text(encoding="utf-8")
-    assert '/web/v9/v9_heatmap.js?v=4.0.4' in html_txt
-    assert '/web/v9/v9_workspace.js?v=4.0.4' in html_txt
+    assert '/web/v9/v9_heatmap.js?v=4.0.5' in html_txt
+    assert '/web/v9/v9_workspace.js?v=4.0.5' in html_txt
 
 
 def test_sw_excludes_root_html_from_shell_cache(tmp_path: Path) -> None:
@@ -183,11 +183,11 @@ const ctx = {
 };
 vm.runInNewContext(swCode + "; globalThis.__sw = { CACHE_NAME, SHELL_ASSETS, SHELL_NAMES, isCacheableShellAsset };", ctx);
 const sw = ctx.__sw;
-assert.ok(sw.CACHE_NAME.includes("4.0.4"));
+assert.ok(sw.CACHE_NAME.includes("4.0.5"));
 assert.ok(!sw.SHELL_ASSETS.includes("/web"));
 assert.ok(!sw.SHELL_ASSETS.includes("/web/index.html"));
-assert.ok(sw.SHELL_ASSETS.includes("/web/v9/v9_heatmap.js?v=4.0.4"));
-assert.ok(sw.SHELL_ASSETS.includes("/web/v9/v9_workspace.js?v=4.0.4"));
+assert.ok(sw.SHELL_ASSETS.includes("/web/v9/v9_heatmap.js?v=4.0.5"));
+assert.ok(sw.SHELL_ASSETS.includes("/web/v9/v9_workspace.js?v=4.0.5"));
 const bareReq = { headers: new Map() };
 assert.strictEqual(sw.isCacheableShellAsset(new URL("https://nexus.example.com/web"), bareReq), false);
 assert.strictEqual(sw.isCacheableShellAsset(new URL("https://nexus.example.com/web/index.html"), bareReq), false);

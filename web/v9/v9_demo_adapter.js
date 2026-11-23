@@ -57,7 +57,7 @@
   function getDemoWorkspaceTree() {
     const snap = window.DEMO_SNAPSHOT;
     if (snap && snap.workspace_tree) return cloneJson(snap.workspace_tree);
-    return { ok: true, version: "4.0.4", queue: { staged_count: 0, tickets: [] }, projects: [] };
+    return { ok: true, version: "4.0.5", queue: { staged_count: 0, tickets: [] }, projects: [] };
   }
 
   function getDemoSessionBucket(sessionId) {

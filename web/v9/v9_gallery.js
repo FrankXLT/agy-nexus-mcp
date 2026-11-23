@@ -6,6 +6,9 @@
   const SHARE_SVG = `<svg class="v9-gal-ico" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="12" cy="3.5" r="1.8" stroke="currentColor" stroke-width="1.5"/><circle cx="4" cy="8" r="1.8" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="12.5" r="1.8" stroke="currentColor" stroke-width="1.5"/><path d="M5.6 7.1L10.4 4.4M5.6 8.9L10.4 11.6" stroke="currentColor" stroke-width="1.4"/></svg>`;
   const CARET_SVG = `<svg class="v9-caret-down" width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   let currentVisualItems = [];
+  let currentSessionItems = [];
+  let currentRepoItems = [];
+  let lastClickedGridId = "";
   let currentRepoSlug = "session";
   let currentSessionCapsCount = 0;
   let moreOpen = false;
@@ -73,14 +76,15 @@
     const n = sel.length;
     const ps = SB.getPerSheet();
     const sheetCount = n ? Math.ceil(n / ps) : 0;
-    const allSel = currentVisualItems.length > 0 && currentVisualItems.every((it) => GS.isSelected(it));
+    const canSelectSession = currentSessionItems.length > 0;
+    const allSel = canSelectSession ? currentSessionItems.every((it) => GS.isSelected(it)) : n > 0;
     const countLabel = n > 0
       ? `${n} selected`
       : `${currentSessionCapsCount} capture${currentSessionCapsCount === 1 ? "" : "s"}`;
 
     bar.innerHTML = `<span class="v9-gal-count">${V9.escHtml(countLabel)}</span>
       <div class="v9-gal-actions">
-        <button type="button" class="v9-nav-btn" id="v9GalAllBtn">${allSel ? "Clear" : "All"}</button>
+        <button type="button" class="v9-nav-btn" id="v9GalAllBtn"${(!canSelectSession && n === 0) ? " disabled" : ""}>${allSel ? "Clear" : "All"}</button>
         <button type="button" class="v9-nav-btn" id="v9GalCmpBtn"${n >= 2 ? "" : " disabled"}>Compare</button>
         <button type="button" class="v9-nav-btn" id="v9GalPngsBtn"${n ? "" : " disabled"}>${DL_SVG}<span>PNGs</span></button>
         <div class="v9-gal-more-wrap" id="v9GalMoreWrap">
@@ -107,12 +111,13 @@
   function bindToolbarEvents(bar, GS, SB, allSel) {
     bar.querySelector("#v9GalAllBtn")?.addEventListener("click", () => {
       if (allSel) GS.clearSelection();
-      else GS.selectAll(currentVisualItems);
+      else if (currentSessionItems.length > 0) GS.selectAll(currentSessionItems);
+      lastClickedGridId = "";
       syncCardSelectionDom();
     });
     bar.querySelector("#v9GalCmpBtn")?.addEventListener("click", () => {
       const picked = GS.getSelectedList();
-      if (picked.length >= 2 && V9.Lightbox) V9.Lightbox.openCompare(picked.slice(0, 2), currentVisualItems, syncCardSelectionDom);
+      if (picked.length >= 2 && V9.Lightbox) V9.Lightbox.openCompare(picked.slice(0, 2), currentVisualItems, () => { lastClickedGridId = ""; syncCardSelectionDom(); });
     });
     bar.querySelector("#v9GalPngsBtn")?.addEventListener("click", async () => {
       if (V9.state.demoMode) await downloadDemoPngs(GS.getSelectedList());
@@ -142,6 +147,17 @@
     });
   }
 
+  function triggerBlobDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
   async function downloadDemoPngs(selected) {
     if (!selected.length) return;
     let okCount = 0;
@@ -151,15 +167,7 @@
       try {
         const res = await fetch(it.signed_url);
         if (!res.ok) continue;
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = it.name || `capture_${i + 1}.png`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 4000);
+        triggerBlobDownload(await res.blob(), it.name || `capture_${i + 1}.png`);
         okCount += 1;
       } catch (_e) {}
     }
@@ -173,20 +181,11 @@
     try {
       const entries = await Promise.all(selected.map(async (it, i) => {
         const r = await fetch(it.signed_url);
-        const buf = new Uint8Array(await r.arrayBuffer());
-        return { name: it.name || `capture_${i + 1}.png`, data: buf };
+        return { name: it.name || `capture_${i + 1}.png`, data: new Uint8Array(await r.arrayBuffer()) };
       }));
-      const zipBytes = SB.buildStoreZip(entries);
-      const blob = new Blob([zipBytes], { type: "application/zip" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `captures_${cid.slice(0, 8)}_${selected.length}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 4000);
-      setStatus(`Downloaded ${a.download}`);
+      const fname = `captures_${cid.slice(0, 8)}_${selected.length}.zip`;
+      triggerBlobDownload(new Blob([SB.buildStoreZip(entries)], { type: "application/zip" }), fname);
+      setStatus(`Downloaded ${fname}`);
     } catch (err) {
       setStatus(`ZIP build error: ${err.message}`);
     }
@@ -243,18 +242,27 @@
     }).join("");
   }
 
+  function getGridScopeItems(gridEl) {
+    return gridEl && gridEl.id === "v9RepoAssetsGrid"
+      ? new Array(currentSessionItems.length).concat(currentRepoItems)
+      : currentSessionItems;
+  }
+
   function wireGridEvents(gridEl) {
     const GS = window.GallerySelect;
     if (!gridEl) return;
+    const gridKey = gridEl.id === "v9RepoAssetsGrid" ? "repo" : "session";
     gridEl.querySelectorAll("[data-sel-idx]").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const idx = Number(btn.getAttribute("data-sel-idx"));
-        const item = currentVisualItems[idx];
+        const scopeItems = getGridScopeItems(gridEl);
+        const item = scopeItems[idx];
         if (!item || !GS) return;
         const checked = !GS.isSelected(item);
-        if (e.shiftKey) GS.handleShiftSelect(currentVisualItems, idx, checked);
+        if (e.shiftKey && lastClickedGridId === gridKey) GS.handleShiftSelect(scopeItems, idx, checked);
         else GS.toggleItem(item, checked, idx);
+        if (checked) lastClickedGridId = gridKey;
         syncCardSelectionDom();
       });
     });
@@ -262,7 +270,7 @@
       btn.addEventListener("click", () => {
         if (GS && GS.shouldSuppressClick()) return;
         const idx = Number(btn.getAttribute("data-open-idx"));
-        if (V9.Lightbox) V9.Lightbox.openSingle(currentVisualItems, idx, syncCardSelectionDom);
+        if (V9.Lightbox) V9.Lightbox.openSingle(currentVisualItems, idx, () => { lastClickedGridId = ""; syncCardSelectionDom(); });
       });
     });
     gridEl.querySelectorAll("[data-copy-link]").forEach((btn) => {
@@ -282,7 +290,7 @@
     });
     if (GS && !gridEl.dataset.v9GesturesBound) {
       gridEl.dataset.v9GesturesBound = "1";
-      GS.bindGalleryGestures(gridEl, () => currentVisualItems, syncCardSelectionDom);
+      GS.bindGalleryGestures(gridEl, () => getGridScopeItems(gridEl), () => { lastClickedGridId = gridKey; syncCardSelectionDom(); });
     }
   }
 
@@ -293,9 +301,12 @@
     const GS = window.GallerySelect;
     if (!gridEl) return;
     if (GS) GS.clearSelection();
+    lastClickedGridId = "";
     currentRepoSlug = (bucket && bucket.repo_slug) || "session";
     const sessionCaps = Array.isArray(bucket && bucket.visual_artifacts) ? bucket.visual_artifacts : [];
     const repoAssets = Array.isArray(bucket && bucket.repo_visual_assets) ? bucket.repo_visual_assets : [];
+    currentSessionItems = sessionCaps;
+    currentRepoItems = repoAssets;
     currentSessionCapsCount = sessionCaps.length;
     currentVisualItems = [...sessionCaps, ...repoAssets];
     const capCntEl = document.getElementById("v9CapturesBtnCount");
@@ -313,25 +324,26 @@
 
   function reset() {
     currentVisualItems = [];
+    currentSessionItems = [];
+    currentRepoItems = [];
+    lastClickedGridId = "";
     currentRepoSlug = "session";
     currentSessionCapsCount = 0;
-    const capCntEl = document.getElementById("v9CapturesBtnCount");
-    if (capCntEl) capCntEl.textContent = "0";
     closeMorePopover();
-    const gridEl = document.getElementById("v9GalGrid");
-    const repoGridEl = document.getElementById("v9RepoAssetsGrid");
-    const repoCountEl = document.getElementById("v9RepoAssetsCount");
-    const bar = document.getElementById("v9GalToolbar");
-    const dlg = document.getElementById("sheetExportDialog");
-    if (dlg && dlg.open) dlg.close();
-    const capDlg = document.getElementById("v9CapturesDialog");
-    if (capDlg && capDlg.open) capDlg.close();
-    if (gridEl) gridEl.innerHTML = "";
-    if (repoGridEl) repoGridEl.innerHTML = "";
-    if (repoCountEl) repoCountEl.textContent = "0";
-    if (bar) bar.innerHTML = "";
+    ["v9CapturesBtnCount", "v9RepoAssetsCount"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = "0";
+    });
+    ["sheetExportDialog", "v9CapturesDialog"].forEach((id) => {
+      const dlg = document.getElementById(id);
+      if (dlg && dlg.open) dlg.close();
+    });
+    ["v9GalGrid", "v9RepoAssetsGrid", "v9GalToolbar"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = "";
+    });
     setStatus("");
   }
 
-  V9.Gallery = { renderBucketGallery, reset, getItems: () => currentVisualItems };
+  V9.Gallery = { renderBucketGallery, reset, getItems: () => currentVisualItems, getSessionItems: () => currentSessionItems };
 })();

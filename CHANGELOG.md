@@ -4,6 +4,15 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.5] — 2026-11-23
+
+### Fixed
+- **Workspace Gallery `All` (`Select All`) Scoped Strictly to Session Captures (`web/v9/v9_gallery.js`)**:
+  - Tracked `currentSessionItems` separately from `currentVisualItems` so clicking **`All`** (`#v9GalAllBtn`) selects only active session captures (`sessionCaps`) and never silently selects collapsed **`Shared Repo Assets`** (`#v9RepoAssetsDrawer`) or inflates `"N selected"` / `PNGs` / `Contact Sheet` / `Download ZIP` exports.
+  - Updated `#v9GalAllBtn` label & disabled logic so selecting all session captures immediately flips the button to **`Clear`**, and a `0`-capture session disables **`All`** unless clearing manually selected repo assets.
+  - Isolated `Shift+Click` (`handleShiftSelect`) and drag/touch gestures (`bindGalleryGestures`) strictly per grid (`#v9GalGrid` vs `#v9RepoAssetsGrid`) so selection ranges never cross between session captures and shared repo assets.
+- **Docs, Tests & PWA Sync**: Updated Workflow 4 & Workflow 6 (`CACHE_NAME = "agy-nexus-v4.0.5"`, `?v=4.0.5`) in `docs/WORKFLOWS.md`, added Node VM & API regression tests (`tests/test_v405_gallery_select_all_scope.py`), and refreshed `demo_snapshot.js`, `README.md`, and `build/gh-pages/` (`0` leaks).
+
 ## [4.0.4] — 2026-11-23
 
 ### Option A Hybrid Range Whiskers & Target/Seam Caret Bars + Subagent Step-Cap Alerts
