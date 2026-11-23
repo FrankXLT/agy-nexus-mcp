@@ -4,6 +4,22 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.7] — 2026-11-23
+
+### Added & Improved
+- **4-Gate `WF-XX` & Common Terms Workflow Engine (`docs/WORKFLOWS.md`, `workflow_baseline.py`, `workflow_gate.py`, `handoff.py`, `tools_praxis.py`, `tools_session.py`, `virtual_uris.py`, `config.py`)**:
+  - Added a `Common Terms Glossary` and explicit `WF-01..WF-06` flow headings in `docs/WORKFLOWS.md` without banned terminology, and upgraded `discover_project_workflows` + `format_workflow_baseline_for_wire` so `load_session_into_gemini` and `workflow:baseline` always return `workflow_status` (`READY` vs `MISSING_BASELINE`), the complete `WF-01..WF-NN` index, and `Common Terms` within `< 20 KB` wire caps.
+  - Added `workflow_ids`, `workflow_delta`, and `user_terms` parameters to `send_handoff_and_resume`, enforced all 4 plain-language workflow pre-flight gates (`NEEDS_WORKFLOW_SPEC`, `WORKFLOW_BOOTSTRAP_REQUIRED`, `HANDOFF_REJECTED_PLAIN_LANGUAGE` + `WF-XX` binding checks) while preventing `allow_chained_publish=True` from bypassing non-closeout checks, and auto-injected matched `WF-XX` sections + `Common Terms` into `scratch/gemini_research_handoff.md`.
+  - Persisted `workflow_ids`, `workflow_delta`, and `docs/WORKFLOWS.md` baseline fingerprints onto staged tickets (`handoff_queue.py`) and gated `praxis_update_handoff(status="COMPLETED")` with `WORKFLOW_DOC_NOT_UPDATED` whenever `docs/WORKFLOWS.md` is left untouched on `bootstrap` / `add_new` / `update_existing` tickets.
+- **Thicker Mobile/Tablet Topbar, Hourly Error-Bar Legend & Dedicated Table Legends (`web/v9/`)**:
+  - Upgraded `< 680px` folded topbar ergonomics in `v9_shell.css` (`40px` Row 1 targets with `>= 40px` menu button / `18px` icon / `13px` tabs; `36px` Row 2 buttons with `>= 36px` `<`/`>` steppers; `6px` row gap; `8px 12px` padding; `0` horizontal overflow at `390px`) and expanded `680px–1099px` tablet topbar to `56px` with `36px` controls.
+  - Fixed `buildCadenceWhiskerOption` (`v9_billing.js`) ECharts legend icons and `itemStyle.color` to match Teal `Min–Max Range` I-beams, Blue `Active Avg` horizontal tick/dash, and Purple `Last 24h` circles across all 4 themes.
+  - Added reactive `V9.SparkBars.renderTableLegend(kind, metric)` `.v9-table-legend` swatch bars directly above Model Workload, Subagent Workload, Top Projects, and Project Sessions tables (`v9_spark_bars.js`, `v9_tables_and_rail.css`, `v9_analytics.js`, `v9_project_view.js`, `index.html`), clarified Subagent per-run text as `<avg> avg · <max> max`, and cleaned chart header subtitles.
+- **Opt-In Gemini Linux VM Screenshot Audit (`config.py`, `media.py`, `retirement.py`, `tools_session.py`, `tools_media.py`, `docs/DEPLOYMENT.md`)**:
+  - Added Rule 6 (`OPT-IN GEMINI VM VISUAL AUDIT`) in `mcp.instructions` and `VISUAL_INSPECTION_HINT` across `load_session_into_gemini` and `inspect_visual_artifacts` so Gemini always presents clickable 7-day `signed_url` links at zero extra token cost first and prompts via `<ElicitationsGroup>` (`Have Gemini audit screenshots in VM (uses extra tokens)`) before pulling images with the `Google-Agent` User-Agent.
+  - Updated `docs/DEPLOYMENT.md` (Section 4 Step 2.3) and `docs/WORKFLOWS.md` (`WF-04`) to permit trailing query strings (`(\?.*)?`) on `/web/media/` for Gemini mobile `?hl=en-US` links over split-DNS.
+- **Docs, Tests & PWA Sync**: Bumped `4.0.7` (`agy-nexus-v4.0.7`), added `tests/test_v407_workflow_gates_and_mobile_legends.py`, updated `test_v404` & version parity tests, and refreshed showcase snapshots, `docs/assets/*.png`, and verified responsive visuals (`390x844`, `820x1080`, `900x1000`, `1440x900`).
+
 ## [4.0.6] — 2026-11-23
 
 ### Added & Improved

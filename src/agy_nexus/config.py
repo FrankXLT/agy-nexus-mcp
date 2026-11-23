@@ -425,12 +425,9 @@ mcp = FastMCP(
     name="agy-nexus-mcp",
     instructions=(
         "AGY-NEXUS-MCP: Antigravity Mission Control, Cross-Session Memory, Quota Overwatch & Handoff Server.\n"
-        "1. PLAIN-LANGUAGE STAGE HANDOFFS (`send_handoff_and_resume`): Explain in 5-15 everyday words what the user sees, clicks, and expects (never buzzwords or bare file lists). Match `handoff_mode`: "
-        "'feature_update' (default: keep docs/WORKFLOWS.md intact + update docs & code), "
-        "'new_project' (user steps across 390px/900px/1440px + empty/error states; create docs/WORKFLOWS.md), "
-        "'bug_or_visual_fix' (what broke, workflow impact, missing docs/WORKFLOWS.md rule, browser test), "
-        "'release_closeout' (verify docs/WORKFLOWS.md, tests, privacy, commit/tag/push, retire). "
-        "Leave `execution_mode='auto'` so compact non-security bugfixes/closeouts use Surgical Fast-Path (`fast`) while features/security stay in `plan`.\n"
+        "1. PLAIN-LANGUAGE STAGE HANDOFFS (`send_handoff_and_resume`): Pass `workflow_ids` (e.g. 'WF-01,WF-03'), `workflow_delta` ('unchanged'|'update_existing'|'add_new'|'bootstrap'), and `user_terms`; explain what the user sees, taps, and expects (never code/line dumps). Ask 2-3 quick plain-language questions before `new_project` (`Who & Goal`, `Common Terms`, >=2 `WF-XX` flows across 390px/900px/1440px + empty/error states) or when a brownfield repo reports `MISSING_BASELINE` (`workflow_delta='bootstrap'`). Modes: "
+        "'feature_update' (default), 'new_project', 'bug_or_visual_fix' (defaults `update_existing`), 'release_closeout' (only zero-edit exempt mode). "
+        "Keep `execution_mode='auto'` so compact non-security fixes/closeouts use `fast` while features/security stay in `plan`.\n"
         "2. SEQUENTIAL READ-ONLY GOVERNANCE (1 CALL AT A TIME, UP TO 4 HOPS/TURN):\n"
         "- NEVER emit parallel simultaneous MCP calls in the same step (causes UI confirmation hangs).\n"
         "- You MAY issue up to 4 sequential read-only calls (`get_session_tree`, `load_session_into_gemini`, `ask_workspace_readonly`, `inspect_git_diff`, `inspect_visual_artifacts`, `list_saved_sessions`, `list_models_and_agents`) per turn (`call -> wait -> next`).\n"
@@ -442,7 +439,10 @@ mcp = FastMCP(
         "<FollowUp label=\"...\" query=\"@Agy Nexus Mcp ...\" /> (1 clear next step) or "
         "<ElicitationsGroup message=\"...\"><Elicitation label=\"...\" query=\"@Agy Nexus Mcp ...\" /></ElicitationsGroup> (2-3 choices). "
         "Every `query` MUST start with `@Agy Nexus Mcp ` and embed the exact `conversation_id`, `handoff_id`, and `project_name` "
-        "(prefer `suggested_actions.followup_xml` when returned)."
+        "(prefer `suggested_actions.followup_xml` when returned).\n"
+        "6. OPT-IN GEMINI VM VISUAL AUDIT: Share clickable `signed_url` screenshot & showcase HTML links at zero extra token cost. "
+        "Gemini's Linux workspace CAN fetch them (`curl -A 'Mozilla/5.0 (compatible; Google-Agent; +https://developers.google.com/crawling/docs/crawlers-fetchers/google-agent)'` + `view_file`), "
+        "but NEVER auto-fetch images unprompted—ALWAYS prompt first with `<Elicitation label=\"Have Gemini audit screenshots in VM (uses extra tokens)\" ... />`."
     ),
 )
 

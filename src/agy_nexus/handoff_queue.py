@@ -28,6 +28,18 @@ from agy_nexus.handoff_queue_store import (
 )
 
 
+def _normalize_wf_id_list(workflow_ids: list[str] | tuple[str, ...] | str) -> list[str]:
+    raw_items = list(workflow_ids) if isinstance(workflow_ids, (list, tuple)) else re.split(r"[\s,;]+", workflow_ids or "")
+    out: list[str] = []
+    for item in raw_items:
+        m = re.fullmatch(r"WF[-_ ]?0*([1-9]\d?)", str(item or "").strip(), re.IGNORECASE)
+        if m:
+            tag = f"WF-{int(m.group(1)):02d}"
+            if tag not in out:
+                out.append(tag)
+    return out[:12]
+
+
 def record_handoff_ticket(
     bg_dir: Path, *, full_markdown: str, chars_written: int, repo_slug: str, title: str,
     project_id: str = "", project_name: str = "", workspace_path: str = "", target_conversation_id: str = "",
@@ -35,6 +47,8 @@ def record_handoff_ticket(
     allow_chained_publish: bool = False, initial_status: str = "STAGED", claimed_by_conversation_id: str = "",
     job_id: str = "", supersede_handoff_id: str = "", append_to_existing: bool = False,
     create_new_project: bool = False, default_branch: str = "", retire_after_closeout: bool = False,
+    workflow_ids: list[str] | tuple[str, ...] | str = "", workflow_delta: str = "",
+    workflows_doc_mtime: float | None = None, workflows_doc_sha256: str = "",
 ) -> dict[str, Any]:
     """Atomically mint `<repo-slug>-NN` (or append), auto-supersede matching unclaimed tickets, and write file."""
     ts_iso = datetime.now(timezone.utc).isoformat()
@@ -43,6 +57,16 @@ def record_handoff_ticket(
     topic_slug = slugify_token(title_clean, "handoff", 32)
     sup_target = canonicalize_handoff_id(supersede_handoff_id)
     eff_status = initial_status.upper() if initial_status.upper() in VALID_HANDOFF_STATES else "STAGED"
+    wf_id_list = _normalize_wf_id_list(workflow_ids)
+    wf_delta_str = str(workflow_delta or "").strip().lower()
+    if workspace_path and workflows_doc_mtime is None and not workflows_doc_sha256:
+        try:
+            from agy_nexus.workflow_gate import get_workflows_doc_fingerprint
+            fp_mtime, fp_sha = get_workflows_doc_fingerprint(workspace_path)
+        except Exception:
+            fp_mtime, fp_sha = 0.0, ""
+    else:
+        fp_mtime, fp_sha = float(workflows_doc_mtime or 0.0), str(workflows_doc_sha256 or "")
 
     with _locked_index(bg_dir) as (q_dir, doc):
         tickets, counters = doc["tickets"], doc["counters"]
@@ -67,6 +91,12 @@ def record_handoff_ticket(
                         ex["default_branch"] = str(default_branch)
                     if retire_after_closeout:
                         ex["retire_after_closeout"] = True
+                    if wf_id_list:
+                        ex["workflow_ids"] = list(dict.fromkeys([*(ex.get("workflow_ids") or []), *wf_id_list]))
+                    if wf_delta_str and wf_delta_str != "unchanged":
+                        ex["workflow_delta"] = wf_delta_str
+                        if not ex.get("workflows_doc_sha256"):
+                            ex["workflows_doc_mtime"], ex["workflows_doc_sha256"] = fp_mtime, fp_sha
                     if eff_status == "IN_WORK":
                         ex.update({"status": "IN_WORK", "claimed_at": ts_iso, "claimed_by_conversation_id": claimed_by_conversation_id or target_conversation_id, "job_id": job_id})
                     return _decorate_ticket(ex)
@@ -92,6 +122,8 @@ def record_handoff_ticket(
             "rollover_from": rollover_from, "execution_mode": execution_mode, "handoff_mode": handoff_mode,
             "allow_chained_publish": allow_chained_publish, "create_new_project": bool(create_new_project),
             "default_branch": str(default_branch or ""), "retire_after_closeout": bool(retire_after_closeout),
+            "workflow_ids": wf_id_list, "workflow_delta": wf_delta_str,
+            "workflows_doc_mtime": fp_mtime, "workflows_doc_sha256": fp_sha,
             "chars_written": chars_written, "handoff_file": str(ticket_file),
             "job_id": job_id, "superseded_ids": superseded_ids, "superseded_by": "",
             "created_at": ts_iso, "updated_at": ts_iso, "claimed_at": ts_iso if eff_status == "IN_WORK" else "",
@@ -99,6 +131,18 @@ def record_handoff_ticket(
         tickets.append(entry)
         doc["tickets"] = _prune_old_tickets(q_dir, tickets)
         return _decorate_ticket(entry)
+
+
+def get_handoff_ticket(bg_dir: Path, handoff_id: str) -> dict[str, Any] | None:
+    """Return decorated handoff ticket by canonical ID, or None if not found."""
+    cid_norm = canonicalize_handoff_id(handoff_id)
+    if not cid_norm:
+        return None
+    doc = _read_index_unlocked(bg_dir)
+    for t in reversed(doc.get("tickets") or []):
+        if t.get("handoff_id") == cid_norm:
+            return _decorate_ticket(t)
+    return None
 
 
 def resolve_staged_ticket_for_resume(
@@ -277,6 +321,7 @@ def reconcile_completed_tickets(bg_dir: Path, db_file: Path | None = None, brain
                     str(t.get("claimed_by_conversation_id") or ""): str(t.get("handoff_id") or "")
                     for t in tickets if str(t.get("status") or "").upper() in ("IN_WORK", "STAGED") and t.get("claimed_by_conversation_id")
                 }
+                from agy_nexus.workflow_gate import verify_workflow_doc_updated_for_completion
                 for t in tickets:
                     st_val = str(t.get("status") or "").upper()
                     if st_val not in ("IN_WORK", "STAGED"):
@@ -285,8 +330,9 @@ def reconcile_completed_tickets(bg_dir: Path, db_file: Path | None = None, brain
                     if not cid:
                         continue
                     if (eff_brain / cid / "RETIRED.json").is_file():
-                        t.update({"status": "COMPLETED", "completed_at": ts_iso, "updated_at": ts_iso})
-                        completed_ids.append(str(t.get("handoff_id")))
+                        if verify_workflow_doc_updated_for_completion(t).get("ok"):
+                            t.update({"status": "COMPLETED", "completed_at": ts_iso, "updated_at": ts_iso})
+                            completed_ids.append(str(t.get("handoff_id")))
                         continue
                     if st_val != "IN_WORK" or not con:
                         continue
@@ -296,7 +342,7 @@ def reconcile_completed_tickets(bg_dir: Path, db_file: Path | None = None, brain
                         is_running = ("RUNNING" in raw_st) or bool(row[1])
                         newer_hid = newer_claimed.get(cid)
                         has_newer = bool(newer_hid and newer_hid != str(t.get("handoff_id")))
-                        if not is_running or has_newer:
+                        if (not is_running or has_newer) and verify_workflow_doc_updated_for_completion(t).get("ok"):
                             t.update({"status": "COMPLETED", "completed_at": ts_iso, "updated_at": ts_iso})
                             completed_ids.append(str(t.get("handoff_id")))
         finally:

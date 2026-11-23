@@ -260,7 +260,7 @@
     ];
     const swatches = themes.map((th) => `<button type="button" class="v9-swatch-btn" data-v9-theme="${th.id}" aria-label="${th.label}" title="${th.label}" aria-pressed="${st.theme === th.id}"><span class="v9-swatch-circle ${th.cls}"></span></button>`).join("");
     return `<div class="v9-rail-footer">
-      <div class="v9-swatch-row" role="group" aria-label="Surface theme">${swatches}</div>
+      <div class="v9-swatch-row" role="group" aria-label="Color theme">${swatches}</div>
       <div class="va-tb-group" role="group" aria-label="Information density">
         <button type="button" class="va-tb-btn" data-v9-density="d3" aria-pressed="${st.density === "d3"}">Compact</button>
         <button type="button" class="va-tb-btn" data-v9-density="d2" aria-pressed="${st.density === "d2"}">Comfortable</button>

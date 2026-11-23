@@ -177,21 +177,28 @@ def _elicit_group(msg: str, items: list[tuple[str, str]]) -> str:
     return f'<ElicitationsGroup message="{esc(msg)}">{inner}</ElicitationsGroup>'
 
 
+def _ret_chips(res: dict[str, Any], phase: str, is_running: bool, has_visuals: bool, tgt: str, cid: str, hid: str) -> dict[str, Any]:
+    from agy_nexus.media import decorate_suggested_actions_with_visual_audit
+    return decorate_suggested_actions_with_visual_audit(res, phase, is_running, has_visuals, tgt, cid, hid)
+
+
 def build_suggested_actions(
     phase: str, target: str = "", conv_id: str = "", step_count: int = 0,
-    catches_count: int = 0, is_running: bool = False, handoff_id: str = "",
+    catches_count: int = 0, is_running: bool = False, handoff_id: str = "", has_visuals: bool = False,
 ) -> dict[str, Any]:
     """Generate job-focused 1-tap Yes transitions and @Agy Nexus Mcp XML reply chips."""
     tgt = _clean_chip_text(target) or "target"
     tgt_short = tgt if len(tgt) <= 24 else tgt[:21] + "..."
     cid, hid, p_norm = _clean_chip_text(conv_id), _clean_chip_text(handoff_id), _clean_chip_text(phase).lower()
     ref_lbl = hid or tgt_short
+    if p_norm == "inspect_visual_artifacts":
+        return _ret_chips({}, p_norm, False, True, tgt, cid, hid)
     if p_norm == "retired" and not is_running:
         prompt = "Start next task or view session tree?"
         q1 = "@Agy Nexus Mcp Show get_session_tree(include_stats=True, style='rich') across workspaces."
         q2 = f"@Agy Nexus Mcp Inspect {tgt} workspace for the next task."
         xml = _elicit_group("Session retired cleanly — what next?", [("View active session tree", q1), (f"Start a fresh session on {tgt_short}", q2)])
-        return {"phase": "retired", "prompt": prompt, "actions": [prompt], "options": [{"label": "Yes", "value": q1}, {"label": f"Inspect {tgt_short}", "value": q2}], "followup_xml": xml}
+        return _ret_chips({"phase": "retired", "prompt": prompt, "actions": [prompt], "options": [{"label": "Yes", "value": q1}, {"label": f"Inspect {tgt_short}", "value": q2}], "followup_xml": xml}, p_norm, is_running, has_visuals, tgt, cid, hid)
     if p_norm == "in_flight" or is_running:
         prompt = "Check in on the build?"
         ctx_meta = f" ({hid}, {tgt})" if hid else f" ({tgt})"
@@ -203,10 +210,10 @@ def build_suggested_actions(
         q1 = f"@Agy Nexus Mcp Run release_closeout on {cid} ({tgt}, allow_chained_publish=True, retire_session=True) to verify tests, commit, tag, push to GitHub, and retire the session." if cid else f"@Agy Nexus Mcp Ship {tgt} to GitHub"
         q2 = f"@Agy Nexus Mcp Inspect git diff on {cid or tgt}"
         xml = _elicit_group(f"Ready to ship {tgt_short} or make adjustments?", [(f"Ship {tgt_short} to GitHub & retire session", q1), (f"Inspect git diff on {tgt_short}", q2)])
-        return {"phase": "ready_to_ship", "prompt": prompt, "actions": [prompt], "options": [{"label": "Yes", "value": q1}, {"label": f"Inspect git diff on {tgt_short}", "value": q2}], "followup_xml": xml}
+        return _ret_chips({"phase": "ready_to_ship", "prompt": prompt, "actions": [prompt], "options": [{"label": "Yes", "value": q1}, {"label": f"Inspect git diff on {tgt_short}", "value": q2}], "followup_xml": xml}, p_norm, is_running, has_visuals, tgt, cid, hid)
     prompt = "Run these changes and update the live preview?"
     ctx_run = f" (session {cid})" if cid else ""
     q1 = f"@Agy Nexus Mcp Launch {hid or tgt} headlessly on {tgt}{ctx_run} and update the live preview."
     q2 = f"@Agy Nexus Mcp Check in on {hid or cid or tgt}"
     xml = _elicit_group(f"How would you like to run {ref_lbl}?", [(f"Launch {ref_lbl} headlessly now", q1), ("Check in after running in IDE", q2)])
-    return {"phase": "ready_to_run", "prompt": prompt, "actions": [prompt], "options": [{"label": "Yes", "value": q1}, {"label": "Check in after running in IDE", "value": q2}], "followup_xml": xml}
+    return _ret_chips({"phase": "ready_to_run", "prompt": prompt, "actions": [prompt], "options": [{"label": "Yes", "value": q1}, {"label": "Check in after running in IDE", "value": q2}], "followup_xml": xml}, p_norm, is_running, has_visuals, tgt, cid, hid)

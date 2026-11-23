@@ -1,4 +1,4 @@
-"""tests/test_v405_gallery_select_all_scope.py — AGY-Nexus v4.0.6 Workspace Gallery Select-All Scope."""
+"""tests/test_v405_gallery_select_all_scope.py — AGY-Nexus v4.0.7 Workspace Gallery Select-All Scope."""
 
 from __future__ import annotations
 
@@ -283,14 +283,14 @@ console.log("OK_V405_GALLERY_SCOPE");
         encoding="utf-8",
     )
     res = subprocess.run(["node", str(probe)], cwd=str(REPO_ROOT), capture_output=True, text=True, check=False)
-    assert res.returncode == 0, f"Node v4.0.6 probe failed:\n{res.stderr}\n{res.stdout}"
+    assert res.returncode == 0, f"Node v4.0.7 probe failed:\n{res.stderr}\n{res.stdout}"
     assert "OK_V405_GALLERY_SCOPE" in res.stdout
 
 
 def test_v405_version_budgets_pwa_and_workflows_contracts() -> None:
-    """Verify v4.0.6 across package, PWA, WORKFLOWS.md, CHANGELOG.md, and <=350L/<=100L gallery module budgets."""
-    assert agy_nexus.__version__ == "4.0.6"
-    assert 'version = "4.0.6"' in (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    """Verify v4.0.7 across package, PWA, WORKFLOWS.md, CHANGELOG.md, and <=350L/<=100L gallery module budgets."""
+    assert agy_nexus.__version__ == "4.0.7"
+    assert 'version = "4.0.7"' in (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
     gal_txt = (V9_DIR / "v9_gallery.js").read_text(encoding="utf-8")
     gal_lines = gal_txt.splitlines()
@@ -300,17 +300,17 @@ def test_v405_version_budgets_pwa_and_workflows_contracts() -> None:
     assert not any(int(sym.get("lines") or 0) > 100 for sym in syms)
 
     sw_txt = (WEB_DIR / "sw.js").read_text(encoding="utf-8")
-    assert 'CACHE_NAME = "agy-nexus-v4.0.6"' in sw_txt
-    assert "/web/v9/v9_gallery.js?v=4.0.6" in sw_txt
+    assert 'CACHE_NAME = "agy-nexus-v4.0.7"' in sw_txt
+    assert "/web/v9/v9_gallery.js?v=4.0.7" in sw_txt
     assert "v9/v9_gallery.js" in web_routes.PWA_ASSETS
 
     html_txt = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     assert html_txt == (V9_DIR / "index.html").read_text(encoding="utf-8")
-    assert "/web/v9/v9_gallery.js?v=4.0.6" in html_txt
+    assert "/web/v9/v9_gallery.js?v=4.0.7" in html_txt
 
     wf_txt = (REPO_ROOT / "docs" / "WORKFLOWS.md").read_text(encoding="utf-8")
-    assert "Workflow 6:" in wf_txt and "v4.0.6" in wf_txt
+    assert "Workflow 6:" in wf_txt and "v4.0.7" in wf_txt
     assert "#v9GalAllBtn" in wf_txt and "Shared Repo Assets" in wf_txt
 
     ch_txt = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "## [4.0.6]" in ch_txt
+    assert "## [4.0.7]" in ch_txt

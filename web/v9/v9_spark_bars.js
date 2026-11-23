@@ -158,7 +158,7 @@
     const flagHtml = sm.isStepCapOver ? ` <span class="v9-cap-flag is-fault">&gt;120</span>` : (sm.isHeavyBurn ? ` <span class="v9-cap-flag is-warn">${esc(bStr)}x</span>` : "");
     const capNote = sm.isStepCapOver ? ` · CAP ALERT: ${sm.over120Runs || 1} run(s) >120 steps (max ${sm.maxSteps || Math.round(fin(sm.max, 0))}s)` : (sm.isHeavyBurn ? ` · HEAVY BURN: ${bStr}x fleet mean` : "");
     const tip = `Avg/Run: ${fmtMetric(sm.avg, metric, true)} · Max/Run: ${fmtMetric(sm.max, metric, true)} · Latest: ${fmtMetric(sm.latest, metric, true)} · Runs: ${sm.runs}${capNote}`;
-    return renderWhiskerMarkup({ min: sm.min, avg: sm.avg, max: sm.max, dot: sm.latest, hasDot: sm.latest != null, scaleMax, color, state, tip, readout: fmtMetric(sm.max, metric, true), flagHtml });
+    return renderWhiskerMarkup({ min: sm.min, avg: sm.avg, max: sm.max, dot: sm.latest, hasDot: sm.latest != null, scaleMax, color, state, tip, readout: `${fmtMetric(sm.avg, metric, true)} avg · ${fmtMetric(sm.max, metric, true)} max`, flagHtml });
   }
 
   function renderModelCaretBar(mm, color) {
@@ -197,5 +197,15 @@
     return `<div class="v9-spk" title="${esc(tip)}"><span class="v9-spk-track" role="img" aria-label="${esc(tip)}"><span class="v9-spk-rail"><span class="v9-caret-fill" style="inline-size:${fillP.toFixed(1)}%;background:${esc(safeCol(color))}"></span><span class="v9-whisk-avg" style="inset-inline-start:${avgP.toFixed(1)}%"></span>${caret}</span></span><span class="v9-spk-val">${esc(fmtMetric(sm.val, metric, true))}</span></div>`;
   }
 
-  V9.SparkBars = { computeProjectMetrics, computeSubagentMetrics, computeModelRows, computeSessionRows, renderProjectWhisker, renderSubagentWhisker, renderModelCaretBar, renderSessionCaretBar };
+  function renderTableLegend(kind, metric) {
+    const it = (cls, lbl, inner = "") => `<span class="v9-lg-item"><span class="v9-lg-sw is-${cls}">${inner}</span>${esc(lbl)}</span>`;
+    let body = "";
+    if (kind === "models") body = `${it("fill", "Window share")}${it("avg", "Guide target")}${it("caret", "Last 24h share", CARET_SVG)}<span class="v9-lg-hint">Tap row to solo</span>`;
+    else if (kind === "subagents") body = `${it("bar", "Min–Max / run")}${it("avg", "Avg / run")}${it("dot", "Latest run")}<span class="v9-lg-item"><span class="v9-cap-flag is-fault">&gt;120</span>Any run &gt;120 steps</span>`;
+    else if (kind === "projects") body = `${it("bar", "Active-day Min–Peak")}${it("avg", "Avg / day")}${it("dot", "Last 24h")}${it("idle", "Idle 24h")}`;
+    else if (kind === "sessions") body = metric === "steps" ? `${it("fill", "Session steps")}${it("avg", "320 clean seam")}${it("caret", "700 rollover limit", CARET_SVG)}` : `${it("fill", "Session total")}${it("avg", "Project avg")}${it("caret", "Last 24h", CARET_SVG)}`;
+    return body ? `<div class="v9-table-legend" role="note" aria-label="Table bar key">${body}</div>` : "";
+  }
+
+  V9.SparkBars = { computeProjectMetrics, computeSubagentMetrics, computeModelRows, computeSessionRows, renderProjectWhisker, renderSubagentWhisker, renderModelCaretBar, renderSessionCaretBar, renderTableLegend };
 })();

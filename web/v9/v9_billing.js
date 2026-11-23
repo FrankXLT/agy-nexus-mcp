@@ -51,6 +51,7 @@
       {
         name: "Min–Max Range",
         type: "custom",
+        itemStyle: { color: stemColor },
         renderItem: (_params, api) => {
           const xIdx = api.value(0);
           const yMin = api.value(1);
@@ -81,6 +82,7 @@
         data: avgLineData,
         symbol: "none",
         connectNulls: false,
+        itemStyle: { color: avgColor },
         lineStyle: { color: avgColor, width: 1.4, type: "dashed" },
         z: 3,
       },
@@ -89,6 +91,7 @@
       series.push({
         name: "Last 24h",
         type: "scatter",
+        symbol: "circle",
         symbolSize: 7,
         itemStyle: { color: l24Color, borderColor: t.surface, borderWidth: 1.2 },
         data: l24Data,
@@ -96,13 +99,22 @@
       });
     }
 
+    const legendData = [
+      { name: "Min–Max Range", icon: "path://M3,1H11V2.6H8V13.4H11V15H3V13.4H6V2.6H3Z", itemStyle: { color: stemColor, borderWidth: 0 } },
+      { name: "Active Avg", icon: "path://M1,6.5H6V9.5H1ZM9,6.5H14V9.5H9Z", itemStyle: { color: avgColor, borderWidth: 0 } },
+    ];
+    if (hasL24) {
+      legendData.push({ name: "Last 24h", icon: "circle", itemStyle: { color: l24Color, borderColor: t.surface, borderWidth: 1 } });
+    }
     const opt = {
+      color: [stemColor, avgColor, l24Color],
       animation: false,
       independentXSpan: true,
       yUnit: `whiskers_${metric}`,
       backgroundColor: "transparent",
       legend: {
-        show: true, top: 2, right: 8, itemWidth: 10, itemHeight: 8,
+        show: true, top: 2, right: 8, itemWidth: 11, itemHeight: 11,
+        data: legendData,
         textStyle: { color: t.sub, fontSize: 10, fontFamily: axisFont },
       },
       tooltip: {

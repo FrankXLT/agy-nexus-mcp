@@ -308,10 +308,16 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
     scratch_batches = list_scratch_upload_batches(conv_id, AGY_BRAIN_DIR)
     wf_info = discover_project_workflows(ws_path)
     project_workflows = {
-        "source_file": wf_info["source_file"],
+        "workflow_status": wf_info.get("workflow_status", "MISSING_BASELINE"),
+        "source_file": wf_info.get("source_file", ""),
+        "workflows": [
+            {"id": w["id"], "title": w["title"], "summary": w["summary"]}
+            for w in wf_info.get("workflows", [])
+        ],
+        "common_terms": wf_info.get("common_terms", []),
         "workflow_titles": wf_info.get("workflow_titles", []),
-        "summary": format_workflow_baseline_for_wire(wf_info, max_chars=1200),
-    } if wf_info.get("found") else {}
+        "summary": format_workflow_baseline_for_wire(wf_info, max_chars=1400),
+    } if (wf_info.get("found") or (ws_path and ws_path.is_dir())) else {}
 
     is_running = bool(db_status_info.get("is_running"))
     step_count = int(db_status_info.get("step_count") or 0)
@@ -332,6 +338,7 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
         "suggested_actions": build_suggested_actions(
             sess_phase, target=project_name or Path(workspace).name or "project",
             conv_id=conv_id, step_count=step_count, is_running=is_running,
+            has_visuals=bool(visual_artifacts),
         ),
         "project_hygiene_standards": MODULAR_HYGIENE_STANDARDS, "execution_status": db_status_info,
         "compaction_count": db_status_info.get("compaction_count", 0),
@@ -347,7 +354,8 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
     if project_workflows:
         payload["project_workflows"] = project_workflows
     if visual_artifacts or scratch_batches:
-        payload["visual_inspection_hint"] = "Share signed_url HTTPS links for mobile viewing, or ask Antigravity to inspect uploaded batches under brain:scratch/uploads_.../INDEX.md."
+        from agy_nexus.media import VISUAL_INSPECTION_HINT
+        payload["visual_inspection_hint"] = VISUAL_INSPECTION_HINT
     if included_files:
         payload["included_files"] = included_files
 
@@ -387,6 +395,21 @@ def _shrink_optional_payload_fields(payload: dict[str, Any]) -> bool:
         if len(val) > 260:
             payload[k] = val[: max(180, len(val) // 2)] + "\n... [compacted]"
             return True
+    pw = payload.get("project_workflows")
+    if isinstance(pw, dict):
+        if pw.pop("workflow_titles", None):
+            return True
+        if isinstance(pw.get("common_terms"), list) and len(pw["common_terms"]) > 4:
+            pw["common_terms"] = [
+                {"term": str(t.get("term") or "")[:36], "meaning": str(t.get("meaning") or "")[:72]}
+                for t in pw["common_terms"][:4] if isinstance(t, dict)
+            ]
+            return True
+        if isinstance(pw.get("workflows"), list) and any(len(str(w.get("summary") or "")) > 60 for w in pw["workflows"] if isinstance(w, dict)):
+            for w in pw["workflows"]:
+                if isinstance(w, dict) and w.get("summary"):
+                    w["summary"] = str(w["summary"])[:60]
+            return True
     if isinstance(payload.get("scratch_files"), list) and payload["scratch_files"]:
         payload["scratch_files"] = []
         return True
@@ -422,8 +445,15 @@ def _compact_loaded_session_payload(
         out_str = _compact_json(payload)
     if not within_wire_budget(out_str, max_raw_bytes=17800, max_escaped_bytes=19600):
         payload["recent_transcript_turns"] = []
-        if isinstance(payload.get("project_workflows"), dict) and len(str(payload["project_workflows"].get("summary") or "")) > 500:
-            payload["project_workflows"]["summary"] = str(payload["project_workflows"]["summary"])[:500] + "\n... [compacted]"
+        if isinstance(payload.get("project_workflows"), dict):
+            pw = payload["project_workflows"]
+            if len(str(pw.get("summary") or "")) > 500:
+                pw["summary"] = str(pw["summary"])[:500] + "\n... [compacted]"
+            if isinstance(pw.get("common_terms"), list):
+                pw["common_terms"] = [
+                    {"term": str(t.get("term") or "")[:40], "meaning": str(t.get("meaning") or "")[:100]}
+                    for t in pw["common_terms"][:8] if isinstance(t, dict)
+                ]
         if isinstance(payload.get("scratch_files"), list):
             payload["scratch_files"] = payload["scratch_files"][:4]
         out_str = _compact_json(payload)

@@ -405,3 +405,44 @@ def discover_visual_artifacts(
     else:
         merged = sorted([*s_items, *r_items], key=lambda item: float(item.get("mtime") or 0.0), reverse=True)
     return merged[: max(1, min(int(limit or 30), 40))]
+
+
+VISUAL_INSPECTION_HINT = (
+    "Share clickable signed_url links at zero extra token cost, and prompt via a 1-tap choice before fetching "
+    "screenshots or published HTML into Gemini's Linux VM (curl -A 'Mozilla/5.0 (compatible; Google-Agent; "
+    "+https://developers.google.com/crawling/docs/crawlers-fetchers/google-agent)' + view_file; uses extra tokens)."
+)
+
+
+def decorate_suggested_actions_with_visual_audit(
+    res: dict[str, Any], phase: str, is_running: bool, has_visuals: bool, tgt: str, cid: str, hid: str,
+) -> dict[str, Any]:
+    """Attach the opt-in VM screenshot audit Elicitation chip without bloating retirement.py over 220L."""
+    import html
+    clean = lambda s: re.sub(r"\s+", " ", re.sub(r"[\x00-\x1f\x7f-\x9f\ufffe\uffff]+", " ", str(s or ""))).strip()
+    esc = lambda s: html.escape(clean(s), quote=True)
+    ref = clean(cid or hid or tgt) or "workspace"
+    tgt_c = clean(tgt) or "workspace"
+    tgt_short = tgt_c if len(tgt_c) <= 24 else tgt_c[:21] + "..."
+    audit_lbl = "Have Gemini audit screenshots in VM (uses extra tokens)"
+    audit_qry = f"@Agy Nexus Mcp Pull the latest signed /web/media/ screenshots and published HTML links for {ref} ({tgt_c}) into your Linux workspace using the Google-Agent User-Agent and visually audit them."
+    if phase == "inspect_visual_artifacts":
+        q_ok = f"@Agy Nexus Mcp I checked the signed visual links for {tgt_c} ({ref}) — looks good; continue."
+        inner = f'<Elicitation label="{esc(audit_lbl)}" query="{esc(audit_qry)}" /><Elicitation label="I checked the links — looks good" query="{esc(q_ok)}" />'
+        return {
+            "phase": "inspect_visual_artifacts", "prompt": "Audit screenshots in Gemini VM or inspect links yourself?",
+            "actions": ["Share links or opt in to Gemini VM visual audit"],
+            "options": [{"label": audit_lbl, "value": audit_qry}, {"label": "I checked the links — looks good", "value": q_ok}],
+            "followup_xml": f'<ElicitationsGroup message="{esc(f"Open signed links directly or ask Gemini to audit {tgt_short} (uses extra tokens)?")}">{inner}</ElicitationsGroup>',
+        }
+    if not has_visuals or is_running:
+        return res
+    opts = list(res.get("options") or [])
+    opts.append({"label": audit_lbl, "value": audit_qry})
+    res["options"] = opts
+    xml = str(res.get("followup_xml") or "")
+    chip = f'<Elicitation label="{esc(audit_lbl)}" query="{esc(audit_qry)}" />'
+    if "</ElicitationsGroup>" in xml:
+        res["followup_xml"] = xml.replace("</ElicitationsGroup>", f"{chip}</ElicitationsGroup>")
+    return res
+

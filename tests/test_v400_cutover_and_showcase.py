@@ -35,13 +35,13 @@ def _load_script_mod(name: str):
 
 
 def test_v400_version_changelog_and_modular_budgets() -> None:
-    """Verify 4.0.6 across pyproject, package, changelog archive split, scripts, and web/v9 modules."""
-    assert agy_nexus.__version__ == "4.0.6"
-    assert 'version = "4.0.6"' in (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    """Verify 4.0.7 across pyproject, package, changelog archive split, scripts, and web/v9 modules."""
+    assert agy_nexus.__version__ == "4.0.7"
+    assert 'version = "4.0.7"' in (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
     changelog_lines = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8").splitlines()
     assert 20 <= len(changelog_lines) <= 450, f"CHANGELOG.md unexpected size: {len(changelog_lines)}L"
-    assert "## [4.0.6]" in changelog_lines[6]
+    assert "## [4.0.7]" in changelog_lines[6]
     assert (REPO_ROOT / "docs" / "CHANGELOG_ARCHIVE.md").is_file()
     assert "## [2.9.0]" in (REPO_ROOT / "docs" / "CHANGELOG_ARCHIVE.md").read_text(encoding="utf-8")
 
@@ -63,12 +63,12 @@ def test_v400_version_changelog_and_modular_budgets() -> None:
 
 
 def test_v400_live_web_cutover_and_pwa_integrity() -> None:
-    """Verify /web, /web/, /web/v9 serve identical Quiet UI v9.3.0 HTML and SW v4.0.6 assets."""
+    """Verify /web, /web/, /web/v9 serve identical Quiet UI v9.3.0 HTML and SW v4.0.7 assets."""
     web_html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     v9_html = (V9_DIR / "index.html").read_text(encoding="utf-8")
     assert web_html == v9_html
     assert 'id="v9ManifestLink" href="/web/manifest.webmanifest"' in web_html
-    assert "v9_demo_docs.js?v=4.0.6" in web_html
+    assert "v9_demo_docs.js?v=4.0.7" in web_html
 
     vendor_dir = V9_DIR / "vendor"
     assert "v9.3.0" in (vendor_dir / "THIRD_PARTY_LICENSES.txt").read_text(encoding="utf-8")
@@ -82,13 +82,13 @@ def test_v400_live_web_cutover_and_pwa_integrity() -> None:
     app = build_nexus_http_app(secret, polyglot_token=get_polyglot_mcp_token(secret), praxis_token=get_praxis_mcp_token(secret))
     with TestClient(app) as client:
         r_health = client.get("/health")
-        assert r_health.status_code == 200 and r_health.json()["version"] == "4.0.6"
+        assert r_health.status_code == 200 and r_health.json()["version"] == "4.0.7"
         for route in ("/web", "/web/", "/web/index.html", "/web/v9", "/web/v9/index.html"):
             r = client.get(route)
             assert r.status_code == 200 and 'id="v9AppShell"' in r.text
             assert "no-store" in r.headers.get("cache-control", "")
         assert "v9/v9_demo_docs.js" in web_routes.PWA_ASSETS
-        r_doc_js = client.get("/web/v9/v9_demo_docs.js?v=4.0.6")
+        r_doc_js = client.get("/web/v9/v9_demo_docs.js?v=4.0.7")
         assert r_doc_js.status_code == 200 and "getDemoDocFile" in r_doc_js.text
 
 
@@ -175,7 +175,7 @@ def test_v400_build_github_showcase_privacy_gate_and_dry_run(tmp_path: Path, mon
     idx_txt = (out_dir / "index.html").read_text(encoding="utf-8")
     assert "window.AGY_STATIC_SHOWCASE = true;" in idx_txt
     assert 'href="/web/' not in idx_txt and 'src="/web/' not in idx_txt
-    assert 'href="./v9/v9_shell.css?v=4.0.6"' in idx_txt
+    assert 'href="./v9/v9_shell.css?v=4.0.7"' in idx_txt
 
     mf = json.loads((out_dir / "manifest.webmanifest").read_text(encoding="utf-8"))
     assert mf["id"] == "./" and mf["start_url"] == "./" and mf["icons"][0]["src"].startswith("./")
@@ -243,8 +243,8 @@ const swCtx = {
 };
 vm.runInNewContext(fs.readFileSync("web/sw.js", "utf-8"), swCtx);
 assert.strictEqual(
-  swCtx.canonicalCacheKey(new URL("https://nexus.example.com/secret_tok/web/v9/v9_app.js?v=4.0.6")),
-  "https://nexus.example.com/web/v9/v9_app.js?v=4.0.6"
+  swCtx.canonicalCacheKey(new URL("https://nexus.example.com/secret_tok/web/v9/v9_app.js?v=4.0.7")),
+  "https://nexus.example.com/web/v9/v9_app.js?v=4.0.7"
 );
 
 const docEl = { innerHTML: "", querySelectorAll: () => [] };

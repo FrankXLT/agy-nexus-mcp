@@ -408,56 +408,51 @@
   .v9-empty { padding: 1.5rem; text-align: center; color: var(--text-muted); font-size: var(--ts-sm); }
 
   @media (max-width: 679px) {
+    html { scroll-padding-top: 108px; }
     .v9-topbar {
       block-size: auto;
       min-block-size: 0;
       max-block-size: none;
       flex-wrap: wrap;
-      padding: 3px 8px;
-      row-gap: 2px;
-      column-gap: 4px;
+      padding: 8px 12px;
+      row-gap: 6px;
+      column-gap: 6px;
     }
-    .v9-topbar-left { inline-size: 100%; flex: 1 0 100%; gap: 4px; }
-    .v9-topbar-right {
-      inline-size: 100%;
-      flex: 1 0 100%;
-      justify-content: space-between;
-      margin-inline-start: 0;
-      gap: 4px;
+    .v9-topbar-left { inline-size: 100%; flex: 1 0 100%; justify-content: space-between; gap: 4px; }
+    .v9-topbar-right { inline-size: 100%; flex: 1 0 100%; justify-content: space-between; margin-inline-start: 0; gap: 6px; min-inline-size: 0; }
+    .v9-topbar-mode-grp { inline-size: 100%; flex-wrap: wrap; justify-content: space-between; gap: 6px; min-inline-size: 0; }
+    .v9-topbar-right-tools { flex: 1 1 260px; flex-wrap: wrap; justify-content: space-between; gap: 6px; min-inline-size: 0; }
+    .v9-topbar .v9-active-filter { max-inline-size: 140px; min-block-size: 36px; block-size: 36px; padding: 0 4px 0 8px; font-size: 11px; }
+    .v9-topbar .v9-chip-clear { inline-size: 22px; block-size: 22px; min-block-size: 22px; min-inline-size: 22px; }
+    .v9-topbar-left .v9-ghost-btn,
+    .v9-topbar-left .v9-tab-btn,
+    .v9-topbar-left .v9-brand-link { min-block-size: 40px; block-size: 40px; padding-block: 0; padding-inline: 7px; font-size: 13px; }
+    .v9-topbar .v9-menu-btn { min-inline-size: 40px; padding-inline: 8px; }
+    .v9-topbar .v9-menu-btn svg { inline-size: 18px; block-size: 18px; }
+    .v9-topbar .v9-brand-link { padding-inline: 2px; font-size: 12px; gap: 4px; }
+    .v9-topbar-right .v9-ghost-btn,
+    .v9-topbar-right .v9-nav-btn,
+    .v9-topbar .va-tb-group .va-tb-btn {
+      min-inline-size: 0; min-block-size: 36px; block-size: 36px;
+      border-block-end: 0; margin-block-end: 0; padding-block: 0; padding-inline: 6px; font-size: 11px;
     }
-    .v9-topbar-mode-grp { inline-size: 100%; justify-content: space-between; gap: 4px; }
-    .v9-topbar-right-tools { flex: 1 1 auto; justify-content: space-between; gap: 4px; }
-    .v9-topbar:has(#v9ActiveProjWrap:not(.hidden)) .v9-topbar-right-tools { flex: 0 0 auto; margin-inline-start: auto; }
-    .v9-topbar .v9-active-filter { max-inline-size: 88px; min-block-size: 26px; block-size: 26px; padding: 0 3px 0 6px; font-size: 11px; }
-    .v9-topbar .v9-chip-clear { inline-size: 18px; block-size: 18px; min-block-size: 18px; min-inline-size: 18px; }
+    .v9-topbar .va-tb-group { padding: 1px; gap: 1px; flex-shrink: 1; min-inline-size: 0; }
+    .v9-topbar .va-tb-group .v9-step-btn { padding-inline: 5px; min-inline-size: 36px; flex-shrink: 0; }
+    .v9-topbar .va-tb-group .va-tb-btn[data-v9-metric] { min-inline-size: 28px; }
+    .v9-topbar .v9-period-wrap { min-inline-size: 0; flex: 1 1 auto; }
+    .v9-topbar .v9-period-trigger { padding-inline: 5px; gap: 3px; min-inline-size: 0; }
+    .v9-period-trigger-txt { max-inline-size: 98px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  }
+  @media (min-width: 680px) and (max-width: 1099px) {
+    .v9-topbar { block-size: 56px; min-block-size: 56px; max-block-size: 58px; }
     .v9-topbar .v9-ghost-btn,
     .v9-topbar .v9-nav-btn,
-    .v9-topbar .v9-tab-btn,
-    .v9-topbar .v9-brand-link {
-      min-block-size: 26px;
-      min-inline-size: 26px;
-      block-size: 26px;
-      padding-block: 0;
-      padding-inline: 6px;
-      font-size: 11px;
-    }
-    .v9-topbar .v9-menu-btn { padding-inline: 5px; }
-    .v9-topbar .v9-brand-link { padding-inline: 2px; font-size: 12px; gap: 4px; }
-    .v9-topbar .va-tb-group { padding: 1px; gap: 1px; }
-    .v9-topbar .va-tb-group .va-tb-btn {
-      min-inline-size: 0;
-      min-block-size: 23px;
-      block-size: 23px;
-      border-block-end: 0;
-      margin-block-end: 0;
-      padding-block: 0;
-      padding-inline: 6px;
-      font-size: 11px;
-    }
-    .v9-topbar .v9-step-btn { padding-inline: 4px; min-inline-size: 22px; }
-    .v9-topbar .v9-period-trigger { padding-inline: 5px; gap: 3px; }
+    .v9-topbar .v9-tab-btn { min-block-size: 36px; block-size: 36px; }
+    .v9-topbar .v9-menu-btn { min-inline-size: 36px; }
+    .v9-topbar .va-tb-group .va-tb-btn { min-inline-size: 0; min-block-size: 36px; block-size: 36px; border-block-end: 0; margin-block-end: 0; padding-inline: 0.48rem; }
+    .v9-topbar .va-tb-group .v9-step-btn { min-inline-size: 36px; }
   }
-  @media (pointer: coarse) and (min-width: 680px) and (max-width: 767px) {
-    .va-tb-group .va-tb-btn { min-inline-size: 0; min-block-size: 28px; border-block-end: 0; margin-block-end: 0; padding-inline: 0.45rem; }
+  @media (min-width: 680px) and (max-width: 839px) {
+    .v9-topbar { block-size: auto; max-block-size: none; flex-wrap: wrap; row-gap: 6px; padding-block: 6px; }
   }
 }

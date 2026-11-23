@@ -115,12 +115,14 @@
     const gHealthy = !pools.google || pools.google.status === "HEALTHY";
     const totalCalls = rows.reduce((s, r) => s + Number(r.actual_calls || 0), 0);
     const totalUsd = rows.reduce((s, r) => s + Number(r.est_cost_usd || 0), 0);
-    if (subEl) subEl.textContent = `${V9.fmtNum(totalCalls)} calls · ${V9.fmtUsd(totalUsd)} · Guide │ · 24h ▾ · click row to solo`;
+    if (subEl) subEl.textContent = `${V9.fmtNum(totalCalls)} calls · ${V9.fmtUsd(totalUsd)}`;
 
     const table = tbody.closest && tbody.closest("table");
     ensureModelTableHead(table);
     const TS = V9.TableSort;
     const SB = V9.SparkBars;
+    const ml = document.getElementById("v9ModelTableLegend");
+    if (ml && SB && SB.renderTableLegend) ml.innerHTML = SB.renderTableLegend("models", metric);
     const enriched = SB
       ? SB.computeModelRows(rows, metric, b.model_series)
       : rows.map((m, origIdx) => {
@@ -200,12 +202,14 @@
     const totalRuns = list.reduce((s, r) => s + Number(r.runs || 0), 0);
     const totalTok = list.reduce((s, r) => s + Number(r.tokens || 0), 0);
     const fleetMeanTok = totalRuns > 0 ? totalTok / totalRuns : 0;
-    if (subEl) subEl.textContent = `${totalRuns} runs · ${list.length} roles · Avg │ · Max · Latest ●`;
+    if (subEl) subEl.textContent = `${totalRuns} runs · ${list.length} roles`;
 
     const table = tbody.closest && tbody.closest("table");
     ensureSubagentTableHead(table);
     const TS = V9.TableSort;
     const SB = V9.SparkBars;
+    const sl = document.getElementById("v9SubagentTableLegend");
+    if (sl && SB && SB.renderTableLegend) sl.innerHTML = SB.renderTableLegend("subagents", metric);
     const enriched = list.map((item, origIdx) => {
       const runs = Number(item.runs || 0);
       const avgTok = Number(item.avg_tokens_per_run != null ? item.avg_tokens_per_run : (runs > 0 ? Math.round(Number(item.tokens || 0) / runs) : 0));
@@ -325,7 +329,7 @@
     const watch = Array.isArray(mh.watchlist_and_exceptions) ? mh.watchlist_and_exceptions.slice(0, 12) : [];
     bodyEl.innerHTML = `
       <div class="v9-health-strip" style="padding-block:0.5rem">
-        <span>Release: ${V9.escHtml((ch.version && ch.version.status_label) || b.version || "4.0.6")}</span>
+        <span>Release: ${V9.escHtml((ch.version && ch.version.status_label) || b.version || "4.0.7")}</span>
         <span>Praxis Symbols: ${(ch.polyglot_health && ch.polyglot_health.total_symbols) || 0}</span>
         <span>Pinned Slots: ${rt.active_slots || 0} (${rt.pinned_calls || 0} pinned / ${rt.auto_resolved_calls || 0} auto)</span>
         <span>3-2-1 Backup: ${V9.escHtml(bk.status_label || "—")} (${V9.escHtml(bk.age || "—")})</span>

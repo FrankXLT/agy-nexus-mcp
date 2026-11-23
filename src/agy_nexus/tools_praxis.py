@@ -16,6 +16,7 @@ from agy_nexus.config import HANDOFF_ANNOTATIONS, READONLY_ANNOTATIONS, _compact
 from agy_nexus.handoff import _unwrap_staged_handoff_markdown
 from agy_nexus.handoff_queue import (
     claim_handoff_for_ide,
+    get_handoff_ticket,
     list_handoff_tickets,
     mark_ticket_status,
 )
@@ -24,6 +25,7 @@ from agy_nexus.polyglot_index import (
     polyglot_repo_map,
     polyglot_symbol_search,
 )
+from agy_nexus.workflow_gate import verify_workflow_doc_updated_for_completion
 
 praxis_mcp = FastMCP(
     name="agy-praxis-mcp",
@@ -139,6 +141,11 @@ def praxis_update_handoff(
     notes: str = "",
 ) -> str:
     """Update handoff ticket state (COMPLETED, IN_WORK, STAGED to release, or SUPERSEDED)."""
+    if status.strip().upper() == "COMPLETED":
+        ticket_cur = get_handoff_ticket(cfg.AGY_BG_DIR, handoff_id)
+        wf_chk = verify_workflow_doc_updated_for_completion(ticket_cur)
+        if not wf_chk.get("ok"):
+            return _compact_json(wf_chk)
     updated = mark_ticket_status(
         cfg.AGY_BG_DIR,
         handoff_id=handoff_id,

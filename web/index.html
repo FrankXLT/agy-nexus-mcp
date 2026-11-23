@@ -10,14 +10,14 @@
   <link rel="apple-touch-icon" href="/web/icon-192.png" />
   <link rel="manifest" id="v9ManifestLink" href="/web/manifest.webmanifest" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <link rel="stylesheet" href="/web/v9/v9_layers.css?v=4.0.6" />
-  <link rel="stylesheet" href="/web/v9/vendor/quiet-ui-tokens.css?v=4.0.6" />
-  <link rel="stylesheet" href="/web/v9/vendor/quiet-evidence-bundle.css?v=4.0.6" />
-  <link rel="stylesheet" href="/web/v9/v9_shell.css?v=4.0.6" />
-  <link rel="stylesheet" href="/web/v9/v9_rail.css?v=4.0.6" />
-  <link rel="stylesheet" href="/web/v9/v9_analytics.css?v=4.0.6" />
-  <link rel="stylesheet" href="/web/v9/v9_workspace.css?v=4.0.6" />
-  <link rel="stylesheet" href="/web/v9/v9_tables_and_rail.css?v=4.0.6" />
+  <link rel="stylesheet" href="/web/v9/v9_layers.css?v=4.0.7" />
+  <link rel="stylesheet" href="/web/v9/vendor/quiet-ui-tokens.css?v=4.0.7" />
+  <link rel="stylesheet" href="/web/v9/vendor/quiet-evidence-bundle.css?v=4.0.7" />
+  <link rel="stylesheet" href="/web/v9/v9_shell.css?v=4.0.7" />
+  <link rel="stylesheet" href="/web/v9/v9_rail.css?v=4.0.7" />
+  <link rel="stylesheet" href="/web/v9/v9_analytics.css?v=4.0.7" />
+  <link rel="stylesheet" href="/web/v9/v9_workspace.css?v=4.0.7" />
+  <link rel="stylesheet" href="/web/v9/v9_tables_and_rail.css?v=4.0.7" />
 </head>
 <body>
   <header class="v9-topbar">
@@ -34,7 +34,7 @@
         </svg>
         <span class="v9-brand-text">AGY-NEXUS</span>
       </a>
-      <div class="va-tab-strip v9-tab-strip" role="tablist" aria-label="Dashboard surfaces">
+      <div class="va-tab-strip v9-tab-strip" role="tablist" aria-label="Dashboard views">
         <button type="button" role="tab" id="v9TabAnalytics" class="va-tab v9-tab-btn" aria-selected="true" tabindex="0">Analytics</button>
         <button type="button" role="tab" id="v9TabWorkspace" class="va-tab v9-tab-btn" aria-selected="false" tabindex="-1">Workspace <span class="v9-tab-count" id="v9WsCount">0</span></button>
       </div>
@@ -132,8 +132,8 @@
       <h1 class="v9-auth-title">Unlock Session Telemetry</h1>
       <p class="v9-auth-desc">Enter your workstation passphrase to query live token metering, quotas, and workspace artifacts, or open offline demo preview.</p>
       <form id="v9UnlockForm" class="v9-input-row">
-        <input id="v9UserInput" name="username" type="text" autocomplete="username" value="nexus-operator" readonly class="hidden" aria-hidden="true" tabindex="-1" />
-        <input id="v9PassInput" class="v9-input" type="password" placeholder="Passphrase..." autocomplete="current-password" />
+        <input id="v9UserInput" name="username" type="text" autocomplete="username" value="nexus-operator" aria-label="Operator username" readonly class="hidden" aria-hidden="true" tabindex="-1" />
+        <input id="v9PassInput" class="v9-input" type="password" placeholder="Passphrase..." aria-label="Workstation passphrase" autocomplete="current-password" />
         <button type="submit" class="v9-nav-btn v9-btn-primary">Unlock</button>
       </form>
       <div class="v9-input-row">
@@ -168,6 +168,7 @@
               </div>
               <div id="v9ModelChart" class="v9-echarts-host v9-echarts-host-daily"></div>
               <div class="va-table-wrap v9-table-scroll" tabindex="0" role="region" aria-label="Model workload summary">
+                <div id="v9ModelTableLegend"></div>
                 <table class="v9-table booktabs" data-v9-table="models">
                   <thead id="v9ModelTableHead"><tr><th scope="col">Model</th><th scope="col" class="v9-col-secondary">Pool · Calls · Rate</th><th scope="col">Share</th><th scope="col" class="num">Guide<span class="v9-col-secondary"> / Delta</span></th><th scope="col" class="num">Tokens</th><th scope="col" class="num">Est. $</th></tr></thead>
                   <tbody id="v9ModelTableBody"></tbody>
@@ -182,6 +183,7 @@
               </div>
               <div id="v9SubagentChart" class="v9-echarts-host v9-echarts-host-daily"></div>
               <div class="va-table-wrap v9-table-scroll" tabindex="0" role="region" aria-label="Subagent role summary">
+                <div id="v9SubagentTableLegend"></div>
                 <table class="v9-table booktabs" data-v9-table="subagents">
                   <thead id="v9SubagentTableHead"><tr><th scope="col">Role</th><th scope="col" class="v9-col-secondary">Model</th><th scope="col">Share</th><th scope="col" class="num">Runs</th><th scope="col" class="num">Tokens</th><th scope="col" class="num v9-col-secondary">Avg Tok/Run</th><th scope="col" class="num">Est. $</th></tr></thead>
                   <tbody id="v9SubagentTableBody"></tbody>
@@ -362,7 +364,7 @@
     </div>
     <div class="v9-dialog-body">
       <div id="v9UploadDrop" class="v9-upload-drop" tabindex="0" role="button">Drop PNG/WebP/MD files here or click to choose</div>
-      <input type="file" id="v9UploadInput" class="hidden" multiple accept="image/*,.md,.txt,.json,.log,.csv" />
+      <input type="file" id="v9UploadInput" class="hidden" aria-label="Choose capture files to upload" multiple accept="image/*,.md,.txt,.json,.log,.csv" />
       <label class="va-meta-inline">Batch Label (optional)
         <input type="text" id="v9UploadLabelInput" class="v9-input" placeholder="e.g. mobile_audit_r2" />
       </label>
@@ -378,28 +380,28 @@
   <div id="v9SortStatus" class="v9-sr-only" role="status" aria-live="polite"></div>
   <div id="v9Toast" class="v9-toast hidden" role="status" aria-live="polite"></div>
 
-  <script src="/web/v9/vendor/echarts.min.js?v=4.0.6"></script>
-  <script src="/web/v9/vendor/quiet-evidence-bundle.js?v=4.0.6"></script>
-  <script src="/web/v9/vendor/echarts-layout-defaults.js?v=4.0.6"></script>
-  <script src="/web/v9/vendor/echarts-quiet-adapter.js?v=4.0.6"></script>
-  <script src="/web/demo_snapshot.js?v=4.0.6"></script>
-  <script src="/web/gallery_select.js?v=4.0.6"></script>
-  <script src="/web/sheet_builder.js?v=4.0.6"></script>
-  <script src="/web/v9/v9_state.js?v=4.0.6"></script>
-  <script src="/web/v9/v9_table_sort.js?v=4.0.6"></script>
-  <script src="/web/v9/v9_spark_bars.js?v=4.0.6"></script>
-  <script src="/web/v9/v9_demo_docs.js?v=4.0.6"></script>
-  <script src="/web/v9/v9_demo_adapter.js?v=4.0.6"></script>
-  <script src="/web/v9/v9_billing.js?v=4.0.6"></script>
-  <script src="/web/v9/v9_charts.js?v=4.0.6"></script>
-  <script src="/web/v9/v9_heatmap.js?v=4.0.6"></script>
-  <script src="/web/v9/v9_project_view.js?v=4.0.6"></script>
-  <script src="/web/v9/v9_analytics.js?v=4.0.6"></script>
-  <script src="/web/v9/v9_hierarchy.js?v=4.0.6"></script>
-  <script src="/web/v9/v9_markdown.js?v=4.0.6"></script>
-  <script src="/web/v9/v9_workspace.js?v=4.0.6"></script>
-  <script src="/web/v9/v9_gallery.js?v=4.0.6"></script>
-  <script src="/web/v9/v9_lightbox.js?v=4.0.6"></script>
-  <script src="/web/v9/v9_app.js?v=4.0.6"></script>
+  <script src="/web/v9/vendor/echarts.min.js?v=4.0.7"></script>
+  <script src="/web/v9/vendor/quiet-evidence-bundle.js?v=4.0.7"></script>
+  <script src="/web/v9/vendor/echarts-layout-defaults.js?v=4.0.7"></script>
+  <script src="/web/v9/vendor/echarts-quiet-adapter.js?v=4.0.7"></script>
+  <script src="/web/demo_snapshot.js?v=4.0.7"></script>
+  <script src="/web/gallery_select.js?v=4.0.7"></script>
+  <script src="/web/sheet_builder.js?v=4.0.7"></script>
+  <script src="/web/v9/v9_state.js?v=4.0.7"></script>
+  <script src="/web/v9/v9_table_sort.js?v=4.0.7"></script>
+  <script src="/web/v9/v9_spark_bars.js?v=4.0.7"></script>
+  <script src="/web/v9/v9_demo_docs.js?v=4.0.7"></script>
+  <script src="/web/v9/v9_demo_adapter.js?v=4.0.7"></script>
+  <script src="/web/v9/v9_billing.js?v=4.0.7"></script>
+  <script src="/web/v9/v9_charts.js?v=4.0.7"></script>
+  <script src="/web/v9/v9_heatmap.js?v=4.0.7"></script>
+  <script src="/web/v9/v9_project_view.js?v=4.0.7"></script>
+  <script src="/web/v9/v9_analytics.js?v=4.0.7"></script>
+  <script src="/web/v9/v9_hierarchy.js?v=4.0.7"></script>
+  <script src="/web/v9/v9_markdown.js?v=4.0.7"></script>
+  <script src="/web/v9/v9_workspace.js?v=4.0.7"></script>
+  <script src="/web/v9/v9_gallery.js?v=4.0.7"></script>
+  <script src="/web/v9/v9_lightbox.js?v=4.0.7"></script>
+  <script src="/web/v9/v9_app.js?v=4.0.7"></script>
 </body>
 </html>

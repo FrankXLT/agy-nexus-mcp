@@ -268,12 +268,8 @@ def resolve_virtual_uri_entry(
     if scheme == "workflow":
         from agy_nexus.workflow_baseline import discover_project_workflows, format_workflow_baseline_for_wire
         wf = discover_project_workflows(ws)
-        if wf.get("found"):
-            text = format_workflow_baseline_for_wire(wf, max_chars=per_file_cap)
-            src_path = f"virtual://workflow/{wf.get('source_file', 'baseline')}"
-        else:
-            text = f"No workflow baseline found in {ws} (checked docs/WORKFLOWS.md, docs/USE_CASES.md, SPEC.md, README.md)."
-            src_path = "virtual://workflow/not_found"
+        text = format_workflow_baseline_for_wire(wf, max_chars=per_file_cap)
+        src_path = f"virtual://workflow/{wf.get('source_file', 'baseline')}" if wf.get("found") else "virtual://workflow/not_found"
     elif scheme == "transcript":
         text, src_path = _resolve_transcript_virtual(rest_clean, session_dir)
         if not text:

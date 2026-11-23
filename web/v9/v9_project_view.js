@@ -154,16 +154,18 @@
     return opt;
   }
 
-  function mountSortableTable(wrap, tableId, tbodyId, headHtml, rowsHtml) {
+  function mountSortableTable(wrap, tableId, tbodyId, headHtml, rowsHtml, legendHtml = "") {
     const TS = V9.TableSort;
     const existingTbl = wrap.querySelector && wrap.querySelector(`table[data-v9-table="${tableId}"]`);
     const existingBody = existingTbl && document.getElementById(tbodyId);
     if (existingTbl && existingBody) {
       if (TS) TS.syncTheadSort(existingTbl.tHead, tableId);
+      const lgHost = wrap.querySelector && wrap.querySelector(".v9-table-legend-host");
+      if (lgHost) lgHost.innerHTML = legendHtml || "";
       existingBody.innerHTML = rowsHtml;
       return existingTbl;
     }
-    wrap.innerHTML = `<table class="v9-table booktabs" data-v9-table="${tableId}"><thead><tr>${headHtml}</tr></thead><tbody id="${tbodyId}">${rowsHtml}</tbody></table>`;
+    wrap.innerHTML = `<div class="v9-table-legend-host">${legendHtml || ""}</div><table class="v9-table booktabs" data-v9-table="${tableId}"><thead><tr>${headHtml}</tr></thead><tbody id="${tbodyId}">${rowsHtml}</tbody></table>`;
     return wrap.querySelector && wrap.querySelector(`table[data-v9-table="${tableId}"]`);
   }
 
@@ -179,7 +181,7 @@
     const otherCnt = (h.other_projects && !Array.isArray(h.other_projects) ? Number(h.other_projects.projects_count || 0) : 0);
     const idle = Array.isArray(h.idle_projects) ? h.idle_projects : [];
     if (titleEl) titleEl.textContent = "Top Projects (Daily)";
-    if (subEl) subEl.textContent = `${h.active_projects_count || active.length} active · ${h.idle_projects_count || idle.length} idle · Avg │ · Peak · 24h ●`;
+    if (subEl) subEl.textContent = `${h.active_projects_count || active.length} active · ${h.idle_projects_count || idle.length} idle`;
     if (!active.length) {
       wrap.innerHTML = `<div class="v9-empty">No project activity recorded in this time window.</div>`;
       if (foot) foot.textContent = "";
@@ -243,7 +245,8 @@
     const th = TS
       ? `${TS.thHtml("projects", "name", "Project", { type: "text" })}${TS.thHtml("projects", "age", "Age", { cls: "num" })}${TS.thHtml("projects", "sessions", "Sessions", { cls: "v9-col-secondary num" })}${TS.thHtml("projects", "share", "Daily Range")}${TS.thHtml("projects", "steps", "Steps", { cls: "num" })}${TS.thHtml("projects", "tokens", "Tokens", { cls: "v9-col-secondary num" })}${TS.thHtml("projects", "cost", "Est. $", { cls: "num" })}<th scope="col" class="num">Actions</th>`
       : `<th>Project</th><th class="num">Age</th><th class="v9-col-secondary num">Sessions</th><th>Daily Range</th><th class="num">Steps</th><th class="v9-col-secondary num">Tokens</th><th class="num">Est. $</th><th class="num">Actions</th>`;
-    const tblEl = mountSortableTable(wrap, "projects", "v9ProjTableBody", th, rowsHtml);
+    const legendHtml = SB && SB.renderTableLegend ? SB.renderTableLegend("projects", metric) : "";
+    const tblEl = mountSortableTable(wrap, "projects", "v9ProjTableBody", th, rowsHtml, legendHtml);
     if (foot) {
       const hiddenNotes = [];
       if (otherCnt > 0) hiddenNotes.push(`${otherCnt} smaller project${otherCnt === 1 ? "" : "s"} rolled up`);
@@ -337,7 +340,7 @@
     if (titleEl) titleEl.textContent = "Project Sessions (Daily)";
     const actCount = ps.active_sessions_count != null ? ps.active_sessions_count : sessions.length;
     const totCount = ps.total_sessions != null ? ps.total_sessions : sessions.length;
-    if (subEl) subEl.textContent = `${actCount} active · ${totCount} total · ${metric === "steps" ? "320│ · 700▾" : "Avg │ · 24h ▾"}`;
+    if (subEl) subEl.textContent = `${actCount} active · ${totCount} total`;
     if (!sessions.length) {
       wrap.innerHTML = `<div class="v9-empty">No active sessions found for ${V9.escHtml(ps.project_name || "this project")} in the current window.</div>`;
       if (foot) foot.textContent = "";
@@ -368,7 +371,8 @@
     const th = TS
       ? `${TS.thHtml("sessions", "name", "Session", { type: "text" })}${TS.thHtml("sessions", "age", "Age", { cls: "num" })}${TS.thHtml("sessions", "status", "Status", { cls: "v9-col-secondary" })}${TS.thHtml("sessions", "share", shareColLbl)}${TS.thHtml("sessions", "steps", "Steps", { cls: "num" })}${TS.thHtml("sessions", "tokens", "Tokens", { cls: "v9-col-secondary num" })}${TS.thHtml("sessions", "cost", "Est. $", { cls: "num" })}<th scope="col" class="num">Workspace</th>`
       : `<th>Session</th><th class="num">Age</th><th class="v9-col-secondary">Status</th><th>${shareColLbl}</th><th class="num">Steps</th><th class="v9-col-secondary num">Tokens</th><th class="num">Est. $</th><th class="num">Workspace</th>`;
-    const tblEl = mountSortableTable(wrap, "sessions", "v9ProjSessionTableBody", th, rowsHtml);
+    const legendHtml = SB && SB.renderTableLegend ? SB.renderTableLegend("sessions", metric) : "";
+    const tblEl = mountSortableTable(wrap, "sessions", "v9ProjSessionTableBody", th, rowsHtml, legendHtml);
     const shareBtnLbl = tblEl && tblEl.querySelector && tblEl.querySelector('[data-sort-table="sessions"][data-sort-key="share"] .v9-th-lbl');
     if (shareBtnLbl) shareBtnLbl.textContent = shareColLbl;
     if (foot) foot.textContent = "Click any session row or Open to inspect its deliverables, Markdown docs, and captures in Workspace.";

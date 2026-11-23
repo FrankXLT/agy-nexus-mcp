@@ -249,7 +249,7 @@ function ensureTable(id, tbodyId) {
 }
 ensureTable("v9ModelTable", "v9ModelTableBody");
 ensureTable("v9SubagentTable", "v9SubagentTableBody");
-["v9KpiGrid", "v9ModelPlotSub", "v9SubPlotSub", "v9ProjPlotTitle", "v9ProjPlotSub",
+["v9KpiGrid", "v9ModelPlotSub", "v9SubPlotSub", "v9ModelTableLegend", "v9SubagentTableLegend", "v9ProjPlotTitle", "v9ProjPlotSub",
  "v9ProjTableWrap", "v9ProjFoot", "v9WireSub", "v9WireClientHost", "v9WireCallsHost",
  "v9HealthDrawerTitle", "v9HealthSummary", "v9HealthBody", "v9HeatHeading",
  "v9PeriodTriggerLabel", "v9PeriodPickerBtn", "v9SortStatus", "v9Toast"
@@ -373,8 +373,9 @@ for (const metric of ["steps", "tokens", "cost"]) {
 
   const subHtml = byId.get("v9SubagentTableBody").innerHTML;
   assert.ok(subHtml.includes("&gt;120") && subHtml.includes('data-state="fault"'), `missing >120 step-cap alert in ${metric}`);
-  assert.ok(byId.get("v9ModelPlotSub").textContent.includes("24h"));
-  assert.ok(byId.get("v9SubPlotSub").textContent.includes("Latest"));
+  assert.ok(!byId.get("v9ModelPlotSub").textContent.includes("▾") && !byId.get("v9SubPlotSub").textContent.includes("●"));
+  assert.ok(byId.get("v9ModelTableLegend").innerHTML.includes("Last 24h share"));
+  assert.ok(byId.get("v9SubagentTableLegend").innerHTML.includes("Latest run"));
 }
 
 // 2. Subagent heavy burn warn (2.5x without >120)
@@ -395,7 +396,7 @@ const alphaProj = bundle.project_hierarchy.top_projects[0];
 const sessBundle = Object.assign({}, bundle, { project_scope: { project_id: "proj-alpha" }, selected_project: alphaProj, project_sessions_series: { dates: ["2026-11-23T08"], step_hours: 1, sessions: alphaProj.sessions } });
 V9.ProjectView.renderProjectSessionsCard(sessBundle, {});
 const sessStepsHtml = byId.get("v9ProjTableWrap").innerHTML;
-assert.ok(sessStepsHtml.includes("Context / Seam"));
+assert.ok(sessStepsHtml.includes("Context / Seam") && sessStepsHtml.includes("700 rollover limit"));
 assert.ok(sessStepsHtml.includes('data-state="warn"') && sessStepsHtml.includes("500+"));
 assert.ok(sessStepsHtml.includes('data-state="fault"') && sessStepsHtml.includes("700+"));
 assert.ok(sessStepsHtml.includes('data-state="retired"') && sessStepsHtml.includes(">RET<"));
@@ -404,8 +405,9 @@ assert.ok(sessStepsHtml.includes("76.1%") || sessStepsHtml.includes("700"), "exp
 
 V9.state.metric = "tokens";
 V9.ProjectView.renderProjectSessionsCard(sessBundle, {});
-assert.ok(byId.get("v9ProjTableWrap").innerHTML.includes("Burn / Avg"));
-assert.ok(byId.get("v9ProjPlotSub").textContent.includes("Avg"));
+const sessTokHtml = byId.get("v9ProjTableWrap").innerHTML;
+assert.ok(sessTokHtml.includes("Burn / Avg") && sessTokHtml.includes("Project avg"));
+assert.ok(!byId.get("v9ProjPlotSub").textContent.includes("▾"));
 
 // 5. V9.TableSort Peak/Share sorting works cleanly
 V9.state.metric = "steps";
@@ -453,7 +455,7 @@ assert.ok(tokSortedHtml.indexOf("Beta Idle") < tokSortedHtml.indexOf("Alpha Core
 
 
 def test_v404_budgets_forced_colors_pwa_parity_and_workflows() -> None:
-    """Enforce file/function line budgets, forced-colors & CSS rules, PWA registration, and Workflow 6 v4.0.6 docs."""
+    """Enforce file/function line budgets, forced-colors & CSS rules, PWA registration, and Workflow 6 v4.0.7 docs."""
     from agy_nexus import polyglot_outline
 
     for mod in ("stats_metrics.py", "stats.py", "stats_series.py", "stats_aggregator.py", "project_stats.py", "cost_ledger.py"):
@@ -484,13 +486,13 @@ def test_v404_budgets_forced_colors_pwa_parity_and_workflows() -> None:
 
     assert "v9/v9_spark_bars.js" in web_routes.PWA_ASSETS
     sw_txt = (WEB_DIR / "sw.js").read_text(encoding="utf-8")
-    assert 'CACHE_NAME = "agy-nexus-v4.0.6"' in sw_txt
-    assert "/web/v9/v9_spark_bars.js?v=4.0.6" in sw_txt and '"v9/v9_spark_bars.js"' in sw_txt
+    assert 'CACHE_NAME = "agy-nexus-v4.0.7"' in sw_txt
+    assert "/web/v9/v9_spark_bars.js?v=4.0.7" in sw_txt and '"v9/v9_spark_bars.js"' in sw_txt
     html_txt = (V9_DIR / "index.html").read_text(encoding="utf-8")
     assert html_txt == (WEB_DIR / "index.html").read_text(encoding="utf-8")
-    assert '/web/v9/v9_spark_bars.js?v=4.0.6' in html_txt
+    assert '/web/v9/v9_spark_bars.js?v=4.0.7' in html_txt
 
     wf_txt = (REPO_ROOT / "docs" / "WORKFLOWS.md").read_text(encoding="utf-8")
-    assert "Workflow 6:" in wf_txt and "v4.0.6" in wf_txt
+    assert "Workflow 6:" in wf_txt and "v4.0.7" in wf_txt
     assert "Hybrid Range Whiskers & Target/Seam Caret Bars" in wf_txt
     assert "320│ / 700▾" in wf_txt

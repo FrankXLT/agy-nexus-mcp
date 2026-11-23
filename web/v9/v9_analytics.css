@@ -482,7 +482,7 @@
     .v9-stage .v9-heat-months { margin-block-end: 2px; }
     .v9-stage .v9-heat-dow > span:nth-child(even) { visibility: hidden; }
   }
-  @media (max-width: 349px) {
+  @media (max-width: 419px) {
     .v9-metric-full { display: none; }
     .v9-metric-short { display: inline; }
   }

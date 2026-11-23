@@ -6,13 +6,23 @@ This document defines the primary user journeys, workflows, and operational ergo
 
 ## The User & Orchestration Model
 
-- **The User**: A lead developer and systems architect managing multiple software projects across local and network-hosted environments. The user frequently monitors progress, reviews visual changes, and directs agent swarms from a mobile device (e.g. Google Pixel Fold in both folded ~390px phone and unfolded ~900px tablet postures) or desktop Chrome.
+- **The User**: A lead developer and systems architect managing multiple software projects across local and network-hosted environments. The user frequently monitors progress, reviews visual changes, and directs agent swarms from a mobile device (e.g. Google Pixel Fold in both folded ~390px phone and unfolded ~900px tablet layouts) or desktop Chrome.
 - **The Orchestrator (Google Gemini)**: Receives user voice dictation, chat messages, or visual critiques, inspects live project and session states via read-only MCP tools, and stages or executes structured handoffs.
-- **The Execution Engine (Google Antigravity)**: Headless or interactive multi-agent developer environment running locally. Executes scoped tasks using an 8-agent orthogonal roster (Carbon 4 Main-Chat, Argon 4 Architects/Surgeons, Flash Scouts/Auditors, and Claude specialists) following strict verification gates and modular architecture invariants.
+- **The Execution Engine (Google Antigravity)**: Headless or interactive multi-agent developer environment running locally. Executes scoped tasks using an orthogonal agent roster (Carbon 4 Main-Chat, Argon 4 Architects/Surgeons, Flash Scouts/Auditors, Neon 4 / Hydrogen 4 Specialists, and Claude Escalation Specialists) following strict verification gates and modular architecture invariants.
 
 ---
 
-## Workflow 1: Voice & Mobile Session Check-Ins & Read-Only Inspection
+## Common Terms Glossary
+
+- **Carets (`▾`)**: Downward triangle markers above table bars showing trailing `24h` share/burn (on `Model Workload` and `Tokens`/`$ Cost` `Project Sessions`) or the `700`-step rollover limit (on `Steps` `Project Sessions`).
+- **Range Whiskers / Error Bars**: Horizontal table bars (`Min–Max` / `Min–Peak` span with `│` average line and `●` latest/`24h` dot) and vertical hourly I-beam whiskers (`Min–Max Range` in Teal, `Active Avg` horizontal tick + dashed line in Blue, `Last 24h` dot in Purple).
+- **Workflow IDs (`WF-01..WF-NN`)**: Stable numbered user journeys inside `<repo>/docs/WORKFLOWS.md` referenced on every read-in, handoff, and closeout check.
+- **Workflow Delta (`workflow_delta`)**: Explicit declaration on handoffs (`unchanged`, `update_existing`, `add_new`, `bootstrap`) stating whether `<repo>/docs/WORKFLOWS.md` must be created or updated during the run.
+- **Opt-In Gemini VM Visual Audit**: Optional Gemini Tasks Linux workspace fetch (`curl` with `Google-Agent` User-Agent + `view_file`) of signed `/web/media/` screenshots or published HTML pages—always offered as an explicit 1-tap user choice noting extra token usage, never run automatically.
+
+---
+
+## Workflow 1: WF-01 — Voice & Mobile Session Check-Ins & Read-In
 
 ### User Goal
 The user is away from the keyboard or multi-tasking on mobile. They speak or type a brief query to Gemini (e.g., *"How is the Chem Sprint build doing?"* or *"What did Antigravity do in the last session?"*) and want an immediate, accurate status summary without accidental code changes or long waits.
@@ -24,46 +34,50 @@ Directing agents from mobile requires zero-risk read operations. If Gemini were 
 1. **Passphrase & Deadbolt Gate**:
    - For secure environments, the bridge requires an inline voice passphrase or active session unlock.
    - When unlocked, a 30-minute sliding-TTL deadbolt remains active while the user interacts.
-2. **Read-Only Inspection**:
-   - Gemini calls `load_session_into_gemini(conv_id=...)` or `get_session_tree(include_stats=True)`.
-   - The tool returns the session's current task state (`task.md`), recent walkthrough highlights (`walkthrough.md`), git working tree status, project workflow baselines (`workflow:baseline`), and recent `visual_artifacts` with **7-day HMAC-signed `/web/media/` HTTPS links** (`604,800` seconds — completely separate from the 30-minute passphrase deadbolt window).
+2. **Read-Only Inspection & Structured Workflow Baseline**:
+   - Gemini calls `load_session_into_gemini(conv_id=...)`, `ask_workspace_readonly(file_subpath="workflow:baseline")`, or `get_session_tree(include_stats=True)`.
+   - `load_session_into_gemini` and `workflow:baseline` return `workflow_status` (`READY` vs `MISSING_BASELINE`), the complete structured `WF-01..WF-NN` index (ID, title, and 1-line summary), and the `Common Terms` glossary within `< 20 KB` wire caps—never cutting off inside the document preamble—and flag `MISSING_BASELINE` whenever a brownfield repo lacks `docs/WORKFLOWS.md`.
+   - `load_session_into_gemini` returns the session's current task state (`task.md`), recent walkthrough highlights (`walkthrough.md`), git working tree status, structured project workflows (`project_workflows`), and recent `visual_artifacts` with **7-day HMAC-signed `/web/media/` HTTPS links** (`604,800` seconds — completely separate from the 30-minute passphrase deadbolt window).
    - `get_session_tree`, `list_saved_sessions`, and the Workspace Explorer tree strictly order **both projects and sessions most-recently-active first** (`last_updated_ts` computed from `max(SQLite last_modified_time, transcript.jsonl mtime, task.md mtime, brain/<cid> mtime)` — preventing brand-new `"0001-01-01..."` chats from dropping and preventing older pinned/running chats or high cumulative-step projects from floating above newer work).
    - `get_session_tree` renders a copy-ready 76-column ASCII hierarchy displaying active sessions and handoff tickets across all four distinct lifecycle states: `[◈ STAGED · UNCLAIMED]`, `[▶ IN-WORK]`, `[✓ COMPLETED]`, and `[⊘ SUPERSEDED -> <id>]`.
    - To keep active sessions prominent and keep every response strictly **under the `20 KB` wire limit** (`<= 18.5 KB` inner UTF-8 / `<= 19.8 KB` JSON-escaped outer wire budget across `ask_workspace_readonly`, `inspect_git_diff`, `load_session_into_gemini`, and `list_models_and_agents`, capping `get_session_tree` inner JSON at `17.5 KB` and Praxis `polyglot_map` at `17.5 KB` with a `directory_summary` and drilldown hint, and compacting `tools/list` to `<= 8.6 KB`), historical closed (`COMPLETED` and `SUPERSEDED`) tickets attached to each project's tree are bounded at a recent window (latest 4 closed tickets per project, with a `(+N older completed)` note when truncated), while keeping 100% of active `STAGED` and `IN_WORK` tickets visible.
-   - **Cloud MCP Header-Only Visual Fast Path (`inspect_visual_artifacts`)**: When `inspect_visual_artifacts` is called from Cloud MCP / Gemini Mobile (`region="full"`, `include_thumbnails=False`), the server skips WebP pixel encoding and reads PNG/JPEG/WebP/GIF headers in `<2ms` (`read_image_dimensions_fast`), returning `<4 KB` JSON (`cloud_fast_path=True`, `returned_images=0`, `original_px`, and **7-day** signed `/web/media/` URLs) since cloud adapters strip binary `ImageContent` blocks on ingress. Local callers, region crops (`region="top"|"middle"|"bottom"|"x,y,w,h"`), and `include_thumbnails=True` still receive budgeted WebP `ImageContent` thumbnails.
+   - **Cloud MCP Header-Only Visual Fast Path & Opt-In VM Audit (`inspect_visual_artifacts`)**: When `inspect_visual_artifacts` is called from Cloud MCP / Gemini Mobile (`region="full"`, `include_thumbnails=False`), the server skips WebP pixel encoding and reads PNG/JPEG/WebP/GIF headers in `<2ms` (`read_image_dimensions_fast`), returning `<4 KB` JSON (`cloud_fast_path=True`, `returned_images=0`, `original_px`, and **7-day** signed `/web/media/` URLs) since cloud adapters strip binary `ImageContent` blocks on ingress. Gemini always shares clickable `signed_url` links at zero extra token cost first and offers **Opt-In Gemini VM Visual Audit** (`Have Gemini audit screenshots in VM (uses extra tokens)`) via `<ElicitationsGroup>` before ever fetching images via `curl` (`Google-Agent` User-Agent) + `view_file`. Local callers, region crops (`region="top"|"middle"|"bottom"|"x,y,w,h"`), and `include_thumbnails=True` still receive budgeted WebP `ImageContent` thumbnails.
    - Stale synthetic test context slots are automatically pruned from `session_state.json`, Praxis IDE calls (`/praxis/`) classify separately as `Antigravity IDE (Praxis MCP)`, and stateless MCP handshakes (`tools/list`, `initialize`) are separated into `protocol_handshakes` so wire averages reflect real tool calls.
    - Remote version comparison queries both GitHub `/releases/latest` and `/tags`, comparing the installed version against the highest valid semantic version tag so tag-pushed releases compare accurately without false `Staged Locally` warnings.
-    - **Deadbolt-Safe Nightly Model & Pricing Status (`style="ascii"`)**: Scheduled status pulls can invoke `list_models_and_agents(style="ascii", include_skills=False, include_rules=False)` or `manage_background_run(action="models", style="ascii")` without unlocking the Deadbolt to receive a fixed `76`-column ASCII status report covering all 8 canonical models (`Carbon 4`, `Neon 4`, `Argon 4`, `Hydrogen 4`, `Flash 3.8`, `Opus 5.5`, `Sonnet 5.5`, `GPT-OSS 120B`), effective-dated micro-USD rates, subagent mappings, and automated `01:45 AM` Language Server + API pricing drift status (`scripts/check_model_drift.py` -> `model_drift_status.json`), while `include_skills=True`, `include_rules=True`, and `style="json"` stay behind the Deadbolt gate. Bundled agent frontmatter (`agents/*.md`) stays synced via `scripts/sync_agents.py --check`.
+   - **Deadbolt-Safe Nightly Model & Pricing Status (`style="ascii"`)**: Scheduled status pulls can invoke `list_models_and_agents(style="ascii", include_skills=False, include_rules=False)` or `manage_background_run(action="models", style="ascii")` without unlocking the Deadbolt to receive a fixed `76`-column ASCII status report covering all 8 canonical models (`Carbon 4`, `Neon 4`, `Argon 4`, `Hydrogen 4`, `Flash 3.8`, `Opus 5.5`, `Sonnet 5.5`, `GPT-OSS 120B`), effective-dated micro-USD rates, subagent mappings, and automated `01:45 AM` Language Server + API pricing drift status (`scripts/check_model_drift.py` -> `model_drift_status.json`), while `include_skills=True`, `include_rules=True`, and `style="json"` stay behind the Deadbolt gate. Bundled agent frontmatter (`agents/*.md`) stays synced via `scripts/sync_agents.py --check`.
 3. **Concise Mobile Summary & 1-Tap `@Agy Nexus Mcp` Reply Chips**:
-   - Every `agy-nexus-mcp` tool response embeds `REPLY_PROMPT_GUIDANCE` (`END-OF-TURN 1-TAP REPLY CHIPS`) inside `assistant_guidance` alongside lifecycle-aware `suggested_actions` (`followup_xml`) so Gemini consistently surfaces `<FollowUp label="..." query="@Agy Nexus Mcp ..." />` or `<ElicitationsGroup>` reply chips prefixed with `@Agy Nexus Mcp ` and exact `conversation_id` / `handoff_id` / `project_name` identifiers even after 10+ turns or context compaction.
-   - Gemini delivers a clean, plain-English summary to the user: current task progress, active background jobs, and clickable 1-tap next-step chips (e.g., *"Check in on the build?"*).
+   - Every `agy-nexus-mcp` tool response embeds `REPLY_PROMPT_GUIDANCE` (`END-OF-TURN 1-TAP REPLY CHIPS`) inside `assistant_guidance` alongside lifecycle-aware `suggested_actions` (`followup_xml`)—including the opt-in VM screenshot audit choice whenever visual links exist—so Gemini consistently shows `<FollowUp label="..." query="@Agy Nexus Mcp ..." />` or `<ElicitationsGroup>` reply chips prefixed with `@Agy Nexus Mcp ` and exact `conversation_id` / `handoff_id` / `project_name` identifiers even after 10+ turns or context compaction.
+   - Gemini delivers a clean, plain-language summary to the user: current task progress, active background jobs, and clickable 1-tap next-step chips (e.g., *"Check in on the build?"*).
 
 ---
 
-## Workflow 2: Plain-Language Stage-Specific Handoffs
+## Workflow 2: WF-02 — Plain-Language Stage-Specific Handoffs
 
 ### User Goal
-The user wants to delegate a specific task to Antigravity without manually micro-managing file names or line numbers. They provide the user goal, the user story, and the target behavior in plain English.
+The user wants to delegate a specific task to Antigravity without manually micro-managing file names or line numbers. They provide the user goal, everyday common terms, referenced workflow IDs, and expected user interactions in plain language.
 
 ### Why It Matters
-Historical audit data shows that over-compressed, line-number-focused handoffs produced a **42.6% rework rate** because agents missed coupled architectural touchpoints. Plain-language handoffs grounded in user goals and end-to-end workflows allow Antigravity to discover and update all coupled files cleanly on the first pass—while matching execution ceremony to task size keeps small 2–3 file fixes fast instead of wrapping them in heavyweight subagent loops.
+Historical audit data shows that over-compressed, line-number-focused handoffs produced a **42.6% rework rate** because agents missed coupled architectural touchpoints. Enforcing a 4-scenario pre-flight gate and injecting matched `WF-XX` sections + `Common Terms` grounds Antigravity on the first pass—while keeping `allow_chained_publish=True` subject to the same workflow discipline (exempting only pure zero-edit `release_closeout`).
 
 ### Handoff Modes & When to Use Them
 AGY-Nexus MCP provides four primary handoff modes:
 
 | Mode | Purpose | Recommended Tone & Content |
 | :--- | :--- | :--- |
-| `feature_update` *(Default)* | Adding capabilities or refining behavior | State the user goal, workflow impact, key components, and expected outcome. |
-| `new_project` | Standing up a new repository or package | State the project mission, target directory, architecture guidelines, and first milestone. |
-| `bug_or_visual_fix` | Fixing runtime defects or UI styling regressions | State what broke, how the user observed it (e.g., folded viewport, broken click), the desired behavior, and verification steps. |
-| `release_closeout` | Finalizing a sprint, tagging, and retiring a session | State clean tree requirement, test suite passes, changelog updates, and version tags. |
+| `feature_update` *(Default)* | Adding capabilities or refining behavior | Bind `workflow_ids` (`WF-XX`), set `workflow_delta`, state Goal & Why, and describe what the user sees/taps/expects. |
+| `new_project` | Standing up a new repository or package | Pass Gate 1 (`Who & Goal`, `Common Terms`, `>= 2` `WF-01..WF-NN` flows across `390px`/`900px`/`1440px` + empty/error states) so `docs/WORKFLOWS.md` is created on Day 1. |
+| `bug_or_visual_fix` | Fixing runtime defects or UI styling regressions | Defaults `workflow_delta` to `update_existing` when `auto`; state what broke, how it affected `WF-XX`, the missing rule to add, and visual verification. |
+| `release_closeout` | Finalizing a sprint, tagging, and retiring a session | Only zero-edit closeout exempt from plain-language workflow body gate; still verifies tests, `docs/WORKFLOWS.md`, privacy, commit/tag/push, and retirement. |
 
-### End-to-End Journey
-1. **Gemini Composes Handoff**:
-   - Gemini structures the handoff with clear sections: `# User Goal`, `# Workflow & Why It Matters`, and `# Architectural Guidance`.
-   - Tool `send_handoff_and_resume` checks handoff quality (`evaluate_handoff_quality`), providing non-blocking advisories if user goals are missing.
+### End-to-End Journey & 4-Gate Pre-Flight Check
+1. **4-Scenario Workflow Pre-Flight (`send_handoff_and_resume`)**:
+   - Accepts explicit `workflow_ids` (e.g., `"WF-01,WF-03"`), `workflow_delta` (`"auto"`, `"unchanged"`, `"update_existing"`, `"add_new"`, `"bootstrap"`), and `user_terms`.
+   - **Never bypassed by `allow_chained_publish=True`**: Only pure `release_closeout` (never `feature_update` or `bug_or_visual_fix`) skips the plain-language workflow quality gate.
+   - **Gate 1 — Greenfield (`new_project` / `create_new_project=True`)**: Returns `NEEDS_WORKFLOW_SPEC` (with interactive user questions and `@Agy Nexus Mcp` chip) unless the spec defines `Who & Goal`, `Common Terms`, and at least two numbered `WF-XX` flows.
+   - **Gate 2 — Brownfield Missing Baseline (`workflow_status="MISSING_BASELINE"`)**: Returns `WORKFLOW_BOOTSTRAP_REQUIRED` when a real brownfield repo lacks `docs/WORKFLOWS.md`, unless `workflow_delta="bootstrap"` is declared with an initial `Common Terms` + `WF-01..WF-NN` outline.
+   - **Gate 3 & 4 — Structural Plain-Language Check & `WF-XX` Injection**: Rejects bare file/line/CSS code dumps lacking Goal & Why + User Interaction (`HANDOFF_REJECTED_PLAIN_LANGUAGE`), resolves `workflow_ids` + `workflow_delta`, and automatically prepends the target repo's `Common Terms` + matched `WF-XX` blocks into the top of `scratch/gemini_research_handoff.md`.
 2. **Ticket Staging, Claiming & Pre-Formatted 1-Tap Chips**:
-   - A sequential ticket is registered in the queue (`<repo-slug>-01`, `<repo-slug>-02`...).
+   - A sequential ticket is registered in the queue (`<repo-slug>-01`, `<repo-slug>-02`...) storing `workflow_ids`, `workflow_delta`, and `docs/WORKFLOWS.md` baseline fingerprint (`workflows_doc_mtime`, `workflows_doc_sha256`).
    - Each ticket tracks full lifecycle states (`STAGED`, `IN_WORK`, `COMPLETED`, `SUPERSEDED`).
    - `get_session_tree` and the `/web` Overwatch Dashboard render each state distinctly (`[◈ STAGED · UNCLAIMED]`, `[▶ IN-WORK]`, `[✓ COMPLETED]`, and `[⊘ SUPERSEDED]`), maintaining 100% visibility for active tickets while bounding historical closed tickets.
    - If `resume_headless=True`, Antigravity is woken up immediately; otherwise, the ticket is staged for IDE pickup via `agy-praxis-mcp`.
@@ -74,31 +88,33 @@ AGY-Nexus MCP provides four primary handoff modes:
 
 ---
 
-## Workflow 3: Overwatch Analytics Across Form Factors
+## Workflow 3: WF-03 — Overwatch Analytics Across Form Factors
 
 ### User Goal
-The user navigates to the Overwatch Web Dashboard (`/web`) to monitor quota consumption, subagent velocity, daily activity patterns, and project health across diverse screen sizes.
+The user navigates to the Overwatch Web Dashboard (`/web`) to monitor quota consumption, subagent velocity, daily activity patterns, chart error-bar spreads, and table metric legends comfortably across phone touchscreen, unfolded foldable tablet, and desktop screen sizes.
 
 ### Why It Matters
-The dashboard must provide responsive, ergonomic visibility whether the user opens it on a narrow smartphone, a square foldable tablet, or an ultra-wide desktop monitor.
+The dashboard must provide comfortable finger touch targets on Pixel Fold (`390px` folded, `900px` unfolded), consistent chart legend colors that match the rendered data, and unmistakable inline swatch legends right above every Analytics table so `24h` carets (`▾`), guide ticks (`│`), and range whiskers are self-explanatory.
 
-### End-to-End Form Factor Postures
+### End-to-End Form Factor Layouts & Visual Clarity
 1. **Pre-Unlock State**:
    - When the bridge deadbolt is locked, `/web` displays a clean, distraction-free passphrase challenge without broken UI controls, partial graphs, or layout shifts.
-2. **Folded Phone Posture (~390px Viewport)**:
-   - `#workspace` stays on an invariant single `41px` topbar row while `#analytics` uses a clean 2-row header (with time-span and metric controls on the second row).
-   - KPIs adapt to a readable 2×2 grid.
-   - The activity heatmap automatically switches to a Monday-aligned **26-week** view so cells remain comfortably tappable without horizontal scrollbars.
-3. **Unfolded Tablet Posture (~900px Foldable)**:
-   - KPIs spread to a 4-across grid.
-   - The full 53-week Mon–Sun activity heatmap uses the unified 5-level single-hue `#2563eb` blue scale across all four themes (`Pure White`, `Warm Paper`, `Dark Paper`, `Obsidian`) with zero horizontal scrollbars.
-4. **Desktop & Widescreen Postures (`1440px` and `1920px–2560px+` Viewports)**:
+2. **Folded Phone Layout (~390px Viewport, `< 680px`)**:
+   - `#workspace` stays on an invariant single `41px` topbar row while `#analytics` uses a 2-row sticky topbar (`padding: 8px 12px`, `row-gap: 6px`): Row 1 (`☰` `>= 40px` menu button with `18px` icon, `AGY-NEXUS`, `Analytics`, `Workspace <N>`) provides comfortable **`40px`-tall** touch targets (`13px` tabs), and Row 2 (`<`, period picker, `>`, `Steps | Tokens | $ Cost`) provides **`36px`-tall** buttons (`>= 36px` `<`/`>` steppers) with zero horizontal overflow at `390px`.
+   - KPIs adapt to a readable 2×2 grid and the activity heatmap automatically switches to a Monday-aligned **26-week** view so cells remain comfortably tappable without horizontal scrollbars.
+3. **Unfolded Tablet Layout (`680px–1099px`, ~900px Foldable)**:
+   - Sticky topbar expands to **`56px`** with **`36px`-tall** menu, tab, period, and metric buttons for comfortable tablet touch ergonomics.
+   - KPIs spread to a 4-across grid and the full 53-week Mon–Sun activity heatmap uses the unified 5-level single-hue `#2563eb` blue scale across all four themes (`Pure White`, `Warm Paper`, `Dark Paper`, `Obsidian`) with zero horizontal scrollbars.
+4. **Desktop & Widescreen Layouts (`1440px` and `1920px–2560px+` Viewports)**:
    - Analytics expands smoothly up to `1960px` (`min(1960px, calc(100% - 32px))`) so 4-up KPI cards keep footers (including `Gemini Web / Cloud MCP`) crisp on one row, `2026 · 53 WEEKS` displays all 12 calendar month headers (`Jan`..`Dec` without skipping `Jan`), and **Year (`Current` & `Rolling`)** renders `24h daily` base bins across the full active/calendar window aligned identically across all three stacked bar charts.
-   - `Pure White` mode pairs `#f8fafc` canvas with crisp `#ffffff` cards, `#f1f5f9` elevated surfaces, and a subtle card shadow (`0 1px 2px rgba(15, 23, 42, 0.04)`) for clear surface separation.
+   - `Pure White` mode pairs `#f8fafc` canvas with crisp `#ffffff` cards, `#f1f5f9` elevated layers, and a subtle card shadow (`0 1px 2px rgba(15, 23, 42, 0.04)`) for clear visual separation.
+5. **Hourly Error-Bar Legend & Dedicated Table Swatch Legends**:
+   - **`Activity by Hour of Day`**: Top-right ECharts legend renders matching icons and colors across all 4 themes (`Min–Max Range` = Teal vertical I-beam whisker, `Active Avg` = Blue horizontal tick/dashed line, `Last 24h` = Purple circle).
+   - **Chart Subtitles & Above-Table Legends (`.v9-table-legend`)**: Chart header subtitles (`#v9ModelPlotSub`, `#v9SubPlotSub`, `#v9ProjPlotSub`) show clean summary counts without orphaned caret/bar symbols; directly above all four tables (`Model Workload`, `Subagent Workload`, `Top Projects`, `Project Sessions`), `.v9-table-legend` renders metric-reactive (`[Steps | Tokens | $ Cost]`) swatches explaining every fill bar, `│` guide/seam/avg line, `▾` caret (`Last 24h` / `700 rollover limit`), `●` latest/`24h` dot, `○` idle indicator, and `>120` alert threshold.
 
 ---
 
-## Workflow 4: 2-Pane Workspace Explorer & Visual Artifact Inspection
+## Workflow 4: WF-04 — 2-Pane Workspace Explorer & Visual Artifact Inspection
 
 ### User Goal
 The user wants to review screenshots generated by each coding session without repo logo clutter, select multiple captures smoothly on phone/foldable/desktop/widescreen monitors, and export crisp, high-resolution batch sheets or archives back into Gemini.
@@ -123,23 +139,26 @@ Developers need fast visual verification across mobile (`390px`), foldable (`900
    - Choose **`Per Sheet`** **`2`**, **`4`** (default), or **`8`** images per stitched sheet directly in the sticky gallery toolbar (saved in `localStorage`).
    - Selecting e.g. 20 captures with `4/sheet` shows `20 selected → 5 sheets (4/sheet)` and builds **5 lossless PNG batch sheets**, each picking the best orientation (`(1×2)` vs `(2×1)`, `(2×2)`, `(2×4)` vs `(4×2)`) to maximize pixel sharpness inside Gemini's **`3072×3072`** vision ceiling without ever upscaling above `1.0×`.
    - Tap **`✦ Share Sheets (K)`** to send sheets via Android's OS Share Sheet directly into Gemini (automatically handling Gemini's 10-file prompt limit with clear batch buttons if `K > 10`, or copying Sheet 1 & opening a preview modal on desktop with individual sheet downloads and an optional `⬇ Sheets ZIP`), **`⬇ Sheets (K)`** to download all `K` individual stitched sheet `.png` files directly into Downloads, **`⬇ PNGs (N)`** to download all `N` selected individual original `.png` captures directly, or **`⬇ ZIP (N)`** when you want an archive of the selected originals.
+   - When sharing 7-day signed `/web/media/` screenshot URLs or published HTML showcase links with Gemini Tasks, always present clickable `signed_url` links at zero token cost first and offer a 1-tap choice (`Have Gemini audit screenshots in VM (uses extra tokens)`) before pulling images into Gemini's Linux VM (`curl` with `Google-Agent` User-Agent + `view_file`).
+   - Keep the public capability host's Nginx Proxy Manager allowlist permitting `(\?.*)?` on `/web/media/[0-9]+/[0-9a-f]{32}/[^?]+(\?.*)?` (see `docs/DEPLOYMENT.md` Section 4 Step 2.3) so links tapped in the Gemini mobile app (which appends `?hl=en-US`) resolve cleanly over WireGuard split-DNS without OpenResty returning `404`.
 4. **Full-Screen Lightbox & Collapsible Upload / Zen Mode**:
    - Opening any capture shows `[idx / total]`, `‹ Prev` / `Next ›` buttons, `ArrowLeft`/`ArrowRight` keyboard navigation, horizontal swipe on touch, and an in-modal **`✓ Select`** button synced with the gallery.
    - A compact **`+ Upload / Paste`** button in the session header toggles the drag-and-drop strip open on demand (auto-opening when dragging files onto the pane), and the left navigation collapses (`300px -> 38px -> 0px` Zen Mode) for focused reading.
 
 ---
 
-## Workflow 5: In-Place Release Closeout, Worktree Cleanup & Ticket Retirement
+## Workflow 5: WF-05 — In-Place Release Closeout, Worktree Cleanup & Ticket Retirement
 
 ### User Goal
-A feature sprint or bugfix is verified and complete. The user instructs Gemini to close out the session, run final audits, commit clean changes, and retire the session.
+A feature sprint or bugfix is verified and complete. The user instructs Gemini to close out the session, run final audits, verify `docs/WORKFLOWS.md` was updated when required, commit clean changes, and retire the session.
 
 ### Why It Matters
-Unclosed sessions leave stale Git worktrees, lingering temporary files, and tickets stuck in `IN_WORK` status, which clutters the handoff queue and confuses subsequent session handoffs.
+Unclosed sessions leave stale Git worktrees, lingering temporary files, outdated `docs/WORKFLOWS.md` specifications, and tickets stuck in `IN_WORK` status, which clutters the handoff queue and breaks workflow continuity across releases.
 
 ### End-to-End Journey
-1. **Verification & Audit**:
-   - The test suite passes (`pytest`, smoke tests), and code health conforms to modular standards (`<= 500 lines` target, `650` ceiling, functions `<= 100` lines).
+1. **Verification, Workflow Doc Check & Audit**:
+   - The test suite passes (`pytest`, `--self-test` runners, visual gates), and code health conforms to modular standards (`<= 500 lines` target, `650` ceiling, functions `<= 100` lines).
+   - **Closeout `docs/WORKFLOWS.md` Verification (`WORKFLOW_DOC_NOT_UPDATED`)**: When Antigravity calls `praxis_update_handoff(status="COMPLETED")` on a ticket with `workflow_delta` in `("bootstrap", "add_new", "update_existing")`, Praxis inspects `<repo>/docs/WORKFLOWS.md` against the ticket baseline timestamp/hash and git status. If `docs/WORKFLOWS.md` was neither created nor modified, completion returns `WORKFLOW_DOC_NOT_UPDATED` so documentation drift is caught before closeout.
 2. **Closeout Handoff (`release_closeout`)**:
    - Gemini sends a `release_closeout` handoff or passes `retire_session=True`.
    - When `handoff_mode="release_closeout"`, `resume_headless=True`, and `retire_session=True` are combined, `retire_after_closeout=True` **defers** writing `RETIRED.json` so the active session is not prematurely locked mid-run; the closeout instructions direct Antigravity to call `record_session_retirement(..., final_commit_sha=<HEAD_SHA>)` only after `git commit` and `git push` succeed. Non-headless `retire_session=True` calls continue writing `RETIRED.json` immediately.
@@ -151,24 +170,24 @@ Unclosed sessions leave stale Git worktrees, lingering temporary files, and tick
 
 ---
 
-## Workflow 6: Quiet UI `v9.3.0` Live `/web` Studio & Interactive GitHub Pages Showcase (`v4.0.6`)
+## Workflow 6: WF-06 — Quiet UI `v9.3.0` Live `/web` Studio & Interactive GitHub Pages Showcase (`v4.0.7`)
 
 ### User Goal
-Serve **Quiet UI Skills v9.3.0** directly as the primary live `/web` dashboard (preserving `/web/v9` compatibility) backed by live workstation 8-model telemetry, effective-dated micro-USD ledgers, accurate 4-tier subscription break-even comparisons, multi-column sortable tables, optional desktop sidebar pinning, and a zero-leak **GitHub Pages Interactive Showcase** (`gh-pages`).
+Serve **Quiet UI Skills v9.3.0** directly as the primary live `/web` dashboard (preserving `/web/v9` compatibility) backed by live workstation 8-model telemetry, effective-dated micro-USD ledgers, accurate 4-tier subscription break-even comparisons, multi-column sortable tables with explicit metric legends, comfortable mobile/tablet touch topbars, optional desktop sidebar pinning, and a zero-leak **GitHub Pages Interactive Showcase** (`gh-pages`).
 
 ### Architectural Invariants
-1. **Primary Live `/web` Cutover, Navbar Invariance & PWA Cache Integrity**:
+1. **Primary Live `/web` Cutover, Navbar Touch Ergonomics & PWA Cache Integrity**:
    - `/web`, `/web/index.html`, `/web/v9`, and `/web/v9/index.html` serve Quiet UI `v9.3.0` HTML directly with `Cache-Control: no-store, no-cache, must-revalidate` in `src/agy_nexus/web_routes.py`.
-   - Every active asset (`web/v9/*.{css,js}`, `web/v9/vendor/*`, `demo_snapshot.js`, `gallery_select.js`, `sheet_builder.js`, `manifest.webmanifest`, `icon*`, and `demo_thumb_*.png`) is registered in `PWA_ASSETS` and `web/sw.js` (`CACHE_NAME = "agy-nexus-v4.0.6"`), matching both `/web/` and `/{PATH_SECRET}/web/`.
-   - Sticky topbar brand/tab X-coordinates remain identical (`0px` shift) between `#analytics` and `#workspace` (`50px` single row `>= 680px`; compact `<= 64px` 2-row sticky header `< 680px`), keeping `#v9MenuBtn`, `AGY-NEXUS`, `Analytics | Workspace <N>`, active scope chip, compound period picker, and `[Steps | Tokens | $ Cost]` (or Workspace layout switches + `Upload`, hiding `Split`/`Captures` `< 760px`) pinned on scroll.
+   - Every active asset (`web/v9/*.{css,js}`, `web/v9/vendor/*`, `demo_snapshot.js`, `gallery_select.js`, `sheet_builder.js`, `manifest.webmanifest`, `icon*`, and `demo_thumb_*.png`) is registered in `PWA_ASSETS` and `web/sw.js` (`CACHE_NAME = "agy-nexus-v4.0.7"`), matching both `/web/` and `/{PATH_SECRET}/web/`.
+   - Sticky topbar keeps `#v9MenuBtn`, `AGY-NEXUS`, `Analytics | Workspace <N>`, active scope chip, compound period picker, and `[Steps | Tokens | $ Cost]` pinned cleanly across breakpoints: `50px` single row on desktop `>= 1100px`, **`56px`** bar with **`36px`** buttons across `680px–1099px` tablet widths, and a compact 2-row sticky bar `< 680px` (`padding: 8px 12px`, `row-gap: 6px`, **`40px`** Row 1 targets with `>= 40px` `☰` button and `18px` icon, **`36px`** Row 2 targets with `>= 36px` `<`/`>` steppers, zero horizontal overflow at `390px`).
    - **Desktop Rail Pinning & Dynamic Menu Affordance (`localStorage.nexus_v9_rail_pinned`)**: On desktop/widescreen (`>= 1100px`), `#v9RailPinBtn` inside `.v9-rail-hdr` pins `#v9NavRail` inline inside a `280px minmax(0, 1fr)` grid (`#v9AppShell.is-rail-pinned`) so switching across `All Projects`, project `Analytics`, and `Workspace` sessions keeps the rail open while realigning ECharts (`V9.Charts.scheduleRealign`). When unpinned or `< 1100px` mobile/tablet, `#v9NavRail` acts as a modal overlay drawer (`role="dialog"`) over `#v9WsBackdrop` and auto-closes on selection; `#v9MenuBtn` displays a **`☰` hamburger** icon when unpinned / `< 1100px` and switches to **`◧` docked-panel** when pinned on desktop.
-2. **Multi-Column Sortable Analytics Tables, Activity Heatmap & Full-Width 52w Strip**:
+2. **Multi-Column Sortable Analytics Tables, Visual Swatch Legends, Activity Heatmap & Full-Width 52w Strip**:
    - **Multi-Column Table Sorting (`web/v9/v9_table_sort.js`)**: `Top Projects`, `Project Sessions`, `Model Workload`, and `Subagent Workload` expose accessible `<th scope="col">` sort `<button>` controls driving `aria-sort="ascending|descending"` on the active `<th>` only (via CSS-driven SVG indicators) and preserving ECharts series color indices (`origIdx` / `color_slot`). `Top Projects` and `Project Sessions` include a dedicated **`Age`** column (`last_updated_ts` with relative-age parser fallback, sorting newest-first on first click), and `Top Projects` sorts all active projects before slicing the top `14`.
-   - **Hybrid Range Whiskers & Target/Seam Caret Bars (`web/v9/v9_spark_bars.js`)**: All four Analytics tables replace flat `0–100%` stubs with metric-reactive (`[Steps | Tokens | $ Cost]`), keyboard/screen-reader-labeled (`role="img"` + `aria-label` + forced-colors support) comparative graphics:
-     - **`Top Projects (Daily)` — Active-Day Range Whisker**: Renders `Min..Peak Day` range stem scaled to table max peak, `│` vertical crossbar at `Active-Day Avg`, and `●` dot at `Last 24h` (hollow muted ring at `0` when idle in active windows; omitted on closed historical windows) with compact `avg/d` readout and Peak-day sorting.
-     - **`Subagent Workload` — Per-Run Outlier Whisker + Cap Alerts**: Renders `Min/run..Max/run`, `│` at `Avg/run`, and `●` at `Latest Run` (fallback `Last 24h`) scaled to highest role `Max/run`; surfaces fault `>120` badge whenever `max_steps_per_run > 120` or `over_120_runs > 0`, and amber `2.5x` badge for `> 2.5x` fleet-mean burn outliers.
-     - **`Model Workload` — Target Guide `│` + `Last 24h ▾` Caret Bar**: Switches `Actual %` and `Guide / Delta` across `Steps`, `Tokens`, and `$ Cost`, preserving the vertical `│` Target Guide pin and adding a top `▾` caret at `Last 24h %` share (`Window % · 24h % · Guide %` tooltip).
-     - **`Project Sessions (Daily)` — `320│ / 700▾` Seam & Burn Caret Bar**: In `Steps`, renders session context `step_count` (plus active window overlay) scaled to `max(750, maxSessionSteps)` with `│` seam tick at `320` steps and `▾` rollover caret at `700` steps (`500+` warning / `700+` alert on unretired sessions vs. muted `RET` when `RETIRED.json` / `is_retired`); in `Tokens` / `$ Cost`, renders normalized session burn with `│` Project Avg tick and `▾` Last 24h caret.
+   - **Above-Table Visual Swatch Legends & Hybrid Range Whiskers & Target/Seam Caret Bars (`web/v9/v9_spark_bars.js`)**: `.v9-table-legend` sits directly above each table inside `.va-table-wrap` and updates reactively with `[Steps | Tokens | $ Cost]`, while `#v9ModelPlotSub`, `#v9SubPlotSub`, and `#v9ProjPlotSub` show concise count summaries without orphaned legend symbols:
+     - **`Top Projects (Daily)` — Active-Day Range Whisker**: `[━ Bar] Active-day Min–Peak` · `[│ Line] Avg / day` · `[● Dot] Last 24h` · `[○ Open] Idle 24h` (hollow muted ring at `0` when idle in active windows; omitted on closed historical windows) with compact `avg/d` readout and Peak-day sorting.
+     - **`Subagent Workload` — Per-Run Outlier Whisker + Cap Alerts**: `[━ Bar] Min–Max / run` · `[│ Line] Avg / run` · `[● Dot] Latest run` · `[>120] Any run >120 steps` (and amber `2.5x` badge for `> 2.5x` fleet-mean burn outliers), displaying `<avg> avg · <max> max` so peak runs are never mistaken for averages.
+     - **`Model Workload` — Target Guide `│` + `Last 24h ▾` Caret Bar**: `[━ Fill] Window share` · `[│ Line] Guide target` · `[▾ Caret] Last 24h share` · `Tap row to solo` across `Steps`, `Tokens`, and `$ Cost`.
+     - **`Project Sessions (Daily)` — `320│ / 700▾` Seam & Burn Caret Bar**: In `Steps`, `[━ Fill] Session steps` · `[│ Line] 320 clean seam` · `[▾ Caret] 700 rollover limit` (`500+` warning / `700+` alert on unretired sessions vs. muted `RET` when `RETIRED.json` / `is_retired`); in `Tokens`/`$ Cost`, `[━ Fill] Session total` · `[│ Line] Project avg` · `[▾ Caret] Last 24h`.
    - **Consistent Quartile Buckets Across Metrics**: `Steps`, `Tokens`, and `$ Cost` all compute `level 1..4` using empirical non-zero quartiles (`P25 / P50 / P75`) over active in-window days (falling back to all non-future active days in the 52-week strip only when the window has `< 4` non-zero days for that metric), so a single spike day never flattens prior weeks.
    - **Clear Out-of-Window Desaturation**: Out-of-window cells (`.v9-heat-cell.is-out`) render desaturated and low-opacity in neutral gray-tint across all 4 themes (`Pure White`, `Warm Paper`, `Dark Paper`, `Obsidian`), restoring clear legibility on hover while keeping in-window days (`in_window: true`) vibrant blue.
    - **Full-Width Trailing 52-Week Strip & 1st-of-Month Headers**: Every period preset renders a full-width trailing 52/53-week strip (`26w` default on `<= 560px` mobile with `Show 53w` toggle) where `.v9-heat-months` and `.v9-heat-grid` share identical `repeat(keepCols, minmax(10px, 1fr))` column tracks across the card width, and month labels anchor on the week column containing the `1st` of each month.
@@ -179,7 +198,7 @@ Serve **Quiet UI Skills v9.3.0** directly as the primary live `/web` dashboard (
      2. **`google_ai_pro`** (`Google AI Pro`): **`$19.99/mo`** (`19,990,000` micro-USD, `$199.99/yr` annual, `5 TB`, `1x`, `$10/mo` dev credits)
      3. **`google_ai_ultra_5x`** (`Google AI Ultra (5x)`): **`$99.99/mo`** (`99,990,000` micro-USD, `20 TB`, `5x` Pro limits, `$40/mo` dev credits)
      4. **`google_ai_ultra_20x`** (`Google AI Ultra (20x)`): **`$199.99/mo`** (`199,990,000` micro-USD, `30 TB`, `20x` Pro limits, `$100/mo` dev credits)
-   - **Activity by Hour of Day** renders active-day `Min / Avg / Max` range whiskers + a `Last 24h` dot over `00h..23h`, followed by full-width **MCP Wire Footprint vs. 20 KB Ceiling** scatter and collapsed **Code Health** drawer (`web/` + `web/v9/` modules `<= 500L`).
+   - **Activity by Hour of Day** renders active-day `Min / Avg / Max` range whiskers + a `Last 24h` dot over `00h..23h` with matching top-right ECharts legend colors and icons (`Min–Max Range` Teal I-beam, `Active Avg` Blue horizontal tick/dash, `Last 24h` Purple circle across all 4 themes), followed by full-width **MCP Wire Footprint vs. 20 KB Ceiling** scatter and collapsed **Code Health** drawer (`web/` + `web/v9/` modules `<= 500L`).
    - Selecting `Analytics` for a project (`?project=<id>#analytics` via `src/agy_nexus/project_stats.py` and `web/v9/v9_demo_adapter.js`) switches to Dedicated Project Analytics (`Steps | Tokens | $ Cost`, `Session Context Budget` vs `700`-step seam, Handoff Queue, `Project Sessions`, and Project Code Health).
    - Both `/web?demo=1` and the static showcase enable all 6 window presets (`MTD`, `QTD`, `YTD`, `30d`, `90d`, `52w`) + `Last Month` from real-distribution depersonalized `DEMO_SNAPSHOT` bundles (`V9.DemoAdapter.isPresetAvailable`) and serve bundled depersonalized Workspace docs (`V9.DemoDocs`).
 4. **2-Bar Flat Hairline Workbench, Responsive Split, Captures Modal & Static Showcase Gate**:

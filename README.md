@@ -68,80 +68,80 @@ Call `get_session_tree()` (or `manage_background_run(action="sessions")`) to ren
 
 ```text
 ╔══════════════════════════════════════════════════════════════════════════╗
-║ AGY-NEXUS v4.0.6 // PROJECT -> CHAT -> SESSION ID HIERARCHY (COPY-READY) ║
+║ AGY-NEXUS v4.0.7 // PROJECT -> CHAT -> SESSION ID HIERARCHY (COPY-READY) ║
 ╠══════════════════════════════════════════════════════════════════════════╣
 ║ SLOTS: 3 | STAGED: 1 | IN-WORK: 2 | PINNED: 24 | TTL: 119.5m             ║
-║ 3-2-1 BACKUP: 722e499 (SYNCED ✓ · 20767.0 KB · 1h ago)                   ║
+║ 3-2-1 BACKUP: 2eaa820 (SYNCED ✓ · 20477.9 KB · 2h ago)                   ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
-[PROJECT 1] AGY Nexus MCP [SHARED REPO] [▶ 1 IN-WORK]
-  project_id : f1378431-5b09-4545-a48c-ac5c67c04fd3
-  workspaces : /home/dev/agentic_workspace/projects/agy-nexus-mcp
-  ├─ [HANDOFF agy-nexus-mcp-47] AGY-Nexus v4.0.6 — Enforce @Agy Nexus Mcp 1-Tap Reply Chips Across All Tools
-  │   pass_off   : [▶ IN-WORK] · plan/feature_update · 34m ago
-  │   session_id : 30287b28-f5b2-4852-8812-e2153b2549cd
-  ├─ [HANDOFF agy-nexus-mcp-46] AGY-Nexus v4.0.5 — Scope Gallery Select-All Strictly to Session Captures
-  │   pass_off   : [✓ COMPLETED] · fast/bug_or_visual_fix · 1h ago
-  │   session_id : 1d8083b4-7b88-4db2-800e-389246283949
-  ├─ (+19 older completed)
-  ├─ [#1] AGY-Nexus v4.0.6 — Enforce @Agy Nexus Mcp 1-Tap Reply Chips Across All Tools
-  │   session_id : 30287b28-f5b2-4852-8812-e2153b2549cd
-  │   workspace  : /home/dev/agentic_workspace/projects/agy-nexus-mcp
-  │   status     : [● RUNNING] · MAIN WRITER · 265 steps · 9s ago
-  ├─ [#7] AGY-Nexus v4.0.5 — Scope Gallery Select-All Strictly to Session Captures
-  │   session_id : 1d8083b4-7b88-4db2-800e-389246283949
-  │   workspace  : /home/dev/agentic_workspace/projects/agy-nexus-mcp
-  │   status     : [◉ PINNED · IDLE] · SHARED (READ-ONLY) · 254 steps · 1h ago
-  └─ [#9] AGY-Nexus v4.0.4 — Hybrid Range Whiskers & Target/Seam Caret Bars
-      session_id : e7244212-16c5-4996-b077-c0c982b77e94
-      workspace  : /home/dev/agentic_workspace/projects/agy-nexus-mcp
-      status     : [○ COMPLETED] · SHARED (READ-ONLY) · 567 steps · 2h ago
-
-[PROJECT 2] Stem Curriculum Lab [SHARED REPO] [◈ 1 STAGED] [▶ 1 IN-WORK]
+[PROJECT 1] Stem Curriculum Lab [SHARED REPO] [◈ 1 STAGED] [▶ 1 IN-WORK]
   project_id : 8d13c66f-569c-42e0-a57e-dd4b111ab5f2
   workspaces : /home/dev/agentic_workspace/projects/stem-curriculum-lab
   ├─ [HANDOFF stem-curriculum-lab-60] [SCL-Core] Stepped & Hex Domain Mosaics + Skill Trees
   │   pass_off   : [◈ STAGED · UNCLAIMED] · plan/feature_update · 4d ago
   │   session_id : (unclaimed · new chat)
-  ├─ [HANDOFF stem-curriculum-lab-87] [SCL-Arch] Sprints 1–14 — Curriculum Engine & Edge CI
-  │   pass_off   : [▶ IN-WORK] · plan/bug_or_visual_fix · 1h ago
-  │   session_id : e1a0d95b-6e25-4e74-b8ae-c58a1c0e2902
-  ├─ (+14 older completed)
-  ├─ [#2] [SCL-Arch] Sprints 1–14 — Curriculum Engine & Edge CI
+  ├─ [HANDOFF stem-curriculum-lab-90] [SCL-RF] Ch. I–VIII Interactive Signal Modules Overhaul
+  │   pass_off   : [▶ IN-WORK] · plan/feature_update · 38m ago
+  │   session_id : 9c90ffb2-4ae2-42fa-9016-4d7fa1f175cf
+  ├─ (+16 older completed)
+  ├─ [#1] [SCL-Portal] Landing Page, Control-Plane & OIDC Auth
+  │   session_id : 9c90ffb2-4ae2-42fa-9016-4d7fa1f175cf
+  │   workspace  : /home/dev/agentic_workspace/projects/stem-curriculum-lab
+  │   status     : [● RUNNING] · MAIN WRITER · 253 steps · 2s ago
+  ├─ [#3] [SCL-Arch] Sprints 1–14 — Curriculum Engine & Edge CI
   │   session_id : e1a0d95b-6e25-4e74-b8ae-c58a1c0e2902
   │   workspace  : /home/dev/agentic_workspace/projects/stem-curriculum-lab
-  │   status     : [● RUNNING] · MAIN WRITER · 516 steps · 56s ago
-  ├─ [#8] [SCL-RF] Ch. I–VIII Interactive Signal Modules Overhaul
-  │   session_id : a5e6835f-4158-4fcb-a54c-fc6a9879a09a
-  │   workspace  : /home/dev/agentic_workspace/projects/stem-curriculum-lab
-  │   status     : [○ COMPLETED] · SHARED (READ-ONLY) · 1,122 steps · 1h ago
-  └─ [#17] [SCL-Portal] Landing Page, Control-Plane & OIDC Auth
-      session_id : 1545ffde-29a4-4e5f-8232-fdd077bc3d8b
+  │   status     : [○ COMPLETED] · SHARED (READ-ONLY) · 730 steps · 16m ago
+  └─ [#11] [SCL-RF] Ch. I–VIII Interactive Signal Modules Overhaul
+      session_id : a5e6835f-4158-4fcb-a54c-fc6a9879a09a
       workspace  : /home/dev/agentic_workspace/projects/stem-curriculum-lab
-      status     : [○ COMPLETED] · SHARED (READ-ONLY) · 741 steps · 14h ago
+      status     : [○ COMPLETED] · SHARED (READ-ONLY) · 1,122 steps · 4h ago
+
+[PROJECT 2] AGY Nexus MCP [SHARED REPO] [▶ 1 IN-WORK]
+  project_id : f1378431-5b09-4545-a48c-ac5c67c04fd3
+  workspaces : /home/dev/agentic_workspace/projects/agy-nexus-mcp
+  ├─ [HANDOFF agy-nexus-mcp-50] AGY-Nexus v4.0.7 — Closeout: DEPLOYMENT.md (?.*)? Sync, Publish & Retire
+  │   pass_off   : [▶ IN-WORK] · fast/release_closeout · 6m ago
+  │   session_id : 5fb0708a-e4cf-443d-bea2-e9f9a4b9dfee
+  ├─ [HANDOFF agy-nexus-mcp-49] AGY-Nexus v4.0.7 — Addendum: Opt-In Gemini VM Screenshot & HTML Audit Prompt
+  │   pass_off   : [✓ COMPLETED] · plan/feature_update · 4m ago
+  │   session_id : 5fb0708a-e4cf-443d-bea2-e9f9a4b9dfee
+  ├─ (+19 older completed)
+  ├─ [#2] AGY-Nexus v4.0.7 — 4-Gate WF-XX Workflow Engine, Thicker Mobile Topbar & Chart/Table Legends
+  │   session_id : 5fb0708a-e4cf-443d-bea2-e9f9a4b9dfee
+  │   workspace  : /home/dev/agentic_workspace/projects/agy-nexus-mcp
+  │   status     : [● RUNNING] · MAIN WRITER · 716 steps · 8s ago
+  ├─ [#6] AGY-Nexus v4.0.6 — Enforce @Agy Nexus Mcp 1-Tap Reply Chips Across All Tools
+  │   session_id : 30287b28-f5b2-4852-8812-e2153b2549cd
+  │   workspace  : /home/dev/agentic_workspace/projects/agy-nexus-mcp
+  │   status     : [○ COMPLETED] · SHARED (READ-ONLY) · 350 steps · 2h ago
+  └─ [#10] AGY-Nexus v4.0.5 — Scope Gallery Select-All Strictly to Session Captures
+      session_id : 1d8083b4-7b88-4db2-800e-389246283949
+      workspace  : /home/dev/agentic_workspace/projects/agy-nexus-mcp
+      status     : [○ COMPLETED] · SHARED (READ-ONLY) · 254 steps · 4h ago
 
 [PROJECT 3] Quiet UI Skills [SHARED REPO]
   project_id : 696506de-5df1-41da-9b5c-03c2e1b9128c
   workspaces : /home/dev/agentic_workspace/projects/quiet-ui-skills
+  ├─ [HANDOFF quiet-ui-skills-50] Mark Older v9.4 Session Done (No Push)
+  │   pass_off   : [✓ COMPLETED] · fast/release_closeout · 1h ago
+  │   session_id : 0b9b559c-8aee-49b1-97e8-ffd906b5744b
   ├─ [HANDOFF quiet-ui-skills-49] Quiet UI Skills v9.5.0 — Release Closeout, Tag, GitHub Release & Live Pages Verification
-  │   pass_off   : [✓ COMPLETED] · fast/release_closeout · 2m ago
+  │   pass_off   : [✓ COMPLETED] · fast/release_closeout · 3h ago
   │   session_id : c291b3c0-2dee-4443-83fe-97067037c8cb
-  ├─ [HANDOFF quiet-ui-skills-48] Quiet UI Skills v9.5.0 R4 — Pinned Sticky Sidebar, Tablet HMI Frame (v08) & Full-Bleed Kiosk Polish (v16/v17)
-  │   pass_off   : [✓ COMPLETED] · plan/feature_update · 36m ago
-  │   session_id : 473d9028-8435-4795-a8a2-77a00415d921
-  ├─ (+20 older completed)
-  ├─ [#3] Quiet UI Skills v9.5.0 — Release Closeout, Tag, GitHub Release & Live Pages Verification
+  ├─ (+17 older completed)
+  ├─ [#4] Quiet UI Skills v9.4.0 Wave 2 — Cleanfield Workbench Archetypes, Flow Primitives & Brownfield CDP Probes
+  │   session_id : 0b9b559c-8aee-49b1-97e8-ffd906b5744b
+  │   workspace  : /home/dev/agentic_workspace/projects/quiet-ui-skills
+  │   status     : [◉ PINNED · IDLE] · MAIN TREE · 458 steps · 1h ago
+  ├─ [#7] Quiet UI Skills v9.5.0 — Release Closeout, Tag, GitHub Release & Live Pages Verification
   │   session_id : c291b3c0-2dee-4443-83fe-97067037c8cb
   │   workspace  : /home/dev/agentic_workspace/projects/quiet-ui-skills
-  │   status     : [◉ PINNED · IDLE] · MAIN WRITER · 240 steps · 1m ago
-  ├─ [#5] Quiet UI Skills v9.5.0 R4 — Pinned Sticky Sidebar, Tablet HMI Frame (v08) & Full-Bleed Kiosk Polish (v16/v17)
-  │   session_id : 473d9028-8435-4795-a8a2-77a00415d921
-  │   workspace  : /home/dev/agentic_workspace/projects/quiet-ui-skills
-  │   status     : [◉ PINNED · IDLE] · PINNED (READ-ONLY) · 371 steps · 1h ago
-  └─ [#10] Quiet UI Skills v9.5.0 R3 — Plain-English Everyday Copy Pass Across Overview, Standards, Picker & Components
-      session_id : c45cf816-c422-4ee4-9612-dfa6fc8114ee
+  │   status     : [○ COMPLETED] · MAIN TREE · 240 steps · 3h ago
+  └─ [#8] Quiet UI Skills v9.5.0 R4 — Pinned Sticky Sidebar, Tablet HMI Frame (v08) & Full-Bleed Kiosk Polish (v16/v17)
+      session_id : 473d9028-8435-4795-a8a2-77a00415d921
       workspace  : /home/dev/agentic_workspace/projects/quiet-ui-skills
-      status     : [○ COMPLETED] · MAIN TREE · 210 steps · 2h ago
+      status     : [○ COMPLETED] · MAIN TREE · 371 steps · 4h ago
 ```
 
 ---
@@ -160,14 +160,14 @@ Ask Gemini for your usage stats (`get_session_tree(include_stats=True, period="l
 
 ```text
 ════════════════════════════════════════╤═══════════════════════════════
-AGY-NEXUS v4.0.6 // 91d (Nov 23 ◄── Aug ┆ Up to Date (v4.0.6)           
+AGY-NEXUS v4.0.7 // 91d (Nov 23 ◄── Aug ┆ Up to Date (v4.0.7)           
 ════════════════════════════════════════╪═══════════════════════════════
 GOOGLE 20x :  99.7% [████████┼█] HEALTHY┆ 0x 429s | Ultra-20x (T:>=90%) 
 PARTNER 1x :  99.7% [░┼░░░░░░░░] ON PACE┆ 85.7% Wk Left | Lim <=14.3%/d 
-STEPS/TOOLS: 266,115s | 138,173t | 205c ┆ 5,117 s/act-d | 2,924 s/cal-d 
-TOKEN BURN : ~12.9B | $3,210.91         ┆ 248.1M/d | $61.75/d (659r)    
-MCP WIRE   : 96% <20KB (avg 11.9/34.1KB)┆ 128 req (424k tok) | Web+Praxi
-CODE HEALTH: Poly 2530 syms | 87/87 <=50┆ 0 >650L | Praxis+Serena       
+STEPS/TOOLS: 268,315s | 139,757t | 207c ┆ 5,159 s/act-d | 2,948 s/cal-d 
+TOKEN BURN : ~13.1B | $3,252.22         ┆ 251.0M/d | $62.54/d (669r)    
+MCP WIRE   : 97% <20KB (avg 10.8/32.4KB)┆ 101 req (302k tok) | Web+Praxi
+CODE HEALTH: Poly 2588 syms | 88/88 <=50┆ 0 >650L | Praxis+Serena       
 ────────────────────────────────────────┴───────────────────────────────
 DAILY HEATMAP (NOW: W01 ──► 22w AGO)   Peak: 11/22 (20,915s) | Act: 52d
 Wk    01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22
@@ -180,37 +180,37 @@ Sat   ·· ██ ██ ██ ██ ▓▓ ░░ ·· ▓▓ ▒▒ ·· ·�
 Sun   ·· ██ ██ ██ ▓▓ ▓▓ ▒▒ ·· ▓▓ ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ·· ··
 Vol   ▁▁ ██ ▄▄ ▃▃ ▃▃ ▂▂ ▁▁ ── ▁▁ ▁▁ ── ── ── ── ── ── ── ── ── ── ── ──
 ────────────────────────────────────────────────────────────────────────
-8H SUB-DAILY PACE (NOW ──► SEP 21)   [Avg: 472/8h | Peak: 2.3k | ░▒▓█]
-2.3k ╷ █                                                               
-1.2k ┤ █                                                               
- 472 ┼▄█─▄───▄──█────▄─────────────────────────────────────────────────
-   0 ╵██▄█░ ▄█ █░ ▄▄▒▓▒█ ▄  ▄▄▄    ░ ░    ▄               ░            
+8H SUB-DAILY PACE (NOW ──► SEP 21)   [Avg: 273/8h | Peak: 796 | ░▒▓█]
+ 796 ╷  ▄█                                                             
+ 413 ┤  ███   ▄        ▄     █    ▄                                    
+ 273 ┼──████▄─█───█────█─────███──█──▄─────────────────────────────────
+   0 ╵█ ▓█░█░ █  ▓░  ▓ █▄  ▒ ▒▒▒ ▄▒▒▄░   ▄▄     ▒                      
      └─▲────────────▲────────────▲────────────▲────────────▲──────────▲─
       Nov 23       Nov 10       Oct 28       Oct 15       Oct 02     Sep
       Stack: [█] stem-curricul (22%)  [▓] mail-triage-u (12%)  [▒] home-
 ────────────────────────────────────────────────────────────────────────
 MODEL       [QUOTA ┼ TARGET] SHARE    CALLS     TOK    EST.$  DLT  STAT
-Carbon 4    [██░┼░░░░░░░░░░] 11.7%  14,337    3.4B  $893.5   -8% OK  
+Carbon 4    [██▓┼░░░░░░░░░░] 12.0%  14,731    3.5B  $922.4   -8% OK  
 Neon 4      [░┼░░░░░░░░░░░░]  0.0%       0       0   $0.00  -10% OK  
-Argon 4     [███┼██▓░░░░░░░] 46.3%  56,758    8.4B  $2,139  +21% WARN
+Argon 4     [███┼██▓░░░░░░░] 46.2%  56,855    8.4B  $2,147  +21% WARN
 Hydrogen 4  [░░┼░░░░░░░░░░░]  0.0%       0       0   $0.00  -15% WARN
-Flash 3.8   [███┼██▓░░░░░░░] 41.7%  51,125    1.0B  $152.9  +22% WARN
+Flash 3.8   [███┼██▓░░░░░░░] 41.5%  51,142    1.0B  $153.1  +22% WARN
 Opus 5.5    [▏░░░░░░░░░░░░░]  0.0%       0       0   $0.00   -3% OK  
-Sonnet 5.5  [░┼░░░░░░░░░░░░]  0.3%     415   69.9M   $25.9   -5% OK  
+Sonnet 5.5  [░┼░░░░░░░░░░░░]  0.4%     462   81.5M   $29.6   -5% OK  
 GPT-OSS 120 [▏░░░░░░░░░░░░░]  0.0%       0       0   $0.00   -2% OK  
-BILLING    Hist:$3,211 API | NextRate:$6,396 (+99%) | 20x:5.3x
+BILLING    Hist:$3,252 API | NextRate:$6,475 (+99%) | 20x:5.4x
 ────────────────────────────────────────────────────────────────────────
 WORKSPACES (15)  CHATS  STEPS    TOK   TOK/D   TOK/WK   EST.$  SHARE
-1. stem-curricul  68c 57,732    3.4B  65.7M  460.2M  $846.9  21.7%
-2. mail-triage-u  31c 32,173    2.1B  41.1M  287.7M  $447.1  12.1%
-3. home-telemetr   4c 31,687    2.0B  37.8M  264.8M  $484.4  11.9%
-4. quiet-ui-skil  36c 26,611    1.6B  30.9M  216.4M  $452.3  10.0%
+1. stem-curricul  69c 58,670    3.5B  67.0M  469.0M  $864.0  21.9%
+2. mail-triage-u  31c 32,207    2.1B  41.2M  288.1M  $448.0  12.0%
+3. home-telemetr   4c 31,687    2.0B  37.8M  264.8M  $484.4  11.8%
+4. quiet-ui-skil  36c 26,638    1.6B  31.0M  216.8M  $453.4   9.9%
 5. task-queue-en   1c 25,933  346.9M  6.67M   46.7M   $96.3   9.7%
-6. agy-nexus-mcp  28c 21,011    1.4B  26.5M  185.2M  $361.7   7.9%
+6. agy-nexus-mcp  29c 22,212    1.5B  28.0M  196.0M  $383.9   8.3%
 7. net-topology-   5c 19,487  860.1M  16.5M  115.8M  $199.6   7.3%
-8. cloud-gitops-   4c 15,070   52.7M  1.01M   7.10M   $11.9   5.7%
+8. cloud-gitops-   4c 15,070   52.7M  1.01M   7.10M   $11.9   5.6%
 9. edge-iot-cont   6c 12,250    9.5M   182k   1.28M   $1.51   4.6%
-10. agent-harnes   8c  9,457  485.1M  9.33M   65.3M  $123.7   3.6%
+10. agent-harnes   8c  9,457  485.1M  9.33M   65.3M  $123.7   3.5%
 11. scratch-prot   8c  7,797  350.8M  6.75M   47.2M  $110.1   2.9%
 12. container-gi   4c  4,995  247.0M  4.75M   33.2M   $69.3   1.9%
 13. astro-sky-ma   1c  1,126    294k   5.7k     40k   $0.02   0.4%
@@ -218,13 +218,13 @@ WORKSPACES (15)  CHATS  STEPS    TOK   TOK/D   TOK/WK   EST.$  SHARE
 15. civic-map-en   1c    177    6.9M   133k    933k   $1.74   0.1%
 ────────────────────────────────────────────────────────────────────────
 SUBAGENTS (10)    RUNS  STEPS    TOK   TOK/D   TOK/WK   EST.$  SHARE
-1. flash-surgeon 155r 26,260  372.0M  7.15M   50.1M   $51.4  28.2%
-2. argon-sentine 134r 25,388    1.2B  23.6M  165.1M  $439.1  27.2%
-3. flash-auditor 196r 15,962  425.0M  8.17M   57.2M   $65.5  17.1%
-4. research       76r  9,503  400.8M  7.71M   54.0M  $149.1  10.2%
-5. argon-surgeon  13r  8,185  524.5M  10.1M   70.6M  $121.9   8.8%
+1. flash-surgeon 155r 26,260  372.0M  7.15M   50.1M   $51.4  27.9%
+2. argon-sentine 138r 25,836    1.3B  24.1M  168.4M  $447.5  27.5%
+3. flash-auditor 199r 16,039  425.7M  8.19M   57.3M   $65.7  17.0%
+4. research       77r  9,648  411.6M  7.92M   55.4M  $151.3  10.3%
+5. argon-surgeon  13r  8,185  524.5M  10.1M   70.6M  $121.9   8.7%
 6. flash-scout    65r  6,287  159.9M  3.07M   21.5M   $24.9   6.7%
-7. claude-sentin  16r  1,431   70.8M  1.36M   9.53M   $25.9   1.5%
+7. claude-sentin  18r  1,607   82.5M  1.59M   11.1M   $29.6   1.7%
 8. argon-archite   2r    132    3.8M    74k    518k   $1.79   0.1%
 9. carbon-sentin   1r     60    3.0M    57k    402k   $1.35   0.1%
 10. claude-speci   1r     31   11.8k    227    1.6k   $0.00   0.0%
@@ -235,49 +235,49 @@ SUBAGENTS (10)    RUNS  STEPS    TOK   TOK/D   TOK/WK   EST.$  SHARE
 
 ```text
 ════════════════════════════════════════
-AGY-NEXUS v4.0.6 // 91d (Nov 23 ◄── Aug 
+AGY-NEXUS v4.0.7 // 91d (Nov 23 ◄── Aug 
 ════════════════════════════════════════
 G-20x: 100% [████████┼█] OK | 0x 429s
 P-1x : 100% [░┼░░░░░░░░] OK | 86% WkLft
-Steps:266.1k | Tools:138.2k | Act:52d
-Burn:12.9B | $3,211 | 248.1M/d
-Health: Poly 2530s | 87/87 <=500L | up_t
+Steps:268.3k | Tools:139.8k | Act:52d
+Burn:13.1B | $3,252 | 251.0M/d
+Health: Poly 2588s | 88/88 <=500L | up_t
 ────────────────────────────────────────
 HEATMAP (NOW ──► 13w Ago)  │ PEAK & VOL
 Mo ██▒▒▓░░·░····           │ Pk: 11/22
 Tu ·█▓▒▒░░··░···           │ 20,915 stp
-We ·█▓▓▒·░·░░···           │ Avg:5,117/d
-Th ·█▒▒▒░░··▒···           │ Cost: $3,21
-Fr ·█▓▓▒▓░·▒▓···           │ Subs : 659r
-Sa ·████▓░·▓▒···           │ Tok/d:248.1
-Su ·███▓▓▒·▓····           │ Tok/w:1.74B
+We ·█▓▓▒·░·░░···           │ Avg:5,159/d
+Th ·█▒▒▒░░··▒···           │ Cost: $3,25
+Fr ·█▓▓▒▓░·▒▓···           │ Subs : 669r
+Sa ·████▓░·▓▒···           │ Tok/d:251.0
+Su ·███▓▓▒·▓····           │ Tok/w:1.76B
 ────────────────────────────────────────
-8H PACE & STACK (NOW──►OLD) Pk:1.4k
-1.4k╷    █                           
- 686┤▄   █                           
- 439┼█───█─█─▄─────▄─────────────────
-   0╵█▄  ▓▄▓▄▒    ▄▒░         ░      
+8H PACE & STACK (NOW──►OLD) Pk:927
+ 927╷ █                              
+ 463┤ ██                             
+ 289┼─██▄──────█──────────────▄──────
+   0╵██░█▄ ▄ ▄ ▒▄      ▄      ░      
 ────────────────────────────────────────
 MODEL   [PIN]    PCT   TOK  EST.$   DLT
-Carbon4 [█┼░░░░░░] 12%  3.4B $893.5  -8
+Carbon4 [█┼░░░░░░] 12%  3.5B $922.4  -8
 Neon 4  [░┼░░░░░░]  0%     0  $0.00 -10
-Argon 4 [██┼█▓░░░] 46%  8.4B $2,139 +21
+Argon 4 [██┼█▓░░░] 46%  8.4B $2,147 +21
 Hydro 4 [░┼░░░░░░]  0%     0  $0.00 -15
-Flash38 [█┼█▓░░░░] 42%  1.0B $152.9 +22
+Flash38 [█┼█▓░░░░] 42%  1.0B $153.1 +22
 Opus5.5 [▏░░░░░░░]  0%     0  $0.00  -3
-Sonn5.5 [▏░░░░░░░]  0% 69.9M  $25.9  -5
+Sonn5.5 [▏░░░░░░░]  0% 81.5M  $29.6  -5
 GPT-120 [▏░░░░░░░]  0%     0  $0.00  -2
 ────────────────────────────────────────
 WORKSPACES & SUBS  TOK   EST.$  TOK/WK
-stem-curriculum  3.4B  $846.9  460.2M
-mail-triage-ui   2.1B  $447.1  287.7M
+stem-curriculum  3.5B  $864.0  469.0M
+mail-triage-ui   2.1B  $448.0  288.1M
 home-telemetry-  2.0B  $484.4  264.8M
-quiet-ui-skills  1.6B  $452.3  216.4M
+quiet-ui-skills  1.6B  $453.4  216.8M
 task-queue-engi 346.9M   $96.3   46.7M
-agy-nexus-mcp    1.4B  $361.7  185.2M
+agy-nexus-mcp    1.5B  $383.9  196.0M
 *flash-surgeon  372.0M   $51.4   50.1M
-*argon-sentinel  1.2B  $439.1  165.1M
-*flash-auditor  425.0M   $65.5   57.2M
+*argon-sentinel  1.3B  $447.5  168.4M
+*flash-auditor  425.7M   $65.7   57.3M
 ════════════════════════════════════════
 ```
 
@@ -285,22 +285,22 @@ agy-nexus-mcp    1.4B  $361.7  185.2M
 
 ```text
 ╔══════════════════════════════════════════════════════════════════════════╗
-║ ▄▀█ █▀▀ █▄█ ▄▄ █▄░█ █▀▀ ▀▄▀ █░█ █▀   v4.0.6 // RICH TELEMETRY RIG        ║
+║ ▄▀█ █▀▀ █▄█ ▄▄ █▄░█ █▀▀ ▀▄▀ █░█ █▀   v4.0.7 // RICH TELEMETRY RIG        ║
 ║ █▀█ █▄█ ░█░ ░░ █░▀█ ██▄ █░█ █▄█ ▄█   WINDOW: 91d (Nov 23 ◄── Aug 25)     ║
 ╠════════════════════════════════════╦═════════════════════════════════════╣
 ║ QUOTA POOLS & 429 COOLDOWNS        │ STEP & TOOL VELOCITY                ║
-║ G-20x:  99.7% [████████┼█] OK      │ Total : 266,115 steps | 138,173 too ║
-║ P-1x :  99.7% [░┼░░░░░░░░] OK      │ Active: 5,117 s/act-d (52d active)  ║
-║ 429s : 0 events | 85.7% Wk Left    │ Calend: 2,924 s/cal-d (205c, 659r)  ║
+║ G-20x:  99.7% [████████┼█] OK      │ Total : 268,315 steps | 139,757 too ║
+║ P-1x :  99.7% [░┼░░░░░░░░] OK      │ Active: 5,159 s/act-d (52d active)  ║
+║ 429s : 0 events | 85.7% Wk Left    │ Calend: 2,948 s/cal-d (207c, 669r)  ║
 ╠════════════════════════════════════╬═════════════════════════════════════╣
 ║ TOKEN BURN & API COST LEDGER       │ MCP WIRE & CLIENT SURFACES          ║
-║ Total : ~12.9B | $3,210.91         │ Wire  : 96% <20KB (avg 11.9/34.1KB) ║
-║ Daily : 248.1M/d ($61.75/d)        │ Calls : 128 MCP reqs (424k tok)     ║
-║ NextRt: $6,395.93 API Forecast     │ Client: Web 52% · Prx 48% · Mob 0%  ║
+║ Total : ~13.1B | $3,252.22         │ Wire  : 97% <20KB (avg 10.8/32.4KB) ║
+║ Daily : 251.0M/d ($62.54/d)        │ Calls : 101 MCP reqs (302k tok)     ║
+║ NextRt: $6,474.79 API Forecast     │ Client: Web 55% · Prx 45% · Mob 0%  ║
 ╠════════════════════════════════════╦═════════════════════════════════════╣
 ║ VERSION & RELEASE STATUS           │ POLYGLOT & MODULAR CODE HEALTH      ║
-║ Installed: v4.0.6 (up_to_date)     │ Poly: 2530s | 87/87 <=500L 0>650L   ║
-║ Remote   : v4.0.6                  │ IDE MCP  : agy-praxis-mcp + Serena  ║
+║ Installed: v4.0.7 (up_to_date)     │ Poly: 2588s | 88/88 <=500L 0>650L   ║
+║ Remote   : v4.0.7                  │ IDE MCP  : agy-praxis-mcp + Serena  ║
 ╠════════════════════════════════════╩═════════════════════════════════════╣
 ║ DAILY ACTIVITY MATRIX (NOW: W01 ──► W13)     [·· 0  ░░ <1k  ▒▒ <4k  ██]  ║
 ║ Wk   W01 W02 W03 W04 W05 W06 W07 W08 W09 W10 W11 W12 W13  ┌─ PEAK DAY ─┐ ║
@@ -308,45 +308,45 @@ agy-nexus-mcp    1.4B  $361.7  185.2M
 ║ Tue  ··· ███ ▓▓▓ ▒▒▒ ▒▒▒ ░░░ ░░░ ··· ··· ░░░ ··· ··· ···  │ 20,915 stp │ ║
 ║ Wed  ··· ███ ▓▓▓ ▓▓▓ ▒▒▒ ··· ░░░ ··· ░░░ ░░░ ··· ··· ···  ├────────────┤ ║
 ║ Thu  ··· ███ ▒▒▒ ▒▒▒ ▒▒▒ ░░░ ░░░ ··· ··· ▒▒▒ ··· ··· ···  │ Act: 52d   │ ║
-║ Fri  ··· ███ ▓▓▓ ▓▓▓ ▒▒▒ ▓▓▓ ░░░ ··· ▒▒▒ ▓▓▓ ··· ··· ···  │ Avg:  5.1k │ ║
-║ Sat  ··· ███ ███ ███ ███ ▓▓▓ ░░░ ··· ▓▓▓ ▒▒▒ ··· ··· ···  │ Sub: 659r  │ ║
+║ Fri  ··· ███ ▓▓▓ ▓▓▓ ▒▒▒ ▓▓▓ ░░░ ··· ▒▒▒ ▓▓▓ ··· ··· ···  │ Avg:  5.2k │ ║
+║ Sat  ··· ███ ███ ███ ███ ▓▓▓ ░░░ ··· ▓▓▓ ▒▒▒ ··· ··· ···  │ Sub: 669r  │ ║
 ║ Sun  ··· ███ ███ ███ ▓▓▓ ▓▓▓ ▒▒▒ ··· ▓▓▓ ··· ··· ··· ···  └────────────┘ ║
 ║ Vol  ▁▁▁ ███ ▄▄▄ ▃▃▃ ▃▃▃ ▂▂▂ ▁▁▁ ─── ▁▁▁ ▁▁▁ ─── ─── ───  PeakWk:83.6k   ║
-║ Steps  8k 84k 53k 35k 31k 19k  7k  ·  16k 12k  ·   ·   ·                 ║
+║ Steps 10k 84k 53k 35k 31k 19k  7k  ·  16k 12k  ·   ·   ·                 ║
 ╠══════════════════════════════════════════════════════════════════════════╣
 ║ 8H SUB-DAILY HORIZON CURVE & PROJECT STACK (NOW ──► SEP 21)              ║
-║ 2.3k ╷ █                                                                 ║
-║ 1.8k ┤ █                                                                 ║
-║ 1.2k ┤ █   ▄   ▄                                                         ║
-║  516 ┼ █   █   █                    ▄                                    ║
-║  408 ┤██▄─██───█─────────▄─────────▄█─────────────────────────────────   ║
-║    0 ╵█▓░ █▓▄█▓▓    ░ ▄  █  ▄▄     ░▒    ▄▄    ▒▄                        ║
+║ 1.7k ╷ █ ▄     ▄                                                         ║
+║ 1.3k ┤ █ █     █                                                         ║
+║  921 ┤ █ █     █                    █                                    ║
+║  470 ┼ ███   █ █      ▄             █                                    ║
+║  301 ┤─███▄──███──────█─────▄──▄───▄█─────────────────────────────────   ║
+║    0 ╵█▓▓█░ ██▓▓░    ▓██▄▄  ░▄ ░   ▒▒           ▒       ░         ▄      ║
 ║      └─▲───────────▲───────────▲───────────▲───────────▲───────────▲───  ║
 ║       Nov 23      Nov 10      Oct 28      Oct 15      Oct 02      Sep 21 ║
 ║       Stack: [█]stem-curricu(22%)  [▓]mail-triage-(12%)  [▒]home-telemet ║
 ╠══════════════════════════════════════════════════════════════════════════╣
 ║ MODEL       [QUOTA ┼ TARGET] SHARE    CALLS     TOK    EST.$  DLT  STAT  ║
-║ Carbon 4    [██░┼░░░░░░░░░░] 11.7%  14,337    3.4B  $893.5   -8% OK      ║
+║ Carbon 4    [██▓┼░░░░░░░░░░] 12.0%  14,731    3.5B  $922.4   -8% OK      ║
 ║ Neon 4      [░┼░░░░░░░░░░░░]  0.0%       0       0   $0.00  -10% OK      ║
-║ Argon 4     [███┼██▓░░░░░░░] 46.3%  56,758    8.4B  $2,139  +21% WRN     ║
+║ Argon 4     [███┼██▓░░░░░░░] 46.2%  56,855    8.4B  $2,147  +21% WRN     ║
 ║ Hydrogen 4  [░░┼░░░░░░░░░░░]  0.0%       0       0   $0.00  -15% WRN     ║
-║ Flash 3.8   [███┼██▓░░░░░░░] 41.7%  51,125    1.0B  $152.9  +22% WRN     ║
+║ Flash 3.8   [███┼██▓░░░░░░░] 41.5%  51,142    1.0B  $153.1  +22% WRN     ║
 ║ Opus 5.5    [▏░░░░░░░░░░░░░]  0.0%       0       0   $0.00   -3% OK      ║
-║ Sonnet 5.5  [░┼░░░░░░░░░░░░]  0.3%     415   69.9M   $25.9   -5% OK      ║
+║ Sonnet 5.5  [░┼░░░░░░░░░░░░]  0.4%     462   81.5M   $29.6   -5% OK      ║
 ║ GPT-OSS 120 [▏░░░░░░░░░░░░░]  0.0%       0       0   $0.00   -2% OK      ║
-║ BILLING CMP: Hist $3,211 | NextRate $6,396 (+99%) | 20x 5.3x             ║
+║ BILLING CMP: Hist $3,252 | NextRate $6,475 (+99%) | 20x 5.4x             ║
 ╠══════════════════════════════════════════════════════════════════════════╣
 ║ WORKSPACES (15)  CHATS   STEPS     TOK   TOK/D   EST.$ SHARE GAUGE       ║
-║ 1. stem-curricul  68c  57,732    3.4B  65.7M  $846.9 █▍░░░░ 21.7%        ║
-║ 2. mail-triage-u  31c  32,173    2.1B  41.1M  $447.1 ▍░░░░░ 12.1%        ║
-║ 3. home-telemetr   4c  31,687    2.0B  37.8M  $484.4 ▍░░░░░ 11.9%        ║
-║ 4. quiet-ui-skil  36c  26,611    1.6B  30.9M  $452.3 ▍░░░░░ 10.0%        ║
+║ 1. stem-curricul  69c  58,670    3.5B  67.0M  $864.0 █▍░░░░ 21.9%        ║
+║ 2. mail-triage-u  31c  32,207    2.1B  41.2M  $448.0 ▍░░░░░ 12.0%        ║
+║ 3. home-telemetr   4c  31,687    2.0B  37.8M  $484.4 ▍░░░░░ 11.8%        ║
+║ 4. quiet-ui-skil  36c  26,638    1.6B  31.0M  $453.4 ▍░░░░░  9.9%        ║
 ║ 5. task-queue-en   1c  25,933  346.9M  6.67M   $96.3 ▍░░░░░  9.7%        ║
-║ 6. agy-nexus-mcp  28c  21,011    1.4B  26.5M  $361.7 ▍░░░░░  7.9%        ║
+║ 6. agy-nexus-mcp  29c  22,212    1.5B  28.0M  $383.9 ▍░░░░░  8.3%        ║
 ║ 7. net-topology-   5c  19,487  860.1M  16.5M  $199.6 ▍░░░░░  7.3%        ║
-║ 8. cloud-gitops-   4c  15,070   52.7M  1.01M   $11.9 ▍░░░░░  5.7%        ║
+║ 8. cloud-gitops-   4c  15,070   52.7M  1.01M   $11.9 ▍░░░░░  5.6%        ║
 ║ 9. edge-iot-cont   6c  12,250    9.5M   182k   $1.51 ▍░░░░░  4.6%        ║
-║ 10. agent-harnes   8c   9,457  485.1M  9.33M  $123.7 ░░░░░░  3.6%        ║
+║ 10. agent-harnes   8c   9,457  485.1M  9.33M  $123.7 ░░░░░░  3.5%        ║
 ║ 11. scratch-prot   8c   7,797  350.8M  6.75M  $110.1 ░░░░░░  2.9%        ║
 ║ 12. container-gi   4c   4,995  247.0M  4.75M   $69.3 ░░░░░░  1.9%        ║
 ║ 13. astro-sky-ma   1c   1,126    294k   5.7k   $0.02 ░░░░░░  0.4%        ║
@@ -354,13 +354,13 @@ agy-nexus-mcp    1.4B  $361.7  185.2M
 ║ 15. civic-map-en   1c     177    6.9M   133k   $1.74 ░░░░░░  0.1%        ║
 ╟──────────────────────────────────────────────────────────────────────────╢
 ║ SUBAGENTS (10)    RUNS   STEPS     TOK   TOK/D   EST.$ SHARE GAUGE       ║
-║ 1. flash-surgeon 155r  26,260  372.0M  7.15M   $51.4 █▍░░░░ 28.2%        ║
-║ 2. argon-sentine 134r  25,388    1.2B  23.6M  $439.1 █▍░░░░ 27.2%        ║
-║ 3. flash-auditor 196r  15,962  425.0M  8.17M   $65.5 █░░░░░ 17.1%        ║
-║ 4. research       76r   9,503  400.8M  7.71M  $149.1 ▍░░░░░ 10.2%        ║
-║ 5. argon-surgeon  13r   8,185  524.5M  10.1M  $121.9 ▍░░░░░  8.8%        ║
+║ 1. flash-surgeon 155r  26,260  372.0M  7.15M   $51.4 █▍░░░░ 27.9%        ║
+║ 2. argon-sentine 138r  25,836    1.3B  24.1M  $447.5 █▍░░░░ 27.5%        ║
+║ 3. flash-auditor 199r  16,039  425.7M  8.19M   $65.7 █░░░░░ 17.0%        ║
+║ 4. research       77r   9,648  411.6M  7.92M  $151.3 ▍░░░░░ 10.3%        ║
+║ 5. argon-surgeon  13r   8,185  524.5M  10.1M  $121.9 ▍░░░░░  8.7%        ║
 ║ 6. flash-scout    65r   6,287  159.9M  3.07M   $24.9 ▍░░░░░  6.7%        ║
-║ 7. claude-sentin  16r   1,431   70.8M  1.36M   $25.9 ░░░░░░  1.5%        ║
+║ 7. claude-sentin  18r   1,607   82.5M  1.59M   $29.6 ░░░░░░  1.7%        ║
 ║ 8. argon-archite   2r     132    3.8M    74k   $1.79 ░░░░░░  0.1%        ║
 ║ 9. carbon-sentin   1r      60    3.0M    57k   $1.35 ░░░░░░  0.1%        ║
 ║ 10. claude-speci   1r      31   11.8k    227   $0.00 ░░░░░░  0.0%        ║

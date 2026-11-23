@@ -104,9 +104,19 @@ Create an `A` or `CNAME` record for `ag-{SUBDOMAIN_HASH}.<your-domain>` pointing
    - Select your certificate (`*.<your-domain>`)
    - **Force SSL**: `ON`
    - **HTTP/2 Support**: `ON`
-3. **Advanced Tab (Prevents Proxy Buffering on MCP Calls)**:
-   Paste the following Nginx rules so responses stream immediately without buffering:
+3. **Advanced Tab (Allows Capability `/mcp` + Signed `/web/media/` Links With Query Strings & Disables Proxy Buffering)**:
+   Paste the following Nginx rules so responses stream immediately without buffering and `?hl=en-US` query parameters appended by the Gemini mobile app pass through cleanly over split-DNS while keeping `/web` off the public MCP host:
    ```nginx
+   if ($request_method !~ ^(GET|HEAD|POST|DELETE|OPTIONS)$) {
+       return 405;
+   }
+   if ($request_uri ~* "(\.\.|%2e%2e)") {
+       return 404;
+   }
+   if ($request_uri !~ "^(/[0-9a-f]{48}/mcp([/?].*)?|/web/media/[0-9]+/[0-9a-f]{32}/[^?]+(\?.*)?)$") {
+       return 404;
+   }
+
    proxy_buffering off;
    proxy_cache off;
    proxy_request_buffering off;
@@ -215,7 +225,7 @@ AG_BRIDGE_PASSPHRASE="<your passphrase>" \
 uv run python3 tests/run_permutation_suite.py
 ```
 
-### Build & Publish Interactive GitHub Pages Showcase (`v4.0.6`)
+### Build & Publish Interactive GitHub Pages Showcase (`v4.0.7`)
 Generate a zero-leak depersonalized static showcase in `build/gh-pages/` (stripping PNG metadata, aliasing private identifiers via SHA-256, and running `scan_showcase_privacy()`), preview locally, or dry-run/sync GitHub `main` + `gh-pages` + Release:
 ```bash
 python3 scripts/build_github_showcase.py --refresh

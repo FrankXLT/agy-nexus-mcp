@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-agy_nexus.tools_media — Multimodal MCP ImageContent Endpoint (<20 KB WebP Thumbnails & Region Zoom).
-"""
+"""agy_nexus.tools_media — Multimodal MCP ImageContent Endpoint (<20 KB WebP Thumbnails & Region Zoom)."""
 
 from __future__ import annotations
 
@@ -38,16 +36,17 @@ from agy_nexus.config import (
     pin_session_context,
 )
 from agy_nexus.media import (
-    ALLOWED_MEDIA_EXTENSIONS, discover_visual_artifacts, get_public_base_url,
+    ALLOWED_MEDIA_EXTENSIONS, VISUAL_INSPECTION_HINT, discover_visual_artifacts, get_public_base_url,
     record_verified_public_origin, sign_media_url,
 )
 from agy_nexus.media_discovery import read_image_dimensions_fast
+from agy_nexus.retirement import build_suggested_actions
 from agy_nexus.routing import _resolve_session_identifier, _session_matches_workspace
 from agy_nexus.telemetry_scanner import detect_product_name
 from agy_nexus.workspace import _resolve_workspace_str
 
 MAX_SOURCE_IMAGE_BYTES = 45 * 1024 * 1024
-MAX_TOTAL_RAW_WEBP_BYTES = 12_200  # <= 16.3 KB base64 + ~1.8 KB JSON = <= 18.5 KB wire (<20 KB limit)
+MAX_TOTAL_RAW_WEBP_BYTES = 11_400  # <= 15.2 KB base64 + ~2.6 KB JSON/suggested_actions = <= 18.2 KB wire (<20 KB limit)
 
 _REGION_PRESETS: dict[str, tuple[float, float, float, float]] = {
     "full": (0.0, 0.0, 1.0, 1.0),
@@ -414,7 +413,9 @@ def inspect_visual_artifacts(
     summary_payload: dict[str, Any] = {
         "ok": True, "conversation_id": conv_id, "returned_images": len(image_blocks),
         "total_available": len(catalog), "has_more": has_more, "next_offset": next_off if has_more else None,
-        "assistant_guidance": REPLY_PROMPT_GUIDANCE, "items": items_meta,
+        "assistant_guidance": REPLY_PROMPT_GUIDANCE, "visual_inspection_hint": VISUAL_INSPECTION_HINT,
+        "suggested_actions": build_suggested_actions("inspect_visual_artifacts", target=Path(ws_path).name if ws_ok else "workspace", conv_id=conv_id, has_visuals=True),
+        "items": items_meta,
     }
     if skip_webp and any(isinstance(m, dict) and m.get("thumbnail_skipped") for m in items_meta):
         summary_payload["cloud_fast_path"] = True
