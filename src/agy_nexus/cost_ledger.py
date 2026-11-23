@@ -17,6 +17,7 @@ from agy_nexus.model_pricing import (
     get_canonical_model_keys,
     split_estimated_tokens,
 )
+from agy_nexus.stats_metrics import fold_subagent_run_sample, init_subagent_role_record
 
 LEDGER_VERSION = 1
 _LEDGER_LOCK = threading.Lock()
@@ -270,8 +271,9 @@ def collect_archived_ledger_totals(
                 archived_convs += 1
                 we["sessions"] += 1
             else:
-                sr = subagent_roles.setdefault(role, {"runs": 0, "steps": 0, "tokens": 0, "cost_usd_micros": 0})
-                sr["runs"], sr["steps"], sr["tokens"], sr["cost_usd_micros"] = sr["runs"] + 1, sr["steps"] + conv_st, sr["tokens"] + conv_tk, sr["cost_usd_micros"] + conv_cm
+                sr = subagent_roles.setdefault(role, init_subagent_role_record())
+                run_ts = float(entry.get("mtime") or 0.0)
+                fold_subagent_run_sample(sr, conv_st, conv_tk, conv_cm, run_ts=run_ts, over_120=(conv_st > 120))
             we["steps"], we["tokens"], we["cost_usd_micros"] = we["steps"] + conv_st, we["tokens"] + conv_tk, we["cost_usd_micros"] + conv_cm
     return {
         "archived_convs": archived_convs, "model_steps": model_steps, "model_tokens": model_tokens,

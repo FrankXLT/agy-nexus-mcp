@@ -318,11 +318,11 @@ def _shrink_aux_fields_step(payload: dict[str, Any]) -> bool:
         insp["content"] = insp["content"][: max(120, len(insp["content"]) // 2)] + "\n... [compacted]"
         insp["truncated"] = True
         return True
-    for list_k, lim_n in (("skills", 10), ("plugin_skill_bundles", 8), ("agents", 8), ("transcript_tail", 6), ("sessions", 6)):
+    for list_k, lim_n in (("skills", 10), ("plugin_skill_bundles", 8), ("agents", 8), ("transcript_tail", 6), ("sessions", 6), ("top_workspaces", 5), ("subagent_list", 6)):
         if isinstance(payload.get(list_k), list) and len(payload[list_k]) > lim_n:
             payload[list_k] = payload[list_k][:lim_n]
             return True
-    for drop_k in ("top_session_detail", "search_results", "available_projects", "projects", "rules_inventory", "wire_telemetry", "modular_hygiene", "code_health", "quota_and_pools"):
+    for drop_k in ("top_session_detail", "search_results", "available_projects", "projects", "rules_inventory", "wire_telemetry", "modular_hygiene", "code_health", "quota_and_pools", "model_drift_status", "billing_comparison"):
         if drop_k in payload and payload[drop_k]:
             payload.pop(drop_k, None)
             return True

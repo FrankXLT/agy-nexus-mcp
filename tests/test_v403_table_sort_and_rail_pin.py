@@ -783,7 +783,7 @@ assert.strictEqual(ctx.document.activeElement, els.v9RailPinBtn, "Focus must sta
 
 
 def test_v403_budgets_pwa_assets_no_pictographs_and_workflows() -> None:
-    """Verify <=500L module budgets, 0 !important, zero pictographs in web/v9, PWA parity & WORKFLOWS.md v4.0.3."""
+    """Verify <=500L module budgets, 0 !important, zero pictographs in web/v9, PWA parity & WORKFLOWS.md v4.0.4."""
     for js_path in sorted(V9_DIR.glob("*.js")):
         lines = js_path.read_text(encoding="utf-8").splitlines()
         assert len(lines) <= 500, f"{js_path.name} exceeded 500L ({len(lines)}L)"
@@ -804,6 +804,6 @@ def test_v403_budgets_pwa_assets_no_pictographs_and_workflows() -> None:
     assert (WEB_DIR / "index.html").read_text(encoding="utf-8") == (V9_DIR / "index.html").read_text(encoding="utf-8")
 
     wf_txt = (REPO_ROOT / "docs" / "WORKFLOWS.md").read_text(encoding="utf-8")
-    assert "Workflow 6:" in wf_txt and "v4.0.3" in wf_txt
+    assert "Workflow 6:" in wf_txt and "v4.0.4" in wf_txt
     assert "Multi-Column Table Sorting" in wf_txt
     assert "Desktop Rail Pinning" in wf_txt

@@ -216,7 +216,7 @@ def test_v402_heatmap_css_and_workflows_contracts() -> None:
     assert re.search(r"@media \(max-width:\s*639px\)[\s\S]*\.v9-heat-grid\s*\{\s*gap:\s*2px;\s*\}", css_txt)
 
     wf_txt = (REPO_ROOT / "docs" / "WORKFLOWS.md").read_text(encoding="utf-8")
-    assert "Workflow 6:" in wf_txt and "v4.0.3" in wf_txt
+    assert "Workflow 6:" in wf_txt and "v4.0.4" in wf_txt
     assert "Consistent Quartile Buckets Across Metrics" in wf_txt
     assert "Clear Out-of-Window Desaturation" in wf_txt
     assert "Full-Width Trailing 52-Week Strip & 1st-of-Month Headers" in wf_txt

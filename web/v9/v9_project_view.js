@@ -173,47 +173,58 @@
     const titleEl = document.getElementById("v9ProjPlotTitle");
     const subEl = document.getElementById("v9ProjPlotSub");
     if (!wrap || !b) return;
+    const metric = V9.state.metric || "steps";
     const h = b.project_hierarchy || {};
     const active = [...(h.top_projects || [])].filter((p) => p && !p.is_rollup);
     const otherCnt = (h.other_projects && !Array.isArray(h.other_projects) ? Number(h.other_projects.projects_count || 0) : 0);
     const idle = Array.isArray(h.idle_projects) ? h.idle_projects : [];
     if (titleEl) titleEl.textContent = "Top Projects (Daily)";
-    if (subEl) subEl.textContent = `${h.active_projects_count || active.length} active · ${h.idle_projects_count || idle.length} idle`;
+    if (subEl) subEl.textContent = `${h.active_projects_count || active.length} active · ${h.idle_projects_count || idle.length} idle · Avg │ · Peak · 24h ●`;
     if (!active.length) {
       wrap.innerHTML = `<div class="v9-empty">No project activity recorded in this time window.</div>`;
       if (foot) foot.textContent = "";
       return;
     }
     const TS = V9.TableSort;
+    const SB = V9.SparkBars;
     const nowRef = Date.now() / 1000;
+    const dates = h.dates || (b.velocity_series && b.velocity_series.dates) || [];
+    const stepH = h.step_hours || (b.velocity_series && b.velocity_series.step_hours) || 1;
     const totalSteps = active.reduce((acc, p) => acc + Number(p.window_steps || 0), 0) || 1;
     const enriched = active.map((p, origIdx) => {
       const pid = p.project_id || "";
       const pct = Number(p.share_pct != null ? p.share_pct : ((p.window_steps || 0) / totalSteps) * 100);
       const actSess = Number(p.active_sessions_count != null ? p.active_sessions_count : (p.sessions || []).length);
       const totSess = Number(p.total_sessions || (p.sessions || []).length || actSess);
+      const pm = SB ? SB.computeProjectMetrics(p, metric, dates, stepH) : null;
       return {
-        p, origIdx, pid, pct, actSess, totSess,
+        p, origIdx, pid, pct, actSess, totSess, pm,
         ageTs: TS ? TS.recencyEpoch(p, nowRef) : Number(p.last_updated_ts || 0),
         ageLabel: TS ? TS.getAgeLabel(p) : (p.relative_age || "recent"),
       };
     });
+    const fullScaleMax = enriched.reduce((mx, e) => Math.max(mx, e.pm && Number.isFinite(e.pm.max) ? e.pm.max : 0), 0) || 1;
     const sorted = TS
       ? TS.sortItems(enriched, "projects", {
           name: { type: "text", get: (e) => e.p.project_name || e.pid },
           age: (e) => e.ageTs,
           sessions: (e) => e.actSess,
-          share: (e) => e.pct * 1e9 + Number(e.p.window_steps || 0),
+          share: (e) => (e.pm ? (e.pm.max / fullScaleMax) * 1e12 + (e.pm.avg / fullScaleMax) * 1e-3 : e.pct * 1e9 + Number(e.p.window_steps || 0)),
           steps: (e) => Number(e.p.window_steps || 0),
           tokens: (e) => Number(e.p.window_tokens || 0),
           cost: (e) => Number(e.p.window_cost_usd || 0),
         })
       : enriched;
 
-    const rowsHtml = sorted.slice(0, 14).map((entry) => {
-      const { p, origIdx, pid, pct, actSess, totSess, ageLabel } = entry;
+    const displayRows = sorted.slice(0, 14);
+    const scaleMax = displayRows.reduce((mx, e) => Math.max(mx, e.pm && Number.isFinite(e.pm.max) ? e.pm.max : 0), 0) || 1;
+    const rowsHtml = displayRows.map((entry) => {
+      const { p, origIdx, pid, pct, actSess, totSess, ageLabel, pm } = entry;
       const color = V9.getSeriesColor(p.color_slot != null ? p.color_slot : origIdx);
       const latestSid = latestProjectSessionId(p);
+      const barHtml = SB && pm
+        ? SB.renderProjectWhisker(pm, scaleMax, metric, color)
+        : `<div class="v9-inline-share"><span class="va-inline-bar"><span class="va-inline-bar-fill" style="inline-size:${Math.min(100, pct).toFixed(1)}%;background:${color}"></span></span><span class="v9-inline-pct">${pct.toFixed(1)}%</span></div>`;
       return `<tr class="v9-row-click v9-row-compact" data-proj-row="${V9.escHtml(pid)}" data-series-name="${V9.escHtml(p.project_name || pid)}">
         <td>
           <div class="v9-tbl-name-wrap"><span class="v9-swatch-dot" style="background:${color}"></span><span class="v9-tbl-name-txt" title="${V9.escHtml(p.project_name)}">${V9.escHtml(p.project_name)}</span></div>
@@ -221,7 +232,7 @@
         </td>
         <td class="num v9-mono-num">${V9.escHtml(ageLabel)}</td>
         <td class="v9-col-secondary num">${actSess} / ${totSess}</td>
-        <td class="v9-bar-cell"><div class="v9-inline-share"><span class="va-inline-bar"><span class="va-inline-bar-fill" style="inline-size:${Math.min(100, pct).toFixed(1)}%;background:${color}"></span></span><span class="v9-inline-pct">${pct.toFixed(1)}%</span></div></td>
+        <td class="v9-bar-cell">${barHtml}</td>
         <td class="num">${V9.fmtNum(p.window_steps || 0)}</td>
         <td class="v9-col-secondary num">${V9.fmtNum(p.window_tokens || 0)}</td>
         <td class="num v9-mono-num">${V9.fmtUsd(p.window_cost_usd || 0)}</td>
@@ -230,8 +241,8 @@
     }).join("");
 
     const th = TS
-      ? `${TS.thHtml("projects", "name", "Project", { type: "text" })}${TS.thHtml("projects", "age", "Age", { cls: "num" })}${TS.thHtml("projects", "sessions", "Sessions", { cls: "v9-col-secondary num" })}${TS.thHtml("projects", "share", "Share")}${TS.thHtml("projects", "steps", "Steps", { cls: "num" })}${TS.thHtml("projects", "tokens", "Tokens", { cls: "v9-col-secondary num" })}${TS.thHtml("projects", "cost", "Est. $", { cls: "num" })}<th scope="col" class="num">Actions</th>`
-      : `<th>Project</th><th class="num">Age</th><th class="v9-col-secondary num">Sessions</th><th>Share</th><th class="num">Steps</th><th class="v9-col-secondary num">Tokens</th><th class="num">Est. $</th><th class="num">Actions</th>`;
+      ? `${TS.thHtml("projects", "name", "Project", { type: "text" })}${TS.thHtml("projects", "age", "Age", { cls: "num" })}${TS.thHtml("projects", "sessions", "Sessions", { cls: "v9-col-secondary num" })}${TS.thHtml("projects", "share", "Daily Range")}${TS.thHtml("projects", "steps", "Steps", { cls: "num" })}${TS.thHtml("projects", "tokens", "Tokens", { cls: "v9-col-secondary num" })}${TS.thHtml("projects", "cost", "Est. $", { cls: "num" })}<th scope="col" class="num">Actions</th>`
+      : `<th>Project</th><th class="num">Age</th><th class="v9-col-secondary num">Sessions</th><th>Daily Range</th><th class="num">Steps</th><th class="v9-col-secondary num">Tokens</th><th class="num">Est. $</th><th class="num">Actions</th>`;
     const tblEl = mountSortableTable(wrap, "projects", "v9ProjTableBody", th, rowsHtml);
     if (foot) {
       const hiddenNotes = [];
@@ -274,82 +285,32 @@
     });
   }
 
-  function renderProjectSessionsCard(b, actions) {
-    const wrap = document.getElementById("v9ProjTableWrap");
-    const foot = document.getElementById("v9ProjFoot");
-    const titleEl = document.getElementById("v9ProjPlotTitle");
-    const subEl = document.getElementById("v9ProjPlotSub");
-    if (!wrap || !b || !b.project_scope) return;
-    const ps = b.project_scope;
-    const pss = b.project_sessions_series || {};
-    const proj = findProjectInBundle(b, ps.project_id);
-    const sessions = (pss.sessions && pss.sessions.length ? pss.sessions : (proj && proj.sessions) || []);
-    const labelMap = pss.labels || {};
-    if (titleEl) titleEl.textContent = "Project Sessions (Daily)";
-    const actCount = ps.active_sessions_count != null ? ps.active_sessions_count : sessions.length;
-    const totCount = ps.total_sessions != null ? ps.total_sessions : sessions.length;
-    if (subEl) subEl.textContent = `${actCount} active · ${totCount} total`;
-    if (!sessions.length) {
-      wrap.innerHTML = `<div class="v9-empty">No active sessions found for ${V9.escHtml(ps.project_name || "this project")} in the current window.</div>`;
-      if (foot) foot.textContent = "";
-      return;
-    }
-    const TS = V9.TableSort;
-    const nowRef = Date.now() / 1000;
-    const maxShareSteps = sessions.reduce((acc, s) => acc + Number(s.window_steps != null ? s.window_steps : (s.step_count || 0)), 0) || 1;
-    const enriched = sessions.map((s, origIdx) => {
-      const cid = s.conversation_id || "";
-      const shortId = s.short_id || cid.slice(0, 8);
-      const steps = Number(s.window_steps != null ? s.window_steps : (s.step_count || 0));
-      return {
-        s, origIdx, cid, shortId, steps,
-        pct: Number(s.share_pct != null ? s.share_pct : (steps / maxShareSteps) * 100),
-        tokens: Number(s.window_tokens != null ? s.window_tokens : (s.tokens || 0)),
-        costUsd: Number(s.window_cost_usd || 0),
-        ageTs: TS ? TS.recencyEpoch(s, nowRef) : Number(s.last_updated_ts || 0),
-        ageLabel: TS ? TS.getAgeLabel(s) : (s.relative_age || "recent"),
-        rank: TS ? TS.statusRank(s) : (s.is_running ? 4 : 3),
-      };
-    });
-    const sorted = TS
-      ? TS.sortItems(enriched, "sessions", {
-          name: { type: "text", get: (e) => e.s.title || e.shortId },
-          age: (e) => e.ageTs,
-          status: (e) => e.rank,
-          share: (e) => e.pct * 1e9 + e.steps,
-          steps: (e) => e.steps,
-          tokens: (e) => e.tokens,
-          cost: (e) => e.costUsd,
-        })
-      : enriched;
-
-    const rowsHtml = sorted.map((entry) => {
-      const { s, origIdx, cid, shortId, steps, pct, tokens, costUsd, ageLabel } = entry;
-      const slot = (s.color_slot != null && s.color_slot >= 0) ? s.color_slot : ((s.shade_idx != null && s.shade_idx >= 0) ? s.shade_idx : origIdx);
-      const color = (s.color_slot === -1 || steps <= 0) ? "#94A3B8" : V9.getSeriesColor(slot);
-      const rawLegend = String(labelMap[cid] || "");
-      const seriesName = rawLegend ? (rawLegend.length > 26 ? `${rawLegend.slice(0, 24)}..` : rawLegend) : "";
-      const tone = s.is_running ? "run" : "idle";
-      return `<tr class="v9-row-click v9-row-compact" data-sess-row="${V9.escHtml(cid)}" data-series-name="${V9.escHtml(seriesName)}">
+  function renderSessionTableRow(entry, labelMap, SB, sData, metric) {
+    const { s, origIdx, cid, shortId, steps, pct, tokens, costUsd, ageLabel, sm } = entry;
+    const slot = (s.color_slot != null && s.color_slot >= 0) ? s.color_slot : ((s.shade_idx != null && s.shade_idx >= 0) ? s.shade_idx : origIdx);
+    const color = (s.color_slot === -1 || steps <= 0) ? "#94A3B8" : V9.getSeriesColor(slot);
+    const rawLegend = String(labelMap[cid] || "");
+    const seriesName = rawLegend ? (rawLegend.length > 26 ? `${rawLegend.slice(0, 24)}..` : rawLegend) : "";
+    const tone = s.is_running ? "run" : "idle";
+    const barHtml = SB && sm && sData
+      ? SB.renderSessionCaretBar(sm, sData.scaleMax, sData.avgActive, metric, color)
+      : `<div class="v9-inline-share"><span class="va-inline-bar"><span class="va-inline-bar-fill" style="inline-size:${Math.min(100, pct).toFixed(1)}%;background:${color}"></span></span><span class="v9-inline-pct">${pct.toFixed(1)}%</span></div>`;
+    return `<tr class="v9-row-click v9-row-compact" data-sess-row="${V9.escHtml(cid)}" data-series-name="${V9.escHtml(seriesName)}">
         <td>
           <div class="v9-tbl-name-wrap"><span class="v9-swatch-dot" style="background:${color}"></span><span class="v9-tbl-name-txt" title="${V9.escHtml(s.title || shortId)}">${V9.escHtml(s.title || shortId)}</span></div>
           <div class="v9-cell-sub">${V9.escHtml(shortId)} · ${V9.escHtml(s.status || "IDLE")} · ${V9.fmtUsd(costUsd)}</div>
         </td>
         <td class="num v9-mono-num">${V9.escHtml(ageLabel)}</td>
         <td class="v9-col-secondary"><span class="v9-status-tag" data-tone="${tone}">${V9.escHtml(s.status || "IDLE")}</span></td>
-        <td class="v9-bar-cell"><div class="v9-inline-share"><span class="va-inline-bar"><span class="va-inline-bar-fill" style="inline-size:${Math.min(100, pct).toFixed(1)}%;background:${color}"></span></span><span class="v9-inline-pct">${pct.toFixed(1)}%</span></div></td>
+        <td class="v9-bar-cell">${barHtml}</td>
         <td class="num">${V9.fmtNum(steps)}</td>
         <td class="v9-col-secondary num">${V9.fmtNum(tokens)}</td>
         <td class="num v9-mono-num">${V9.fmtUsd(costUsd)}</td>
         <td class="num"><button type="button" class="v9-tbl-btn is-primary" data-open-sess="${V9.escHtml(cid)}"><span>Open</span><svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8H12.5M9 4.5L12.5 8L9 11.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button></td>
       </tr>`;
-    }).join("");
+  }
 
-    const th = TS
-      ? `${TS.thHtml("sessions", "name", "Session", { type: "text" })}${TS.thHtml("sessions", "age", "Age", { cls: "num" })}${TS.thHtml("sessions", "status", "Status", { cls: "v9-col-secondary" })}${TS.thHtml("sessions", "share", "Share")}${TS.thHtml("sessions", "steps", "Steps", { cls: "num" })}${TS.thHtml("sessions", "tokens", "Tokens", { cls: "v9-col-secondary num" })}${TS.thHtml("sessions", "cost", "Est. $", { cls: "num" })}<th scope="col" class="num">Workspace</th>`
-      : `<th>Session</th><th class="num">Age</th><th class="v9-col-secondary">Status</th><th>Share</th><th class="num">Steps</th><th class="v9-col-secondary num">Tokens</th><th class="num">Est. $</th><th class="num">Workspace</th>`;
-    const tblEl = mountSortableTable(wrap, "sessions", "v9ProjSessionTableBody", th, rowsHtml);
-    if (foot) foot.textContent = "Click any session row or Open to inspect its deliverables, Markdown docs, and captures in Workspace.";
+  function bindSessionTableRows(wrap, actions) {
     wrap.querySelectorAll("tr[data-sess-row]").forEach((tr) => {
       const seriesName = tr.getAttribute("data-series-name") || "";
       if (seriesName) {
@@ -361,9 +322,58 @@
         if (cid && actions && actions.openSessionWorkspace) actions.openSessionWorkspace(cid);
       });
     });
-    if (TS && tblEl) {
-      TS.bindSortHeaders(tblEl, "sessions", () => renderProjectSessionsCard(V9.state.bundle || b, actions), () => sorted.length);
+  }
+
+  function renderProjectSessionsCard(b, actions) {
+    const wrap = document.getElementById("v9ProjTableWrap");
+    const foot = document.getElementById("v9ProjFoot");
+    const titleEl = document.getElementById("v9ProjPlotTitle");
+    const subEl = document.getElementById("v9ProjPlotSub");
+    if (!wrap || !b || !b.project_scope) return;
+    const metric = V9.state.metric || "steps";
+    const ps = b.project_scope, pss = b.project_sessions_series || {}, proj = findProjectInBundle(b, ps.project_id);
+    const sessions = (pss.sessions && pss.sessions.length ? pss.sessions : (proj && proj.sessions) || []);
+    const labelMap = pss.labels || {};
+    if (titleEl) titleEl.textContent = "Project Sessions (Daily)";
+    const actCount = ps.active_sessions_count != null ? ps.active_sessions_count : sessions.length;
+    const totCount = ps.total_sessions != null ? ps.total_sessions : sessions.length;
+    if (subEl) subEl.textContent = `${actCount} active · ${totCount} total · ${metric === "steps" ? "320│ · 700▾" : "Avg │ · 24h ▾"}`;
+    if (!sessions.length) {
+      wrap.innerHTML = `<div class="v9-empty">No active sessions found for ${V9.escHtml(ps.project_name || "this project")} in the current window.</div>`;
+      if (foot) foot.textContent = "";
+      return;
     }
+    const TS = V9.TableSort, SB = V9.SparkBars, nowRef = Date.now() / 1000;
+    const maxShareSteps = sessions.reduce((acc, s) => acc + Number(s.window_steps != null ? s.window_steps : (s.step_count || 0)), 0) || 1;
+    const sData = SB ? SB.computeSessionRows(sessions, metric, pss) : null;
+    const enriched = sessions.map((s, origIdx) => {
+      const cid = s.conversation_id || "", shortId = s.short_id || cid.slice(0, 8);
+      const steps = Number(s.window_steps != null ? s.window_steps : (s.step_count || 0));
+      return {
+        s, origIdx, cid, shortId, steps, sm: sData ? sData.items[origIdx] : null,
+        pct: Number(s.share_pct != null ? s.share_pct : (steps / maxShareSteps) * 100),
+        tokens: Number(s.window_tokens != null ? s.window_tokens : (s.tokens || 0)), costUsd: Number(s.window_cost_usd || 0),
+        ageTs: TS ? TS.recencyEpoch(s, nowRef) : Number(s.last_updated_ts || 0),
+        ageLabel: TS ? TS.getAgeLabel(s) : (s.relative_age || "recent"),
+        rank: TS ? TS.statusRank(s) : (s.is_running ? 4 : 3),
+      };
+    });
+    const sorted = TS ? TS.sortItems(enriched, "sessions", {
+      name: { type: "text", get: (e) => e.s.title || e.shortId }, age: (e) => e.ageTs, status: (e) => e.rank,
+      share: (e) => (e.sm ? (metric === "steps" ? e.sm.stepCount : e.sm.val) : e.pct * 1e9 + e.steps),
+      steps: (e) => e.steps, tokens: (e) => e.tokens, cost: (e) => e.costUsd,
+    }) : enriched;
+    const rowsHtml = sorted.map((entry) => renderSessionTableRow(entry, labelMap, SB, sData, metric)).join("");
+    const shareColLbl = metric === "steps" ? "Context / Seam" : "Burn / Avg";
+    const th = TS
+      ? `${TS.thHtml("sessions", "name", "Session", { type: "text" })}${TS.thHtml("sessions", "age", "Age", { cls: "num" })}${TS.thHtml("sessions", "status", "Status", { cls: "v9-col-secondary" })}${TS.thHtml("sessions", "share", shareColLbl)}${TS.thHtml("sessions", "steps", "Steps", { cls: "num" })}${TS.thHtml("sessions", "tokens", "Tokens", { cls: "v9-col-secondary num" })}${TS.thHtml("sessions", "cost", "Est. $", { cls: "num" })}<th scope="col" class="num">Workspace</th>`
+      : `<th>Session</th><th class="num">Age</th><th class="v9-col-secondary">Status</th><th>${shareColLbl}</th><th class="num">Steps</th><th class="v9-col-secondary num">Tokens</th><th class="num">Est. $</th><th class="num">Workspace</th>`;
+    const tblEl = mountSortableTable(wrap, "sessions", "v9ProjSessionTableBody", th, rowsHtml);
+    const shareBtnLbl = tblEl && tblEl.querySelector && tblEl.querySelector('[data-sort-table="sessions"][data-sort-key="share"] .v9-th-lbl');
+    if (shareBtnLbl) shareBtnLbl.textContent = shareColLbl;
+    if (foot) foot.textContent = "Click any session row or Open to inspect its deliverables, Markdown docs, and captures in Workspace.";
+    bindSessionTableRows(wrap, actions);
+    if (TS && tblEl) TS.bindSortHeaders(tblEl, "sessions", () => renderProjectSessionsCard(V9.state.bundle || b, actions), () => sorted.length);
   }
 
   function renderProjectHealthDrawer(b) {

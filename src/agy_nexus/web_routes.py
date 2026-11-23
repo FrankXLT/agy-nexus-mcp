@@ -62,6 +62,7 @@ PWA_ASSETS: dict[str, bytes] = {
     "v9/v9_tables_and_rail.css": b"text/css; charset=utf-8",
     "v9/v9_state.js": b"application/javascript; charset=utf-8",
     "v9/v9_table_sort.js": b"application/javascript; charset=utf-8",
+    "v9/v9_spark_bars.js": b"application/javascript; charset=utf-8",
     "v9/v9_demo_docs.js": b"application/javascript; charset=utf-8",
     "v9/v9_demo_adapter.js": b"application/javascript; charset=utf-8",
     "v9/v9_billing.js": b"application/javascript; charset=utf-8",

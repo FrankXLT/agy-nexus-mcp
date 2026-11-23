@@ -4,6 +4,19 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.4] — 2026-11-23
+
+### Option A Hybrid Range Whiskers & Target/Seam Caret Bars + Subagent Step-Cap Alerts
+- **Per-Run Outlier, Active-Day Range & Trailing 24h Backend Telemetry (`src/agy_nexus/stats_metrics.py`, `cost_ledger.py`, `stats_aggregator.py`, `stats_series.py`, `project_stats.py`, `stats.py`)**:
+  - Computed exact active-day `min_daily_*`, `avg_daily_*`, `max_daily_*` (`Steps`, `Tokens`, `$ Cost`) and trailing 24-hour (`last_24h_*` + `has_last_24h`) activity across live and archived ledgers (`l24_slots`), plus session `is_retired` status from `RETIRED.json`.
+  - Added per-run subagent distributions (`min_steps_per_run`, `avg_steps_per_run`, `max_steps_per_run`, `min/avg/max_tokens_per_run`, `min/avg/max_cost_per_run`, `last_run_*`, `over_120_runs`) and 24h model `last_24h_steps`/`tokens`/`cost_usd` metrics.
+- **Hybrid Range Whiskers & Target/Seam Caret Bars (`web/v9/v9_spark_bars.js`, `v9_tables_and_rail.css`, `v9_analytics.js`, `v9_project_view.js`, `v9_demo_adapter.js`)**:
+  - **`Top Projects (Daily)`**: Active-Day Range Whisker (`Min..Peak Day` stem, `│` crossbar at `Active-Day Avg`, `●` dot at `Last 24h` — hollow muted dot when idle in an active window, omitted in closed windows) scaled to highest table peak, reactive to `[Steps | Tokens | $ Cost]`, and sortable via `V9.TableSort`.
+  - **`Subagent Workload`**: Per-Run Outlier Whisker (`Min/run..Max/run`, `│` at `Avg/run`, `●` at `Latest Run` / `Last 24h`) with amber `2.5x` burn outlier badges and fault `>120` step-cap warnings when runs exceed `120` steps (`max_steps_per_run > 120` / `over_120_runs > 0`).
+  - **`Model Workload`**: Target Guide `│` + `Last 24h ▾` Caret Bar with reactive `Actual %` & `Guide / Delta` across `Steps`, `Tokens`, and `$ Cost`.
+  - **`Project Sessions (Daily)`**: `320│ / 700▾` Context-Seam Caret Bar in `Steps` mode (highlighting `500+` warning / `700+` rollover alert on unretired sessions vs. muted `RET` on `RETIRED` sessions) and `Project Avg │ + Last 24h ▾` burn bar in `Tokens` / `$ Cost` modes.
+- **Packaging, PWA & Docs**: Registered `v9_spark_bars.js` in `PWA_ASSETS` (`src/agy_nexus/web_routes.py`), `web/sw.js` (`CACHE_NAME = "agy-nexus-v4.0.4"`, `?v=4.0.4`), updated Workflow 6 in `docs/WORKFLOWS.md`, refreshed `demo_snapshot.js`, `README.md`, `docs/assets/`, and `build/gh-pages/` (`0` leaks).
+
 ## [4.0.3] — 2026-11-23
 
 ### Added

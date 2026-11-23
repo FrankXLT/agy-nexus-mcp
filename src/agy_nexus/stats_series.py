@@ -15,6 +15,7 @@ from agy_nexus.model_pricing import (
     get_canonical_model_keys,
     load_model_catalog,
 )
+from agy_nexus.stats_metrics import compute_daily_range_metrics, sum_slots_in_set
 from agy_nexus.telemetry_scanner import normalize_workspace_name
 
 MODEL_KEYS = get_canonical_model_keys()
@@ -141,6 +142,10 @@ def _build_project_buckets(
     db_convs: dict[str, dict[str, Any]],
     projects_map: dict[str, dict[str, Any]],
     tree_bundle: dict[str, Any],
+    *,
+    l24_slots: set[str] | None = None,
+    has_l24: bool = False,
+    retired_cids: set[str] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Merge window telemetry, live session states, and repo-prefixed handoff tickets into per-project buckets."""
     live_sess_map, live_proj_meta = {}, {}
@@ -164,6 +169,8 @@ def _build_project_buckets(
             "sessions": [], "_s1_steps": {}, "_s1_toks": {}, "_s1_cost": {},
         }
 
+    l24 = l24_slots or set()
+    ret_set = retired_cids or set()
     proj_buckets: dict[str, dict[str, Any]] = {}
     for rcid in (set(root_sess_stats.keys()) | set(live_sess_map.keys())):
         st_info, live_s, meta = root_sess_stats.get(rcid, {}), live_sess_map.get(rcid, {}), db_convs.get(rcid, {})
@@ -177,6 +184,7 @@ def _build_project_buckets(
         if w_steps == 0 and not live_s:
             continue
         status_s = str(live_s.get("status") or meta.get("status") or "IDLE")
+        is_ret = bool(rcid in ret_set or live_s.get("is_retired") or status_s.upper() == "RETIRED")
         is_run = bool(live_s.get("is_running") or status_s in ("RUNNING", "STALLED_WAITING_APPROVAL"))
         is_pin = bool(live_s.get("is_pinned"))
         pb = proj_buckets.setdefault(pid, _init_bucket(pid, pname))
@@ -186,11 +194,14 @@ def _build_project_buckets(
         pb["window_tokens"] += w_toks
         pb["window_cost_micros"] += w_cost
         pb["total_steps"] += tot_steps
-        for sk, sv in (st_info.get("s1_steps") or {}).items():
+        s1_st = st_info.get("s1_steps") or {}
+        s1_tk = st_info.get("s1_toks") or {}
+        s1_cs = st_info.get("s1_cost") or {}
+        for sk, sv in s1_st.items():
             pb["_s1_steps"][sk] = pb["_s1_steps"].get(sk, 0) + sv
-        for sk, sv in (st_info.get("s1_toks") or {}).items():
+        for sk, sv in s1_tk.items():
             pb["_s1_toks"][sk] = pb["_s1_toks"].get(sk, 0) + sv
-        for sk, sv in (st_info.get("s1_cost") or {}).items():
+        for sk, sv in s1_cs.items():
             pb["_s1_cost"][sk] = pb["_s1_cost"].get(sk, 0) + sv
         last_iso = str(live_s.get("last_updated") or meta.get("last_modified") or "")
         last_ts = float(live_s.get("last_updated_ts") or parse_iso_epoch(last_iso) or 0.0)
@@ -198,12 +209,17 @@ def _build_project_buckets(
         pb["sessions"].append({
             "index": str(live_s.get("index") or ""), "conversation_id": rcid, "title": str(live_s.get("title") or meta.get("title") or rcid[:8]),
             "project_id": pid, "project_name": pname, "workspace_path": wpath, "workspace_short": str(live_s.get("workspace_short") or (Path(wpath).name if wpath else "unassigned")),
-            "status": status_s, "is_running": is_run, "is_pinned": is_pin, "mode": str(live_s.get("mode") or ("WORKTREE" if "/worktrees/" in wpath else "MAIN TREE")),
+            "status": status_s, "is_running": is_run, "is_pinned": is_pin, "is_retired": is_ret,
+            "mode": str(live_s.get("mode") or ("WORKTREE" if "/worktrees/" in wpath else "MAIN TREE")),
             "window_steps": w_steps, "window_tokens": w_toks, "window_cost_micros": w_cost, "window_cost_usd": round(w_cost / 1_000_000.0, 4),
             "step_count": tot_steps, "subagent_runs": int(st_info.get("sub_runs") or 0),
+            "has_last_24h": has_l24,
+            "last_24h_steps": sum_slots_in_set(s1_st, l24) if has_l24 else None,
+            "last_24h_tokens": sum_slots_in_set(s1_tk, l24) if has_l24 else None,
+            "last_24h_cost_usd": round(sum_slots_in_set(s1_cs, l24) / 1_000_000.0, 4) if has_l24 else None,
             "last_updated": last_iso, "relative_age": rel_age,
             "last_updated_ts": last_ts,
-            "_s1_steps": st_info.get("s1_steps") or {}, "_s1_toks": st_info.get("s1_toks") or {}, "_s1_cost": st_info.get("s1_cost") or {},
+            "_s1_steps": s1_st, "_s1_toks": s1_tk, "_s1_cost": s1_cs,
         })
 
     for pid, tp_meta in live_proj_meta.items():
@@ -212,14 +228,27 @@ def _build_project_buckets(
     return proj_buckets
 
 
-def _pack_top_project(pb: dict[str, Any], p_idx: int, tot_win_steps: int, groups: list[list[str]]) -> dict[str, Any]:
+def _pack_top_project(
+    pb: dict[str, Any],
+    p_idx: int,
+    tot_win_steps: int,
+    groups: list[list[str]],
+    *,
+    l24_slots: set[str] | None = None,
+    has_l24: bool = False,
+) -> dict[str, Any]:
     n_bins = len(groups)
     pb["color_slot"] = p_idx
     pb["share_pct"] = round((pb["window_steps"] / tot_win_steps) * 100.0, 1)
     pb["window_cost_usd"] = round(pb["window_cost_micros"] / 1_000_000.0, 2)
-    pb["steps_series"] = _sum_slots(pb.pop("_s1_steps"), groups)
-    pb["tokens_series"] = _sum_slots(pb.pop("_s1_toks"), groups)
-    pb["cost_series"] = _sum_slots_usd(pb.pop("_s1_cost"), groups)
+    s1_st, s1_tk, s1_cs = pb.pop("_s1_steps"), pb.pop("_s1_toks"), pb.pop("_s1_cost")
+    pb.update(compute_daily_range_metrics(
+        s1_st, s1_tk, s1_cs, l24_slots or set(), has_l24,
+        fallback_steps=pb["window_steps"], fallback_tokens=pb["window_tokens"], fallback_cost_micros=pb["window_cost_micros"],
+    ))
+    pb["steps_series"] = _sum_slots(s1_st, groups)
+    pb["tokens_series"] = _sum_slots(s1_tk, groups)
+    pb["cost_series"] = _sum_slots_usd(s1_cs, groups)
     pb["sessions"].sort(key=lambda s: (-s["window_steps"], not s["is_running"], not s["is_pinned"], -float(s.get("last_updated_ts") or 0.0), -s["step_count"]))
     act_cnt = sum(1 for s in pb["sessions"] if s["window_steps"] > 0)
     shade_cap, ovf_steps, ovf_toks, ovf_cost, has_ovf, act_rank = min(12, max(1, act_cnt)), [0] * n_bins, [0] * n_bins, [0.0] * n_bins, False, 0
@@ -289,6 +318,7 @@ def build_series_and_project_hierarchy(
     subagent_list: list[dict[str, Any]], root_sess_stats: dict[str, dict[str, Any]],
     db_convs: dict[str, dict[str, Any]], projects_map: dict[str, dict[str, Any]], tree_bundle: dict[str, Any],
     s1_tot_cost: dict[str, int] | None = None, s1_mod_cost: dict[str, dict[str, int]] | None = None, s1_sub_cost: dict[str, dict[str, int]] | None = None,
+    l24_slots: set[str] | None = None, has_l24: bool = False, retired_cids: set[str] | None = None,
 ) -> dict[str, Any]:
     """Assemble velocity_series, model_series, subagent_series, workspace_series, and Top-10 project_hierarchy."""
     labels, groups, step_h, res_lbl = build_base_slot_grid(period_key, trimmed_days, today_iso, now_hour)
@@ -307,12 +337,18 @@ def build_series_and_project_hierarchy(
     other_ws = [w["workspace"] for w in all_ws_list[5:]]
     ws_layers = {k: ([sum(sum(s1_ws_steps.get(ok, {}).get(s, 0) for ok in other_ws) for s in g) for g in groups] if k == "other-projects" else _sum_slots(s1_ws_steps.get(k, {}), groups)) for k in ws_keys}
 
-    proj_buckets = _build_project_buckets(root_sess_stats, db_convs, projects_map, tree_bundle)
+    proj_buckets = _build_project_buckets(
+        root_sess_stats, db_convs, projects_map, tree_bundle,
+        l24_slots=l24_slots, has_l24=has_l24, retired_cids=retired_cids,
+    )
     tot_win_steps = max(1, sum(p["window_steps"] for p in proj_buckets.values()))
     active_projs = sorted((p for p in proj_buckets.values() if p["window_steps"] > 0), key=lambda p: (-p["window_steps"], -p["running_count"], -p["staged_count"], -p["total_steps"]))
     idle_projs = sorted((p for p in proj_buckets.values() if p["window_steps"] == 0), key=lambda p: (-p["staged_count"], -p["in_work_handoff_count"], -p["running_count"], -p["pinned_count"], -p["total_steps"]))
 
-    top_projects = [_pack_top_project(pb, p_idx, tot_win_steps, groups) for p_idx, pb in enumerate(active_projs[:10])]
+    top_projects = [
+        _pack_top_project(pb, p_idx, tot_win_steps, groups, l24_slots=l24_slots, has_l24=has_l24)
+        for p_idx, pb in enumerate(active_projs[:10])
+    ]
     other_projects = _build_other_projects_rollup(active_projs[10:], tot_win_steps, groups) if len(active_projs) > 10 else None
     for ip in idle_projs:
         ip.pop("_s1_steps", None)

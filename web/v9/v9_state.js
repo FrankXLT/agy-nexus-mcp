@@ -256,9 +256,9 @@
     navigator.serviceWorker.register(`${getBasePath()}/web/sw.js`, { scope: `${getBasePath() || ""}/` }).catch(() => {});
     let swReloading = false;
     navigator.serviceWorker.addEventListener("controllerchange", () => {
-      if (swReloading || sessionStorage.getItem("nexus_sw_reloaded") === "4.0.3") return;
+      if (swReloading || sessionStorage.getItem("nexus_sw_reloaded") === "4.0.4") return;
       swReloading = true;
-      sessionStorage.setItem("nexus_sw_reloaded", "4.0.3");
+      sessionStorage.setItem("nexus_sw_reloaded", "4.0.4");
       window.location.reload();
     });
   }

@@ -297,10 +297,10 @@ def test_v325_100pct_500l_compliance_and_compat_exports() -> None:
     _s, fmt_y, _sym = polyglot_outline.outline_yaml(["secrets:", "  - name: ghp_realTokenShouldRedact999", "  - name: public_label"])
     assert "ghp_realTokenShouldRedact999" not in "\n".join(fmt_y) and "[REDACTED]" in "\n".join(fmt_y)
 
-    assert agy_nexus.__version__ == "4.0.3"
-    assert 'version = "4.0.3"' in (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert "?v=4.0.3" in (REPO_ROOT / "web" / "index.html").read_text(encoding="utf-8")
-    assert 'CACHE_NAME = "agy-nexus-v4.0.3"' in (REPO_ROOT / "web" / "sw.js").read_text(encoding="utf-8")
+    assert agy_nexus.__version__ == "4.0.4"
+    assert 'version = "4.0.4"' in (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert "?v=4.0.4" in (REPO_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    assert 'CACHE_NAME = "agy-nexus-v4.0.4"' in (REPO_ROOT / "web" / "sw.js").read_text(encoding="utf-8")
 
     for fn in ("outline_markdown", "outline_json", "outline_yaml", "_outline_html_css", "_clean_one_liner"):
         assert callable(getattr(polyglot_outline, fn))

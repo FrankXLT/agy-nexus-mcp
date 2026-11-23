@@ -99,7 +99,7 @@
     if (!thead || !V9.TableSort) return;
     if (!thead.querySelector('[data-sort-table="models"]')) {
       const TS = V9.TableSort;
-      thead.innerHTML = `<tr>${TS.thHtml("models", "name", "Model", { type: "text" })}${TS.thHtml("models", "calls", "Pool · Calls · Rate", { cls: "v9-col-secondary" })}${TS.thHtml("models", "share", "Share")}${TS.thHtml("models", "delta", 'Guide<span class="v9-col-secondary"> / Delta</span>', { cls: "num", rawLabel: true })}${TS.thHtml("models", "tokens", "Tokens", { cls: "num" })}${TS.thHtml("models", "cost", "Est. $", { cls: "num" })}</tr>`;
+      thead.innerHTML = `<tr>${TS.thHtml("models", "name", "Model", { type: "text" })}${TS.thHtml("models", "calls", "Pool · Calls · Rate", { cls: "v9-col-secondary" })}${TS.thHtml("models", "share", "Share · 24h")}${TS.thHtml("models", "delta", 'Guide<span class="v9-col-secondary"> / Delta</span>', { cls: "num", rawLabel: true })}${TS.thHtml("models", "tokens", "Tokens", { cls: "num" })}${TS.thHtml("models", "cost", "Est. $", { cls: "num" })}</tr>`;
     } else {
       V9.TableSort.syncTheadSort(thead, "models");
     }
@@ -109,29 +109,33 @@
     const tbody = document.getElementById("v9ModelTableBody");
     const subEl = document.getElementById("v9ModelPlotSub");
     if (!tbody) return;
+    const metric = V9.state.metric || "steps";
     const rows = Array.isArray(b.model_usage_vs_target) ? b.model_usage_vs_target : [];
     const pools = (b.quota_and_pools && b.quota_and_pools.pools) || {};
     const gHealthy = !pools.google || pools.google.status === "HEALTHY";
     const totalCalls = rows.reduce((s, r) => s + Number(r.actual_calls || 0), 0);
     const totalUsd = rows.reduce((s, r) => s + Number(r.est_cost_usd || 0), 0);
-    if (subEl) subEl.textContent = `${V9.fmtNum(totalCalls)} calls · ${V9.fmtUsd(totalUsd)} · click row to solo`;
+    if (subEl) subEl.textContent = `${V9.fmtNum(totalCalls)} calls · ${V9.fmtUsd(totalUsd)} · Guide │ · 24h ▾ · click row to solo`;
 
     const table = tbody.closest && tbody.closest("table");
     ensureModelTableHead(table);
     const TS = V9.TableSort;
-    const enriched = rows.map((m, origIdx) => {
-      const act = Number(m.actual_pct || 0);
-      const tgt = Number(m.target_pct || 0);
-      const delta = m.delta_pct != null ? Number(m.delta_pct) : Number((act - tgt).toFixed(1));
-      const tok = sumLayerTokens(b.model_series, m.model_key, m.est_tokens);
-      return { m, origIdx, act, tgt, delta, tok };
-    });
+    const SB = V9.SparkBars;
+    const enriched = SB
+      ? SB.computeModelRows(rows, metric, b.model_series)
+      : rows.map((m, origIdx) => {
+          const act = Number(m.actual_pct || 0);
+          const tgt = Number(m.target_pct || 0);
+          const delta = m.delta_pct != null ? Number(m.delta_pct) : Number((act - tgt).toFixed(1));
+          const tok = sumLayerTokens(b.model_series, m.model_key, m.est_tokens);
+          return { m, origIdx, val: Number(m.actual_calls || 0), tok, actualPct: act, targetPct: tgt, deltaPct: delta, last24hPct: null };
+        });
     const sorted = TS
       ? TS.sortItems(enriched, "models", {
           name: { type: "text", get: (e) => e.m.label || e.m.model_key || "" },
           calls: (e) => Number(e.m.actual_calls || 0),
-          share: (e) => e.act * 1e6 + Number(e.m.actual_calls || 0),
-          delta: (e) => e.delta,
+          share: (e) => e.actualPct * 1e6 + Number(e.val || e.m.actual_calls || 0),
+          delta: (e) => e.deltaPct,
           tokens: (e) => e.tok,
           cost: (e) => Number(e.m.est_cost_usd || 0),
         })
@@ -140,9 +144,9 @@
     tbody.innerHTML = sorted.map((entry) => {
       const m = entry.m;
       const col = V9.getSeriesColor(entry.origIdx);
-      const act = entry.act;
-      const tgt = entry.tgt;
-      const delta = entry.delta;
+      const act = entry.actualPct;
+      const tgt = entry.targetPct;
+      const delta = entry.deltaPct;
       const deltaStr = `${delta > 0 ? "+" : ""}${delta.toFixed(1)}%`;
       const isGoogle = String(m.pool_key || m.pool || "").toLowerCase().includes("google");
       const warn = (!isGoogle || !gHealthy) && delta > 12.0;
@@ -152,10 +156,13 @@
       const rateHint = m.rate_label ? ` · ${m.rate_label}` : "";
       const solo = V9.state.soloModel === m.model_key;
       const cls = ["v9-row-click", "va-row-compact", solo ? "is-solo" : (V9.state.soloModel ? "is-dim" : "")].filter(Boolean).join(" ");
+      const barHtml = SB
+        ? SB.renderModelCaretBar(entry, col)
+        : `<span class="v9-inline-share"><span class="va-inline-bar" role="img" aria-label="${act.toFixed(1)}% share"><span class="va-inline-bar-fill" style="inline-size:${Math.min(100, act)}%;background:${col}"></span><span class="va-inline-bar-pin" style="inset-inline-start:${Math.min(100, tgt)}%"></span></span><span class="v9-inline-pct">${act.toFixed(1)}%</span></span>`;
       return `<tr class="${cls}" data-solo-model="${V9.escHtml(m.model_key)}">
         <td><span class="v9-swatch-dot" style="background:${col}"></span><span class="v9-cell-main">${V9.escHtml(m.label)}</span></td>
         <td class="v9-col-secondary"><span class="v9-cell-sub">${V9.escHtml(m.pool)} · ${V9.fmtNum(m.actual_calls)}${V9.escHtml(rateHint)}</span></td>
-        <td><span class="v9-inline-share"><span class="va-inline-bar" aria-label="${act}%"><span class="va-inline-bar-fill" style="inline-size:${Math.min(100, act)}%;background:${col}"></span><span class="va-inline-bar-pin" style="inset-inline-start:${Math.min(100, tgt)}%"></span></span><span class="v9-inline-pct">${act.toFixed(1)}%</span></span></td>
+        <td class="v9-bar-cell">${barHtml}</td>
         <td class="num">${tgt.toFixed(0)}% <span class="${deltaCls}">(${V9.escHtml(deltaStr)})</span></td>
         <td class="num">${V9.fmtNum(tok)}</td>
         <td class="num v9-mono-num">${V9.fmtUsd(usd)}</td>
@@ -178,7 +185,7 @@
     if (!thead || !V9.TableSort) return;
     if (!thead.querySelector('[data-sort-table="subagents"]')) {
       const TS = V9.TableSort;
-      thead.innerHTML = `<tr>${TS.thHtml("subagents", "name", "Role", { type: "text" })}${TS.thHtml("subagents", "model", "Model", { type: "text", cls: "v9-col-secondary" })}${TS.thHtml("subagents", "share", "Share")}${TS.thHtml("subagents", "runs", "Runs", { cls: "num" })}${TS.thHtml("subagents", "tokens", "Tokens", { cls: "num" })}${TS.thHtml("subagents", "avg_tok", "Avg Tok/Run", { cls: "num v9-col-secondary" })}${TS.thHtml("subagents", "cost", "Est. $", { cls: "num" })}</tr>`;
+      thead.innerHTML = `<tr>${TS.thHtml("subagents", "name", "Role", { type: "text" })}${TS.thHtml("subagents", "model", "Model", { type: "text", cls: "v9-col-secondary" })}${TS.thHtml("subagents", "share", "Per-Run")}${TS.thHtml("subagents", "runs", "Runs", { cls: "num" })}${TS.thHtml("subagents", "tokens", "Tokens", { cls: "num" })}${TS.thHtml("subagents", "avg_tok", "Avg Tok/Run", { cls: "num v9-col-secondary" })}${TS.thHtml("subagents", "cost", "Est. $", { cls: "num" })}</tr>`;
     } else {
       V9.TableSort.syncTheadSort(thead, "subagents");
     }
@@ -188,23 +195,34 @@
     const tbody = document.getElementById("v9SubagentTableBody");
     const subEl = document.getElementById("v9SubPlotSub");
     if (!tbody) return;
+    const metric = V9.state.metric || "steps";
     const list = Array.isArray(b.subagent_list) ? b.subagent_list : [];
     const totalRuns = list.reduce((s, r) => s + Number(r.runs || 0), 0);
-    if (subEl) subEl.textContent = `${totalRuns} runs · ${list.length} roles`;
+    const totalTok = list.reduce((s, r) => s + Number(r.tokens || 0), 0);
+    const fleetMeanTok = totalRuns > 0 ? totalTok / totalRuns : 0;
+    if (subEl) subEl.textContent = `${totalRuns} runs · ${list.length} roles · Avg │ · Max · Latest ●`;
 
     const table = tbody.closest && tbody.closest("table");
     ensureSubagentTableHead(table);
     const TS = V9.TableSort;
+    const SB = V9.SparkBars;
     const enriched = list.map((item, origIdx) => {
       const runs = Number(item.runs || 0);
       const avgTok = Number(item.avg_tokens_per_run != null ? item.avg_tokens_per_run : (runs > 0 ? Math.round(Number(item.tokens || 0) / runs) : 0));
-      return { item, origIdx, runs, avgTok };
+      const sm = SB ? SB.computeSubagentMetrics(item, metric, b.subagent_series, fleetMeanTok) : null;
+      return { item, origIdx, runs, avgTok, sm };
     });
+    const scaleMax = enriched.reduce((mx, e) => Math.max(mx, e.sm && Number.isFinite(e.sm.max) ? e.sm.max : 0), 0) || 1;
     const sorted = TS
       ? TS.sortItems(enriched, "subagents", {
           name: { type: "text", get: (e) => e.item.role || "" },
           model: { type: "text", get: (e) => e.item.dominant_model_label || e.item.dominant_model_key || "" },
-          share: (e) => Number(e.item.share_pct || 0) * 1e9 + Number(e.item.steps || 0),
+          share: (e) => {
+            if (e.sm && (metric !== "steps" || e.item.max_steps_per_run != null || e.item.steps != null)) {
+              return (e.sm.max / scaleMax) * 1e12 + (e.sm.avg / scaleMax) * 1e-3;
+            }
+            return Number(e.item.share_pct || 0) * 1e9 + Number(e.item.steps || 0);
+          },
           runs: (e) => e.runs,
           tokens: (e) => Number(e.item.tokens || 0),
           avg_tok: (e) => e.avgTok,
@@ -220,10 +238,13 @@
       const avgTok = entry.avgTok;
       const solo = V9.state.soloSubagent === item.role;
       const cls = ["v9-row-click", "va-row-compact", solo ? "is-solo" : (V9.state.soloSubagent ? "is-dim" : "")].filter(Boolean).join(" ");
+      const barHtml = SB && entry.sm
+        ? SB.renderSubagentWhisker(entry.sm, scaleMax, metric, col)
+        : `<span class="v9-inline-share"><span class="va-inline-bar" role="img" aria-label="${pct}%"><span class="va-inline-bar-fill" style="inline-size:${Math.min(100, pct)}%;background:${col}"></span></span><span class="v9-inline-pct">${pct.toFixed(1)}%</span></span>`;
       return `<tr class="${cls}" data-solo-sub="${V9.escHtml(item.role)}">
         <td><span class="v9-swatch-dot" style="background:${col}"></span><span class="v9-cell-main">${V9.escHtml(item.role)}</span></td>
         <td class="v9-col-secondary"><span class="v9-cell-sub">${V9.escHtml(item.dominant_model_label || item.dominant_model_key || "—")}</span></td>
-        <td><span class="v9-inline-share"><span class="va-inline-bar" aria-label="${pct}%"><span class="va-inline-bar-fill" style="inline-size:${Math.min(100, pct)}%;background:${col}"></span></span><span class="v9-inline-pct">${pct.toFixed(1)}%</span></span></td>
+        <td class="v9-bar-cell">${barHtml}</td>
         <td class="num">${runs}</td>
         <td class="num">${V9.fmtNum(item.tokens)}</td>
         <td class="num v9-col-secondary v9-mono-num">${V9.fmtNum(avgTok)}</td>
@@ -304,7 +325,7 @@
     const watch = Array.isArray(mh.watchlist_and_exceptions) ? mh.watchlist_and_exceptions.slice(0, 12) : [];
     bodyEl.innerHTML = `
       <div class="v9-health-strip" style="padding-block:0.5rem">
-        <span>Release: ${V9.escHtml((ch.version && ch.version.status_label) || b.version || "4.0.3")}</span>
+        <span>Release: ${V9.escHtml((ch.version && ch.version.status_label) || b.version || "4.0.4")}</span>
         <span>Praxis Symbols: ${(ch.polyglot_health && ch.polyglot_health.total_symbols) || 0}</span>
         <span>Pinned Slots: ${rt.active_slots || 0} (${rt.pinned_calls || 0} pinned / ${rt.auto_resolved_calls || 0} auto)</span>
         <span>3-2-1 Backup: ${V9.escHtml(bk.status_label || "—")} (${V9.escHtml(bk.age || "—")})</span>

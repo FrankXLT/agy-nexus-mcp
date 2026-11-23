@@ -13,14 +13,21 @@ from typing import Any
 
 from agy_nexus.cost_ledger import collect_archived_ledger_totals
 from agy_nexus.inventory import parse_markdown_frontmatter
+from agy_nexus.media_discovery import parse_iso_epoch
 from agy_nexus.model_pricing import (
     classify_model_key,
     compute_step_cost_micros,
     get_canonical_model_keys,
     split_estimated_tokens,
 )
+from agy_nexus.stats_metrics import (
+    fold_subagent_run_sample,
+    init_subagent_role_record,
+    merge_subagent_role_stats,
+    slot_key_epoch,
+)
 from agy_nexus.stats_series import resolve_root_conversation, resolve_subagent_model
-from agy_nexus.telemetry_scanner import normalize_workspace_name, to_1h_slot
+from agy_nexus.telemetry_scanner import DISPLAY_TZ, normalize_workspace_name, to_1h_slot
 
 
 def load_db_conversations(db_file: Path) -> dict[str, dict[str, Any]]:
@@ -306,11 +313,15 @@ def fold_live_conversations(
                 we["sessions"] += 1
                 agg["active_parent_convs"] += 1
             else:
-                rec = agg["subagent_roles"].setdefault(agent_role, {"runs": 0, "steps": 0, "tokens": 0, "cost_usd_micros": 0})
-                rec["runs"] += 1
-                rec["steps"] += win_steps
-                rec["tokens"] += win_toks
-                rec["cost_usd_micros"] += win_cost
+                rec = agg["subagent_roles"].setdefault(agent_role, init_subagent_role_record())
+                run_ts = (
+                    float(meta.get("last_updated_ts") or 0.0)
+                    or parse_iso_epoch(str(meta.get("last_modified") or ""))
+                    or float(cdata.get("mtime") or 0.0)
+                    or slot_key_epoch(cdata.get("slot_1h_steps"), DISPLAY_TZ)
+                )
+                over_120 = int(meta.get("step_count") or win_steps) > 120 or win_steps > 120
+                fold_subagent_run_sample(rec, win_steps, win_toks, win_cost, run_ts=run_ts, over_120=over_120)
             we["steps"] += win_steps
             we["tokens"] += win_toks
             we["cost_usd_micros"] += win_cost
@@ -356,11 +367,9 @@ def fold_orphaned_and_archived(
         r_stat["s1_steps"][s1_str] = r_stat["s1_steps"].get(s1_str, 0) + st_c
         r_stat["s1_toks"][s1_str] = r_stat["s1_toks"].get(s1_str, 0) + tok_est
         r_stat["s1_cost"][s1_str] = r_stat["s1_cost"].get(s1_str, 0) + cm
-        rec = agg["subagent_roles"].setdefault(role, {"runs": 0, "steps": 0, "tokens": 0, "cost_usd_micros": 0})
-        rec["runs"] += 1
-        rec["steps"] += st_c
-        rec["tokens"] += tok_est
-        rec["cost_usd_micros"] += cm
+        rec = agg["subagent_roles"].setdefault(role, init_subagent_role_record())
+        run_ts = float(meta.get("last_updated_ts") or 0.0) or parse_iso_epoch(str(meta.get("last_modified") or ""))
+        fold_subagent_run_sample(rec, st_c, tok_est, cm, run_ts=run_ts, over_120=(st_c > 120))
         we = agg["ws_map"].setdefault(ws_n, {"workspace": ws_n, "sessions": 0, "steps": 0, "tokens": 0, "cost_usd_micros": 0})
         we["steps"] += st_c
         we["tokens"] += tok_est
@@ -390,11 +399,8 @@ def fold_orphaned_and_archived(
         we["tokens"] += int(aw.get("tokens") or 0)
         we["cost_usd_micros"] += int(aw.get("cost_usd_micros") or 0)
     for role_k, asr in (arch.get("subagent_roles") or {}).items():
-        sr = agg["subagent_roles"].setdefault(role_k, {"runs": 0, "steps": 0, "tokens": 0, "cost_usd_micros": 0})
-        sr["runs"] += int(asr.get("runs") or 0)
-        sr["steps"] += int(asr.get("steps") or 0)
-        sr["tokens"] += int(asr.get("tokens") or 0)
-        sr["cost_usd_micros"] += int(asr.get("cost_usd_micros") or 0)
+        sr = agg["subagent_roles"].setdefault(role_k, init_subagent_role_record())
+        merge_subagent_role_stats(sr, asr)
     for idx in range(3):
         agg["tok_split"][idx] += int(arch["token_split"][idx])
     return int(arch["archived_convs"])

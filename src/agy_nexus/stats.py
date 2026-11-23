@@ -33,12 +33,18 @@ from agy_nexus.project_stats import (
     filter_project_conversations,
     resolve_target_project_id,
 )
+from agy_nexus.retirement import is_session_retired
 from agy_nexus.stats_aggregator import (
     fold_live_conversations,
     fold_orphaned_and_archived,
     init_agg_state,
     load_agent_target_map,
     load_db_conversations,
+)
+from agy_nexus.stats_metrics import (
+    build_model_comparison_rows,
+    build_subagent_list_rows,
+    compute_trailing_24h_slots,
 )
 from agy_nexus.stats_series import (
     MODEL_SHORT_LABELS,
@@ -153,7 +159,7 @@ def _resolve_window_bounds(
 
 
 def _build_heatmap_and_tables(
-    agg: dict[str, Any], *, start_d: date, end_d: date, today: date, hm: str,
+    agg: dict[str, Any], *, start_d: date, end_d: date, today: date, now_hour: int, hm: str,
     quota_info: dict[str, Any], parent_model_map: dict[str, str], main_mk: str,
     main_switch_date: str, agent_target_map: dict[str, str], bg_dir: Path,
 ) -> dict[str, Any]:
@@ -200,47 +206,23 @@ def _build_heatmap_and_tables(
         tk, st_w, cm_w = int(w.get("tokens", 0)), int(w.get("steps", 0)), int(w.get("cost_usd_micros", 0))
         w.update({"tok_per_day": round(tk / act_d), "tok_per_week": round(tk / act_w), "share_pct": round((st_w / ws_sum) * 100.0, 1), "est_cost_usd": round(cm_w / 1_000_000.0, 2)})
 
-    sa_sum = max(1, sum(int(v.get("steps", 0)) for v in agg["subagent_roles"].values()))
-    subagent_list: list[dict[str, Any]] = []
+    has_l24, l24_slots = compute_trailing_24h_slots(start_d, end_d, today, now_hour)
     e_iso = end_d.strftime("%Y-%m-%d")
-    for rk, rv in sorted(agg["subagent_roles"].items(), key=lambda kv: kv[1]["steps"], reverse=True):
-        tk, st_s, runs, cm_s = int(rv.get("tokens", 0)), int(rv.get("steps", 0)), int(rv.get("runs", 0)), int(rv.get("cost_usd_micros", 0))
-        votes = agg["role_model_votes"].get(rk) or {}
-        dom_mk = max(votes.items(), key=lambda kv: kv[1])[0] if votes else resolve_subagent_model(rk, "", parent_model_map, main_mk, main_switch_date, e_iso, agent_target_map)[0]
-        dom_lbl = MODEL_SHORT_LABELS.get(dom_mk, dom_mk) + (" (inherit)" if agg["role_inherited"].get(rk) else "")
-        rv.update({
-            "tok_per_day": round(tk / act_d), "tok_per_week": round(tk / act_w),
-            "avg_tokens_per_run": round(tk / max(1, runs)), "cost_usd_micros": cm_s, "est_cost_usd": round(cm_s / 1_000_000.0, 2),
-            "share_pct": round((st_s / sa_sum) * 100.0, 1), "dominant_model_key": dom_mk, "dominant_model_label": dom_lbl,
-        })
-        subagent_list.append({"role": rk, **rv})
-
-    targets, specs = quota_info["target_model_allocation"], get_model_specs_map()
-    tot_calls = max(1, sum(agg["model_totals"].values()))
-    model_comp = []
-    for mk in get_canonical_model_keys():
-        sp = specs.get(mk, {})
-        tm = targets.get(mk, {"label": sp.get("label", mk), "pool": sp.get("pool_label", "Unknown"), "pool_key": sp.get("pool_key", "google"), "quota_group": sp.get("quota_group", "Gemini Models"), "target_pct": 0.0})
-        ac, tk_m, cm_m, fm_m = int(agg["model_totals"].get(mk, 0)), int(agg["model_tokens"].get(mk, 0)), int(agg["model_cost"].get(mk, 0)), int(agg["model_fore"].get(mk, 0))
-        ap, tp = round((ac / tot_calls) * 100.0, 1), float(tm.get("target_pct", 0.0))
-        dp = round(ap - tp, 1)
-        epoch = resolve_rate_epoch(mk, e_iso, bg_dir=bg_dir)
-        model_comp.append({
-            "model_key": mk, "label": str(tm.get("label") or sp.get("label") or mk),
-            "short_label": str(sp.get("short_label") or MODEL_SHORT_LABELS.get(mk, mk)),
-            "pool": str(tm.get("pool") or sp.get("pool_label") or "Unknown"),
-            "pool_key": str(tm.get("pool_key") or sp.get("pool_key") or "google"),
-            "quota_group": str(tm.get("quota_group") or sp.get("quota_group") or "Gemini Models"),
-            "rate_label": f"${epoch['input_micros'] / 1_000_000:.2f}/${epoch['output_micros'] / 1_000_000:.2f}",
-            "actual_calls": ac, "est_tokens": tk_m, "cost_usd_micros": cm_m, "est_cost_usd": round(cm_m / 1_000_000.0, 2),
-            "forecast_cost_micros": fm_m, "forecast_cost_usd": round(fm_m / 1_000_000.0, 2),
-            "actual_pct": ap, "target_pct": tp, "delta_pct": dp,
-            "status": "ON_TARGET" if abs(dp) <= 12.0 else ("OVER_TARGET" if dp > 12.0 else "UNDER_TARGET"),
-        })
-
+    subagent_list = build_subagent_list_rows(
+        agg, act_d, act_w, l24_slots, has_l24,
+        resolve_model_fn=resolve_subagent_model, short_labels=MODEL_SHORT_LABELS, e_iso=e_iso,
+        parent_model_map=parent_model_map, main_mk=main_mk, main_switch_date=main_switch_date,
+        agent_target_map=agent_target_map,
+    )
+    model_comp = build_model_comparison_rows(
+        agg, quota_info, e_iso, l24_slots, has_l24,
+        canonical_keys=get_canonical_model_keys(), specs=get_model_specs_map(),
+        short_labels=MODEL_SHORT_LABELS, resolve_rate_epoch_fn=resolve_rate_epoch, bg_dir=bg_dir,
+    )
     return {
         "win_steps_sum": win_st, "win_tools_sum": win_tl, "win_tokens_sum": win_tk, "win_cost_sum": win_cs,
         "active_days": act_days, "act_d": act_d, "act_w": act_w, "peak": peak,
+        "has_last_24h": has_l24, "l24_slots": l24_slots,
         "heatmap_series": heatmap_series, "all_ws_list": all_ws_list, "subagent_list": subagent_list, "model_comp": model_comp,
     }
 
@@ -275,13 +257,8 @@ def build_nexus_stats_bundle(
     can_persist = (bg_dir.resolve() != default_live_bg) or any((brain_dir / cid).is_dir() for cid in full_conv_cache)
     parent_model_map = {cid: str(cd.get("last_conv_model") or "") for cid, cd in full_conv_cache.items() if cd.get("last_conv_model")}
     ledger = (
-        merge_and_persist_cost_ledger(
-            bg_dir, full_conv_cache, full_db_convs, projects_map=projects_map,
-            parent_model_map=parent_model_map, main_mk=main_mk,
-            main_switch_date=main_switch_date, agent_target_map=agent_target_map,
-        )
-        if can_persist
-        else load_cost_ledger(bg_dir)
+        merge_and_persist_cost_ledger(bg_dir, full_conv_cache, full_db_convs, projects_map=projects_map, parent_model_map=parent_model_map, main_mk=main_mk, main_switch_date=main_switch_date, agent_target_map=agent_target_map)
+        if can_persist else load_cost_ledger(bg_dir)
     )
     full_live_cids = set(full_conv_cache.keys())
 
@@ -306,7 +283,7 @@ def build_nexus_stats_bundle(
         agent_target_map=agent_target_map, bg_dir=bg_dir,
     )
     tbl = _build_heatmap_and_tables(
-        agg, start_d=start_d, end_d=end_d, today=today, hm=hm, quota_info=quota_info,
+        agg, start_d=start_d, end_d=end_d, today=today, now_hour=now_loc.hour, hm=hm, quota_info=quota_info,
         parent_model_map=parent_model_map, main_mk=main_mk, main_switch_date=main_switch_date,
         agent_target_map=agent_target_map, bg_dir=bg_dir,
     )
@@ -319,6 +296,8 @@ def build_nexus_stats_bundle(
         trimmed_days = [x["date"] for x in (chart_days[max(0, first_idx - 1) :] if len(chart_days) > 7 else chart_days)]
 
     tree_for_series = {"projects": [tp for tp in (tree_bundle.get("projects") or []) if str(tp.get("project_id") or "") == target_pid]} if target_pid else tree_bundle
+    cand_cids = set(agg["root_sess_stats"]) | {str(s.get("conversation_id") or "") for tp in (tree_for_series.get("projects") or []) for s in (tp.get("sessions") or [])}
+    retired_cids = {cid for cid in cand_cids if cid and is_session_retired(cid, brain_dir)}
     sess_s1_steps = {rcid: rs["s1_steps"] for rcid, rs in agg["root_sess_stats"].items()} if target_pid else {}
     sess_s1_toks = {rcid: rs["s1_toks"] for rcid, rs in agg["root_sess_stats"].items()} if target_pid else {}
     sess_s1_cost = {rcid: rs["s1_cost"] for rcid, rs in agg["root_sess_stats"].items()} if target_pid else {}
@@ -329,6 +308,7 @@ def build_nexus_stats_bundle(
         s1_sub_steps=agg["s1_sub_steps"], s1_sub_toks=agg["s1_sub_toks"], s1_sub_cost=agg["s1_sub_cost"],
         s1_ws_steps=agg["s1_ws_steps"], all_ws_list=tbl["all_ws_list"], subagent_list=tbl["subagent_list"],
         root_sess_stats=agg["root_sess_stats"], db_convs=db_convs, projects_map=projects_map, tree_bundle=tree_for_series,
+        l24_slots=tbl["l24_slots"], has_l24=tbl["has_last_24h"], retired_cids=retired_cids,
     )
     slot_groups, p_hier = series_pkg.pop("groups", []), series_pkg["project_hierarchy"]
     if target_pid and fleet_idx is not None:

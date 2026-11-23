@@ -57,7 +57,7 @@
   function getDemoWorkspaceTree() {
     const snap = window.DEMO_SNAPSHOT;
     if (snap && snap.workspace_tree) return cloneJson(snap.workspace_tree);
-    return { ok: true, version: "4.0.3", queue: { staged_count: 0, tickets: [] }, projects: [] };
+    return { ok: true, version: "4.0.4", queue: { staged_count: 0, tickets: [] }, projects: [] };
   }
 
   function getDemoSessionBucket(sessionId) {
@@ -141,6 +141,7 @@
         window_tokens: tokens,
         window_cost_usd: costUsd,
         status,
+        is_retired: Boolean(s.is_retired) || String(status).toUpperCase() === "RETIRED",
       }));
       if (!isAct) return;
       const weight = steps / pTotal;
@@ -165,9 +166,26 @@
       }
       activeIdx += 1;
     });
-    const ovfCost = new Array(n).fill(0);
+    const { costLayers } = finalizeScopedSessionLayers(proj, list, dates, keys, labels, colors, layers, tokenLayers, roster, overflowSteps, overflowTok, otherCount);
+    return {
+      dates,
+      step_hours: String(dates[0] || "").length > 10 ? 1 : 24,
+      resolution: String(dates[0] || "").length > 10 ? "1h base slots" : "24h daily",
+      keys,
+      layers,
+      token_layers: tokenLayers,
+      cost_layers: costLayers,
+      labels,
+      colors,
+      sessions: roster,
+    };
+  }
+
+  function finalizeScopedSessionLayers(proj, list, dates, keys, labels, colors, layers, tokenLayers, roster, overflowSteps, overflowTok, otherCount) {
+    const n = dates.length;
     const pTokTotal = list.reduce((a, s) => a + Number((s && (s.window_tokens != null ? s.window_tokens : s.tokens)) || 0), 0) || Number(proj.window_tokens || 0);
     const pCostTotal = Number(proj.window_cost_usd || 0);
+    const pSeriesToks = Array.isArray(proj.tokens_series) ? proj.tokens_series : [];
     const pSeriesCost = Array.isArray(proj.cost_series) && proj.cost_series.length ? proj.cost_series : [];
     const costPerTok = pTokTotal > 0 && pCostTotal > 0 ? pCostTotal / pTokTotal : 0;
     const costLayers = {};
@@ -180,29 +198,26 @@
         return Number((fs * ((Number(pSeriesToks[i] || 0) > 0 ? Number(tv || 0) / Number(pSeriesToks[i]) : 0))).toFixed(4));
       });
     }
+    const slotW = String(dates[0] || "").length > 10 ? Math.min(n, 24) : 1;
+    const tailSum = (arr) => Array.isArray(arr) && arr.length ? arr.slice(-slotW).reduce((a, b) => a + Number(b || 0), 0) : 0;
+    roster.forEach((r) => {
+      if (r.has_last_24h == null) r.has_last_24h = proj.has_last_24h !== false;
+      if (r.has_last_24h && r.last_24h_steps == null) {
+        r.last_24h_steps = tailSum(layers[r.conversation_id]);
+        r.last_24h_tokens = tailSum(tokenLayers[r.conversation_id]);
+        r.last_24h_cost_usd = Number(tailSum(costLayers[r.conversation_id]).toFixed(4));
+      }
+    });
     if (otherCount > 0) {
-      const ovf = proj.overflow_sessions_series || {};
-      const hasOvfSteps = overflowSteps.some((v) => v > 0);
+      const ovf = proj.overflow_sessions_series || {}, hasOvfSteps = overflowSteps.some((v) => v > 0);
       keys.push("__other_sessions__");
       labels.__other_sessions__ = `Other (${otherCount} sessions)`;
       colors.__other_sessions__ = 11;
       layers.__other_sessions__ = (hasOvfSteps || !Array.isArray(ovf.steps_series)) ? overflowSteps : ovf.steps_series.slice(0, n);
       tokenLayers.__other_sessions__ = (hasOvfSteps || !Array.isArray(ovf.tokens_series)) ? overflowTok : ovf.tokens_series.slice(0, n);
-      for (let i = 0; i < n; i += 1) ovfCost[i] = Number((Number(tokenLayers.__other_sessions__[i] || 0) * costPerTok).toFixed(4));
-      costLayers.__other_sessions__ = ovfCost;
+      costLayers.__other_sessions__ = Array.from({ length: n }, (_, i) => Number((Number(tokenLayers.__other_sessions__[i] || 0) * costPerTok).toFixed(4)));
     }
-    return {
-      dates,
-      step_hours: 1,
-      resolution: "1h base slots",
-      keys,
-      layers,
-      token_layers: tokenLayers,
-      cost_layers: costLayers,
-      labels,
-      colors,
-      sessions: roster,
-    };
+    return { costLayers };
   }
 
   function roundUsd(val, digits = 2) {
@@ -412,6 +427,9 @@
         actual_calls: Math.round((m.actual_calls != null ? m.actual_calls : (m.calls || 0)) * shareRatio),
         tokens: Math.round((m.tokens || 0) * shareRatio), est_tokens: Math.round((m.est_tokens != null ? m.est_tokens : (m.tokens || 0)) * shareRatio),
         est_cost_usd: roundUsd((m.est_cost_usd || 0) * costRatio, 2), forecast_cost_usd: roundUsd((m.forecast_cost_usd || 0) * costRatio, 2),
+        last_24h_steps: m.last_24h_steps != null ? Math.round(m.last_24h_steps * shareRatio) : null,
+        last_24h_tokens: m.last_24h_tokens != null ? Math.round(m.last_24h_tokens * shareRatio) : null,
+        last_24h_cost_usd: m.last_24h_cost_usd != null ? roundUsd(m.last_24h_cost_usd * costRatio, 4) : null,
         share_pct: Number((m.share_pct || 0).toFixed(1)),
       }));
     }
@@ -427,10 +445,19 @@
         if (raw.subagent_series.cost_layers) raw.subagent_series.cost_layers = scaleLayerMap(dates, fleetSeries, pStepsArr, raw.subagent_series.cost_layers, 4);
       }
       if (Array.isArray(raw.subagent_list)) {
-        raw.subagent_list = raw.subagent_list.map((r) => Object.assign({}, r, {
-          runs: Math.max(0, Math.round((r.runs || 0) * subRatio)), tokens: Math.max(0, Math.round((r.tokens || 0) * subRatio)),
-          est_cost_usd: roundUsd((r.est_cost_usd || 0) * subRatio, 2),
-        })).filter((r) => r.runs > 0);
+        raw.subagent_list = raw.subagent_list.map((r) => {
+          const newRuns = Math.max(0, Math.round((r.runs || 0) * subRatio));
+          return Object.assign({}, r, {
+            runs: newRuns,
+            steps: Math.max(0, Math.round((r.steps || 0) * subRatio)),
+            tokens: Math.max(0, Math.round((r.tokens || 0) * subRatio)),
+            est_cost_usd: roundUsd((r.est_cost_usd || 0) * subRatio, 2),
+            over_120_runs: Math.min(newRuns, Math.max(0, Math.round((r.over_120_runs || 0) * subRatio))),
+            last_24h_steps: r.last_24h_steps != null ? Math.max(0, Math.round(r.last_24h_steps * subRatio)) : null,
+            last_24h_tokens: r.last_24h_tokens != null ? Math.max(0, Math.round(r.last_24h_tokens * subRatio)) : null,
+            last_24h_cost_usd: r.last_24h_cost_usd != null ? roundUsd(r.last_24h_cost_usd * subRatio, 4) : null,
+          });
+        }).filter((r) => r.runs > 0);
       }
     }
     raw.project_sessions_series = buildScopedProjectSeries(proj, dates);

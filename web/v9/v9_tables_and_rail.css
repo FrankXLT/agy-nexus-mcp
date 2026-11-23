@@ -109,6 +109,121 @@
       transition: none;
     }
   }
+
+  /* Option A Hybrid Range Whiskers & Target/Seam Caret Bars */
+  .v9-spk {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.42rem;
+    inline-size: 100%;
+    min-inline-size: 146px;
+  }
+  .v9-spk-track {
+    position: relative;
+    flex: 1 1 80px;
+    min-inline-size: 66px;
+    block-size: 16px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .v9-spk-rail {
+    position: relative;
+    inline-size: 100%;
+    block-size: 6px;
+    border-radius: var(--radius-pill);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    overflow: visible;
+  }
+  .v9-whisk-tether {
+    position: absolute;
+    inset-block-start: 1px;
+    inset-inline-start: 0;
+    block-size: 2px;
+    background: var(--text-muted);
+    opacity: 0.28;
+    border-radius: var(--radius-xs);
+  }
+  .v9-whisk-bar,
+  .v9-caret-fill {
+    position: absolute;
+    inset-block-start: 0;
+    block-size: 4px;
+    border-radius: var(--radius-pill);
+  }
+  .v9-caret-fill {
+    inset-inline-start: 0;
+  }
+  .v9-caret-fill.is-muted {
+    opacity: 0.36;
+  }
+  .v9-whisk-avg {
+    position: absolute;
+    inset-block-start: -4px;
+    inline-size: 2px;
+    block-size: 12px;
+    background: var(--text-primary);
+    border-radius: 1px;
+    transform: translateX(-1px);
+    z-index: 2;
+  }
+  .v9-whisk-dot {
+    position: absolute;
+    inset-block-start: 50%;
+    inline-size: 7px;
+    block-size: 7px;
+    border-radius: 50%;
+    background: var(--v9-dot-bg, var(--accent));
+    border: 1.5px solid var(--v9-dot-bd, var(--bg-surface));
+    transform: translate(-50%, -50%);
+    z-index: 3;
+  }
+  .v9-whisk-dot.is-idle {
+    opacity: 0.85;
+  }
+  .v9-top-caret {
+    position: absolute;
+    inset-block-start: -6px;
+    inline-size: 8px;
+    block-size: 5px;
+    color: var(--text-primary);
+    transform: translateX(-4px);
+    z-index: 3;
+    pointer-events: none;
+  }
+  .v9-top-caret.is-idle { color: var(--text-muted); opacity: 0.72; }
+  .v9-top-caret.is-seam { color: var(--text-muted); }
+  .v9-top-caret.is-seam.is-alert { color: var(--status-danger); }
+  .v9-spk-val {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.22rem;
+    font-family: var(--font-mono);
+    font-size: var(--ts-xs);
+    color: var(--text-secondary);
+    white-space: nowrap;
+    min-inline-size: 3.5rem;
+  }
+  .v9-cap-flag {
+    display: inline-block;
+    padding: 0 3px;
+    border-radius: var(--radius-xs);
+    font-size: 11px;
+    line-height: 1.25;
+    font-weight: 700;
+    border: 1px solid currentColor;
+  }
+  .v9-cap-flag.is-fault { color: var(--status-danger); background: var(--status-err-bg); }
+  .v9-cap-flag.is-warn { color: var(--status-warn); background: var(--status-warn-bg); }
+  .v9-cap-flag.is-muted { color: var(--text-muted); background: var(--bg-elevated); border-color: var(--border-subtle); }
+  @media (forced-colors: active) {
+    .v9-whisk-bar,
+    .v9-caret-fill { border-block: 2px solid Highlight; }
+    .v9-whisk-avg { border-inline-start: 2px solid CanvasText; background: CanvasText; }
+    .v9-whisk-dot { forced-color-adjust: none; border-color: CanvasText; background: Highlight; }
+    .v9-whisk-dot.is-idle { background: Canvas; }
+  }
 }
 
 @layer utilities {
@@ -122,15 +237,17 @@
   }
 
   @media (max-width: 639px) {
-    .v9-stage .v9-table th:has(> .v9-th-sort) {
-      padding: 0;
+    .v9-stage .v9-table th:has(> .v9-th-sort) { padding: 0; }
+    .v9-stage .v9-th-sort { min-inline-size: 0; padding: 0.24rem 0.22rem; font-size: 11px; gap: 0.12rem; }
+    .v9-stage .v9-bar-cell { min-inline-size: 74px; }
+    .v9-stage .v9-spk {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 2px;
+      min-inline-size: 68px;
     }
-    .v9-stage .v9-th-sort {
-      min-inline-size: 0;
-      padding: 0.24rem 0.22rem;
-      font-size: 11px;
-      gap: 0.12rem;
-    }
+    .v9-stage .v9-spk-track { flex: none; min-inline-size: 64px; block-size: 12px; }
+    .v9-stage .v9-spk-val { min-inline-size: 0; justify-content: flex-start; flex-wrap: wrap; font-size: 11px; }
   }
 
   /* Ensure 4 swatches + [Compact | Comfortable] fit comfortably inside 280px rail even under 4K rem scaling */

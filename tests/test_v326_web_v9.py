@@ -75,7 +75,7 @@ def test_classic_cross_link_navbar_invariance_and_workbench_dom() -> None:
 
     assert live_html == v9_html
     assert 'id="navV9Link"' not in live_html
-    assert 'CACHE_NAME = "agy-nexus-v4.0.3"' in sw_js
+    assert 'CACHE_NAME = "agy-nexus-v4.0.4"' in sw_js
     assert '"v9/v9_app.js"' in sw_js
 
     topbar_match = re.search(r"<header\b[^>]*class=\"v9-topbar\"[^>]*>([\s\S]*?)</header>", v9_html)
