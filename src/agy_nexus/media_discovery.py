@@ -165,6 +165,24 @@ def parse_iso_epoch(raw_ts: str) -> float:
         return 0.0
 
 
+def format_relative_age(iso_str: str = "", ts: float = 0.0, *, now_ts: float | None = None) -> str:
+    """Convert ISO-8601 timestamp or epoch seconds into compact relative age (e.g. '4m ago', '2h ago', '3d ago')."""
+    eff_ts = float(ts or 0.0)
+    if eff_ts <= 0.0:
+        eff_ts = parse_iso_epoch(iso_str)
+    if eff_ts <= 0.0:
+        return "recent"
+    ref_ts = float(now_ts) if now_ts is not None else datetime.now(timezone.utc).timestamp()
+    diff_s = max(0, int(ref_ts - eff_ts))
+    if diff_s < 60:
+        return f"{diff_s}s ago"
+    if diff_s < 3600:
+        return f"{diff_s // 60}m ago"
+    if diff_s < 86400:
+        return f"{diff_s // 3600}h ago"
+    return f"{diff_s // 86400}d ago"
+
+
 def _transcript_start_epoch(brain_dir: Path | None) -> float:
     if brain_dir is None or not brain_dir.is_dir():
         return 0.0

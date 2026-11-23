@@ -8,7 +8,7 @@ import time
 from typing import Any
 
 from agy_nexus.hygiene import is_sensitive_filename
-from agy_nexus.media_discovery import parse_iso_epoch
+from agy_nexus.media_discovery import format_relative_age, parse_iso_epoch
 from agy_nexus.stats_series import _sum_slots, _sum_slots_usd, resolve_canonical_project, resolve_root_conversation
 from agy_nexus.telemetry_scanner import normalize_workspace_name, to_1h_slot
 
@@ -271,6 +271,9 @@ def build_project_sessions_series(
         cid = str(s.get("conversation_id") or "")
         w_st = int(s.get("window_steps") or 0)
         w_cm = int(s.get("window_cost_micros") or 0)
+        last_iso = str(s.get("last_updated") or "")
+        last_ts = float(s.get("last_updated_ts") or 0.0) or parse_iso_epoch(last_iso)
+        rel_age = str(s.get("relative_age") or "") or (format_relative_age(last_iso, last_ts) if last_ts > 0 else "recent")
         roster.append({
             "conversation_id": cid, "short_id": cid[:8], "title": str(s.get("title") or cid[:8]),
             "status": str(s.get("status") or "IDLE"), "is_running": bool(s.get("is_running")),
@@ -279,8 +282,8 @@ def build_project_sessions_series(
             "window_steps": w_st, "window_tokens": int(s.get("window_tokens") or 0),
             "window_cost_micros": w_cm, "window_cost_usd": round(w_cm / 1_000_000.0, 4),
             "step_count": int(s.get("step_count") or 0), "subagent_runs": int(s.get("subagent_runs") or 0),
-            "last_updated": str(s.get("last_updated") or ""), "last_updated_ts": float(s.get("last_updated_ts") or 0.0),
-            "relative_age": str(s.get("relative_age") or ""),
+            "last_updated": last_iso, "last_updated_ts": last_ts,
+            "relative_age": rel_age,
             "color_slot": colors_map.get(cid, -1),
         })
 

@@ -17,26 +17,12 @@ import agy_nexus.config as cfg
 from agy_nexus.config import AGY_GITLAB_DIR, AGY_PROJECTS_DIR, SESSION_STATE
 from agy_nexus.handoff_queue import list_handoff_tickets, slugify_token
 from agy_nexus.hygiene import TTL_SECONDS
-from agy_nexus.media_discovery import parse_iso_epoch
+from agy_nexus.media_discovery import format_relative_age, parse_iso_epoch
 from agy_nexus.sessions import _list_saved_sessions_internal, _load_projects_map
 from agy_nexus.telemetry_scanner import normalize_workspace_name
 
 
-def _format_relative_age(iso_str: str, ts: float = 0.0) -> str:
-    """Convert ISO-8601 timestamp or epoch seconds into compact relative age (e.g. '4m ago', '2h ago', '3d ago')."""
-    eff_ts = float(ts or 0.0)
-    if eff_ts <= 0.0:
-        eff_ts = parse_iso_epoch(iso_str)
-    if eff_ts <= 0.0:
-        return "recent"
-    diff_s = max(0, int(time.time() - eff_ts))
-    if diff_s < 60:
-        return f"{diff_s}s ago"
-    if diff_s < 3600:
-        return f"{diff_s // 60}m ago"
-    if diff_s < 86400:
-        return f"{diff_s // 3600}h ago"
-    return f"{diff_s // 86400}d ago"
+_format_relative_age = format_relative_age
 
 
 def read_backup_321_manifest(bg_dir: Path | None = None) -> dict[str, Any]:

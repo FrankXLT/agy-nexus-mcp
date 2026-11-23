@@ -88,7 +88,7 @@ def _read_package_version(src_root: Path) -> str:
         m = re.search(r'^version\s*=\s*"([^"]+)"', pyproject.read_text(encoding="utf-8"), re.M)
         if m:
             return m.group(1).strip()
-    return "4.0.2"
+    return "4.0.3"
 
 
 def _extract_changelog_section(src_root: Path, version: str) -> str:
@@ -219,7 +219,7 @@ def main() -> int:
     parser.add_argument("--repo", default="agy-nexus-mcp", help="Target GitHub repository name")
     parser.add_argument(
         "--description",
-        default="AGY-Nexus v4.0.2: Quiet UI v9.3.0 Telemetry & Workspace Studio, 8-Model Cost Ledger, Praxis Semantic Gateway, and Multi-Agent Orchestrator for Google Antigravity.",
+        default="AGY-Nexus v4.0.3: Quiet UI v9.3.0 Sortable Analytics Tables, Pinned Desktop Sidebar, 8-Model Cost Ledger, Praxis Semantic Gateway & Multi-Agent Orchestrator.",
         help="GitHub repository description",
     )
     parser.add_argument("--private", action="store_true", help="Create repository as private (default: public)")
@@ -235,7 +235,7 @@ def main() -> int:
     src_root = Path(__file__).resolve().parent.parent
     pkg_version = _read_package_version(src_root)
     tag_name = f"v{pkg_version}"
-    rel_title = args.release_title.strip() or f"{tag_name} — Quiet UI v9.3.0 Live /web Studio, 8-Model Micro-USD Cost Ledger & Public Interactive Showcase"
+    rel_title = args.release_title.strip() or f"{tag_name} — Sortable Analytics Tables, Desktop Sidebar Pinning & Opus 5.5 Drift Fix"
     showcase_dir = src_root / "build" / "gh-pages"
     pages_res = build_showcase(showcase_dir, refresh=False) if not args.no_pages else {"files": 0, "bytes": 0, "privacy_findings": 0}
     if args.dry_run:

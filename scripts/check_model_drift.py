@@ -152,6 +152,17 @@ def _check_gemini_api(cat: dict[str, Any]) -> tuple[dict[str, Any], list[dict[st
     return {"status": "OK", "matched_models": matched}, findings
 
 
+_PUBLIC_FEED_MODEL_TOKENS: tuple[str, ...] = (
+    "gemini-4",
+    "gemini-3.8",
+    "sonnet-5-5",
+    "sonnet-5.5",
+    "opus-5-5",
+    "opus-5.5",
+    "gpt-oss-120b",
+)
+
+
 def _check_public_rate_feeds(cat: dict[str, Any], today_iso: str) -> tuple[dict[str, Any], list[dict[str, str]]]:
     sources: dict[str, Any] = {}
     findings: list[dict[str, str]] = []
@@ -166,7 +177,7 @@ def _check_public_rate_feeds(cat: dict[str, Any], today_iso: str) -> tuple[dict[
                 if not isinstance(info, dict):
                     continue
                 low = str(mid).lower()
-                if not any(tok in low for tok in ("gemini-4", "gemini-3.8", "sonnet-5", "opus-5", "gpt-oss-120b")):
+                if not any(tok in low for tok in _PUBLIC_FEED_MODEL_TOKENS):
                     continue
                 checked += 1
                 mk = classify_model_key(mid)
@@ -194,7 +205,7 @@ def _check_public_rate_feeds(cat: dict[str, Any], today_iso: str) -> tuple[dict[
     if not ok_ll or not isinstance(ll_data, dict):
         sources["litellm"] = {"status": "UNREACHABLE", "detail": ll_err}
     else:
-        ll_cnt = sum(1 for k in ll_data if any(t in str(k).lower() for t in ("gemini-4", "gemini-3.8", "sonnet-5", "opus-5", "gpt-oss-120b")))
+        ll_cnt = sum(1 for k in ll_data if any(t in str(k).lower() for t in _PUBLIC_FEED_MODEL_TOKENS))
         sources["litellm"] = {"status": "OK", "matched_models": ll_cnt}
     return sources, findings
 

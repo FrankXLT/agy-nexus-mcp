@@ -1,0 +1,157 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* AGY-Nexus /web/v9 — Sortable Table Headers & Desktop Sticky Sidebar Pinning */
+
+@layer views {
+  :root {
+    --v9-topbar-h: 50px;
+  }
+
+  /* Sortable Table Header Buttons & CSS-Driven SVG Indicators */
+  .v9-table th:has(> .v9-th-sort) {
+    padding: 0;
+  }
+  .v9-th-sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.24rem;
+    inline-size: 100%;
+    min-block-size: 28px;
+    padding: 0.28rem 0.45rem;
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-transform: inherit;
+    letter-spacing: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+    text-align: start;
+  }
+  .v9-table th.num .v9-th-sort {
+    justify-content: flex-end;
+    text-align: end;
+  }
+  .v9-th-sort:hover {
+    background: var(--bg-surface);
+    color: var(--text-primary);
+  }
+  .v9-th-sort:focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: -2px;
+    color: var(--text-primary);
+  }
+  .v9-sort-ind {
+    flex-shrink: 0;
+    color: var(--text-muted);
+  }
+  .v9-sort-ind .v9-sort-up,
+  .v9-sort-ind .v9-sort-dn {
+    opacity: 0.22;
+    transition: opacity 0.12s ease;
+  }
+  .v9-th-sort:hover .v9-sort-up,
+  .v9-th-sort:hover .v9-sort-dn {
+    opacity: 0.55;
+  }
+  th[aria-sort] .v9-th-sort {
+    color: var(--text-primary);
+  }
+  th[aria-sort="ascending"] .v9-sort-ind,
+  th[aria-sort="descending"] .v9-sort-ind {
+    color: var(--accent-primary);
+  }
+  th[aria-sort="ascending"] .v9-sort-up { opacity: 1; }
+  th[aria-sort="ascending"] .v9-sort-dn { opacity: 0.14; }
+  th[aria-sort="descending"] .v9-sort-dn { opacity: 1; }
+  th[aria-sort="descending"] .v9-sort-up { opacity: 0.14; }
+
+  /* Rail Pin Toggle Button (Visible >= 1100px Desktop Only) */
+  .v9-rail-hdr-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    flex-shrink: 0;
+  }
+  .v9-rail-pin-btn {
+    display: none;
+    color: var(--text-muted);
+  }
+  .v9-rail-pin-btn[aria-pressed="true"] {
+    background: var(--bg-surface);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+  }
+
+  @media (min-width: 1100px) {
+    .v9-rail-pin-btn {
+      display: inline-flex;
+    }
+    .v9-app-shell.is-rail-pinned {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      align-items: start;
+    }
+    .v9-app-shell.is-rail-pinned > .v9-nav-rail.is-pinned {
+      position: sticky;
+      inset-block-start: var(--v9-topbar-h, 50px);
+      inset-inline-start: auto;
+      inline-size: 280px;
+      width: 280px;
+      block-size: calc(100dvh - var(--v9-topbar-h, 50px));
+      max-block-size: calc(100dvh - var(--v9-topbar-h, 50px));
+      transform: none;
+      visibility: visible;
+      pointer-events: auto;
+      box-shadow: none;
+      z-index: 20;
+      border-inline-end: 1px solid var(--border-subtle);
+      transition: none;
+    }
+  }
+}
+
+@layer utilities {
+  .v9-sr-only {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  @media (max-width: 639px) {
+    .v9-stage .v9-table th:has(> .v9-th-sort) {
+      padding: 0;
+    }
+    .v9-stage .v9-th-sort {
+      min-inline-size: 0;
+      padding: 0.24rem 0.22rem;
+      font-size: 11px;
+      gap: 0.12rem;
+    }
+  }
+
+  /* Ensure 4 swatches + [Compact | Comfortable] fit comfortably inside 280px rail even under 4K rem scaling */
+  .v9-nav-rail .v9-rail-footer {
+    padding: 4px 6px;
+    gap: 4px;
+  }
+  .v9-nav-rail .v9-swatch-row {
+    gap: 2px;
+  }
+  .v9-nav-rail .v9-swatch-btn {
+    inline-size: 26px;
+    block-size: 28px;
+    min-block-size: 28px;
+  }
+  .v9-nav-rail .v9-swatch-circle {
+    inline-size: 18px;
+    block-size: 18px;
+  }
+  .v9-nav-rail .v9-rail-footer .va-tb-group .va-tb-btn {
+    padding: 2px 5px;
+    font-size: 11px;
+  }
+}

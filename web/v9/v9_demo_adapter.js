@@ -57,7 +57,7 @@
   function getDemoWorkspaceTree() {
     const snap = window.DEMO_SNAPSHOT;
     if (snap && snap.workspace_tree) return cloneJson(snap.workspace_tree);
-    return { ok: true, version: "4.0.2", queue: { staged_count: 0, tickets: [] }, projects: [] };
+    return { ok: true, version: "4.0.3", queue: { staged_count: 0, tickets: [] }, projects: [] };
   }
 
   function getDemoSessionBucket(sessionId) {
@@ -130,7 +130,18 @@
       const isAct = steps > 0;
       const share = isAct ? Number(((steps / pTotal) * 100).toFixed(1)) : 0;
       const slot = isAct ? (activeIdx < 11 ? activeIdx : 11) : 11;
-      roster.push(Object.assign({}, s, { short_id: cid.slice(0, 8), share_pct: share, color_slot: slot }));
+      const tokens = Number(s.window_tokens != null ? s.window_tokens : (proj.is_idle ? 0 : (s.tokens || 0)));
+      const costUsd = Number(s.window_cost_usd || 0);
+      const status = s.status || (s.is_running ? "RUNNING" : "IDLE");
+      roster.push(Object.assign({}, s, {
+        short_id: cid.slice(0, 8),
+        share_pct: share,
+        color_slot: slot,
+        window_steps: steps,
+        window_tokens: tokens,
+        window_cost_usd: costUsd,
+        status,
+      }));
       if (!isAct) return;
       const weight = steps / pTotal;
       const ss = Array.isArray(s.steps_series) && s.steps_series.length

@@ -45,7 +45,7 @@ from agy_nexus.workspace import _resolve_and_read_files
 
 
 def test_version_and_modular_budget() -> None:
-    assert agy_nexus.__version__ == "4.0.2"
+    assert agy_nexus.__version__ == "4.0.3"
     assert TARGET_FILE_LINES == 500
     assert HARD_MAX_FILE_LINES == 650
     assert not (SRC_DIR / "agy_nexus" / "ast_outline.py").exists(), "ast_outline.py must be removed"
@@ -285,7 +285,7 @@ def test_6_streamable_http_405_and_polyglot_zero_trust_lan_guard() -> None:
 
         # Health & Web remain 200
         r_h = client.get("/health")
-        assert r_h.status_code == 200 and r_h.json()["version"] == "4.0.2"
+        assert r_h.status_code == 200 and r_h.json()["version"] == "4.0.3"
 
         # Zero-Trust LAN Guard blocks reverse-proxied / public-domain / DNS-rebinding / cross-origin requests to /praxis/* and /polyglot/*
         for bad_hdrs in (

@@ -46,6 +46,7 @@
     tabAn?.setAttribute("tabindex", isWs ? "-1" : "0");
     tabWs?.setAttribute("aria-selected", String(isWs));
     tabWs?.setAttribute("tabindex", isWs ? "0" : "-1");
+    V9.Hierarchy?.syncRailLayout?.();
   }
 
   function lockAndReset(reasonMsg) {
@@ -430,12 +431,22 @@
       st.heatWeeks = st.heatWeeks <= 26 ? 53 : 26;
       if (st.bundle) V9.Heatmap.renderHeatmap(st.bundle);
     });
+    let lastDesktopRail = window.innerWidth >= 1100;
+    let resizeRailTimer = null;
     window.addEventListener("resize", () => {
       const nowMob = window.innerWidth <= 560;
       if (nowMob !== lastMobileHeat) {
         lastMobileHeat = nowMob;
         if (!st.heatPinned) st.heatWeeks = nowMob ? 26 : 53;
         if (st.bundle) V9.Heatmap.renderHeatmap(st.bundle);
+      }
+      const nowDesktop = window.innerWidth >= 1100;
+      if (nowDesktop !== lastDesktopRail) {
+        lastDesktopRail = nowDesktop;
+        V9.Hierarchy?.syncRailLayout?.();
+      } else {
+        clearTimeout(resizeRailTimer);
+        resizeRailTimer = setTimeout(() => V9.Hierarchy?.syncRailLayout?.(), 80);
       }
       if (st.bundle && st.surfaceView === "analytics") V9.Charts.scheduleRealign();
       if ((st.passphrase || st.demoMode) && V9.Workspace?.syncResponsiveMode) V9.Workspace.syncResponsiveMode();

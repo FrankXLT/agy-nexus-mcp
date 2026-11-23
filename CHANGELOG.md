@@ -4,6 +4,22 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.3] — 2026-11-23
+
+### Added
+- **Multi-Column Sortable Analytics Tables & `Age` Column (`web/v9/v9_table_sort.js`, `web/v9/v9_tables_and_rail.css`, `web/v9/v9_project_view.js`, `web/v9/v9_analytics.js`, `src/agy_nexus/stats_series.py`, `src/agy_nexus/project_stats.py`)**:
+  - Added `V9.TableSort` powering 1-click ascending/descending sorting (`<th scope="col">` buttons with `aria-sort="ascending|descending"` on the active column only and CSS-driven SVG direction arrows) across `Top Projects`, `Project Sessions`, `Model Workload`, and `Subagent Workload`.
+  - Added a dedicated `Age` column on both `Top Projects` and `Project Sessions` (backed by project/session `last_updated_ts` + `relative_age` metadata and a relative-age parser fallback for demo/static snapshots), sorted across all active projects prior to slicing the top 14 while preserving ECharts series color indices.
+- **Desktop Sidebar Pinning (`>= 1100px`) & Dynamic Menu Affordance (`web/v9/v9_hierarchy.js`, `web/v9/v9_state.js`, `web/v9/v9_app.js`)**:
+  - Added `localStorage.nexus_v9_rail_pinned` persistence with `#v9RailPinBtn` in `.v9-rail-hdr` (`>= 1100px`) to dock `#v9NavRail` inline in `#v9AppShell.is-rail-pinned` across `Analytics` and `Workspace`, keeping the rail open across project/session switches and realigning ECharts automatically.
+  - Updated `#v9MenuBtn` to render a `☰` hamburger icon when unpinned (or `< 1100px` mobile/tablet overlay mode) and a `◧` docked-panel icon when pinned on desktop, with debounced `1100px` resize synchronization.
+
+### Fixed
+- **Opus 5.5 / Sonnet 5.5 Drift Match (`scripts/check_model_drift.py`)**:
+  - Pinned `_check_public_rate_feeds` filter tokens to `opus-5-5` / `opus-5.5` and `sonnet-5-5` / `sonnet-5.5`, eliminating false-positive `models.dev` `claude-opus-5` (`$5.00/$25.00`) `RATE_DRIFT` warnings against active `Claude Opus 5.5` (`$4.00/$20.00`) rates.
+- **Docs & PWA Cache Sync (`docs/WORKFLOWS.md`, `web/sw.js`, `src/agy_nexus/web_routes.py`, `web/demo_snapshot.js`)**:
+  - Registered `v9_table_sort.js` and `v9_tables_and_rail.css` in `PWA_ASSETS` and `web/sw.js` (`CACHE_NAME = "agy-nexus-v4.0.3"`, `?v=4.0.3`), updated Workflow 6 in `docs/WORKFLOWS.md`, and refreshed `demo_snapshot.js` + `build/gh-pages/` (`0` leaks).
+
 ## [4.0.2] — 2026-11-22
 
 ### Fixed

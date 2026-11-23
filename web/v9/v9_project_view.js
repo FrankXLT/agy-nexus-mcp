@@ -154,6 +154,19 @@
     return opt;
   }
 
+  function mountSortableTable(wrap, tableId, tbodyId, headHtml, rowsHtml) {
+    const TS = V9.TableSort;
+    const existingTbl = wrap.querySelector && wrap.querySelector(`table[data-v9-table="${tableId}"]`);
+    const existingBody = existingTbl && document.getElementById(tbodyId);
+    if (existingTbl && existingBody) {
+      if (TS) TS.syncTheadSort(existingTbl.tHead, tableId);
+      existingBody.innerHTML = rowsHtml;
+      return existingTbl;
+    }
+    wrap.innerHTML = `<table class="v9-table booktabs" data-v9-table="${tableId}"><thead><tr>${headHtml}</tr></thead><tbody id="${tbodyId}">${rowsHtml}</tbody></table>`;
+    return wrap.querySelector && wrap.querySelector(`table[data-v9-table="${tableId}"]`);
+  }
+
   function renderTopProjectsTable(b, actions) {
     const wrap = document.getElementById("v9ProjTableWrap");
     const foot = document.getElementById("v9ProjFoot");
@@ -171,37 +184,55 @@
       if (foot) foot.textContent = "";
       return;
     }
+    const TS = V9.TableSort;
+    const nowRef = Date.now() / 1000;
     const totalSteps = active.reduce((acc, p) => acc + Number(p.window_steps || 0), 0) || 1;
-    const rowsHtml = active.slice(0, 14).map((p) => {
+    const enriched = active.map((p, origIdx) => {
       const pid = p.project_id || "";
-      const color = V9.getSeriesColor(p.color_slot || 0);
       const pct = Number(p.share_pct != null ? p.share_pct : ((p.window_steps || 0) / totalSteps) * 100);
       const actSess = Number(p.active_sessions_count != null ? p.active_sessions_count : (p.sessions || []).length);
       const totSess = Number(p.total_sessions || (p.sessions || []).length || actSess);
+      return {
+        p, origIdx, pid, pct, actSess, totSess,
+        ageTs: TS ? TS.recencyEpoch(p, nowRef) : Number(p.last_updated_ts || 0),
+        ageLabel: TS ? TS.getAgeLabel(p) : (p.relative_age || "recent"),
+      };
+    });
+    const sorted = TS
+      ? TS.sortItems(enriched, "projects", {
+          name: { type: "text", get: (e) => e.p.project_name || e.pid },
+          age: (e) => e.ageTs,
+          sessions: (e) => e.actSess,
+          share: (e) => e.pct * 1e9 + Number(e.p.window_steps || 0),
+          steps: (e) => Number(e.p.window_steps || 0),
+          tokens: (e) => Number(e.p.window_tokens || 0),
+          cost: (e) => Number(e.p.window_cost_usd || 0),
+        })
+      : enriched;
+
+    const rowsHtml = sorted.slice(0, 14).map((entry) => {
+      const { p, origIdx, pid, pct, actSess, totSess, ageLabel } = entry;
+      const color = V9.getSeriesColor(p.color_slot != null ? p.color_slot : origIdx);
       const latestSid = latestProjectSessionId(p);
       return `<tr class="v9-row-click v9-row-compact" data-proj-row="${V9.escHtml(pid)}" data-series-name="${V9.escHtml(p.project_name || pid)}">
         <td>
-          <div class="v9-tbl-name-wrap">
-            <span class="v9-swatch-dot" style="background:${color}"></span>
-            <span class="v9-tbl-name-txt" title="${V9.escHtml(p.project_name)}">${V9.escHtml(p.project_name)}</span>
-          </div>
+          <div class="v9-tbl-name-wrap"><span class="v9-swatch-dot" style="background:${color}"></span><span class="v9-tbl-name-txt" title="${V9.escHtml(p.project_name)}">${V9.escHtml(p.project_name)}</span></div>
           <div class="v9-cell-sub">${actSess}/${totSess} sess · ${V9.fmtNum(p.window_tokens || 0)} tok · ${V9.fmtUsd(p.window_cost_usd || 0)}</div>
         </td>
+        <td class="num v9-mono-num">${V9.escHtml(ageLabel)}</td>
         <td class="v9-col-secondary num">${actSess} / ${totSess}</td>
         <td class="v9-bar-cell"><div class="v9-inline-share"><span class="va-inline-bar"><span class="va-inline-bar-fill" style="inline-size:${Math.min(100, pct).toFixed(1)}%;background:${color}"></span></span><span class="v9-inline-pct">${pct.toFixed(1)}%</span></div></td>
         <td class="num">${V9.fmtNum(p.window_steps || 0)}</td>
         <td class="v9-col-secondary num">${V9.fmtNum(p.window_tokens || 0)}</td>
         <td class="num v9-mono-num">${V9.fmtUsd(p.window_cost_usd || 0)}</td>
-        <td class="num"><div class="v9-tbl-actions">
-          <button type="button" class="v9-tbl-btn is-primary" data-proj-analytics="${V9.escHtml(pid)}">Analytics</button>
-          <button type="button" class="v9-tbl-btn" data-proj-ws="${V9.escHtml(pid)}"${latestSid ? "" : " disabled"}>Workspace</button>
-        </div></td>
+        <td class="num"><div class="v9-tbl-actions"><button type="button" class="v9-tbl-btn is-primary" data-proj-analytics="${V9.escHtml(pid)}">Analytics</button><button type="button" class="v9-tbl-btn" data-proj-ws="${V9.escHtml(pid)}"${latestSid ? "" : " disabled"}>Workspace</button></div></td>
       </tr>`;
     }).join("");
-    wrap.innerHTML = `<table class="v9-table booktabs">
-      <thead><tr><th>Project</th><th class="v9-col-secondary num">Sessions</th><th>Share</th><th class="num">Steps</th><th class="v9-col-secondary num">Tokens</th><th class="num">Est. $</th><th class="num">Actions</th></tr></thead>
-      <tbody id="v9ProjTableBody">${rowsHtml}</tbody>
-    </table>`;
+
+    const th = TS
+      ? `${TS.thHtml("projects", "name", "Project", { type: "text" })}${TS.thHtml("projects", "age", "Age", { cls: "num" })}${TS.thHtml("projects", "sessions", "Sessions", { cls: "v9-col-secondary num" })}${TS.thHtml("projects", "share", "Share")}${TS.thHtml("projects", "steps", "Steps", { cls: "num" })}${TS.thHtml("projects", "tokens", "Tokens", { cls: "v9-col-secondary num" })}${TS.thHtml("projects", "cost", "Est. $", { cls: "num" })}<th scope="col" class="num">Actions</th>`
+      : `<th>Project</th><th class="num">Age</th><th class="v9-col-secondary num">Sessions</th><th>Share</th><th class="num">Steps</th><th class="v9-col-secondary num">Tokens</th><th class="num">Est. $</th><th class="num">Actions</th>`;
+    const tblEl = mountSortableTable(wrap, "projects", "v9ProjTableBody", th, rowsHtml);
     if (foot) {
       const hiddenNotes = [];
       if (otherCnt > 0) hiddenNotes.push(`${otherCnt} smaller project${otherCnt === 1 ? "" : "s"} rolled up`);
@@ -211,6 +242,9 @@
         : "Hover a row to highlight its stack; click Analytics for project deep-dive or Workspace to jump straight to its latest session.";
     }
     bindTopProjectTableEvents(wrap, actions);
+    if (TS && tblEl) {
+      TS.bindSortHeaders(tblEl, "projects", () => renderTopProjectsTable(V9.state.bundle || b, actions), () => Math.min(14, sorted.length));
+    }
   }
 
   function bindTopProjectTableEvents(wrap, actions) {
@@ -260,36 +294,61 @@
       if (foot) foot.textContent = "";
       return;
     }
+    const TS = V9.TableSort;
+    const nowRef = Date.now() / 1000;
     const maxShareSteps = sessions.reduce((acc, s) => acc + Number(s.window_steps != null ? s.window_steps : (s.step_count || 0)), 0) || 1;
-    const rowsHtml = sessions.map((s, idx) => {
+    const enriched = sessions.map((s, origIdx) => {
       const cid = s.conversation_id || "";
       const shortId = s.short_id || cid.slice(0, 8);
-      const color = V9.getSeriesColor(s.color_slot != null ? s.color_slot : (s.shade_idx != null ? s.shade_idx : idx));
       const steps = Number(s.window_steps != null ? s.window_steps : (s.step_count || 0));
-      const pct = Number(s.share_pct != null ? s.share_pct : (steps / maxShareSteps) * 100);
+      return {
+        s, origIdx, cid, shortId, steps,
+        pct: Number(s.share_pct != null ? s.share_pct : (steps / maxShareSteps) * 100),
+        tokens: Number(s.window_tokens != null ? s.window_tokens : (s.tokens || 0)),
+        costUsd: Number(s.window_cost_usd || 0),
+        ageTs: TS ? TS.recencyEpoch(s, nowRef) : Number(s.last_updated_ts || 0),
+        ageLabel: TS ? TS.getAgeLabel(s) : (s.relative_age || "recent"),
+        rank: TS ? TS.statusRank(s) : (s.is_running ? 4 : 3),
+      };
+    });
+    const sorted = TS
+      ? TS.sortItems(enriched, "sessions", {
+          name: { type: "text", get: (e) => e.s.title || e.shortId },
+          age: (e) => e.ageTs,
+          status: (e) => e.rank,
+          share: (e) => e.pct * 1e9 + e.steps,
+          steps: (e) => e.steps,
+          tokens: (e) => e.tokens,
+          cost: (e) => e.costUsd,
+        })
+      : enriched;
+
+    const rowsHtml = sorted.map((entry) => {
+      const { s, origIdx, cid, shortId, steps, pct, tokens, costUsd, ageLabel } = entry;
+      const slot = (s.color_slot != null && s.color_slot >= 0) ? s.color_slot : ((s.shade_idx != null && s.shade_idx >= 0) ? s.shade_idx : origIdx);
+      const color = (s.color_slot === -1 || steps <= 0) ? "#94A3B8" : V9.getSeriesColor(slot);
       const rawLegend = String(labelMap[cid] || "");
       const seriesName = rawLegend ? (rawLegend.length > 26 ? `${rawLegend.slice(0, 24)}..` : rawLegend) : "";
       const tone = s.is_running ? "run" : "idle";
       return `<tr class="v9-row-click v9-row-compact" data-sess-row="${V9.escHtml(cid)}" data-series-name="${V9.escHtml(seriesName)}">
         <td>
-          <div class="v9-tbl-name-wrap">
-            <span class="v9-swatch-dot" style="background:${color}"></span>
-            <span class="v9-tbl-name-txt" title="${V9.escHtml(s.title || shortId)}">${V9.escHtml(s.title || shortId)}</span>
-          </div>
-          <div class="v9-cell-sub">${V9.escHtml(shortId)} · ${V9.escHtml(s.relative_age || "recent")} · ${V9.fmtUsd(s.window_cost_usd || 0)}</div>
+          <div class="v9-tbl-name-wrap"><span class="v9-swatch-dot" style="background:${color}"></span><span class="v9-tbl-name-txt" title="${V9.escHtml(s.title || shortId)}">${V9.escHtml(s.title || shortId)}</span></div>
+          <div class="v9-cell-sub">${V9.escHtml(shortId)} · ${V9.escHtml(s.status || "IDLE")} · ${V9.fmtUsd(costUsd)}</div>
         </td>
+        <td class="num v9-mono-num">${V9.escHtml(ageLabel)}</td>
         <td class="v9-col-secondary"><span class="v9-status-tag" data-tone="${tone}">${V9.escHtml(s.status || "IDLE")}</span></td>
         <td class="v9-bar-cell"><div class="v9-inline-share"><span class="va-inline-bar"><span class="va-inline-bar-fill" style="inline-size:${Math.min(100, pct).toFixed(1)}%;background:${color}"></span></span><span class="v9-inline-pct">${pct.toFixed(1)}%</span></div></td>
         <td class="num">${V9.fmtNum(steps)}</td>
-        <td class="v9-col-secondary num">${V9.fmtNum(s.window_tokens || 0)}</td>
-        <td class="num v9-mono-num">${V9.fmtUsd(s.window_cost_usd || 0)}</td>
+        <td class="v9-col-secondary num">${V9.fmtNum(tokens)}</td>
+        <td class="num v9-mono-num">${V9.fmtUsd(costUsd)}</td>
         <td class="num"><button type="button" class="v9-tbl-btn is-primary" data-open-sess="${V9.escHtml(cid)}"><span>Open</span><svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8H12.5M9 4.5L12.5 8L9 11.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button></td>
       </tr>`;
     }).join("");
-    wrap.innerHTML = `<table class="v9-table booktabs">
-      <thead><tr><th>Session</th><th class="v9-col-secondary">Status</th><th>Share</th><th class="num">Steps</th><th class="v9-col-secondary num">Tokens</th><th class="num">Est. $</th><th class="num">Workspace</th></tr></thead>
-      <tbody id="v9ProjSessionTableBody">${rowsHtml}</tbody>
-    </table>`;
+
+    const th = TS
+      ? `${TS.thHtml("sessions", "name", "Session", { type: "text" })}${TS.thHtml("sessions", "age", "Age", { cls: "num" })}${TS.thHtml("sessions", "status", "Status", { cls: "v9-col-secondary" })}${TS.thHtml("sessions", "share", "Share")}${TS.thHtml("sessions", "steps", "Steps", { cls: "num" })}${TS.thHtml("sessions", "tokens", "Tokens", { cls: "v9-col-secondary num" })}${TS.thHtml("sessions", "cost", "Est. $", { cls: "num" })}<th scope="col" class="num">Workspace</th>`
+      : `<th>Session</th><th class="num">Age</th><th class="v9-col-secondary">Status</th><th>Share</th><th class="num">Steps</th><th class="v9-col-secondary num">Tokens</th><th class="num">Est. $</th><th class="num">Workspace</th>`;
+    const tblEl = mountSortableTable(wrap, "sessions", "v9ProjSessionTableBody", th, rowsHtml);
     if (foot) foot.textContent = "Click any session row or Open to inspect its deliverables, Markdown docs, and captures in Workspace.";
     wrap.querySelectorAll("tr[data-sess-row]").forEach((tr) => {
       const seriesName = tr.getAttribute("data-series-name") || "";
@@ -302,6 +361,9 @@
         if (cid && actions && actions.openSessionWorkspace) actions.openSessionWorkspace(cid);
       });
     });
+    if (TS && tblEl) {
+      TS.bindSortHeaders(tblEl, "sessions", () => renderProjectSessionsCard(V9.state.bundle || b, actions), () => sorted.length);
+    }
   }
 
   function renderProjectHealthDrawer(b) {

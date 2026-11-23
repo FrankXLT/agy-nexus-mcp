@@ -122,7 +122,7 @@
       }
     } finally {
       st.projectCapturesPending.delete(pid);
-      if (seq === capturesSeq && st.railOpen && (st.demoMode || st.passphrase)) {
+      if (seq === capturesSeq && (isDesktopPinned() || st.railOpen) && (st.demoMode || st.passphrase)) {
         renderHierarchy(st.bundle, activeActions);
       }
     }
@@ -142,35 +142,112 @@
     maybeFetchProjectCaptures(activePid);
   }
 
-  function applyRailVisibility(open) {
+  function isDesktopWidth() {
+    return window.innerWidth >= 1100;
+  }
+
+  function isDesktopPinned() {
+    return Boolean(V9.state.railPinned && isDesktopWidth());
+  }
+
+  function syncMenuButtonUi(desktopPin, drawerOpen) {
+    const menuBtn = document.getElementById("v9MenuBtn");
+    if (!menuBtn) return;
+    menuBtn.querySelector(".v9-menu-icon-burger")?.classList.toggle("hidden", desktopPin);
+    menuBtn.querySelector(".v9-menu-icon-panel")?.classList.toggle("hidden", !desktopPin);
+    menuBtn.setAttribute("aria-expanded", String(Boolean(desktopPin || drawerOpen)));
+    if (desktopPin) {
+      menuBtn.setAttribute("aria-label", "Collapse pinned sidebar");
+      menuBtn.title = "Collapse pinned sidebar (Ctrl+B)";
+    } else {
+      menuBtn.setAttribute("aria-label", drawerOpen ? "Close projects and sessions menu" : "Open projects and sessions menu");
+      menuBtn.title = "Projects & Sessions menu (Ctrl+B)";
+    }
+  }
+
+  function ensureRailPopulated() {
     const st = V9.state;
+    const projects = collectUnifiedProjects(st.bundle, st.wsTree);
+    applySmartContext(projects);
+    renderHierarchy(st.bundle, activeActions);
+    if (!st.wsTree && activeActions.ensureWorkspaceTree) {
+      activeActions.ensureWorkspaceTree().then(() => {
+        const merged = collectUnifiedProjects(st.bundle, st.wsTree);
+        applySmartContext(merged);
+        if ((isDesktopPinned() || st.railOpen) && (st.demoMode || st.passphrase)) {
+          renderHierarchy(st.bundle, activeActions);
+        }
+      });
+    }
+  }
+
+  function syncRailLayout(opts) {
+    const o = opts || {};
+    const st = V9.state;
+    const unlocked = Boolean(st.passphrase || st.demoMode);
+    const shell = document.getElementById("v9AppShell");
     const rail = document.getElementById("v9NavRail");
     const backdrop = document.getElementById("v9WsBackdrop");
     const menuBtn = document.getElementById("v9MenuBtn");
-    const next = Boolean(open);
-    st.railOpen = next;
-    if (rail) {
-      rail.classList.toggle("is-drawer-open", next);
-      rail.setAttribute("aria-hidden", String(!next));
-    }
-    if (backdrop) backdrop.classList.toggle("hidden", !next);
-    if (menuBtn) menuBtn.setAttribute("aria-expanded", String(next));
+    const wasPinnedDom = Boolean(shell && shell.classList.contains("is-rail-pinned"));
+    const desktopPin = Boolean(unlocked && st.railPinned && isDesktopWidth());
+    const drawerOpen = Boolean(unlocked && !desktopPin && st.railOpen);
 
-    if (next) {
-      const projects = collectUnifiedProjects(st.bundle, st.wsTree);
-      applySmartContext(projects);
-      renderHierarchy(st.bundle, activeActions);
-      if (!st.wsTree && activeActions.ensureWorkspaceTree) {
-        activeActions.ensureWorkspaceTree().then(() => {
-          const merged = collectUnifiedProjects(st.bundle, st.wsTree);
-          applySmartContext(merged);
-          if (st.railOpen) renderHierarchy(st.bundle, activeActions);
-        });
+    shell?.classList.toggle("is-rail-pinned", desktopPin);
+    if (rail) {
+      rail.classList.toggle("is-pinned", desktopPin);
+      rail.classList.toggle("is-drawer-open", drawerOpen);
+      rail.setAttribute("aria-hidden", String(!(desktopPin || drawerOpen)));
+      if (drawerOpen) {
+        rail.setAttribute("role", "dialog");
+        rail.setAttribute("aria-modal", "true");
+      } else {
+        rail.removeAttribute("role");
+        rail.removeAttribute("aria-modal");
       }
+    }
+    backdrop?.classList.toggle("hidden", !drawerOpen);
+    syncMenuButtonUi(desktopPin, drawerOpen);
+
+    const pinBtn = document.getElementById("v9RailPinBtn");
+    if (pinBtn) {
+      pinBtn.setAttribute("aria-pressed", String(Boolean(st.railPinned)));
+      pinBtn.setAttribute("aria-label", st.railPinned ? "Unpin sidebar" : "Pin sidebar open");
+      pinBtn.title = st.railPinned ? "Unpin sidebar" : "Pin sidebar open";
+    }
+
+    if ((desktopPin || drawerOpen) && (o.forceRender || (rail && !rail.innerHTML.trim()))) {
+      ensureRailPopulated();
+    }
+    if (drawerOpen && o.focusClose) {
       document.getElementById("v9RailCloseBtn")?.focus({ preventScroll: true });
-    } else if (menuBtn && rail && rail.contains(document.activeElement)) {
+    } else if (!desktopPin && !drawerOpen && menuBtn && rail && rail.contains(document.activeElement)) {
       menuBtn.focus({ preventScroll: true });
     }
+    if (wasPinnedDom !== desktopPin && st.bundle && st.surfaceView === "analytics" && V9.Charts) {
+      V9.Charts.scheduleRealign(st.bundle);
+    }
+  }
+
+  function applyRailVisibility(open) {
+    const st = V9.state;
+    const next = Boolean(open);
+    if (!next && isDesktopPinned()) {
+      st.railPinned = false;
+      localStorage.setItem("nexus_v9_rail_pinned", "0");
+    }
+    st.railOpen = next;
+    syncRailLayout({ forceRender: next, focusClose: next && !isDesktopPinned() });
+  }
+
+  function toggleRailPin() {
+    const st = V9.state;
+    const nextPinned = !st.railPinned;
+    st.railPinned = nextPinned;
+    localStorage.setItem("nexus_v9_rail_pinned", nextPinned ? "1" : "0");
+    if (!nextPinned) st.railOpen = isDesktopWidth();
+    else st.railOpen = false;
+    syncRailLayout({ forceRender: true });
   }
 
   function renderFooterHtml() {
@@ -248,11 +325,30 @@
     </div>`;
   }
 
+  function escAttrVal(v) {
+    return typeof CSS !== "undefined" && typeof CSS.escape === "function"
+      ? CSS.escape(String(v))
+      : String(v).replace(/["\\]/g, "\\$&");
+  }
+
+  function captureRailFocusSelector(rail) {
+    const ae = document.activeElement;
+    if (!ae || typeof rail.contains !== "function" || !rail.contains(ae)) return "";
+    if (ae.id) return `#${escAttrVal(ae.id)}`;
+    if (typeof ae.getAttribute !== "function") return "";
+    for (const attr of ["data-proj-toggle", "data-show-older", "data-rail-analytics", "data-rail-sess", "data-v9-theme", "data-v9-density"]) {
+      const val = ae.getAttribute(attr);
+      if (val) return `[${attr}="${escAttrVal(val)}"]`;
+    }
+    return "";
+  }
+
   function renderHierarchy(b, actions) {
     if (actions) activeActions = actions;
     const rail = document.getElementById("v9NavRail");
     if (!rail) return;
     const st = V9.state;
+    const restoreSel = captureRailFocusSelector(rail);
     const projects = collectUnifiedProjects(b, st.wsTree);
     const totalSess = (b && b.project_hierarchy && b.project_hierarchy.total_sessions_count)
       || projects.reduce((acc, p) => acc + p.sessions.length, 0);
@@ -262,9 +358,14 @@
           <span class="va-kicker">Projects &amp; Sessions</span>
           <span class="v9-meta-inline">${projects.length} · ${totalSess}</span>
         </div>
-        <button type="button" id="v9RailCloseBtn" class="v9-ghost-btn v9-ghost-btn-sm" aria-label="Close menu">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-        </button>
+        <div class="v9-rail-hdr-actions">
+          <button type="button" id="v9RailPinBtn" class="v9-ghost-btn v9-ghost-btn-sm v9-rail-pin-btn" aria-pressed="${Boolean(st.railPinned)}" aria-label="${st.railPinned ? "Unpin sidebar" : "Pin sidebar open"}" title="${st.railPinned ? "Unpin sidebar" : "Pin sidebar open"}">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5.5 2.5H10.5L9.5 6.5L12 8.5V10H8.7V13.8L8 14.5L7.3 13.8V10H4V8.5L6.5 6.5L5.5 2.5Z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"${st.railPinned ? ' fill="currentColor" fill-opacity="0.22"' : ""}/></svg>
+          </button>
+          <button type="button" id="v9RailCloseBtn" class="v9-ghost-btn v9-ghost-btn-sm" aria-label="Close menu" title="Close sidebar">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
+        </div>
       </div>
       <div class="v9-rail-body">
         <button type="button" id="v9RailAllBtn" class="v9-rail-all-btn" aria-current="${!st.soloProject ? "true" : "false"}">
@@ -276,13 +377,23 @@
       ${renderFooterHtml()}`;
 
     bindRailBodyEvents(rail);
+    if (restoreSel && typeof rail.querySelector === "function") {
+      const target = rail.querySelector(restoreSel) || document.getElementById("v9RailCloseBtn");
+      target?.focus?.({ preventScroll: true });
+    }
+  }
+
+  function closeUnpinnedDrawer() {
+    if (!isDesktopPinned()) applyRailVisibility(false);
   }
 
   function bindRailBodyEvents(rail) {
+    document.getElementById("v9RailPinBtn")?.addEventListener("click", () => toggleRailPin());
     document.getElementById("v9RailCloseBtn")?.addEventListener("click", () => applyRailVisibility(false));
     document.getElementById("v9RailAllBtn")?.addEventListener("click", () => {
-      applyRailVisibility(false);
+      closeUnpinnedDrawer();
       if (activeActions.clearProjectScope) activeActions.clearProjectScope();
+      if (isDesktopPinned()) renderHierarchy(V9.state.bundle, activeActions);
     });
     rail.querySelectorAll("[data-proj-toggle]").forEach((el) => {
       el.addEventListener("click", () => {
@@ -304,15 +415,16 @@
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const pid = btn.getAttribute("data-rail-analytics");
-        applyRailVisibility(false);
+        closeUnpinnedDrawer();
         if (pid && activeActions.openProjectAnalytics) activeActions.openProjectAnalytics(pid);
       });
     });
     rail.querySelectorAll("[data-rail-sess]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const sid = btn.getAttribute("data-rail-sess");
-        applyRailVisibility(false);
+        closeUnpinnedDrawer();
         if (sid && activeActions.openSessionWorkspace) activeActions.openSessionWorkspace(sid);
+        if (isDesktopPinned()) renderHierarchy(V9.state.bundle, activeActions);
       });
     });
     rail.querySelectorAll("[data-v9-theme]").forEach((btn) => {
@@ -333,14 +445,18 @@
     if (actions) activeActions = actions;
     if (chromeBound) return;
     chromeBound = true;
-    document.getElementById("v9MenuBtn")?.addEventListener("click", () => applyRailVisibility(!V9.state.railOpen));
+    document.getElementById("v9MenuBtn")?.addEventListener("click", () => {
+      if (isDesktopPinned()) applyRailVisibility(false);
+      else applyRailVisibility(!V9.state.railOpen);
+    });
     document.getElementById("v9WsBackdrop")?.addEventListener("click", () => applyRailVisibility(false));
     document.addEventListener("keydown", (e) => {
       if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === "b") {
         if ((!V9.state.passphrase && !V9.state.demoMode) || document.querySelector("dialog[open]")) return;
         e.preventDefault();
-        applyRailVisibility(!V9.state.railOpen);
-      } else if (e.key === "Escape" && V9.state.railOpen) {
+        if (isDesktopPinned()) applyRailVisibility(false);
+        else applyRailVisibility(!V9.state.railOpen);
+      } else if (e.key === "Escape" && V9.state.railOpen && !isDesktopPinned()) {
         applyRailVisibility(false);
       }
     });
@@ -348,10 +464,11 @@
 
   function reset() {
     capturesSeq += 1;
-    applyRailVisibility(false);
+    V9.state.railOpen = false;
+    syncRailLayout();
     const rail = document.getElementById("v9NavRail");
     if (rail) rail.innerHTML = "";
   }
 
-  V9.Hierarchy = { renderHierarchy, wireRailEvents, applyRailVisibility, reset };
+  V9.Hierarchy = { renderHierarchy, wireRailEvents, applyRailVisibility, syncRailLayout, toggleRailPin, isDesktopPinned, reset };
 })();

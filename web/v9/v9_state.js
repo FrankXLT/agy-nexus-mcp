@@ -42,6 +42,7 @@
     wsMode: "split",
     docMode: "rendered",
     railOpen: false,
+    railPinned: localStorage.getItem("nexus_v9_rail_pinned") === "1",
     openProjects: new Set(),
     showAllSessionsForProject: new Set(),
     projectCapturesLoaded: new Set(),
@@ -255,9 +256,9 @@
     navigator.serviceWorker.register(`${getBasePath()}/web/sw.js`, { scope: `${getBasePath() || ""}/` }).catch(() => {});
     let swReloading = false;
     navigator.serviceWorker.addEventListener("controllerchange", () => {
-      if (swReloading || sessionStorage.getItem("nexus_sw_reloaded") === "4.0.2") return;
+      if (swReloading || sessionStorage.getItem("nexus_sw_reloaded") === "4.0.3") return;
       swReloading = true;
-      sessionStorage.setItem("nexus_sw_reloaded", "4.0.2");
+      sessionStorage.setItem("nexus_sw_reloaded", "4.0.3");
       window.location.reload();
     });
   }

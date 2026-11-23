@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from agy_nexus.media_discovery import parse_iso_epoch
+from agy_nexus.media_discovery import format_relative_age, parse_iso_epoch
 from agy_nexus.model_pricing import (
     classify_model_key,
     get_canonical_model_keys,
@@ -192,14 +192,17 @@ def _build_project_buckets(
             pb["_s1_toks"][sk] = pb["_s1_toks"].get(sk, 0) + sv
         for sk, sv in (st_info.get("s1_cost") or {}).items():
             pb["_s1_cost"][sk] = pb["_s1_cost"].get(sk, 0) + sv
+        last_iso = str(live_s.get("last_updated") or meta.get("last_modified") or "")
+        last_ts = float(live_s.get("last_updated_ts") or parse_iso_epoch(last_iso) or 0.0)
+        rel_age = str(live_s.get("relative_age") or "") or (format_relative_age(last_iso, last_ts) if last_ts > 0 else "recent")
         pb["sessions"].append({
             "index": str(live_s.get("index") or ""), "conversation_id": rcid, "title": str(live_s.get("title") or meta.get("title") or rcid[:8]),
             "project_id": pid, "project_name": pname, "workspace_path": wpath, "workspace_short": str(live_s.get("workspace_short") or (Path(wpath).name if wpath else "unassigned")),
             "status": status_s, "is_running": is_run, "is_pinned": is_pin, "mode": str(live_s.get("mode") or ("WORKTREE" if "/worktrees/" in wpath else "MAIN TREE")),
             "window_steps": w_steps, "window_tokens": w_toks, "window_cost_micros": w_cost, "window_cost_usd": round(w_cost / 1_000_000.0, 4),
             "step_count": tot_steps, "subagent_runs": int(st_info.get("sub_runs") or 0),
-            "last_updated": str(live_s.get("last_updated") or meta.get("last_modified") or ""), "relative_age": str(live_s.get("relative_age") or ""),
-            "last_updated_ts": float(live_s.get("last_updated_ts") or parse_iso_epoch(str(meta.get("last_modified") or "")) or 0.0),
+            "last_updated": last_iso, "relative_age": rel_age,
+            "last_updated_ts": last_ts,
             "_s1_steps": st_info.get("s1_steps") or {}, "_s1_toks": st_info.get("s1_toks") or {}, "_s1_cost": st_info.get("s1_cost") or {},
         })
 
@@ -239,6 +242,9 @@ def _pack_top_project(pb: dict[str, Any], p_idx: int, tot_win_steps: int, groups
             s["shade_idx"], s["shade_count"] = -1, shade_cap
     if has_ovf:
         pb["overflow_sessions_series"] = {"steps_series": ovf_steps, "tokens_series": ovf_toks, "cost_series": ovf_cost, "shade_idx": 11, "shade_count": shade_cap}
+    max_ts = max((float(s.get("last_updated_ts") or 0.0) for s in pb["sessions"]), default=0.0)
+    pb["last_updated_ts"] = max_ts
+    pb["relative_age"] = format_relative_age("", max_ts) if max_ts > 0 else ""
     pb["active_sessions_count"] = act_cnt
     return pb
 
@@ -319,6 +325,9 @@ def build_series_and_project_hierarchy(
             s.pop("_s1_toks", None)
             s.pop("_s1_cost", None)
             s["share_pct"] = 0.0
+        max_ts = max((float(s.get("last_updated_ts") or 0.0) for s in ip["sessions"]), default=0.0)
+        ip["last_updated_ts"] = max_ts
+        ip["relative_age"] = format_relative_age("", max_ts) if max_ts > 0 else ""
 
     seen_cids: set[str] = set()
     latest_cid, latest_ts = "", -1.0

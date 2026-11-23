@@ -27,7 +27,7 @@
   }
   .v9-nav-rail:not(.is-drawer-open) { visibility: hidden; pointer-events: none; }
   .v9-nav-rail.is-drawer-open { transform: translateX(0); visibility: visible; pointer-events: auto; }
-  body:has(.v9-nav-rail.is-drawer-open) { overflow: hidden; }
+  body:has(.v9-nav-rail.is-drawer-open:not(.is-pinned)) { overflow: hidden; }
   .v9-ws-backdrop {
     position: fixed;
     inset: 0;

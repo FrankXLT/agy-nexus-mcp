@@ -45,18 +45,18 @@ WEB_DIR = PROJECT_ROOT / "web"
 
 
 def test_v323_version_docs_and_modular_hygiene() -> None:
-    """Verify v4.0.2 across package, docs, PWA shell, and strict <=500L/<=100L function budgets."""
-    assert agy_nexus.__version__ == "4.0.2"
-    assert 'version = "4.0.2"' in (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert "## [4.0.2]" in (PROJECT_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    """Verify v4.0.3 across package, docs, PWA shell, and strict <=500L/<=100L function budgets."""
+    assert agy_nexus.__version__ == "4.0.3"
+    assert 'version = "4.0.3"' in (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert "## [4.0.3]" in (PROJECT_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 
     wf_doc = (PROJECT_ROOT / "docs" / "WORKFLOWS.md").read_text(encoding="utf-8")
     assert "Surgical Fast-Path" in wf_doc and "17.5 KB" in wf_doc
 
     sw_js = (WEB_DIR / "sw.js").read_text(encoding="utf-8")
     html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
-    assert 'CACHE_NAME = "agy-nexus-v4.0.2"' in sw_js
-    assert "?v=4.0.2" in html and 'id="v9AppShell"' in html
+    assert 'CACHE_NAME = "agy-nexus-v4.0.3"' in sw_js
+    assert "?v=4.0.3" in html and 'id="v9AppShell"' in html
 
     checked_modules = (
         "handoff_templates.py", "handoff.py", "polyglot_index.py", "telemetry_scanner.py",

@@ -94,6 +94,17 @@
     return Number(fallback || 0);
   }
 
+  function ensureModelTableHead(table) {
+    const thead = table && table.tHead;
+    if (!thead || !V9.TableSort) return;
+    if (!thead.querySelector('[data-sort-table="models"]')) {
+      const TS = V9.TableSort;
+      thead.innerHTML = `<tr>${TS.thHtml("models", "name", "Model", { type: "text" })}${TS.thHtml("models", "calls", "Pool · Calls · Rate", { cls: "v9-col-secondary" })}${TS.thHtml("models", "share", "Share")}${TS.thHtml("models", "delta", 'Guide<span class="v9-col-secondary"> / Delta</span>', { cls: "num", rawLabel: true })}${TS.thHtml("models", "tokens", "Tokens", { cls: "num" })}${TS.thHtml("models", "cost", "Est. $", { cls: "num" })}</tr>`;
+    } else {
+      V9.TableSort.syncTheadSort(thead, "models");
+    }
+  }
+
   function renderModelTable(b, rerenderFn) {
     const tbody = document.getElementById("v9ModelTableBody");
     const subEl = document.getElementById("v9ModelPlotSub");
@@ -105,16 +116,38 @@
     const totalUsd = rows.reduce((s, r) => s + Number(r.est_cost_usd || 0), 0);
     if (subEl) subEl.textContent = `${V9.fmtNum(totalCalls)} calls · ${V9.fmtUsd(totalUsd)} · click row to solo`;
 
-    tbody.innerHTML = rows.map((m, idx) => {
-      const col = V9.getSeriesColor(idx);
+    const table = tbody.closest && tbody.closest("table");
+    ensureModelTableHead(table);
+    const TS = V9.TableSort;
+    const enriched = rows.map((m, origIdx) => {
       const act = Number(m.actual_pct || 0);
       const tgt = Number(m.target_pct || 0);
       const delta = m.delta_pct != null ? Number(m.delta_pct) : Number((act - tgt).toFixed(1));
+      const tok = sumLayerTokens(b.model_series, m.model_key, m.est_tokens);
+      return { m, origIdx, act, tgt, delta, tok };
+    });
+    const sorted = TS
+      ? TS.sortItems(enriched, "models", {
+          name: { type: "text", get: (e) => e.m.label || e.m.model_key || "" },
+          calls: (e) => Number(e.m.actual_calls || 0),
+          share: (e) => e.act * 1e6 + Number(e.m.actual_calls || 0),
+          delta: (e) => e.delta,
+          tokens: (e) => e.tok,
+          cost: (e) => Number(e.m.est_cost_usd || 0),
+        })
+      : enriched;
+
+    tbody.innerHTML = sorted.map((entry) => {
+      const m = entry.m;
+      const col = V9.getSeriesColor(entry.origIdx);
+      const act = entry.act;
+      const tgt = entry.tgt;
+      const delta = entry.delta;
       const deltaStr = `${delta > 0 ? "+" : ""}${delta.toFixed(1)}%`;
       const isGoogle = String(m.pool_key || m.pool || "").toLowerCase().includes("google");
       const warn = (!isGoogle || !gHealthy) && delta > 12.0;
       const deltaCls = warn ? "v9-delta-warn" : (delta >= 0 ? "v9-delta-pos" : "v9-delta-neg");
-      const tok = sumLayerTokens(b.model_series, m.model_key, m.est_tokens);
+      const tok = entry.tok;
       const usd = Number(m.est_cost_usd || 0);
       const rateHint = m.rate_label ? ` · ${m.rate_label}` : "";
       const solo = V9.state.soloModel === m.model_key;
@@ -135,6 +168,20 @@
         rerenderFn();
       });
     });
+    if (TS && table) {
+      TS.bindSortHeaders(table, "models", () => renderModelTable(V9.state.bundle || b, rerenderFn), () => sorted.length);
+    }
+  }
+
+  function ensureSubagentTableHead(table) {
+    const thead = table && table.tHead;
+    if (!thead || !V9.TableSort) return;
+    if (!thead.querySelector('[data-sort-table="subagents"]')) {
+      const TS = V9.TableSort;
+      thead.innerHTML = `<tr>${TS.thHtml("subagents", "name", "Role", { type: "text" })}${TS.thHtml("subagents", "model", "Model", { type: "text", cls: "v9-col-secondary" })}${TS.thHtml("subagents", "share", "Share")}${TS.thHtml("subagents", "runs", "Runs", { cls: "num" })}${TS.thHtml("subagents", "tokens", "Tokens", { cls: "num" })}${TS.thHtml("subagents", "avg_tok", "Avg Tok/Run", { cls: "num v9-col-secondary" })}${TS.thHtml("subagents", "cost", "Est. $", { cls: "num" })}</tr>`;
+    } else {
+      V9.TableSort.syncTheadSort(thead, "subagents");
+    }
   }
 
   function renderSubagentTable(b, rerenderFn) {
@@ -144,11 +191,33 @@
     const list = Array.isArray(b.subagent_list) ? b.subagent_list : [];
     const totalRuns = list.reduce((s, r) => s + Number(r.runs || 0), 0);
     if (subEl) subEl.textContent = `${totalRuns} runs · ${list.length} roles`;
-    tbody.innerHTML = list.map((item, idx) => {
-      const col = V9.getSeriesColor(idx);
-      const pct = Number(item.share_pct || 0);
+
+    const table = tbody.closest && tbody.closest("table");
+    ensureSubagentTableHead(table);
+    const TS = V9.TableSort;
+    const enriched = list.map((item, origIdx) => {
       const runs = Number(item.runs || 0);
       const avgTok = Number(item.avg_tokens_per_run != null ? item.avg_tokens_per_run : (runs > 0 ? Math.round(Number(item.tokens || 0) / runs) : 0));
+      return { item, origIdx, runs, avgTok };
+    });
+    const sorted = TS
+      ? TS.sortItems(enriched, "subagents", {
+          name: { type: "text", get: (e) => e.item.role || "" },
+          model: { type: "text", get: (e) => e.item.dominant_model_label || e.item.dominant_model_key || "" },
+          share: (e) => Number(e.item.share_pct || 0) * 1e9 + Number(e.item.steps || 0),
+          runs: (e) => e.runs,
+          tokens: (e) => Number(e.item.tokens || 0),
+          avg_tok: (e) => e.avgTok,
+          cost: (e) => Number(e.item.est_cost_usd || 0),
+        })
+      : enriched;
+
+    tbody.innerHTML = sorted.map((entry) => {
+      const item = entry.item;
+      const col = V9.getSeriesColor(entry.origIdx);
+      const pct = Number(item.share_pct || 0);
+      const runs = entry.runs;
+      const avgTok = entry.avgTok;
       const solo = V9.state.soloSubagent === item.role;
       const cls = ["v9-row-click", "va-row-compact", solo ? "is-solo" : (V9.state.soloSubagent ? "is-dim" : "")].filter(Boolean).join(" ");
       return `<tr class="${cls}" data-solo-sub="${V9.escHtml(item.role)}">
@@ -168,6 +237,9 @@
         rerenderFn();
       });
     });
+    if (TS && table) {
+      TS.bindSortHeaders(table, "subagents", () => renderSubagentTable(V9.state.bundle || b, rerenderFn), () => sorted.length);
+    }
   }
 
   function renderWireSection(b) {
@@ -232,7 +304,7 @@
     const watch = Array.isArray(mh.watchlist_and_exceptions) ? mh.watchlist_and_exceptions.slice(0, 12) : [];
     bodyEl.innerHTML = `
       <div class="v9-health-strip" style="padding-block:0.5rem">
-        <span>Release: ${V9.escHtml((ch.version && ch.version.status_label) || b.version || "4.0.2")}</span>
+        <span>Release: ${V9.escHtml((ch.version && ch.version.status_label) || b.version || "4.0.3")}</span>
         <span>Praxis Symbols: ${(ch.polyglot_health && ch.polyglot_health.total_symbols) || 0}</span>
         <span>Pinned Slots: ${rt.active_slots || 0} (${rt.pinned_calls || 0} pinned / ${rt.auto_resolved_calls || 0} auto)</span>
         <span>3-2-1 Backup: ${V9.escHtml(bk.status_label || "—")} (${V9.escHtml(bk.age || "—")})</span>
