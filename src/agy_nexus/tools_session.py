@@ -17,6 +17,7 @@ from agy_nexus.config import (
     AGY_PROJECTS_DIR,
     LOCKED_RESPONSE,
     READONLY_ANNOTATIONS,
+    REPLY_PROMPT_GUIDANCE,
     SESSION_STATE,
     TTL_SECONDS,
     _clear_selected_session_state,
@@ -38,6 +39,7 @@ from agy_nexus.hygiene import (
     within_wire_budget,
 )
 from .media import discover_visual_artifacts
+from agy_nexus.retirement import build_suggested_actions, is_session_retired
 from agy_nexus.routing import _resolve_session_identifier
 from agy_nexus.search import _search_workspaces_and_history
 from agy_nexus.session_status import (
@@ -95,7 +97,8 @@ def unlock_sessions(spoken_passphrase: str, search_query: str = "", style: str =
         "assistant_guidance": (
             "Deadbolt unlocked and live telemetry stats retrieved successfully. "
             "If the user asked for stats, display ascii_mobile_report inside a ```text block now; otherwise present the active sessions. "
-            "Sequential read-only follow-up calls (e.g. load_session_into_gemini or ask_workspace_readonly) are permitted (one call at a time, up to 4 hops/turn—never in parallel)."
+            "Sequential read-only follow-up calls (e.g. load_session_into_gemini or ask_workspace_readonly) are permitted (one call at a time, up to 4 hops/turn—never in parallel). "
+            + REPLY_PROMPT_GUIDANCE
         ),
         "ttl_seconds": TTL_SECONDS, "selected_session": sel_id,
         "selected_session_title": SESSION_STATE["session_title_map"].get(sel_id, ""),
@@ -146,7 +149,8 @@ def list_saved_sessions(
         "ok": True,
         "assistant_guidance": (
             "Sessions listed above (task previews and top_session_detail included below). "
-            "Present the conversations and ask the user which session to inspect or resume, or issue a sequential read-only follow-up call (e.g. load_session_into_gemini, one call at a time, never in parallel) if further inspection is needed."
+            "Present the conversations and ask the user which session to inspect or resume, or issue a sequential read-only follow-up call (e.g. load_session_into_gemini, one call at a time, never in parallel) if further inspection is needed. "
+            + REPLY_PROMPT_GUIDANCE
         ),
         "count": len(sessions), "available_projects": list(projects_map.values()),
         "top_session_detail": top_detail, "sessions": sessions,
@@ -309,6 +313,12 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
         "summary": format_workflow_baseline_for_wire(wf_info, max_chars=1200),
     } if wf_info.get("found") else {}
 
+    is_running = bool(db_status_info.get("is_running"))
+    step_count = int(db_status_info.get("step_count") or 0)
+    is_retired = is_session_retired(conv_id, AGY_BRAIN_DIR)
+    if is_retired:
+        db_status_info["is_retired"] = True
+    sess_phase = "in_flight" if is_running else ("retired" if is_retired else "ready_to_ship")
     payload: dict[str, Any] = {
         "ok": True, "status": "LOADED",
         "conversation_id": conv_id, "title": conv_title, "project_id": project_id,
@@ -316,7 +326,12 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
         "assistant_guidance": (
             "Session context loaded successfully. "
             "Synthesize your analysis or proceed with sequential read-only follow-up calls (e.g. paging a truncated transcript via ask_workspace_readonly(file_subpath='transcript:latest', start_line=..., end_line=...) or exploring code, one call at a time, never in parallel). "
-            "Note: Hosted Gemini Web/Mobile strips binary MCP ImageContent blocks; share signed_url links with the user or let Antigravity inspect images locally."
+            "Note: Hosted Gemini Web/Mobile strips binary MCP ImageContent blocks; share signed_url links with the user or let Antigravity inspect images locally. "
+            + REPLY_PROMPT_GUIDANCE
+        ),
+        "suggested_actions": build_suggested_actions(
+            sess_phase, target=project_name or Path(workspace).name or "project",
+            conv_id=conv_id, step_count=step_count, is_running=is_running,
         ),
         "project_hygiene_standards": MODULAR_HYGIENE_STANDARDS, "execution_status": db_status_info,
         "compaction_count": db_status_info.get("compaction_count", 0),

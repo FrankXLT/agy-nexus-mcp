@@ -20,6 +20,7 @@ from agy_nexus.config import (
     ALLOW_LOCKED_STATS,
     LOCKED_RESPONSE,
     READONLY_ANNOTATIONS,
+    REPLY_PROMPT_GUIDANCE,
     SESSION_STATE,
     TTL_SECONDS,
     _compact_json,
@@ -130,7 +131,8 @@ def get_session_tree(
                 if include_stats
                 else "Display ascii_tree verbatim inside a fenced ```text block so the user can copy untruncated session_id and workspace values. "
             )
-            + "Sequential read-only follow-up calls (e.g. load_session_into_gemini or ask_workspace_readonly) are permitted (one call at a time, never in parallel)."
+            + "Sequential read-only follow-up calls (e.g. load_session_into_gemini or ask_workspace_readonly) are permitted (one call at a time, never in parallel). "
+            + REPLY_PROMPT_GUIDANCE
         ),
         **stats_extra,
         **tree_bundle,
@@ -147,7 +149,8 @@ def _dispatch_models_action(style_clean: str) -> str:
             "ok": True, "action": "models", "style": "ascii",
             "assistant_guidance": (
                 "Display ascii_models_report verbatim inside a fenced ```text code block. "
-                "Sequential read-only follow-up calls are permitted (one call at a time, never in parallel)."
+                "Sequential read-only follow-up calls are permitted (one call at a time, never in parallel). "
+                + REPLY_PROMPT_GUIDANCE
             ),
             "ascii_models_report": render_ascii_models_status(data_dir=AGY_DATA_DIR, agy_config_dir=AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR),
         }, serializer=_compact_json)
@@ -155,7 +158,8 @@ def _dispatch_models_action(style_clean: str) -> str:
         "ok": True, "action": "models", "style": style_clean,
         "assistant_guidance": (
             "Structured 8-model pricing catalog and latest drift check retrieved below. "
-            "Sequential read-only follow-up calls are permitted (one call at a time, never in parallel)."
+            "Sequential read-only follow-up calls are permitted (one call at a time, never in parallel). "
+            + REPLY_PROMPT_GUIDANCE
         ),
         "quota_and_pools": get_live_quota_and_pool_status(AGY_DATA_DIR, AGY_CONFIG_DIR),
         "model_drift_status": read_model_drift_status(AGY_BG_DIR),
@@ -219,7 +223,7 @@ def _handle_job_status_or_tail(action_clean: str, job_id: str, tail_lines: int, 
     if action_clean == "tail":
         return compact_payload_to_wire_budget({
             "ok": True, "conversation_id": conv_id, "job_id": safe_job_id,
-            "assistant_guidance": "Transcript tail retrieved below. Sequential read-only follow-up calls are permitted (one call at a time, never in parallel).",
+            "assistant_guidance": f"Transcript tail retrieved below. Sequential read-only follow-up calls are permitted (one call at a time, never in parallel). {REPLY_PROMPT_GUIDANCE}",
             "pending_approval": pending_app, "tail_lines_count": len(parsed_tail), "transcript_tail": parsed_tail,
         }, serializer=_compact_json)
     if action_clean == "stop":
@@ -230,7 +234,7 @@ def _handle_job_status_or_tail(action_clean: str, job_id: str, tail_lines: int, 
     stats_fallback = build_nexus_stats_bundle(data_dir=AGY_DATA_DIR, brain_dir=AGY_BRAIN_DIR, db_file=AGY_DB_FILE, config_dir=AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR, period=period or "last_90d")
     return compact_payload_to_wire_budget({
         "ok": True, "action": "status", "conversation_id": conv_id, "job_id": safe_job_id,
-        "assistant_guidance": "Job and session status retrieved below. If the user asked for stats, display ascii_mobile_report inside a ```text block now; otherwise report the job/session status. Sequential read-only follow-up calls are permitted (one call at a time, never in parallel).",
+        "assistant_guidance": f"Job and session status retrieved below. If the user asked for stats, display ascii_mobile_report inside a ```text block now; otherwise report the job/session status. Sequential read-only follow-up calls are permitted (one call at a time, never in parallel). {REPLY_PROMPT_GUIDANCE}",
         "ascii_mobile_report": stats_fallback.get("ascii_mobile_report", ""),
         "quota_and_pools": stats_fallback.get("quota_and_pools", {}),
         "job_metadata": job_data, "db_info": db_info, "pending_approval": pending_app,
@@ -259,14 +263,14 @@ def manage_background_run(
         tree_bundle = build_project_session_tree(active_only=(style_clean == "active"), project_filter=job_id.strip() if job_id.strip().lower() != "latest" else "", limit=max(5, min(tail_lines, 40)), bg_dir=AGY_BG_DIR)
         return compact_payload_to_wire_budget({
             "ok": True, "action": action_clean,
-            "assistant_guidance": "Display ascii_tree verbatim inside a fenced ```text code block first so the user can copy untruncated session_id and workspace values. Sequential read-only follow-up calls are permitted (one call at a time, never in parallel).",
+            "assistant_guidance": f"Display ascii_tree verbatim inside a fenced ```text code block first so the user can copy untruncated session_id and workspace values. Sequential read-only follow-up calls are permitted (one call at a time, never in parallel). {REPLY_PROMPT_GUIDANCE}",
             **tree_bundle,
         }, serializer=_compact_json)
     if action_clean in ("export_notebook", "notebook", "sync_notebook"):
         export_res = export_notebook_bundle(brain_dir=AGY_BRAIN_DIR, db_file=AGY_DB_FILE, bg_dir=AGY_BG_DIR, projects_map=_load_projects_map())
         return compact_payload_to_wire_budget({
             "ok": True, "action": "export_notebook",
-            "assistant_guidance": "Session walkthrough.md and implementation_plan.md artifacts have been exported with SHA-256 deduplication. Sequential read-only follow-up calls are permitted (one call at a time, never in parallel).",
+            "assistant_guidance": f"Session walkthrough.md and implementation_plan.md artifacts have been exported with SHA-256 deduplication. Sequential read-only follow-up calls are permitted (one call at a time, never in parallel). {REPLY_PROMPT_GUIDANCE}",
             **export_res,
         }, serializer=_compact_json)
     if action_clean in ("stats", "dashboard", "quota", "heatmap"):
@@ -280,13 +284,13 @@ def manage_background_run(
         compact_bundle = {k: v for k, v in bundle.items() if k not in drop_keys}
         return compact_payload_to_wire_budget({
             "ok": True, "action": "stats",
-            "assistant_guidance": "Display ascii_mobile_report inside a fenced ```text code block first followed by a concise 3-bullet summary of Google 20x Pool share, Partner Weekly Pacing vs Target, and Top Projects. Sequential read-only follow-up calls are permitted (one call at a time, never in parallel).",
+            "assistant_guidance": f"Display ascii_mobile_report inside a fenced ```text code block first followed by a concise 3-bullet summary of Google 20x Pool share, Partner Weekly Pacing vs Target, and Top Projects. Sequential read-only follow-up calls are permitted (one call at a time, never in parallel). {REPLY_PROMPT_GUIDANCE}",
             **compact_bundle,
         }, serializer=_compact_json)
     if action_clean in ("telemetry", "wire", "logs"):
         return compact_payload_to_wire_budget({
             "ok": True, "action": "telemetry",
-            "assistant_guidance": "Wire telemetry and quota summary retrieved below. Sequential read-only follow-up calls are permitted (one call at a time, never in parallel).",
+            "assistant_guidance": f"Wire telemetry and quota summary retrieved below. Sequential read-only follow-up calls are permitted (one call at a time, never in parallel). {REPLY_PROMPT_GUIDANCE}",
             "wire_telemetry": get_wire_telemetry_summary(AGY_BG_DIR, limit=25),
             "quota_and_pools": get_live_quota_and_pool_status(AGY_DATA_DIR, AGY_CONFIG_DIR),
         }, serializer=_compact_json)
@@ -304,7 +308,8 @@ def _build_models_ascii_response() -> str:
         "active_profile": active_profile,
         "assistant_guidance": (
             "Display ascii_models_report verbatim inside a fenced ```text code block. "
-            "Sequential read-only follow-up calls are permitted (one call at a time, never in parallel)."
+            "Sequential read-only follow-up calls are permitted (one call at a time, never in parallel). "
+            + REPLY_PROMPT_GUIDANCE
         ),
         "ascii_models_report": render_ascii_models_status(
             data_dir=AGY_DATA_DIR, agy_config_dir=AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR,
@@ -395,7 +400,8 @@ def list_models_and_agents(
         "ok": True, "status": "OK",
         "assistant_guidance": (
             "Agents, skills, rules, and model quota inventory retrieved successfully. "
-            "You may synthesize your response directly, or issue a sequential read-only follow-up call (e.g. inspect_name or ask_workspace_readonly, one call at a time, up to 4 sequential hops/turn—never in parallel)."
+            "You may synthesize your response directly, or issue a sequential read-only follow-up call (e.g. inspect_name or ask_workspace_readonly, one call at a time, up to 4 sequential hops/turn—never in parallel). "
+            + REPLY_PROMPT_GUIDANCE
         ),
         "active_profile": active_profile, "quota_and_pools": quota_status,
         "customization_scope_policy": CUSTOMIZATION_SCOPE_POLICY, "session_customization_scope": session_scope,

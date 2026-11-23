@@ -28,7 +28,7 @@ from agy_nexus.config import (
     AGY_PROJECTS_DIR,
     AGY_WORKSPACE_DIR,
     LOCKED_RESPONSE,
-    READONLY_ANNOTATIONS,
+    READONLY_ANNOTATIONS, REPLY_PROMPT_GUIDANCE,
     SESSION_STATE,
     _compact_json,
     get_umbrella_roots,
@@ -387,7 +387,7 @@ def inspect_visual_artifacts(
     selected = _select_targets(catalog, targets, conv_id, ws_path, offset=offset, limit=eff_limit)
     if not selected:
         return [TextContent(type="text", text=_compact_json({
-            "ok": False, "conversation_id": conv_id, "total_available": len(catalog),
+            "ok": False, "conversation_id": conv_id, "total_available": len(catalog), "assistant_guidance": REPLY_PROMPT_GUIDANCE,
             "error": f"No matching visual artifacts found for targets='{targets}'.",
             "available_preview": [{"seq": c["seq"], "name": c["name"], "rel_path": c["rel_path"]} for c in catalog[:10]],
         }))]
@@ -414,7 +414,7 @@ def inspect_visual_artifacts(
     summary_payload: dict[str, Any] = {
         "ok": True, "conversation_id": conv_id, "returned_images": len(image_blocks),
         "total_available": len(catalog), "has_more": has_more, "next_offset": next_off if has_more else None,
-        "items": items_meta,
+        "assistant_guidance": REPLY_PROMPT_GUIDANCE, "items": items_meta,
     }
     if skip_webp and any(isinstance(m, dict) and m.get("thumbnail_skipped") for m in items_meta):
         summary_payload["cloud_fast_path"] = True

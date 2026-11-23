@@ -380,13 +380,22 @@ def is_unlocked(spoken_passphrase: str = "") -> bool:
         return True
     return False
 
+REPLY_PROMPT_GUIDANCE = (
+    "END-OF-TURN 1-TAP REPLY CHIPS: When presenting your final answer to the user, ALWAYS end your message with "
+    "<FollowUp label=\"...\" query=\"@Agy Nexus Mcp ...\" /> (1 clear next step) or "
+    "<ElicitationsGroup message=\"...\"><Elicitation label=\"...\" query=\"@Agy Nexus Mcp ...\" /></ElicitationsGroup> "
+    "(2-3 choices). Every query MUST start with '@Agy Nexus Mcp ' and include exact session/handoff/project IDs "
+    "(prefer suggested_actions.followup_xml when provided)."
+)
+
 LOCKED_RESPONSE = json.dumps({
     "ok": False,
     "locked": True,
     "assistant_guidance": (
         "STOP IMMEDIATELY AND REPLY TO THE USER NOW: Do NOT call any more MCP tools in this turn "
         "(Google Gemini's UI confirmation card hangs on back-to-back tool calls). "
-        "Ask the user for their spoken passphrase first, then call the tool in the NEXT turn."
+        "Ask the user for their spoken passphrase first, then call the tool via @Agy Nexus Mcp in the NEXT turn "
+        "(and always prefix any <FollowUp> / <ElicitationsGroup> chip query with '@Agy Nexus Mcp ')."
     ),
     "message": (
         "Security Deadbolt Active. Voice/spoken passphrase verification required. "
@@ -429,7 +438,11 @@ mcp = FastMCP(
         "- HARD STOP ON MUTATIONS & DEADBOLT: `send_handoff_and_resume` and `LOCKED_RESPONSE` end the turn—reply to the user immediately.\n"
         "3. 1-CALL SUPER-CALLS: Call `load_session_into_gemini(session_identifier='1'|'latest'|<keyword>, include_files=...)` directly for check-ins (skip `list_saved_sessions`). Batch up to 12 files/virtual URIs in `ask_workspace_readonly(file_subpath='a.py,outline:b.py,workflow:baseline,transcript:latest')`.\n"
         "4. ROUTING & CONTINUITY: Pass `session_identifier` (or `project_name` + `workspace_path` with `create_new_session=True`) and `session_continuity='auto'|'continuation'|'closeout'|'new_topic'`.\n"
-        "5. JOB-FIRST 1-TAP BUTTONS: Match `suggested_actions` ('Run these changes and update the live preview?' / 'Check in on the build?' / 'Ship <target> to GitHub?')."
+        "5. END-OF-TURN 1-TAP REPLY CHIPS (`@Agy Nexus Mcp` REQUIRED): ALWAYS end EVERY final user-facing reply with "
+        "<FollowUp label=\"...\" query=\"@Agy Nexus Mcp ...\" /> (1 clear next step) or "
+        "<ElicitationsGroup message=\"...\"><Elicitation label=\"...\" query=\"@Agy Nexus Mcp ...\" /></ElicitationsGroup> (2-3 choices). "
+        "Every `query` MUST start with `@Agy Nexus Mcp ` and embed the exact `conversation_id`, `handoff_id`, and `project_name` "
+        "(prefer `suggested_actions.followup_xml` when returned)."
     ),
 )
 

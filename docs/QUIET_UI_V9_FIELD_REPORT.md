@@ -1,8 +1,8 @@
-# AGY-Nexus `v4.0.5` (`/web` Cutover) — Quiet UI `v9.3.0` Production Field Report
+# AGY-Nexus `v4.0.6` (`/web` Cutover) — Quiet UI `v9.3.0` Production Field Report
 
 ## 1. Executive Summary & Production Cutover
 
-Originally evaluated at `/web/v9`, the **Quiet UI Skills v9.3.0** Studio (`quiet-ui`, `quiet-evidence`, `quiet-bridge`) is the primary live **`/web`** interface in **`v4.0.5`** (while retaining `/web/v9` route compatibility), grounded strictly in `/web/api/*` 8-model cost ledgers, hourly active-day whiskers, multi-column sortable tables, desktop pinned rail navigation, and session artifact contracts without external CDNs, Playwright, or `!important` CSS overrides.
+Originally evaluated at `/web/v9`, the **Quiet UI Skills v9.3.0** Studio (`quiet-ui`, `quiet-evidence`, `quiet-bridge`) is the primary live **`/web`** interface in **`v4.0.6`** (while retaining `/web/v9` route compatibility), grounded strictly in `/web/api/*` 8-model cost ledgers, hourly active-day whiskers, multi-column sortable tables, desktop pinned rail navigation, and session artifact contracts without external CDNs, Playwright, or `!important` CSS overrides.
 
 After iterative polish rounds spanning folded phone (`390×844`), Pixel Fold (`820×1080`), desktop (`1440×900`), and widescreen (`2560×1440`), `/web` delivers **Quiet Cockpit** single-row toolbar simplicity, 1-column aligned daily timelines, active-day hourly whisker distributions, responsive wrapped mobile document tabs + `[Captures (N)]` modal, and verified compliance with `audit_quiet_html.py`, `verify_visual_contract.py`, and the public static GitHub Pages showcase (`scripts/build_github_showcase.py`).
 
@@ -23,7 +23,7 @@ After iterative polish rounds spanning folded phone (`390×844`), Pixel Fold (`8
 
 ---
 
-## 3. Data-to-Widget Binding Map (`v4.0.5`)
+## 3. Data-to-Widget Binding Map (`v4.0.6`)
 
 | Panel / Widget | Source Endpoints & Fields | Rendering & Honesty Contract |
 | :--- | :--- | :--- |
@@ -40,7 +40,7 @@ After iterative polish rounds spanning folded phone (`390×844`), Pixel Fold (`8
 
 ## 4. Offline Vendoring & Public GitHub Pages Showcase (`gh-pages`)
 
-- Zero external CDNs: all styles, ECharts `v5.6.0`, and Quiet UI `v9.3.0` adapters load from `/web/v9/vendor/` (cached in `web/sw.js` `CACHE_NAME = "agy-nexus-v4.0.5"`) or relative `./v9/vendor/` in the static GitHub Pages showcase (`build/gh-pages/` via `scripts/build_github_showcase.py`).
+- Zero external CDNs: all styles, ECharts `v5.6.0`, and Quiet UI `v9.3.0` adapters load from `/web/v9/vendor/` (cached in `web/sw.js` `CACHE_NAME = "agy-nexus-v4.0.6"`) or relative `./v9/vendor/` in the static GitHub Pages showcase (`build/gh-pages/` via `scripts/build_github_showcase.py`).
 - All showcase outputs pass PNG chunk metadata scrubbing (`tEXt`/`iTXt`/`zTXt`/`eXIf`/`tIME` removed) and automated fail-closed `scan_showcase_privacy()` (`0` private slugs/domains/LAN IPs/UUIDs).
 
 ---

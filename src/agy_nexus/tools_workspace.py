@@ -14,6 +14,7 @@ from agy_nexus.config import (
     AGY_WORKSPACE_DIR,
     LOCKED_RESPONSE,
     READONLY_ANNOTATIONS,
+    REPLY_PROMPT_GUIDANCE,
     SESSION_STATE,
     _compact_json,
     _save_session_state,
@@ -151,7 +152,8 @@ def ask_workspace_readonly(
         "assistant_guidance": (
             "Inspection complete. All requested file details, code search matches, and session status are included below. "
             "You may synthesize your analysis directly, or issue a sequential read-only follow-up call (e.g. paging lines or inspecting git diff, one call at a time, up to 4 sequential hops/turn—never in parallel). "
-            "If a tool call fails with permission_denied or an immediate error, you MAY automatically invoke load_session_into_gemini once as a same-turn fallback."
+            "If a tool call fails with permission_denied or an immediate error, you MAY automatically invoke load_session_into_gemini once as a same-turn fallback. "
+            + REPLY_PROMPT_GUIDANCE
         ),
         "selected_session_status": _get_selected_session_quick_status(conv_id),
         "file_details": file_result,
@@ -196,7 +198,8 @@ def inspect_git_diff(
         return compact_payload_to_wire_budget({
             "assistant_guidance": (
                 "Multi-repository drift audit completed in a single turn (all branch, status, and drift details included below). "
-                "Synthesize your report directly, or issue a sequential read-only follow-up call (one call at a time, never in parallel)."
+                "Synthesize your report directly, or issue a sequential read-only follow-up call (one call at a time, never in parallel). "
+                + REPLY_PROMPT_GUIDANCE
             ),
             "selected_session_status": _get_selected_session_quick_status(conv_id),
             **drift_bundle,
@@ -261,7 +264,7 @@ def inspect_git_diff(
                     )
                     return compact_payload_to_wire_budget({
                         "ok": True, "workspace": str(ws_res),
-                        "assistant_guidance": "Git diff retrieved. Synthesize your report directly, or issue a sequential read-only follow-up call (one call at a time, never in parallel).",
+                        "assistant_guidance": f"Git diff retrieved. Synthesize your report directly, or issue a sequential read-only follow-up call (one call at a time, never in parallel). {REPLY_PROMPT_GUIDANCE}",
                         "selected_session_status": _get_selected_session_quick_status(conv_id),
                         "configured_mcp_servers": configured_mcps, "branch": current_branch,
                         "current_branch": current_branch, "status_short": status_proc.stdout.strip(),
@@ -279,7 +282,7 @@ def inspect_git_diff(
         )
         return compact_payload_to_wire_budget({
             "ok": True, "workspace": host_res.get("workspace", ws_str),
-            "assistant_guidance": "Host git inspection complete. Synthesize your report directly, or issue a sequential read-only follow-up call (one call at a time, never in parallel).",
+            "assistant_guidance": f"Host git inspection complete. Synthesize your report directly, or issue a sequential read-only follow-up call (one call at a time, never in parallel). {REPLY_PROMPT_GUIDANCE}",
             "selected_session_status": _get_selected_session_quick_status(conv_id),
             "configured_mcp_servers": configured_mcps, "branch": br, "current_branch": br,
             "status_short": host_res.get("status_short", ""), "diff_stat": host_res.get("diff_stat", ""),

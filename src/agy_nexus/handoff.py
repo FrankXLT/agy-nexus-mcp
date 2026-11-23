@@ -15,8 +15,8 @@ from typing import Any
 import agy_nexus.config as cfg
 from agy_nexus.config import (
     AGY_CONFIG_DIR, AGY_DATA_DIR, AGY_GITLAB_DIR, ALLOW_LOCKED_STAGING,
-    HANDOFF_ANNOTATIONS, LOCKED_RESPONSE, SESSION_STATE, _compact_json,
-    get_antigravity_config_repo, is_unlocked, mcp, pin_session_context,
+    HANDOFF_ANNOTATIONS, LOCKED_RESPONSE, REPLY_PROMPT_GUIDANCE, SESSION_STATE,
+    _compact_json, get_antigravity_config_repo, is_unlocked, mcp, pin_session_context,
 )
 from agy_nexus.handoff_queue import (
     canonicalize_handoff_id, mark_ticket_status,
@@ -186,13 +186,13 @@ def _run_headless_new_session(ctx: dict[str, Any]) -> str:
         job_meta["auto_rollover_from"] = ctx["auto_rollover_from"]
     (cfg.AGY_BG_DIR / f"{job_id}.json").write_text(json.dumps(job_meta, indent=2) + "\n", encoding="utf-8")
     guidance = (
-        f"STOP AND REPLY TO USER NOW: Handoff {hid} delivered and session resumed in background. Do NOT chain a second MCP tool after a successful response."
+        f"STOP AND REPLY TO USER NOW: Handoff {hid} delivered and session resumed in background. Do NOT chain a second MCP tool after a successful response. {REPLY_PROMPT_GUIDANCE}"
         if bridge_ok else
-        f"STOP AND REPLY TO USER NOW: Host bridge failed to spawn headless session ({bridge_response.get('error', 'bridge error')}); handoff {hid} remains staged at {handoff_file} (say 'Run handoff {hid}' in Antigravity IDE)."
+        f"STOP AND REPLY TO USER NOW: Host bridge failed to spawn headless session ({bridge_response.get('error', 'bridge error')}); handoff {hid} remains staged at {handoff_file} (say 'Run handoff {hid}' in Antigravity IDE). {REPLY_PROMPT_GUIDANCE}"
     )
     t_stat = str(ticket.get("status", "IN_WORK"))
     out: dict[str, Any] = {"ok": bridge_ok, "status": "RESUMED" if bridge_ok else "FAILED", "handoff_id": hid, "handoff_status": t_stat, "ticket_status": t_stat, "created_new_session": bool(new_conv_id and bridge_ok), "create_new_project": create_new_proj, "default_branch": eff_branch, "resumed": bridge_ok, "write_mode": write_mode, "chars_written": len(body_clean), "execution_mode": eff_exec_mode, "modular_hygiene_enforced": apply_hygiene, "customization_scope_info": doc["cust_scope_info"], "active_mainchat_model": doc["main_model_info"], "job_id": job_id, "conversation_id": new_conv_id, "handoff_mode": eff_handoff_mode, "allow_chained_publish": allow_chained_publish, "workspace_path": pinned_ws, "project_id": pinned_pid, "project_name": pinned_pname, "handoff_file": str(handoff_file), "assistant_guidance": guidance, "bridge_response": bridge_response}
-    out["suggested_actions"] = build_suggested_actions("in_flight", target=repo_slug, conv_id=new_conv_id, is_running=bridge_ok)
+    out["suggested_actions"] = build_suggested_actions("in_flight" if bridge_ok else "ready_to_run", target=repo_slug, conv_id=new_conv_id, is_running=bridge_ok, handoff_id=hid)
     if defer_retire:
         out["retire_after_closeout"] = True
     if ctx.get("coerced_from_fast"):
@@ -248,10 +248,10 @@ def _stage_new_chat_handoff(ctx: dict[str, Any]) -> str:
         "execution_mode": ctx["eff_exec_mode"], "modular_hygiene_enforced": ctx["apply_hygiene"],
         "customization_scope_info": doc["cust_scope_info"], "active_mainchat_model": doc["main_model_info"],
         "conversation_id": "", "handoff_file": tfile,
-        "assistant_guidance": f"STOP AND REPLY TO USER NOW: Handoff `{hid}`{sup_note} is staged (UNCLAIMED) for `{repo_slug}` ({title_clean}). Tell the user they can open a new or existing chat on `{repo_slug}` in Antigravity IDE and say 'Run handoff {hid}' (picked up via agy-praxis-mcp without file paths). You MUST end your response with this exact prompt: 'Do you understand the risk and would you like me to override and resume it headlessly anyway?'",
+        "assistant_guidance": f"STOP AND REPLY TO USER NOW: Handoff `{hid}`{sup_note} is staged (UNCLAIMED) for `{repo_slug}` ({title_clean}). Tell the user they can open a new or existing chat on `{repo_slug}` in Antigravity IDE and say 'Run handoff {hid}' (picked up via agy-praxis-mcp without file paths). You MUST end your response with this exact prompt: 'Do you understand the risk and would you like me to override and resume it headlessly anyway?' {REPLY_PROMPT_GUIDANCE}",
         "message": f"Research handoff staged as {hid}{sup_note} at {tfile} without headless wakeup.",
     }
-    out_staged["suggested_actions"] = build_suggested_actions("ready_to_run", target=repo_slug, conv_id="")
+    out_staged["suggested_actions"] = build_suggested_actions("ready_to_run", target=repo_slug, conv_id="", handoff_id=hid)
     if defer_retire:
         out_staged["retire_after_closeout"] = True
     if ctx.get("coerced_from_fast"):
@@ -306,13 +306,13 @@ def _run_headless_existing_session(ctx: dict[str, Any]) -> str:
         job_meta["retire_after_closeout"] = True
     (cfg.AGY_BG_DIR / f"{job_id}.json").write_text(json.dumps(job_meta, indent=2) + "\n", encoding="utf-8")
     guidance = (
-        f"STOP AND REPLY TO USER NOW: Handoff {hid} delivered and session resumed in background. Do NOT chain a second MCP tool after a successful response."
+        f"STOP AND REPLY TO USER NOW: Handoff {hid} delivered and session resumed in background. Do NOT chain a second MCP tool after a successful response. {REPLY_PROMPT_GUIDANCE}"
         if bridge_ok else
-        f"STOP AND REPLY TO USER NOW: Host bridge wakeup failed ({bridge_response.get('error', 'bridge error')}); handoff {hid} remains staged at {handoff_file} for manual pickup."
+        f"STOP AND REPLY TO USER NOW: Host bridge wakeup failed ({bridge_response.get('error', 'bridge error')}); handoff {hid} remains staged at {handoff_file} for manual pickup. {REPLY_PROMPT_GUIDANCE}"
     )
     t_stat2 = "IN_WORK" if bridge_ok else "STAGED"
     out: dict[str, Any] = {"ok": bridge_ok, "status": "RESUMED" if bridge_ok else "FAILED", "handoff_id": hid, "handoff_status": t_stat2, "ticket_status": t_stat2, "resumed": bridge_ok, "write_mode": ctx["write_mode"], "chars_written": len(body_clean), "execution_mode": eff_exec_mode, "modular_hygiene_enforced": apply_hygiene, "customization_scope_info": doc["cust_scope_info"], "active_mainchat_model": doc["main_model_info"], "job_id": job_id, "conversation_id": conv_id, "conversation_title": conv_title, "project_id": eff_pid, "project_name": eff_pname, "workspace_path": eff_ws, "routing_reason": ctx["routing_reason"], "mode": sess_mode, "other_running_sessions": other_writers, "handoff_mode": eff_handoff_mode, "allow_chained_publish": allow_chained_publish, "handoff_file": str(handoff_file), "assistant_guidance": guidance, "bridge_response": bridge_response}
-    out["suggested_actions"] = build_suggested_actions("in_flight", target=eff_pname or ctx.get("repo_slug", "task"), conv_id=conv_id, is_running=bridge_ok)
+    out["suggested_actions"] = build_suggested_actions("in_flight" if bridge_ok else "ready_to_run", target=eff_pname or ctx.get("repo_slug", "task"), conv_id=conv_id, is_running=bridge_ok, handoff_id=hid)
     warn_multi = f"Note: {len(other_writers)} other conversation(s) targeting this workspace are currently running; consider use_worktree=True for parallel edits." if (other_writers and not use_worktree) else ""
     for k_opt, v_opt in (("retire_after_closeout", defer_retire), ("coerced_from_fast", bool(ctx.get("coerced_from_fast"))), ("execution_mode_advisory", ctx["execution_mode_advisory"]), ("concurrent_writer_warning", warn_multi), ("size_warning", ctx["size_warning"]), ("handoff_advisory", ctx.get("handoff_advisory"))):
         if v_opt:
@@ -330,7 +330,7 @@ def _stage_or_run_existing_session(conv_id: str, routing_reason: str, base_ctx: 
     if resume_headless and not force_interrupt:
         mutex_check = check_inflight_handoff_mutex(conv_id, cfg.AGY_BG_DIR, quick_st, max_age_seconds=300)
         if mutex_check:
-            return json.dumps({"ok": False, "status": "ALREADY_RUNNING", "conversation_id": conv_id, "conversation_title": conv_title, "active_job_id": mutex_check["active_job_id"], "elapsed_seconds": mutex_check["elapsed_seconds"], "started_at": mutex_check["started_at"], "handoff_mode": eff_handoff_mode, "allow_chained_publish": allow_chained_publish, "assistant_guidance": "STOP AND REPLY TO USER NOW: Target session is currently RUNNING with an active background job (< 300s). Call load_session_into_gemini to inspect progress, or pass force_interrupt=True to override.", "message": mutex_check["message"]}, indent=2)
+            return json.dumps({"ok": False, "status": "ALREADY_RUNNING", "conversation_id": conv_id, "conversation_title": conv_title, "active_job_id": mutex_check["active_job_id"], "elapsed_seconds": mutex_check["elapsed_seconds"], "started_at": mutex_check["started_at"], "handoff_mode": eff_handoff_mode, "allow_chained_publish": allow_chained_publish, "assistant_guidance": f"STOP AND REPLY TO USER NOW: Target session is currently RUNNING with an active background job (< 300s). Call load_session_into_gemini to inspect progress, or pass force_interrupt=True to override. {REPLY_PROMPT_GUIDANCE}", "suggested_actions": build_suggested_actions("in_flight", target=base_ctx.get("repo_slug", ""), conv_id=conv_id, is_running=True), "message": mutex_check["message"]}, indent=2)
 
     if base_ctx.get("retire_session") and not defer_retire:
         record_session_retirement(conv_id, cfg.AGY_BRAIN_DIR)
@@ -344,8 +344,8 @@ def _stage_or_run_existing_session(conv_id: str, routing_reason: str, base_ctx: 
     pin_session_context(conv_id, title=conv_title, project_id=eff_pid, project_name=eff_pname, workspace=eff_conv_ws, mode=sess_mode, last_tool="send_handoff_and_resume", set_default=True)
     if not resume_headless:
         hid, sup_note = str(ticket["handoff_id"]), (f" (superseded {', '.join(ticket['superseded_ids'])})" if ticket.get("superseded_ids") else "")
-        out_local: dict[str, Any] = {"ok": True, "status": "STAGED_ONLY", "handoff_id": hid, "handoff_status": "STAGED", "ticket_status": "STAGED", "superseded_ids": ticket.get("superseded_ids", []), "repo_slug": repo_slug, "resumed": False, "write_mode": write_mode, "chars_written": len(body_clean), "execution_mode": base_ctx["eff_exec_mode"], "modular_hygiene_enforced": base_ctx["apply_hygiene"], "handoff_mode": eff_handoff_mode, "allow_chained_publish": allow_chained_publish, "customization_scope_info": doc["cust_scope_info"], "active_mainchat_model": doc["main_model_info"], "conversation_id": conv_id, "conversation_title": conv_title, "project_id": eff_pid, "project_name": eff_pname or repo_slug, "workspace_path": eff_conv_ws, "routing_reason": routing_reason, "mode": sess_mode, "other_running_sessions": other_writers, "handoff_file": str(handoff_file), "ticket_file": str(ticket.get("handoff_file") or ""), "assistant_guidance": f"STOP AND REPLY TO USER NOW: Handoff `{hid}`{sup_note} is staged (UNCLAIMED) for `{repo_slug}` ({title_clean}). Advise the user they can say 'Run handoff {hid}' in any new or existing Antigravity chat on `{repo_slug}`. You MUST end your response with this exact prompt: 'Do you understand the risk and would you like me to override and resume it headlessly anyway?'", "message": f"Research handoff staged as {hid}{sup_note} ({len(body_clean)} chars) without headless wakeup."}
-        out_local["suggested_actions"] = build_suggested_actions("ready_to_run", target=repo_slug, conv_id=conv_id)
+        out_local: dict[str, Any] = {"ok": True, "status": "STAGED_ONLY", "handoff_id": hid, "handoff_status": "STAGED", "ticket_status": "STAGED", "superseded_ids": ticket.get("superseded_ids", []), "repo_slug": repo_slug, "resumed": False, "write_mode": write_mode, "chars_written": len(body_clean), "execution_mode": base_ctx["eff_exec_mode"], "modular_hygiene_enforced": base_ctx["apply_hygiene"], "handoff_mode": eff_handoff_mode, "allow_chained_publish": allow_chained_publish, "customization_scope_info": doc["cust_scope_info"], "active_mainchat_model": doc["main_model_info"], "conversation_id": conv_id, "conversation_title": conv_title, "project_id": eff_pid, "project_name": eff_pname or repo_slug, "workspace_path": eff_conv_ws, "routing_reason": routing_reason, "mode": sess_mode, "other_running_sessions": other_writers, "handoff_file": str(handoff_file), "ticket_file": str(ticket.get("handoff_file") or ""), "assistant_guidance": f"STOP AND REPLY TO USER NOW: Handoff `{hid}`{sup_note} is staged (UNCLAIMED) for `{repo_slug}` ({title_clean}). Advise the user they can say 'Run handoff {hid}' in any new or existing Antigravity chat on `{repo_slug}`. You MUST end your response with this exact prompt: 'Do you understand the risk and would you like me to override and resume it headlessly anyway?' {REPLY_PROMPT_GUIDANCE}", "message": f"Research handoff staged as {hid}{sup_note} ({len(body_clean)} chars) without headless wakeup."}
+        out_local["suggested_actions"] = build_suggested_actions("ready_to_run", target=repo_slug, conv_id=conv_id, handoff_id=hid)
         for k_opt, v_opt in (("retire_after_closeout", defer_retire), ("coerced_from_fast", bool(base_ctx.get("coerced_from_fast"))), ("execution_mode_advisory", base_ctx["execution_mode_advisory"]), ("size_warning", base_ctx["size_warning"]), ("handoff_advisory", base_ctx.get("handoff_advisory"))):
             if v_opt:
                 out_local[k_opt] = v_opt

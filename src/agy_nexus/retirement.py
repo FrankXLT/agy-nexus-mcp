@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import html
 import json
 from pathlib import Path
 import re
@@ -166,38 +167,46 @@ def extract_prior_session_baton(
     return "\n\n".join(parts) + "\n\n"
 
 
-def build_suggested_actions(
-    phase: str,
-    target: str = "",
-    conv_id: str = "",
-    step_count: int = 0,
-    catches_count: int = 0,
-    is_running: bool = False,
-) -> dict[str, Any]:
-    """Generate job-focused 1-tap Yes transitions for Gemini clients."""
-    tgt = target.strip() or "target"
-    p_norm = (phase or "").strip().lower()
+def _clean_chip_text(val: Any) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[\x00-\x1f\x7f-\x9f\ufffe\uffff]+", " ", str(val or ""))).strip()
 
+
+def _elicit_group(msg: str, items: list[tuple[str, str]]) -> str:
+    esc = lambda s: html.escape(_clean_chip_text(s), quote=True)
+    inner = "".join(f'<Elicitation label="{esc(lbl)}" query="{esc(qry)}" />' for lbl, qry in items)
+    return f'<ElicitationsGroup message="{esc(msg)}">{inner}</ElicitationsGroup>'
+
+
+def build_suggested_actions(
+    phase: str, target: str = "", conv_id: str = "", step_count: int = 0,
+    catches_count: int = 0, is_running: bool = False, handoff_id: str = "",
+) -> dict[str, Any]:
+    """Generate job-focused 1-tap Yes transitions and @Agy Nexus Mcp XML reply chips."""
+    tgt = _clean_chip_text(target) or "target"
+    tgt_short = tgt if len(tgt) <= 24 else tgt[:21] + "..."
+    cid, hid, p_norm = _clean_chip_text(conv_id), _clean_chip_text(handoff_id), _clean_chip_text(phase).lower()
+    ref_lbl = hid or tgt_short
+    if p_norm == "retired" and not is_running:
+        prompt = "Start next task or view session tree?"
+        q1 = "@Agy Nexus Mcp Show get_session_tree(include_stats=True, style='rich') across workspaces."
+        q2 = f"@Agy Nexus Mcp Inspect {tgt} workspace for the next task."
+        xml = _elicit_group("Session retired cleanly — what next?", [("View active session tree", q1), (f"Start a fresh session on {tgt_short}", q2)])
+        return {"phase": "retired", "prompt": prompt, "actions": [prompt], "options": [{"label": "Yes", "value": q1}, {"label": f"Inspect {tgt_short}", "value": q2}], "followup_xml": xml}
     if p_norm == "in_flight" or is_running:
         prompt = "Check in on the build?"
-        return {
-            "phase": "in_flight",
-            "prompt": prompt,
-            "actions": [prompt],
-            "options": [{"label": "Yes", "value": f"Check in on {tgt} build" if tgt != "target" else "Check in on the build"}],
-        }
-    if p_norm in ("ready_to_ship", "audit_clean", "high_step_retirement") or step_count >= 900:
+        ctx_meta = f" ({hid}, {tgt})" if hid else f" ({tgt})"
+        q1 = f"@Agy Nexus Mcp Check in on {cid}{ctx_meta} to inspect build progress, visual captures, and test status." if cid else (f"@Agy Nexus Mcp Check in on {hid or tgt} build" if (hid or tgt != "target") else "@Agy Nexus Mcp Check in on the build")
+        lbl = f"Check in on {tgt_short} build" if tgt != "target" else "Check in on the build"
+        return {"phase": "in_flight", "prompt": prompt, "actions": [prompt], "options": [{"label": "Yes", "value": q1}], "followup_xml": f'<FollowUp label="{html.escape(_clean_chip_text(lbl), quote=True)}" query="{html.escape(_clean_chip_text(q1), quote=True)}" />'}
+    if p_norm in ("ready_to_ship", "audit_clean", "high_step_retirement") or (step_count or 0) >= 900:
         prompt = f"Ship {tgt} to GitHub?"
-        return {
-            "phase": "ready_to_ship",
-            "prompt": prompt,
-            "actions": [prompt],
-            "options": [{"label": "Yes", "value": f"Ship {tgt} to GitHub"}],
-        }
+        q1 = f"@Agy Nexus Mcp Run release_closeout on {cid} ({tgt}, allow_chained_publish=True, retire_session=True) to verify tests, commit, tag, push to GitHub, and retire the session." if cid else f"@Agy Nexus Mcp Ship {tgt} to GitHub"
+        q2 = f"@Agy Nexus Mcp Inspect git diff on {cid or tgt}"
+        xml = _elicit_group(f"Ready to ship {tgt_short} or make adjustments?", [(f"Ship {tgt_short} to GitHub & retire session", q1), (f"Inspect git diff on {tgt_short}", q2)])
+        return {"phase": "ready_to_ship", "prompt": prompt, "actions": [prompt], "options": [{"label": "Yes", "value": q1}, {"label": f"Inspect git diff on {tgt_short}", "value": q2}], "followup_xml": xml}
     prompt = "Run these changes and update the live preview?"
-    return {
-        "phase": "ready_to_run",
-        "prompt": prompt,
-        "actions": [prompt],
-        "options": [{"label": "Yes", "value": f"Run changes on {tgt}" if tgt != "target" else "Run these changes"}],
-    }
+    ctx_run = f" (session {cid})" if cid else ""
+    q1 = f"@Agy Nexus Mcp Launch {hid or tgt} headlessly on {tgt}{ctx_run} and update the live preview."
+    q2 = f"@Agy Nexus Mcp Check in on {hid or cid or tgt}"
+    xml = _elicit_group(f"How would you like to run {ref_lbl}?", [(f"Launch {ref_lbl} headlessly now", q1), ("Check in after running in IDE", q2)])
+    return {"phase": "ready_to_run", "prompt": prompt, "actions": [prompt], "options": [{"label": "Yes", "value": q1}, {"label": "Check in after running in IDE", "value": q2}], "followup_xml": xml}

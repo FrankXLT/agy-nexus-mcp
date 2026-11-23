@@ -4,6 +4,15 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.6] — 2026-11-23
+
+### Added & Improved
+- **Enforce `@Agy Nexus Mcp` 1-Tap `<FollowUp>` / `<ElicitationsGroup>` Reply Chips Across All Tools & Lifecycles**:
+  - Added `REPLY_PROMPT_GUIDANCE` in `src/agy_nexus/config.py`, upgraded `FastMCP` Rule 5 with explicit `<FollowUp label="..." query="@Agy Nexus Mcp ..." />` and `<ElicitationsGroup>` XML syntax + required `@Agy Nexus Mcp ` prefix and exact `conversation_id` / `handoff_id` / `project_name` embedding, and updated `LOCKED_RESPONSE` with next-turn `@Agy Nexus Mcp` guidance.
+  - Upgraded `build_suggested_actions()` (`src/agy_nexus/retirement.py`) to accept `handoff_id`, support the `retired` state (prioritized before `step_count >= 900`), prefix all `options` and `query` attributes with `@Agy Nexus Mcp `, embed `conv_id`/`handoff_id`/`target`, and emit `html.escape(..., quote=True)` `followup_xml` strings.
+  - Wired `handoff_id=hid` and `REPLY_PROMPT_GUIDANCE` into `src/agy_nexus/handoff.py`, attached lifecycle `suggested_actions` inside `load_session_into_gemini` (`tools_session.py`), and appended `REPLY_PROMPT_GUIDANCE` across `unlock_sessions`, `list_saved_sessions`, `ask_workspace_readonly`, `inspect_git_diff`, `inspect_visual_artifacts`, `get_session_tree`, `list_models_and_agents`, and `manage_background_run`.
+- **Docs, Tests & PWA Sync**: Preserved Workflows 1–6 and documented 1-tap reply-chip guidance in `docs/WORKFLOWS.md` (`v4.0.6`), bumped PWA/SW (`agy-nexus-v4.0.6`), added `tests/test_v406_reply_prompt_guidance.py`, and refreshed `demo_snapshot.js` + `README.md`.
+
 ## [4.0.5] — 2026-11-23
 
 ### Fixed

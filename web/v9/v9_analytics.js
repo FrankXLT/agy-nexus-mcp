@@ -325,7 +325,7 @@
     const watch = Array.isArray(mh.watchlist_and_exceptions) ? mh.watchlist_and_exceptions.slice(0, 12) : [];
     bodyEl.innerHTML = `
       <div class="v9-health-strip" style="padding-block:0.5rem">
-        <span>Release: ${V9.escHtml((ch.version && ch.version.status_label) || b.version || "4.0.5")}</span>
+        <span>Release: ${V9.escHtml((ch.version && ch.version.status_label) || b.version || "4.0.6")}</span>
         <span>Praxis Symbols: ${(ch.polyglot_health && ch.polyglot_health.total_symbols) || 0}</span>
         <span>Pinned Slots: ${rt.active_slots || 0} (${rt.pinned_calls || 0} pinned / ${rt.auto_resolved_calls || 0} auto)</span>
         <span>3-2-1 Backup: ${V9.escHtml(bk.status_label || "—")} (${V9.escHtml(bk.age || "—")})</span>

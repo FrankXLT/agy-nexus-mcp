@@ -34,8 +34,9 @@ Directing agents from mobile requires zero-risk read operations. If Gemini were 
    - Stale synthetic test context slots are automatically pruned from `session_state.json`, Praxis IDE calls (`/praxis/`) classify separately as `Antigravity IDE (Praxis MCP)`, and stateless MCP handshakes (`tools/list`, `initialize`) are separated into `protocol_handshakes` so wire averages reflect real tool calls.
    - Remote version comparison queries both GitHub `/releases/latest` and `/tags`, comparing the installed version against the highest valid semantic version tag so tag-pushed releases compare accurately without false `Staged Locally` warnings.
     - **Deadbolt-Safe Nightly Model & Pricing Status (`style="ascii"`)**: Scheduled status pulls can invoke `list_models_and_agents(style="ascii", include_skills=False, include_rules=False)` or `manage_background_run(action="models", style="ascii")` without unlocking the Deadbolt to receive a fixed `76`-column ASCII status report covering all 8 canonical models (`Carbon 4`, `Neon 4`, `Argon 4`, `Hydrogen 4`, `Flash 3.8`, `Opus 5.5`, `Sonnet 5.5`, `GPT-OSS 120B`), effective-dated micro-USD rates, subagent mappings, and automated `01:45 AM` Language Server + API pricing drift status (`scripts/check_model_drift.py` -> `model_drift_status.json`), while `include_skills=True`, `include_rules=True`, and `style="json"` stay behind the Deadbolt gate. Bundled agent frontmatter (`agents/*.md`) stays synced via `scripts/sync_agents.py --check`.
-3. **Concise Mobile Summary**:
-   - Gemini delivers a clean, plain-English summary to the user: current task progress, active background jobs, and a 1-tap suggested next step (e.g., *"Check in on the build?"*).
+3. **Concise Mobile Summary & 1-Tap `@Agy Nexus Mcp` Reply Chips**:
+   - Every `agy-nexus-mcp` tool response embeds `REPLY_PROMPT_GUIDANCE` (`END-OF-TURN 1-TAP REPLY CHIPS`) inside `assistant_guidance` alongside lifecycle-aware `suggested_actions` (`followup_xml`) so Gemini consistently surfaces `<FollowUp label="..." query="@Agy Nexus Mcp ..." />` or `<ElicitationsGroup>` reply chips prefixed with `@Agy Nexus Mcp ` and exact `conversation_id` / `handoff_id` / `project_name` identifiers even after 10+ turns or context compaction.
+   - Gemini delivers a clean, plain-English summary to the user: current task progress, active background jobs, and clickable 1-tap next-step chips (e.g., *"Check in on the build?"*).
 
 ---
 
@@ -61,11 +62,12 @@ AGY-Nexus MCP provides four primary handoff modes:
 1. **Gemini Composes Handoff**:
    - Gemini structures the handoff with clear sections: `# User Goal`, `# Workflow & Why It Matters`, and `# Architectural Guidance`.
    - Tool `send_handoff_and_resume` checks handoff quality (`evaluate_handoff_quality`), providing non-blocking advisories if user goals are missing.
-2. **Ticket Staging & Claiming**:
+2. **Ticket Staging, Claiming & Pre-Formatted 1-Tap Chips**:
    - A sequential ticket is registered in the queue (`<repo-slug>-01`, `<repo-slug>-02`...).
    - Each ticket tracks full lifecycle states (`STAGED`, `IN_WORK`, `COMPLETED`, `SUPERSEDED`).
    - `get_session_tree` and the `/web` Overwatch Dashboard render each state distinctly (`[◈ STAGED · UNCLAIMED]`, `[▶ IN-WORK]`, `[✓ COMPLETED]`, and `[⊘ SUPERSEDED]`), maintaining 100% visibility for active tickets while bounding historical closed tickets.
    - If `resume_headless=True`, Antigravity is woken up immediately; otherwise, the ticket is staged for IDE pickup via `agy-praxis-mcp`.
+   - Both `send_handoff_and_resume` and `load_session_into_gemini` attach lifecycle-aware `suggested_actions` (`in_flight`, `ready_to_run`, `ready_to_ship`, `retired`) with XML-escaped `followup_xml` chips prefixed by `@Agy Nexus Mcp ` and exact session/handoff/project IDs so Gemini always ends with 1-tap next-step buttons.
 3. **Proportional Two-Tier Execution Lifecycle & `plan` Coercion (`execution_mode="auto"`)**:
    - **Tier 1 — Surgical Fast-Path (`fast`)**: When `execution_mode="auto"` receives a `release_closeout`, a compact (`< 6,500` chars) `bug_or_visual_fix` that does **not** touch security, auth, deadbolt, middleware, or crypto files, or a compact (`<= 2,200` chars, `< 3` deliverables) `allow_chained_publish=True, resume_headless=True` non-security run, Antigravity inspects target spans directly in Main Chat (`Gemini 4 Carbon`), edits within `<= 500` lines/file, runs `pytest` + `--self-test` directly (skipping multi-subagent `flash-scout` / `flash-surgeon` / 2-sentinel loops unless `4+` modules change), restarts `ag-bridge-mcp`, and captures a quick browser check if UI changed.
    - **Tier 2 — Full 4-Step Multi-Agent + Dual-Review (`plan`)**: Used for `new_project`, multi-deliverable/complex `feature_update` (`>= 3` deliverables or `> 2,200` chars), large specifications (`>= 6,500` chars), or **any** security/auth/deadbolt change (`middleware.py`, `bridge_security.py`, `PASS_HASH`, `PATH_SECRET`, `PRAXIS_MCP_TOKEN`, `hmac`, `verify_passphrase`). Even if `execution_mode="fast"` is passed explicitly on `new_project` or a heavy/multi-deliverable `feature_update`, `resolve_execution_mode_with_reason()` automatically coerces it back to `"plan"` (`coerced_from_fast=True`) so complex architectures never bypass discovery, `argon-surgeon`/`flash-surgeon`, `flash-auditor`, and adversarial Dual-Review. Antigravity halts at local staging when `allow_chained_publish=False`.
@@ -149,7 +151,7 @@ Unclosed sessions leave stale Git worktrees, lingering temporary files, and tick
 
 ---
 
-## Workflow 6: Quiet UI `v9.3.0` Live `/web` Studio & Interactive GitHub Pages Showcase (`v4.0.5`)
+## Workflow 6: Quiet UI `v9.3.0` Live `/web` Studio & Interactive GitHub Pages Showcase (`v4.0.6`)
 
 ### User Goal
 Serve **Quiet UI Skills v9.3.0** directly as the primary live `/web` dashboard (preserving `/web/v9` compatibility) backed by live workstation 8-model telemetry, effective-dated micro-USD ledgers, accurate 4-tier subscription break-even comparisons, multi-column sortable tables, optional desktop sidebar pinning, and a zero-leak **GitHub Pages Interactive Showcase** (`gh-pages`).
@@ -157,7 +159,7 @@ Serve **Quiet UI Skills v9.3.0** directly as the primary live `/web` dashboard (
 ### Architectural Invariants
 1. **Primary Live `/web` Cutover, Navbar Invariance & PWA Cache Integrity**:
    - `/web`, `/web/index.html`, `/web/v9`, and `/web/v9/index.html` serve Quiet UI `v9.3.0` HTML directly with `Cache-Control: no-store, no-cache, must-revalidate` in `src/agy_nexus/web_routes.py`.
-   - Every active asset (`web/v9/*.{css,js}`, `web/v9/vendor/*`, `demo_snapshot.js`, `gallery_select.js`, `sheet_builder.js`, `manifest.webmanifest`, `icon*`, and `demo_thumb_*.png`) is registered in `PWA_ASSETS` and `web/sw.js` (`CACHE_NAME = "agy-nexus-v4.0.5"`), matching both `/web/` and `/{PATH_SECRET}/web/`.
+   - Every active asset (`web/v9/*.{css,js}`, `web/v9/vendor/*`, `demo_snapshot.js`, `gallery_select.js`, `sheet_builder.js`, `manifest.webmanifest`, `icon*`, and `demo_thumb_*.png`) is registered in `PWA_ASSETS` and `web/sw.js` (`CACHE_NAME = "agy-nexus-v4.0.6"`), matching both `/web/` and `/{PATH_SECRET}/web/`.
    - Sticky topbar brand/tab X-coordinates remain identical (`0px` shift) between `#analytics` and `#workspace` (`50px` single row `>= 680px`; compact `<= 64px` 2-row sticky header `< 680px`), keeping `#v9MenuBtn`, `AGY-NEXUS`, `Analytics | Workspace <N>`, active scope chip, compound period picker, and `[Steps | Tokens | $ Cost]` (or Workspace layout switches + `Upload`, hiding `Split`/`Captures` `< 760px`) pinned on scroll.
    - **Desktop Rail Pinning & Dynamic Menu Affordance (`localStorage.nexus_v9_rail_pinned`)**: On desktop/widescreen (`>= 1100px`), `#v9RailPinBtn` inside `.v9-rail-hdr` pins `#v9NavRail` inline inside a `280px minmax(0, 1fr)` grid (`#v9AppShell.is-rail-pinned`) so switching across `All Projects`, project `Analytics`, and `Workspace` sessions keeps the rail open while realigning ECharts (`V9.Charts.scheduleRealign`). When unpinned or `< 1100px` mobile/tablet, `#v9NavRail` acts as a modal overlay drawer (`role="dialog"`) over `#v9WsBackdrop` and auto-closes on selection; `#v9MenuBtn` displays a **`☰` hamburger** icon when unpinned / `< 1100px` and switches to **`◧` docked-panel** when pinned on desktop.
 2. **Multi-Column Sortable Analytics Tables, Activity Heatmap & Full-Width 52w Strip**:

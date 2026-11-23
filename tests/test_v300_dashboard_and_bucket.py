@@ -50,8 +50,8 @@ from agy_nexus.stats_series import build_base_slot_grid
 
 
 def test_v301_version_bump() -> None:
-    """Verify package version is bumped to 4.0.5."""
-    assert agy_nexus.__version__ == "4.0.5"
+    """Verify package version is bumped to 4.0.6."""
+    assert agy_nexus.__version__ == "4.0.6"
 
 
 def test_media_ttl_is_7_days() -> None:
