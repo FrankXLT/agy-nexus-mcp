@@ -88,7 +88,7 @@ def _read_package_version(src_root: Path) -> str:
         m = re.search(r'^version\s*=\s*"([^"]+)"', pyproject.read_text(encoding="utf-8"), re.M)
         if m:
             return m.group(1).strip()
-    return "4.0.7"
+    return "4.0.8"
 
 
 def _extract_changelog_section(src_root: Path, version: str) -> str:
@@ -219,7 +219,7 @@ def main() -> int:
     parser.add_argument("--repo", default="agy-nexus-mcp", help="Target GitHub repository name")
     parser.add_argument(
         "--description",
-        default="AGY-Nexus v4.0.7: Quiet UI v9.3.0 @Agy Nexus Mcp 1-Tap Reply Chips, Session-Scoped Gallery Select-All, Hybrid Range Whiskers, Caret Bars, Sortable Tables, Pinned Desktop Sidebar, 8-Model Cost Ledger, Praxis Semantic Gateway & Multi-Agent Orchestrator.",
+        default="AGY-Nexus v4.0.8: Zero-stdout --stdio & GHCR OCI MCP Server + GitHub OIDC Registry Publishing, Quiet UI v9.3.0 Studio, 1-Tap Reply Chips, Range Whiskers, Caret Bars, Sortable Tables, 8-Model Cost Ledger, Praxis Semantic Gateway & 12-Agent Orchestrator.",
         help="GitHub repository description",
     )
     parser.add_argument("--private", action="store_true", help="Create repository as private (default: public)")
@@ -235,7 +235,7 @@ def main() -> int:
     src_root = Path(__file__).resolve().parent.parent
     pkg_version = _read_package_version(src_root)
     tag_name = f"v{pkg_version}"
-    rel_title = args.release_title.strip() or f"{tag_name} — 4-Gate WF-XX Workflow Engine, Thicker Mobile Topbar, Legends & Opt-In VM Audit"
+    rel_title = args.release_title.strip() or f"{tag_name} — Public GHCR OCI Container, --stdio Mode & MCP Registry OIDC"
     showcase_dir = src_root / "build" / "gh-pages"
     pages_res = build_showcase(showcase_dir, refresh=False) if not args.no_pages else {"files": 0, "bytes": 0, "privacy_findings": 0}
     if args.dry_run:

@@ -39,6 +39,7 @@ _ALLOWED_PUBLIC_STRINGS = (
     "@users.noreply.github.com",
     "/home/dev/",
     "/home/dev",
+    "selftest_runner.py",
 )
 _BANNED_HASHES = frozenset({
     "d3b2fffdf371", "7e4712893a83", "b69a2bdcf5ff", "c79698445329", "c96d8cec0414",

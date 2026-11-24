@@ -7,7 +7,7 @@ from pathlib import Path
 import time
 from typing import Any
 
-from agy_nexus.hygiene import is_sensitive_filename
+from agy_nexus.hygiene import is_sensitive_filename, resolve_source_repo_root
 from agy_nexus.media_discovery import format_relative_age, parse_iso_epoch
 from agy_nexus.stats_series import _sum_slots, _sum_slots_usd, resolve_canonical_project, resolve_root_conversation
 from agy_nexus.telemetry_scanner import normalize_workspace_name, to_1h_slot
@@ -162,8 +162,8 @@ def scan_project_code_health(workspace_path: str) -> dict[str, Any]:
         return {"available": False, "workspace_path": wp, "reason": "Workspace directory not present on local disk"}
     try:
         resolved = root.resolve()
-        repo_root = Path(__file__).resolve().parents[2]
-        if resolved == repo_root.resolve():
+        repo_root = resolve_source_repo_root(__file__)
+        if repo_root is not None and resolved == repo_root.resolve():
             from agy_nexus.code_health import get_modular_hygiene_summary
             hyg = get_modular_hygiene_summary()
             return {"available": True, "workspace_path": str(resolved), **hyg, "modules": (hyg.get("modules") or [])[:15]}

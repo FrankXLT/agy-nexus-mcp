@@ -337,10 +337,13 @@ def normalize_phrase(phrase: str) -> str:
     cleaned = re.sub(r"[^a-z0-9]", "", (phrase or "").lower())
     return hashlib.sha256(cleaned.encode("utf-8")).hexdigest()
 
+_HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
 def verify_passphrase(spoken_passphrase: str, expected_hash: str = "") -> bool:
     """Constant-time verification of normalized passphrase (and spoken prefix wrappers) against expected SHA-256 hash."""
     target_hash = (expected_hash or PASS_HASH).strip().lower()
-    if not target_hash or not spoken_passphrase:
+    if not target_hash or not spoken_passphrase or not _HEX64_RE.fullmatch(target_hash):
         return False
     if hmac.compare_digest(normalize_phrase(spoken_passphrase), target_hash):
         return True
@@ -362,7 +365,7 @@ def verify_passphrase(spoken_passphrase: str, expected_hash: str = "") -> bool:
 
 def is_unlocked(spoken_passphrase: str = "") -> bool:
     """Check if the session deadbolt is currently unlocked (or unlock inline if spoken_passphrase is valid) and refresh TTL."""
-    if not PASS_HASH:
+    if not PASS_HASH or not _HEX64_RE.fullmatch(PASS_HASH.strip().lower()):
         return False
     now = time.time()
     phrase_valid = bool(spoken_passphrase and verify_passphrase(spoken_passphrase))
@@ -398,7 +401,8 @@ LOCKED_RESPONSE = json.dumps({
         "(and always prefix any <FollowUp> / <ElicitationsGroup> chip query with '@Agy Nexus Mcp ')."
     ),
     "message": (
-        "Security Deadbolt Active. Voice/spoken passphrase verification required. "
+        "Security Deadbolt Active. Voice/spoken passphrase verification required "
+        "(configure a 64-hex PASS_HASH or AG_BRIDGE_ENV_FILE when running in --stdio mode). "
         "Please ask the user for their spoken passphrase and call the tool in the next turn."
     ),
 }, indent=2)

@@ -92,25 +92,25 @@ def _mcp_call(client: TestClient, secret: str, req_id: int, tool_name: str, argu
 
 
 def test_v407_workflows_doc_glossary_structure_and_wire_readin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify WORKFLOWS.md has Common Terms + WF-01..WF-06, zero banned words, and full read-in without cutoff."""
+    """Verify WORKFLOWS.md has Common Terms + WF-01..WF-07, zero banned words, and full read-in without cutoff."""
     wf_txt = (REPO_ROOT / "docs" / "WORKFLOWS.md").read_text(encoding="utf-8")
     assert "## Common Terms Glossary" in wf_txt
-    for n in range(1, 7):
+    for n in range(1, 8):
         assert f"## Workflow {n}: WF-0{n}" in wf_txt
     for banned in ("diurnal", "plain-english", "posture", "surface"):
         assert banned not in wf_txt.lower(), f"Banned term '{banned}' found in docs/WORKFLOWS.md"
 
     wf_info = wb_mod.discover_project_workflows(REPO_ROOT)
     assert wf_info["workflow_status"] == "READY"
-    assert len(wf_info["workflows"]) == 6
-    assert [w["id"] for w in wf_info["workflows"]] == [f"WF-0{n}" for n in range(1, 7)]
+    assert len(wf_info["workflows"]) == 7
+    assert [w["id"] for w in wf_info["workflows"]] == [f"WF-0{n}" for n in range(1, 8)]
     assert len(wf_info["common_terms"]) >= 4
 
     wire = wb_mod.format_workflow_baseline_for_wire(wf_info, max_chars=1200)
     assert len(wire) <= 1200
     assert "**Established Workflows (`docs/WORKFLOWS.md`)**:" in wire
     assert "**Common Terms**:" in wire
-    for n in range(1, 7):
+    for n in range(1, 8):
         assert f"WF-0{n}" in wire
 
     # Live read-in tools expose READY vs MISSING_BASELINE accurately
@@ -134,12 +134,12 @@ def test_v407_workflows_doc_glossary_structure_and_wire_readin(tmp_path: Path, m
         txt = json.dumps(baseline_resp)
         assert "MISSING_BASELINE" in txt
 
-        # Now copy real docs/WORKFLOWS.md into brown_repo and confirm READY index returns all WF-01..WF-06
+        # Now copy real docs/WORKFLOWS.md into brown_repo and confirm READY index returns all WF-01..WF-07
         (brown_repo / "docs").mkdir()
         shutil.copy2(REPO_ROOT / "docs" / "WORKFLOWS.md", brown_repo / "docs" / "WORKFLOWS.md")
         loaded_ready = _mcp_call(client, secret, 4, "load_session_into_gemini", {"session_identifier": cid_b})
         assert loaded_ready["project_workflows"]["workflow_status"] == "READY"
-        assert len(loaded_ready["project_workflows"]["workflows"]) == 6
+        assert len(loaded_ready["project_workflows"]["workflows"]) == 7
         assert len(loaded_ready["project_workflows"]["common_terms"]) >= 4
 
 

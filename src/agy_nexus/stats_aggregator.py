@@ -74,10 +74,13 @@ def load_db_conversations(db_file: Path) -> dict[str, dict[str, Any]]:
     return db_convs
 
 
+from agy_nexus.hygiene import resolve_package_resource_dir
+
+
 def load_agent_target_map(agy_config_dir: Path) -> dict[str, str]:
     """Map subagent names from tracked agents/*.md and user AGY_CONFIG_DIR/agents/*.md to model keys."""
     out: dict[str, str] = {}
-    repo_agents = Path(__file__).resolve().parents[2] / "agents"
+    repo_agents = resolve_package_resource_dir("agents", __file__)
     for root in (repo_agents, agy_config_dir / "agents"):
         if not root.is_dir():
             continue

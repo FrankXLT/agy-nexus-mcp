@@ -19,6 +19,7 @@ from agy_nexus.config import (
 )
 import agy_nexus.handoff  # noqa: F401
 from agy_nexus.middleware import BridgeCompatMiddleware
+import agy_nexus.tools_media  # noqa: F401
 import agy_nexus.tools_ops  # noqa: F401
 import agy_nexus.tools_polyglot  # noqa: F401
 from agy_nexus.tools_praxis import praxis_mcp
@@ -89,13 +90,49 @@ def run_self_test() -> int:
     return _run_modular_self_test()
 
 
+def _run_stdio_transport() -> None:
+    """Start agy-nexus-mcp on stdio transport with zero stdout banner noise."""
+    _offload_sync_mcp_tools(mcp)
+    run_sig = inspect.signature(mcp.run)
+    if "show_banner" in run_sig.parameters:
+        mcp.run(transport="stdio", show_banner=False)
+    else:
+        mcp.run(transport="stdio")
+
+
+def _has_valid_pass_hash(raw_hash: str) -> bool:
+    clean = (raw_hash or "").strip().lower()
+    return len(clean) == 64 and all(ch in "0123456789abcdef" for ch in clean)
+
+
+def _is_stdio_flag_enabled(argv: list[str]) -> bool:
+    for arg in argv:
+        low = arg.strip().lower()
+        if low == "--stdio" or low in ("--stdio=true", "--stdio=1", "--stdio=yes"):
+            return True
+    return False
+
+
 def main() -> None:
     if "--self-test" in sys.argv:
         sys.exit(run_self_test())
 
+    if _is_stdio_flag_enabled(sys.argv[1:]):
+        if not _has_valid_pass_hash(PASS_HASH):
+            print(
+                f"[*] agy-nexus-mcp v{__version__} starting in --stdio mode without valid 64-hex PASS_HASH; "
+                "deadbolt-safe tools are active and private session tools remain locked.",
+                file=sys.stderr,
+                flush=True,
+            )
+        else:
+            print(f"[*] Starting agy-nexus-mcp v{__version__} (transport=stdio)", file=sys.stderr, flush=True)
+        _run_stdio_transport()
+        return
+
     if len(PATH_SECRET) < 32:
         sys.exit("FATAL: PATH_SECRET must be at least 32 hex characters. Ensure secrets.env exists with mode 600.")
-    if len(PASS_HASH) != 64:
+    if not _has_valid_pass_hash(PASS_HASH):
         sys.exit("FATAL: PASS_HASH must be a 64-character SHA-256 hex string. Run init_secrets.py to configure.")
 
     praxis_tok = get_praxis_mcp_token(PATH_SECRET)

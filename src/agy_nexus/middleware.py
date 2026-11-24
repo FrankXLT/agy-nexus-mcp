@@ -144,7 +144,8 @@ class BridgeCompatMiddleware:
         self.praxis_token = (praxis_token or polyglot_token or "").strip()
         self.polyglot_token = (polyglot_token or praxis_token or "").strip()
         self.praxis_mount_path = f"/praxis/{self.praxis_token}/mcp" if self.praxis_token else "/praxis/mcp"
-        self.web_dir = Path(__file__).resolve().parent.parent.parent / "web"
+        from agy_nexus.hygiene import resolve_package_resource_dir
+        self.web_dir = resolve_package_resource_dir("web", __file__)
         self.web_html_path = self.web_dir / "index.html"
 
     async def _route_praxis_doorway(

@@ -16,7 +16,9 @@ import urllib.request
 
 from . import __version__
 from .config import AGY_BG_DIR
-from .hygiene import HARD_MAX_FILE_LINES, TARGET_FILE_LINES
+from .hygiene import (
+    HARD_MAX_FILE_LINES, TARGET_FILE_LINES, resolve_package_resource_dir, resolve_source_repo_root,
+)
 from .polyglot_index import refresh_polyglot_index
 from .polyglot_outline import build_polyglot_outline
 
@@ -172,19 +174,21 @@ def get_modular_hygiene_summary(pkg_dir: Path | None = None) -> dict[str, Any]:
     """Scan agy_nexus modules, host_bridge and web JS for <=500L target, 501-650L warning, >650L ceiling, and >100L functions."""
     if pkg_dir is None:
         pkg_dir = Path(__file__).resolve().parent
-    repo_root = pkg_dir.parents[1] if len(pkg_dir.parents) >= 2 else pkg_dir
-    dirty_files = _get_git_dirty_files(repo_root)
+    src_root = resolve_source_repo_root(__file__)
+    dirty_files = _get_git_dirty_files(src_root) if src_root is not None else set()
 
     modules: list[dict[str, Any]] = []
     compliant = warning = violations = total_lines = total_symbols = total_long_funcs = 0
     syntax_errors: dict[str, str] = {}
 
+    web_root = (src_root / "web") if src_root is not None else resolve_package_resource_dir("web", __file__)
     scan_targets: list[tuple[Path, str, str]] = [
         (pkg_dir, "*.py", "src/agy_nexus/"),
-        (repo_root / "host_bridge", "*.py", "host_bridge/"),
-        (repo_root / "web", "*.js", "web/"),
-        (repo_root / "web" / "v9", "*.js", "web/v9/"),
+        (web_root, "*.js", "web/"),
+        (web_root / "v9", "*.js", "web/v9/"),
     ]
+    if src_root is not None:
+        scan_targets.append((src_root / "host_bridge", "*.py", "host_bridge/"))
 
     for dir_path, glob_pat, prefix in scan_targets:
         if not dir_path.is_dir():
@@ -261,8 +265,22 @@ def get_polyglot_health_summary(pkg_dir: Path | None = None) -> dict[str, Any]:
     """Summarize Polyglot incremental index health and Python syntax integrity."""
     if pkg_dir is None:
         pkg_dir = Path(__file__).resolve().parent
-    repo_root = pkg_dir.parents[1] if len(pkg_dir.parents) >= 2 else pkg_dir
-    ref = refresh_polyglot_index(repo_root, force=False)
+    src_root = resolve_source_repo_root(__file__)
+    if src_root is None:
+        hyg = get_modular_hygiene_summary(pkg_dir)
+        return {
+            "clean": len(hyg.get("syntax_errors") or {}) == 0,
+            "indexed_files": hyg.get("total_modules", 0),
+            "scanned_files": len(list(pkg_dir.glob("*.py"))) if pkg_dir.is_dir() else 0,
+            "total_symbols": hyg.get("total_symbols", 0),
+            "long_functions_over_100": hyg.get("long_functions_over_100", 0),
+            "undefined_count": len(hyg.get("syntax_errors") or {}),
+            "undefined_names": len(hyg.get("syntax_errors") or {}),
+            "flagged_modules": len(hyg.get("syntax_errors") or {}),
+            "details": {k: [v] for k, v in (hyg.get("syntax_errors") or {}).items()},
+            "index_file": "",
+        }
+    ref = refresh_polyglot_index(src_root, force=False)
     idx_doc = ref["index"]
     files_map = idx_doc.get("files", {})
     syntax_errs = {k: [v["syntax_error"]] for k, v in files_map.items() if v.get("syntax_error")}

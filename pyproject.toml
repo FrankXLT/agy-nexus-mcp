@@ -1,6 +1,6 @@
 [project]
 name = "agy-nexus-mcp"
-version = "4.0.7"
+version = "4.0.8"
 description = "AGY-NEXUS-MCP & AGY-PRAXIS-MCP: Antigravity Mission Control, Local IDE Praxis Doorway, Repo-Prefixed Handoff Queue, Polyglot Semantic Index & Quiet UI v9.3.0 Studio"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -20,6 +20,12 @@ dependencies = [
     "python-multipart>=0.0.12",
     "Pillow>=10.4.0",
 ]
+
+[project.urls]
+Homepage = "https://FrankXLT.github.io/agy-nexus-mcp/"
+Repository = "https://github.com/FrankXLT/agy-nexus-mcp"
+Documentation = "https://github.com/FrankXLT/agy-nexus-mcp/blob/main/docs/DEPLOYMENT.md"
+Changelog = "https://github.com/FrankXLT/agy-nexus-mcp/blob/main/CHANGELOG.md"
 
 [project.scripts]
 agy-nexus-mcp = "agy_nexus.server:main"

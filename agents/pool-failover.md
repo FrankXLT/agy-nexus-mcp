@@ -7,8 +7,11 @@ model: flash
 targetModel: "GPT-OSS 120B"
 difficultyLevel: "Medium"
 tools:
-  - run_command
   - view_file
+  - grep_search
+  - find_by_name
+  - list_dir
+  - run_command
 ---
 You are `pool-failover`, an automated bridge that manages load balancing and failover across model pools (`<= 120` steps max).
 

@@ -19,6 +19,9 @@ This document defines the primary user journeys, workflows, and operational ergo
 - **Workflow IDs (`WF-01..WF-NN`)**: Stable numbered user journeys inside `<repo>/docs/WORKFLOWS.md` referenced on every read-in, handoff, and closeout check.
 - **Workflow Delta (`workflow_delta`)**: Explicit declaration on handoffs (`unchanged`, `update_existing`, `add_new`, `bootstrap`) stating whether `<repo>/docs/WORKFLOWS.md` must be created or updated during the run.
 - **Opt-In Gemini VM Visual Audit**: Optional Gemini Tasks Linux workspace fetch (`curl` with `Google-Agent` User-Agent + `view_file`) of signed `/web/media/` screenshots or published HTML pages—always offered as an explicit 1-tap user choice noting extra token usage, never run automatically.
+- **GHCR OCI Package**: Public container image `ghcr.io/frankxlt/agy-nexus-mcp` carrying the `io.modelcontextprotocol.server.name` label for registry ownership verification.
+- **MCP Registry Manifest (`server.json`)**: `2025-12-11` schema descriptor published to `registry.modelcontextprotocol.io` via `mcp-publisher` and GitHub Actions OIDC.
+- **Stdio Container Mode (`--stdio`)**: Zero-stdout JSON-RPC transport mode (`docker run -i --rm ghcr.io/frankxlt/agy-nexus-mcp:<ver> --stdio`) bypassing HTTP `PATH_SECRET` while keeping private tools fail-closed unless `PASS_HASH` is configured.
 
 ---
 
@@ -170,7 +173,7 @@ Unclosed sessions leave stale Git worktrees, lingering temporary files, outdated
 
 ---
 
-## Workflow 6: WF-06 — Quiet UI `v9.3.0` Live `/web` Studio & Interactive GitHub Pages Showcase (`v4.0.7`)
+## Workflow 6: WF-06 — Quiet UI `v9.3.0` Live `/web` Studio & Interactive GitHub Pages Showcase (`v4.0.8`)
 
 ### User Goal
 Serve **Quiet UI Skills v9.3.0** directly as the primary live `/web` dashboard (preserving `/web/v9` compatibility) backed by live workstation 8-model telemetry, effective-dated micro-USD ledgers, accurate 4-tier subscription break-even comparisons, multi-column sortable tables with explicit metric legends, comfortable mobile/tablet touch topbars, optional desktop sidebar pinning, and a zero-leak **GitHub Pages Interactive Showcase** (`gh-pages`).
@@ -178,7 +181,7 @@ Serve **Quiet UI Skills v9.3.0** directly as the primary live `/web` dashboard (
 ### Architectural Invariants
 1. **Primary Live `/web` Cutover, Navbar Touch Ergonomics & PWA Cache Integrity**:
    - `/web`, `/web/index.html`, `/web/v9`, and `/web/v9/index.html` serve Quiet UI `v9.3.0` HTML directly with `Cache-Control: no-store, no-cache, must-revalidate` in `src/agy_nexus/web_routes.py`.
-   - Every active asset (`web/v9/*.{css,js}`, `web/v9/vendor/*`, `demo_snapshot.js`, `gallery_select.js`, `sheet_builder.js`, `manifest.webmanifest`, `icon*`, and `demo_thumb_*.png`) is registered in `PWA_ASSETS` and `web/sw.js` (`CACHE_NAME = "agy-nexus-v4.0.7"`), matching both `/web/` and `/{PATH_SECRET}/web/`.
+   - Every active asset (`web/v9/*.{css,js}`, `web/v9/vendor/*`, `demo_snapshot.js`, `gallery_select.js`, `sheet_builder.js`, `manifest.webmanifest`, `icon*`, and `demo_thumb_*.png`) is registered in `PWA_ASSETS` and `web/sw.js` (`CACHE_NAME = "agy-nexus-v4.0.8"`), matching both `/web/` and `/{PATH_SECRET}/web/`.
    - Sticky topbar keeps `#v9MenuBtn`, `AGY-NEXUS`, `Analytics | Workspace <N>`, active scope chip, compound period picker, and `[Steps | Tokens | $ Cost]` pinned cleanly across breakpoints: `50px` single row on desktop `>= 1100px`, **`56px`** bar with **`36px`** buttons across `680px–1099px` tablet widths, and a compact 2-row sticky bar `< 680px` (`padding: 8px 12px`, `row-gap: 6px`, **`40px`** Row 1 targets with `>= 40px` `☰` button and `18px` icon, **`36px`** Row 2 targets with `>= 36px` `<`/`>` steppers, zero horizontal overflow at `390px`).
    - **Desktop Rail Pinning & Dynamic Menu Affordance (`localStorage.nexus_v9_rail_pinned`)**: On desktop/widescreen (`>= 1100px`), `#v9RailPinBtn` inside `.v9-rail-hdr` pins `#v9NavRail` inline inside a `280px minmax(0, 1fr)` grid (`#v9AppShell.is-rail-pinned`) so switching across `All Projects`, project `Analytics`, and `Workspace` sessions keeps the rail open while realigning ECharts (`V9.Charts.scheduleRealign`). When unpinned or `< 1100px` mobile/tablet, `#v9NavRail` acts as a modal overlay drawer (`role="dialog"`) over `#v9WsBackdrop` and auto-closes on selection; `#v9MenuBtn` displays a **`☰` hamburger** icon when unpinned / `< 1100px` and switches to **`◧` docked-panel** when pinned on desktop.
 2. **Multi-Column Sortable Analytics Tables, Visual Swatch Legends, Activity Heatmap & Full-Width 52w Strip**:
@@ -205,3 +208,25 @@ Serve **Quiet UI Skills v9.3.0** directly as the primary live `/web` dashboard (
    - Workspace docks cleanly beneath `.v9-ws-context`: on `< 760px` phones, Docs fills `100%` width with wrapped 2-row `.v9-doc-hdr` tabs + `[Captures (N)]` modal; on `760–1279px` foldables, Split uses `64% / 36%` with a `1`-column gallery; and on `>= 1280px` desktops, Split uses `60% / 40%` with a `2`-column gallery (`[Raw]` + print stay on the right).
    - In `web/v9/v9_gallery.js`, `#v9GalAllBtn` (`All` / `Clear`) strictly targets `sessionCaps` (`disabled` at `0` session captures unless clearing a manual repo-asset selection), and `Shift+Click` / drag-or-touch gestures remain strictly scoped per grid (`#v9GalGrid` vs `#v9RepoAssetsGrid`) so collapsed `Shared Repo Assets` (`#v9RepoAssetsDrawer`) are never selected by `All`.
    - `scripts/build_github_showcase.py` builds a relative-path `./` static bundle (`build/gh-pages/` with `.nojekyll`, `window.AGY_STATIC_SHOWCASE = true`, and PNG ancillary metadata stripping) enforced by a fail-closed **0-leak privacy gate** before `scripts/publish_to_github.py` pushes orphan `gh-pages` or configures GitHub Pages.
+
+---
+
+## Workflow 7: WF-07 — Public GHCR Container, Stdio Mode & MCP Registry OIDC Publishing
+
+### User Goal
+Discover and one-click install `AGY-Nexus MCP` (`io.github.FrankXLT/agy-nexus-mcp`) from the Official MCP Registry (`registry.modelcontextprotocol.io`) and GitHub MCP Registry (`github.com/mcp`) via a public GHCR OCI image (`ghcr.io/frankxlt/agy-nexus-mcp:4.0.8` in `--stdio` mode), while keeping local HTTP and `/web` Studio operations completely unchanged.
+
+### Why It Matters
+Developers on VS Code, Copilot CLI, Claude Code, and MCP Inspector expect zero-secret container installation without configuring `PATH_SECRET` or reverse proxies, and automated Sigstore `cosign` + `github-oidc` workflows remove long-lived registry credentials from CI.
+
+### End-to-End Journey
+1. **Browse & One-Click Registry Install (`390px` Mobile / `900px` Tablet / `1440px` Desktop)**:
+   - On `github.com/mcp` across folded phone (`390px`), tablet (`900px`), and desktop (`1440px`), the `AGY-Nexus MCP` listing shows a focused `<= 100`-character description, GitHub source repository link, and `Install` command backed by `ghcr.io/frankxlt/agy-nexus-mcp:4.0.8` (`server.json` `2025-12-11` schema, `stdio` transport, `--stdio` named argument, and optional secret `PASS_HASH`).
+2. **Zero-Stdout `--stdio` Startup & Fail-Closed Secret State**:
+   - Launching `docker run -i --rm ghcr.io/frankxlt/agy-nexus-mcp:4.0.8 --stdio` runs `_offload_sync_mcp_tools(mcp)` and `mcp.run(transport="stdio", show_banner=False)` with `0` startup banner lines on `stdout` (all diagnostics route strictly to `sys.stderr`).
+   - Without `PATH_SECRET` or `PASS_HASH`, `initialize`, `tools/list` (`11` tools), and deadbolt-safe `list_models_and_agents(style="ascii", include_skills=False, include_rules=False)` succeed immediately; private session and workspace tools return `LOCKED_RESPONSE` with `PASS_HASH` / `AG_BRIDGE_ENV_FILE` setup guidance unless a valid 64-hex `PASS_HASH` is configured and unlocked (`verify_passphrase` and `is_unlocked` stay strictly `False` when `PASS_HASH` is empty or invalid).
+3. **Local Workstation HTTP & `/web` Studio Continuity**:
+   - Running `docker compose up -d` or `python3 ag_bridge.py` without `--stdio` enforces `len(PATH_SECRET) >= 32` and `len(PASS_HASH) == 64`, preserves stateless Streamable HTTP routing, LAN-only `/praxis/` gating, and `/web` Studio (`CACHE_NAME = "agy-nexus-v4.0.8"`).
+4. **Tagged GitHub Actions OIDC Release & First-Push Visibility Recovery**:
+   - Pushing tag `v*` triggers `.github/workflows/publish-mcp.yml` (`permissions: { contents: read, packages: write, id-token: write }`), which runs `pytest`, `python3 ag_bridge.py --self-test`, and `python3 -m agy_nexus.tools_praxis --self-test`, smoke-tests `--stdio` locally, pushes `ghcr.io/frankxlt/agy-nexus-mcp:<version>` and `:latest`, verifies `mcp-publisher` (`v1.8.1`) with `sigstore/cosign-installer@v4.1.2`, syncs `server.json` via `jq`, validates, logs in via `./mcp-publisher login github-oidc`, and publishes to `https://registry.modelcontextprotocol.io`.
+   - If GitHub initializes a brand-new GHCR package as Private on first push (`Package validation failed`), flipping package visibility to Public in GitHub UI and triggering **Run workflow** (`workflow_dispatch` with `release_tag`) completes registry publication without incrementing the version tag.

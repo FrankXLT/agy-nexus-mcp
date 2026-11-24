@@ -56,11 +56,11 @@ WEB_DIR = PROJECT_ROOT / "web"
 
 
 def test_v310_version_bump() -> None:
-    """Verify package version is bumped to 4.0.7 across pyproject.toml and package."""
-    assert agy_nexus.__version__ == "4.0.7"
+    """Verify package version is bumped to 4.0.8 across pyproject.toml and package."""
+    assert agy_nexus.__version__ == "4.0.8"
 
     pyproject_text = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'version = "4.0.7"' in pyproject_text
+    assert 'version = "4.0.8"' in pyproject_text
 
     manifest_data = json.loads((WEB_DIR / "manifest.webmanifest").read_text(encoding="utf-8"))
     assert manifest_data.get("handle_links") == "preferred"
@@ -118,8 +118,14 @@ def test_media_origin_filtering() -> None:
     assert _is_public_hostname("overwatch.bridge-test.org")
 
 
-def test_media_query_parameter_tolerance_and_deep_link(tmp_path: Path) -> None:
+def test_media_query_parameter_tolerance_and_deep_link(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Verify media route handles trailing query parameters and generates valid workspace_url."""
+    from agy_nexus import config as cfg
+
+    if not cfg.PASS_HASH:
+        monkeypatch.setattr(cfg, "PASS_HASH", "0" * 64)
     # Test query param tolerance in verify_and_resolve_media
     now_ts = int(time.time())
     exp_ts = now_ts + 3600

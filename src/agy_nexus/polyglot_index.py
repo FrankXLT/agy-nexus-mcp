@@ -27,7 +27,7 @@ from agy_nexus.config import (
     get_umbrella_roots,
     get_workspace_pillar_roots,
 )
-from agy_nexus.hygiene import is_sensitive_filename
+from agy_nexus.hygiene import is_sensitive_filename, resolve_source_repo_root
 from agy_nexus.polyglot_outline import EXT_LANG, build_polyglot_outline
 
 INDEX_SCHEMA_VERSION = 1
@@ -57,14 +57,15 @@ def get_polyglot_index_dir() -> Path:
 
 
 def _allowed_workspace_roots() -> list[Path]:
-    pkg_repo = Path(__file__).resolve().parents[2]
+    pkg_repo = resolve_source_repo_root(__file__)
     roots = [
         AGY_WORKSPACE_DIR.resolve(),
         *get_workspace_pillar_roots(),
         (AGY_DATA_DIR / "worktrees").resolve(),
         AGY_CONFIG_DIR.resolve(),
-        pkg_repo,
     ]
+    if pkg_repo is not None:
+        roots.append(pkg_repo)
     home_res = Path.home().resolve()
     root_fs = Path("/").resolve()
     seen: set[Path] = set()
@@ -111,8 +112,10 @@ def resolve_polyglot_workspace(workspace: str = "") -> Path:
     sel_ws = str(SESSION_STATE.get("selected_workspace") or "").strip()
     if sel_ws:
         candidates.append(Path(sel_ws))
+    src_repo = resolve_source_repo_root(__file__)
+    if src_repo is not None:
+        candidates.append(src_repo)
     candidates.extend([
-        Path(__file__).resolve().parents[2],
         AGY_PROJECTS_DIR / "agy-nexus-mcp",
         AGY_GITLAB_DIR / "agy-nexus-mcp",
         get_antigravity_config_repo(),
@@ -121,7 +124,7 @@ def resolve_polyglot_workspace(workspace: str = "") -> Path:
     for cand in candidates:
         if _is_safe_workspace(cand):
             return cand.resolve()
-    return Path(__file__).resolve().parents[2]
+    return src_repo if src_repo is not None else AGY_CONFIG_DIR
 
 
 def _index_file_for_workspace(ws_root: Path) -> Path:

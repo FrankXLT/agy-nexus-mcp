@@ -106,9 +106,12 @@ def _ls_remaining_by_model_key(ls_configs: list[dict[str, Any]]) -> dict[str, in
     return rem_map
 
 
+from agy_nexus.hygiene import resolve_package_resource_dir
+
+
 def _check_agent_roster_and_sync(agy_config_dir: Path) -> list[dict[str, str]]:
     """Build tracked subagent summary with zero filesystem path disclosure."""
-    repo_agents = Path(__file__).resolve().parents[2] / "agents"
+    repo_agents = resolve_package_resource_dir("agents", __file__)
     user_agents = agy_config_dir / "agents"
     rows: list[dict[str, str]] = []
     if not repo_agents.is_dir():

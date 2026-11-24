@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 import re
 from typing import Any
 
@@ -439,4 +440,48 @@ def compact_payload_to_wire_budget(
         payload["wire_compacted"] = True
         out_str = ser(payload)
     return out_str
+
+
+def resolve_package_resource_dir(dirname: str, anchor_file: str | Path | None = None) -> Path:
+    """Resolve repo/wheel bundled directories (e.g. 'agents', 'web') across source-tree and site-packages installs."""
+    base = Path(anchor_file).resolve() if anchor_file else Path(__file__).resolve()
+    candidates: list[Path] = []
+    if len(base.parents) >= 3:
+        candidates.append(base.parents[2] / dirname)
+    if len(base.parents) >= 2:
+        candidates.append(base.parents[1] / dirname)
+    candidates.append(Path.cwd() / dirname)
+    candidates.append(Path("/app") / dirname)
+    for cand in candidates:
+        if cand.is_dir():
+            return cand
+    return candidates[0]
+
+
+def resolve_package_root(pkg_dir: Path | None = None) -> Path:
+    """Resolve package root containing src/ or installed site-packages resources."""
+    pdir = (pkg_dir or Path(__file__).resolve().parent).resolve()
+    if len(pdir.parents) >= 2:
+        src_root = pdir.parents[1]
+        if (src_root / "web").is_dir() or (src_root / "agents").is_dir():
+            return src_root
+    if len(pdir.parents) >= 1:
+        wheel_root = pdir.parents[0]
+        if (wheel_root / "web").is_dir() or (wheel_root / "agents").is_dir():
+            return wheel_root
+    return pdir.parents[1] if len(pdir.parents) >= 2 else pdir
+
+
+def resolve_source_repo_root(anchor_file: str | Path | None = None) -> Path | None:
+    """Resolve verified source checkout root containing src/agy_nexus/ and pyproject.toml, or None if wheel-only."""
+    base = Path(anchor_file).resolve() if anchor_file else Path(__file__).resolve()
+    candidates: list[Path] = []
+    if len(base.parents) >= 3:
+        candidates.append(base.parents[2])
+    candidates.extend([Path.cwd().resolve(), Path("/app")])
+    for cand in candidates:
+        if (cand / "src" / "agy_nexus").is_dir() and (cand / "pyproject.toml").is_file():
+            return cand
+    return None
+
 

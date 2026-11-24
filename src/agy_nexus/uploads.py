@@ -51,6 +51,30 @@ def format_byte_size(num_bytes: int) -> str:
     return f"{num_bytes} B"
 
 
+def _write_upload_batch_index(
+    target_dir: Path, conv_id: str, folder_name: str, now_utc: datetime,
+    total_bytes: int, clean_label: str, saved_records: list[dict[str, Any]],
+) -> Path:
+    index_lines = [
+        f"# Scratch Upload Batch: {folder_name}", "",
+        f"- **Session ID**: `{conv_id}`",
+        f"- **Uploaded At**: {now_utc.isoformat()}",
+        f"- **Batch Folder**: `~/.gemini/antigravity/brain/{conv_id}/scratch/{folder_name}/`",
+        f"- **Total Files**: {len(saved_records)}",
+        f"- **Total Bytes**: {total_bytes:,} bytes ({format_byte_size(total_bytes)})",
+        f"- **Batch Label**: `{clean_label or 'none'}`", "",
+        "## File Index", "",
+        "| Seq | Original Filename | Saved Filename | Size | Type |",
+        "| :-: | :--- | :--- | :-: | :--- |",
+    ]
+    for r in saved_records:
+        index_lines.append(f"| {r['seq']:02d} | `{r['original_name']}` | `{r['saved_name']}` | {r['size_formatted']} | {r['mime_type']} |")
+    index_lines.append("")
+    index_file = target_dir / "INDEX.md"
+    index_file.write_text("\n".join(index_lines), encoding="utf-8")
+    return index_file
+
+
 def save_scratch_upload_batch(
     conv_id: str,
     files_data: list[tuple[str, bytes, str]],
@@ -64,13 +88,10 @@ def save_scratch_upload_batch(
     session_dir = (brain_dir / conv_id).resolve()
     if not session_dir.is_relative_to(brain_dir.resolve()):
         return {"ok": False, "status": "ERROR", "error": "Path escapes session brain root boundary."}
-
     if not files_data:
         return {"ok": False, "status": "ERROR", "error": "No files provided in upload batch."}
-
     if len(files_data) > MAX_BATCH_FILES:
         return {"ok": False, "status": "ERROR", "error": f"Batch file count ({len(files_data)}) exceeds limit ({MAX_BATCH_FILES})."}
-
     total_bytes = sum(len(content) for _, content, _ in files_data)
     if total_bytes > MAX_BATCH_BYTES:
         return {"ok": False, "status": "ERROR", "error": f"Batch total size ({format_byte_size(total_bytes)}) exceeds 200 MB limit."}
@@ -80,8 +101,7 @@ def save_scratch_upload_batch(
         clean_label = re.sub(r"[^a-z0-9_-]", "", clean_label)[:32]
 
     now_utc = datetime.now(timezone.utc)
-    ts_str = now_utc.strftime("%Y%m%d_%H%M%S")
-    base_folder = f"uploads_{ts_str}_{clean_label}" if clean_label else f"uploads_{ts_str}"
+    base_folder = f"uploads_{now_utc.strftime('%Y%m%d_%H%M%S')}_{clean_label}" if clean_label else f"uploads_{now_utc.strftime('%Y%m%d_%H%M%S')}"
     folder_name = base_folder
     seq_bump = 2
     while (session_dir / "scratch" / folder_name).exists():
@@ -92,52 +112,22 @@ def save_scratch_upload_batch(
 
     saved_records: list[dict[str, Any]] = []
     seen_names: set[str] = set()
-
     for idx, (orig_name, content, mime_type) in enumerate(files_data, 1):
         clean_name = sanitize_filename(orig_name, fallback_idx=idx)
-        # Sequence-prefixed saved filename to maintain exact arrival order
         saved_name = f"{idx:02d}_{clean_name}"
         if saved_name in seen_names:
             saved_name = f"{idx:02d}_{idx}_{clean_name}"
         seen_names.add(saved_name)
-
         dest_file = target_dir / saved_name
         dest_file.write_bytes(content)
-
         file_sz = len(content)
         saved_records.append({
-            "seq": idx,
-            "original_name": orig_name,
-            "saved_name": saved_name,
-            "bytes": file_sz,
-            "size_formatted": format_byte_size(file_sz),
-            "mime_type": mime_type or "application/octet-stream",
+            "seq": idx, "original_name": orig_name, "saved_name": saved_name, "bytes": file_sz,
+            "size_formatted": format_byte_size(file_sz), "mime_type": mime_type or "application/octet-stream",
             "is_image": dest_file.suffix.lower() in ALLOWED_MEDIA_EXTENSIONS,
         })
 
-    # Generate Markdown INDEX.md
-    index_lines = [
-        f"# Scratch Upload Batch: {folder_name}",
-        "",
-        f"- **Session ID**: `{conv_id}`",
-        f"- **Uploaded At**: {now_utc.isoformat()}",
-        f"- **Batch Folder**: `~/.gemini/antigravity/brain/{conv_id}/scratch/{folder_name}/`",
-        f"- **Total Files**: {len(saved_records)}",
-        f"- **Total Bytes**: {total_bytes:,} bytes ({format_byte_size(total_bytes)})",
-        f"- **Batch Label**: `{clean_label or 'none'}`",
-        "",
-        "## File Index",
-        "",
-        "| Seq | Original Filename | Saved Filename | Size | Type |",
-        "| :-: | :--- | :--- | :-: | :--- |",
-    ]
-    for r in saved_records:
-        index_lines.append(f"| {r['seq']:02d} | `{r['original_name']}` | `{r['saved_name']}` | {r['size_formatted']} | {r['mime_type']} |")
-
-    index_lines.append("")
-    index_file = target_dir / "INDEX.md"
-    index_file.write_text("\n".join(index_lines), encoding="utf-8")
-
+    index_file = _write_upload_batch_index(target_dir, conv_id, folder_name, now_utc, total_bytes, clean_label, saved_records)
     app_prompt = f"Evaluate the {len(saved_records)} uploaded files in ~/.gemini/antigravity/brain/{conv_id}/scratch/{folder_name}/ (see INDEX.md for sequence order)."
 
     return {
@@ -217,7 +207,7 @@ async def handle_session_upload_request(scope: dict[str, Any], receive: Any, sen
                 supplied_pass = urllib.parse.unquote(kv.split("=", 1)[1]).strip()
                 break
 
-    if cfg.PASS_HASH and not verify_passphrase(supplied_pass):
+    if not verify_passphrase(supplied_pass):
         resp = JSONResponse({"ok": False, "status": "UNAUTHORIZED", "error": "Invalid deadbolt passphrase."}, status_code=401)
         await resp(scope, receive, send)
         return

@@ -17,7 +17,7 @@ from typing import Any
 import urllib.parse
 
 import agy_nexus.config as cfg
-from agy_nexus.hygiene import is_sensitive_filename
+from agy_nexus.hygiene import is_sensitive_filename, resolve_source_repo_root
 from agy_nexus.media_discovery import (
     classify_repo_media as _classify_repo_media,
     collect_git_status_media as _md_collect_git_status_media,
@@ -159,11 +159,11 @@ def is_allowed_workspace_dir(ws_path: Path | str) -> bool:
         resolved = Path(ws_path).resolve()
         if not resolved.is_dir():
             return False
-        pkg_root = Path(__file__).resolve().parents[2].resolve()
+        pkg_root = resolve_source_repo_root(__file__)
         forbidden = {Path("/").resolve(), Path.home().resolve(), *cfg.get_umbrella_roots()}
         if resolved in forbidden:
             return False
-        if resolved == pkg_root:
+        if pkg_root is not None and resolved == pkg_root.resolve():
             return True
         ws_roots = (
             set(cfg.get_workspace_pillar_roots())
@@ -189,8 +189,8 @@ def _resolve_scope_base_dir(scope: str) -> Path | None:
         repo_name = re.sub(r"[^a-zA-Z0-9_.-]", "", scope.split(":", 1)[1])
         if not repo_name or repo_name in (".", ".."):
             return None
-        pkg_root = Path(__file__).resolve().parents[2]
-        if repo_name == pkg_root.name and pkg_root.is_dir():
+        pkg_root = resolve_source_repo_root(__file__)
+        if pkg_root is not None and repo_name == pkg_root.name and pkg_root.is_dir():
             return pkg_root.resolve()
         candidate_roots = list(cfg.get_workspace_pillar_roots()) + [cfg.AGY_GITLAB_DIR, cfg.AGY_DATA_DIR / "worktrees"]
         for root_dir in candidate_roots:

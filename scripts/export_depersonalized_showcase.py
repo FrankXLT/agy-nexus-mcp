@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-scripts/export_depersonalized_showcase.py — Export Live Telemetry to Public v4.0.7 Showcases.
+scripts/export_depersonalized_showcase.py — Export Live Telemetry to Public v4.0.8 Showcases.
 
 Reads live workstation bundles (current_month, last_month, qtd, ytd, last_30d, last_90d, last_year),
 Workspace Explorer tree, bundled demo docs, and Code Health, applies deterministic 1-to-1 SHA-256-keyed
@@ -72,7 +72,7 @@ _DOMAIN_TITLES: dict[str, list[str]] = {
     "civic-map-engine": ["Sprint 0 — Choropleth Canvas, Boundaries & CSS Layers"],
     "scratch-prototypes": ["Workspace Hygiene v1.0 — Session Archiver & Standardization"],
 }
-_FALLBACK_SLUGS: tuple[str, ...] = ("telemetry-ingestor", "edge-proxy-rs", "workflow-runner", "media-pipeline", "auth-broker-oidc", "billing-ledger", "cache-shard-kv", "sensor-fusion-py")
+_FALLBACK_SLUGS: tuple[str, ...] = ("telemetry-ingestor", "edge-proxy-rs", "task-dispatcher", "media-pipeline", "auth-broker-oidc", "billing-ledger", "cache-shard-kv", "sensor-fusion-py")
 _TARGET_SLUGS: frozenset[str] = PUBLIC_REPOS | {v[0] for v in _WS_HASH_ALIASES.values()} | set(_FALLBACK_SLUGS)
 _CLEAN_WORKTREE_LEAVES: tuple[str, ...] = ("feat_api_gateway", "fix_telemetry_sync", "perf_canvas_solver", "feat_oidc_auth", "fix_mobile_grid", "refactor_worker_pool", "feat_cache_layer", "fix_ws_reconnect")
 
@@ -305,7 +305,7 @@ def depersonalize_stats_bundle(raw_bundle: dict[str, Any], dp: ShowcaseDepersona
         if isinstance(obj, list):
             return [scrub_obj(x) for x in obj]
         if isinstance(obj, dict):
-            return {k: scrub_obj(v) for k, v in obj.items()}
+            return {(dp.scrub_text(k) if isinstance(k, str) else k): scrub_obj(v) for k, v in obj.items()}
         return obj
 
     ch = b.get("code_health") or {}
@@ -318,7 +318,7 @@ def depersonalize_stats_bundle(raw_bundle: dict[str, Any], dp: ShowcaseDepersona
     for sub_k in ("polyglot_health", "local_lsp", "ast_integrity"):
         if sub_k in ch:
             ch[sub_k] = scrub_obj(ch[sub_k])
-    for sk in ("wire_telemetry", "model_drift_status"):
+    for sk in ("wire_telemetry", "model_drift_status", "subagent_list", "subagent_role_breakdown", "subagent_series"):
         if sk in b:
             b[sk] = scrub_obj(b[sk])
     bk = b.get("backup_321") or {}

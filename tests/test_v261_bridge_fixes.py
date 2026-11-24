@@ -45,7 +45,7 @@ from agy_nexus.workspace import _resolve_and_read_files
 
 
 def test_version_and_modular_budget() -> None:
-    assert agy_nexus.__version__ == "4.0.7"
+    assert agy_nexus.__version__ == "4.0.8"
     assert TARGET_FILE_LINES == 500
     assert HARD_MAX_FILE_LINES == 650
     assert not (SRC_DIR / "agy_nexus" / "ast_outline.py").exists(), "ast_outline.py must be removed"
@@ -56,6 +56,7 @@ def test_version_and_modular_budget() -> None:
 
 
 def test_polyglot_incremental_sha256_index() -> None:
+    (cfg.AGY_DATA_DIR / "worktrees").mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=str(cfg.AGY_DATA_DIR / "worktrees")) as tmp_ws_str:
         ws = Path(tmp_ws_str)
         (ws / "pkg").mkdir()
@@ -285,7 +286,7 @@ def test_6_streamable_http_405_and_polyglot_zero_trust_lan_guard() -> None:
 
         # Health & Web remain 200
         r_h = client.get("/health")
-        assert r_h.status_code == 200 and r_h.json()["version"] == "4.0.7"
+        assert r_h.status_code == 200 and r_h.json()["version"] == "4.0.8"
 
         # Zero-Trust LAN Guard blocks reverse-proxied / public-domain / DNS-rebinding / cross-origin requests to /praxis/* and /polyglot/*
         for bad_hdrs in (
@@ -349,6 +350,7 @@ def test_7_dual_review_security_and_invariants() -> None:
     assert is_sensitive_filename("mcp_config.template.json") is False
 
     # Sensitive file denial, relative escape denial, and YAML scalar redaction
+    (cfg.AGY_DATA_DIR / "worktrees").mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=str(cfg.AGY_DATA_DIR / "worktrees")) as tmp_ws_str:
         ws = Path(tmp_ws_str)
         (ws / "secrets.env").write_text("API_KEY=top_secret_value_999\n", encoding="utf-8")

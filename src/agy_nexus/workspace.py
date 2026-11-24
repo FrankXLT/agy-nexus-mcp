@@ -29,7 +29,7 @@ from agy_nexus.config import (
 )
 from agy_nexus.hygiene import (
     MAX_FILE_CHARS, MAX_FILES_PER_CALL, MAX_TOTAL_FILE_CHARS,
-    is_sensitive_filename, parse_inline_line_spec, slice_file_content,
+    is_sensitive_filename, parse_inline_line_spec, resolve_source_repo_root, slice_file_content,
 )
 from agy_nexus.inventory import resolve_customization_file
 from agy_nexus.polyglot_outline import build_file_outline
@@ -38,11 +38,16 @@ from agy_nexus.virtual_uris import resolve_brain_uri_path, resolve_virtual_uri_e
 
 
 def _default_nexus_repo_dir() -> Path:
-    cand_proj = AGY_PROJECTS_DIR / "agy-nexus-mcp"
+    cand_proj = cfg.AGY_PROJECTS_DIR / "agy-nexus-mcp"
     if cand_proj.is_dir():
         return cand_proj
-    standalone = AGY_GITLAB_DIR / "agy-nexus-mcp"
-    return standalone if standalone.is_dir() else get_antigravity_config_repo()
+    standalone = cfg.AGY_GITLAB_DIR / "agy-nexus-mcp"
+    if standalone.is_dir():
+        return standalone
+    pkg_root = resolve_source_repo_root(__file__)
+    if pkg_root is not None:
+        return pkg_root
+    return get_antigravity_config_repo()
 
 
 def _pillar_root_map() -> dict[str, Path]:
@@ -109,10 +114,12 @@ def normalize_pillar_target_path(raw_input: str) -> tuple[str, str, bool]:
     if abs_p.parent and Path(os.path.abspath(str(abs_p.parent.parent))) in home_roots and abs_p.parent.name.lower() in pillars:
         return _validated(pillars[abs_p.parent.name.lower()] / abs_p.name, abs_p.name)
 
-    pkg_root = Path(__file__).resolve().parents[2].resolve()
-    res_abs = abs_p.resolve()
-    if res_abs == pkg_root or (pkg_root != Path("/") and res_abs.is_relative_to(pkg_root)):
-        return str(res_abs), res_abs.name.lower(), res_abs.is_dir()
+    pkg_root = resolve_source_repo_root(__file__)
+    if pkg_root is not None:
+        pkg_res = pkg_root.resolve()
+        res_abs = abs_p.resolve()
+        if res_abs == pkg_res or (pkg_res != Path("/") and res_abs.is_relative_to(pkg_res)):
+            return str(res_abs), res_abs.name.lower(), res_abs.is_dir()
     return _validated(abs_p)
 
 
@@ -135,8 +142,9 @@ def _resolve_workspace_str(ws_input: str) -> str:
         return norm_path
 
     q_lower = (norm_slug or raw.strip("/")).lower()
-    if q_lower == "ag-bridge-mcp":
-        return str(_default_nexus_repo_dir().resolve())
+    default_repo = _default_nexus_repo_dir().resolve()
+    if q_lower == "ag-bridge-mcp" or (q_lower == default_repo.name.lower() and not (norm_path and Path(norm_path).is_dir())):
+        return str(default_repo)
     q_slug = _slugify_exact(q_lower)
     for pid, pinfo in _load_projects_map().items():
         pname = str(pinfo.get("name") or "").lower()
@@ -204,19 +212,14 @@ def _resolve_and_read_files(
         else:
             search_roots.append(AGY_GITLAB_DIR.resolve())
 
-    allowed = tuple(
-        (
-            set(get_workspace_pillar_roots())
-            | {
-                AGY_BRAIN_DIR.resolve(),
-                (AGY_DATA_DIR / "worktrees").resolve(),
-                AGY_CONFIG_DIR.resolve(),
-                (AGY_DATA_DIR / "builtin").resolve(),
-                Path(__file__).resolve().parents[2],
-            }
-        )
-        - {Path("/").resolve(), Path.home().resolve()}
-    )
+    src_repo = resolve_source_repo_root(__file__)
+    allowed_set = set(get_workspace_pillar_roots()) | {
+        AGY_BRAIN_DIR.resolve(), (AGY_DATA_DIR / "worktrees").resolve(),
+        AGY_CONFIG_DIR.resolve(), (AGY_DATA_DIR / "builtin").resolve(),
+    }
+    if src_repo is not None:
+        allowed_set.add(src_repo)
+    allowed = tuple(allowed_set - {Path("/").resolve(), Path.home().resolve()})
     items_slice = raw_items[:MAX_FILES_PER_CALL]
     remaining_total_chars = max_total_chars
     files_list: list[dict[str, Any]] = []
@@ -363,6 +366,10 @@ def _resolve_and_read_files(
                                 extracted_cand_repo = cand
                 except Exception:
                     pass
+            if not extracted_cand_repo:
+                pkg_r = resolve_source_repo_root(__file__)
+                if pkg_r is not None and target_path.is_relative_to(pkg_r) and pkg_r not in search_roots:
+                    extracted_cand_repo = pkg_r
             if extracted_cand_repo:
                 auto_resolved_ws = str(extracted_cand_repo)
                 SESSION_STATE["auto_resolved_calls"] = int(SESSION_STATE.get("auto_resolved_calls") or 0) + 1

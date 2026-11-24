@@ -1,0 +1,38 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.FrankXLT/agy-nexus-mcp",
+  "title": "AGY-Nexus MCP",
+  "description": "Dual-doorway MCP server for Antigravity IDE telemetry, session handoffs, and Quiet UI studio.",
+  "repository": {
+    "url": "https://github.com/FrankXLT/agy-nexus-mcp",
+    "source": "github"
+  },
+  "websiteUrl": "https://FrankXLT.github.io/agy-nexus-mcp/",
+  "version": "4.0.8",
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/frankxlt/agy-nexus-mcp:4.0.8",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "--stdio",
+          "isRequired": true,
+          "description": "Run AGY-Nexus MCP over standard input/output without HTTP or PATH_SECRET."
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "PASS_HASH",
+          "description": "Optional 64-hex SHA-256 deadbolt passphrase hash to unlock private workspace and session tools.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

@@ -84,6 +84,21 @@ systemctl --user daemon-reload
 systemctl --user enable --now ag-bridge.service
 ```
 
+### Option C: Public GHCR OCI Container (`--stdio` Mode for Local IDEs)
+Run directly in VS Code, Copilot CLI, Claude Code, or MCP Inspector over clean zero-stdout JSON-RPC without exposing an HTTP port or requiring `PATH_SECRET`:
+```bash
+docker run -i --rm ghcr.io/frankxlt/agy-nexus-mcp:4.0.8 --stdio
+```
+To unlock private session and workspace tools inside `--stdio` mode, pass a 64-hex `PASS_HASH` (or mount `secrets.env` via `-e AG_BRIDGE_ENV_FILE=/config/secrets.env`):
+```bash
+docker run -i --rm \
+  -e PASS_HASH="<your-64-hex-sha256>" \
+  -v "${HOME}/.gemini/antigravity:${HOME}/.gemini/antigravity:rw" \
+  -v "${HOME}/agentic_workspace:${HOME}/agentic_workspace:ro" \
+  ghcr.io/frankxlt/agy-nexus-mcp:4.0.8 --stdio
+```
+- **First-Push GHCR Visibility Recovery (`Package validation failed`)**: GitHub initializes new `ghcr.io/<owner>/<repo>` container packages as Private on their first tagged push. If the `Publish GHCR OCI & MCP Registry` workflow fails at `./mcp-publisher publish` with `Package validation failed`, open **GitHub Package Settings -> Change visibility -> Public** once, then trigger **Actions -> Publish GHCR OCI & MCP Registry -> Run workflow** (`workflow_dispatch`, setting `release_tag` to `v4.0.8`) to finish registry publication without burning a new tag.
+
 ---
 
 ## 4. Reverse Proxy Setup (Nginx Proxy Manager & Cloudflare)
@@ -225,7 +240,7 @@ AG_BRIDGE_PASSPHRASE="<your passphrase>" \
 uv run python3 tests/run_permutation_suite.py
 ```
 
-### Build & Publish Interactive GitHub Pages Showcase (`v4.0.7`)
+### Build & Publish Interactive GitHub Pages Showcase (`v4.0.8`)
 Generate a zero-leak depersonalized static showcase in `build/gh-pages/` (stripping PNG metadata, aliasing private identifiers via SHA-256, and running `scan_showcase_privacy()`), preview locally, or dry-run/sync GitHub `main` + `gh-pages` + Release:
 ```bash
 python3 scripts/build_github_showcase.py --refresh

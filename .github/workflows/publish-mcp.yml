@@ -1,0 +1,167 @@
+name: Publish GHCR OCI & MCP Registry
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Optional version tag to publish (e.g. v4.0.8). Defaults to pushed tag or pyproject.toml version."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  MCP_PUBLISHER_VERSION: v1.8.1
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag && (startsWith(inputs.release_tag, 'v') && format('refs/tags/{0}', inputs.release_tag) || format('refs/tags/v{0}', inputs.release_tag)) || github.ref }}
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package and test dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install --no-cache-dir . pytest pytest-asyncio
+
+      - name: Run pytest and self-tests
+        run: |
+          pytest
+          python3 ag_bridge.py --self-test
+          python3 -m agy_nexus.tools_praxis --self-test
+
+      - name: Resolve release version and lowercase GHCR image name
+        id: meta
+        run: |
+          RAW_TAG="${{ inputs.release_tag }}"
+          if [ -z "$RAW_TAG" ] && [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            RAW_TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          if [ -z "$RAW_TAG" ]; then
+            RAW_TAG="$(python3 -c 'import re; from pathlib import Path; m = re.search(r"^version\s*=\s*\"([^\"]+)\"", Path("pyproject.toml").read_text(), re.M); print(m.group(1) if m else "")')"
+          fi
+          VERSION="${RAW_TAG#v}"
+          if [ -z "$VERSION" ]; then
+            echo "Unable to resolve release version" >&2
+            exit 1
+          fi
+          IMAGE_REPO="$(printf 'ghcr.io/%s' "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "image_repo=$IMAGE_REPO" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke-test Docker --stdio JSON-RPC container locally
+        run: |
+          IMAGE="${{ steps.meta.outputs.image_repo }}:${{ steps.meta.outputs.version }}"
+          docker build -t "$IMAGE" .
+          python3 - "$IMAGE" <<'PY'
+          import json, select, subprocess, sys, time
+          image = sys.argv[1]
+          reqs = [
+              {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "ci-smoke", "version": "1.0"}}},
+              {"jsonrpc": "2.0", "method": "notifications/initialized"},
+              {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+              {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "list_models_and_agents", "arguments": {"style": "ascii", "include_skills": False, "include_rules": False}}},
+          ]
+          proc = subprocess.Popen(["docker", "run", "--rm", "-i", image, "--stdio"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+          for req in reqs[:2]:
+              proc.stdin.write(json.dumps(req) + "\n")
+          proc.stdin.flush()
+          for req in reqs[2:]:
+              proc.stdin.write(json.dumps(req) + "\n")
+          proc.stdin.flush()
+          parsed = {}
+          deadline = time.monotonic() + 25.0
+          while len(parsed) < 3 and time.monotonic() < deadline:
+              ready, _, _ = select.select([proc.stdout], [], [], max(0.1, deadline - time.monotonic()))
+              if not ready:
+                  break
+              line = proc.stdout.readline()
+              if not line:
+                  break
+              if line.strip():
+                  msg = json.loads(line)
+                  assert msg.get("jsonrpc") == "2.0"
+                  if "id" in msg:
+                      parsed[msg["id"]] = msg
+          proc.stdin.close()
+          stderr = proc.stderr.read()
+          assert proc.wait(timeout=15) == 0, stderr
+          assert set(parsed.keys()) >= {1, 2, 3}, (parsed, stderr)
+          assert "result" in parsed[1] and len(parsed[2]["result"]["tools"]) == 11
+          assert "SUBAGENT ROSTER (12)" in parsed[3]["result"]["content"][0]["text"]
+          print("Docker stdio smoke test OK")
+          PY
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push GHCR OCI image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ steps.meta.outputs.image_repo }}:${{ steps.meta.outputs.version }}
+            ${{ steps.meta.outputs.image_repo }}:latest
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.1.2
+
+      - name: Download and verify mcp-publisher
+        run: |
+          set -euo pipefail
+          os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          arch="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
+          archive="mcp-publisher_${os}_${arch}.tar.gz"
+          base_url="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}"
+
+          curl --fail --location --silent --show-error --output "$archive" "$base_url/$archive"
+          curl --fail --location --silent --show-error --output "$archive.sigstore.json" "$base_url/$archive.sigstore.json"
+          cosign verify-blob \
+            --bundle "$archive.sigstore.json" \
+            --certificate-identity "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/${MCP_PUBLISHER_VERSION}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$archive"
+          tar xzf "$archive" mcp-publisher
+          chmod +x mcp-publisher
+          rm -f "$archive" "$archive.sigstore.json"
+
+      - name: Sync and validate server.json
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          IMAGE="${{ steps.meta.outputs.image_repo }}:${VERSION}"
+          jq --arg v "$VERSION" --arg img "$IMAGE" \
+            '.version = $v | .packages[0].identifier = $img' server.json > server.tmp
+          mv server.tmp server.json
+          ./mcp-publisher validate
+
+      - name: Authenticate to MCP Registry via GitHub OIDC
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish to MCP Registry
+        run: ./mcp-publisher publish

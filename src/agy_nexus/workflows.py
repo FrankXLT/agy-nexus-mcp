@@ -26,144 +26,112 @@ def _slugify(value: str, fallback: str = "session", max_len: int = 36) -> str:
         return fallback
     return cleaned[:max_len].rstrip("-") or fallback
 
+def _load_notebook_session_meta(
+    db_file: Path, projects_map: dict[str, dict[str, Any]], limit: int,
+) -> dict[str, dict[str, Any]]:
+    meta_by_id: dict[str, dict[str, Any]] = {}
+    if not db_file.is_file():
+        return meta_by_id
+    try:
+        with closing(sqlite3.connect(f"file:{db_file}?mode=ro", uri=True)) as con:
+            rows = con.execute(
+                "SELECT conversation_id, title, step_count, last_modified_time, workspace_uris, project_id "
+                "FROM conversation_summaries WHERE parent_conversation_id IS NULL OR parent_conversation_id = '' "
+                "ORDER BY last_modified_time DESC LIMIT ?",
+                (max(limit * 3, 60),),
+            ).fetchall()
+        for row in rows:
+            cid, pid = str(row[0] or ""), str(row[5] or "")
+            pname = projects_map.get(pid, {}).get("name", pid or "workspace")
+            ws_name = pname
+            try:
+                uris = json.loads(str(row[4] or "[]"))
+                if uris and isinstance(uris, list):
+                    first_u = re.sub(r"^file://", "", str(uris[0])).rstrip("/")
+                    if first_u:
+                        ws_name = Path(first_u).name
+            except Exception:
+                pass
+            meta_by_id[cid] = {
+                "title": str(row[1] or cid), "step_count": int(row[2] or 0),
+                "last_modified": str(row[3] or ""), "project_name": pname, "workspace_name": ws_name,
+            }
+    except Exception:
+        pass
+    return meta_by_id
+
+
+def _sync_notebook_markdown_file(
+    sdir: Path, export_root: Path, meta: dict[str, Any], dry_run: bool,
+) -> tuple[str, dict[str, Any]]:
+    cid = sdir.name
+    walk_path, plan_path = sdir / "walkthrough.md", sdir / "implementation_plan.md"
+    walk_text = walk_path.read_text(encoding="utf-8", errors="replace").strip() if walk_path.is_file() and walk_path.stat().st_size > 40 else ""
+    plan_text = plan_path.read_text(encoding="utf-8", errors="replace").strip() if plan_path.is_file() and plan_path.stat().st_size > 40 else ""
+    title = str(meta.get("title") or cid)
+    ws_name = str(meta.get("workspace_name") or meta.get("project_name") or "workspace")
+    last_mod = str(meta.get("last_modified") or "")
+    date_prefix = last_mod[:10] if len(last_mod) >= 10 and last_mod[4:5] == "-" else datetime.fromtimestamp(sdir.stat().st_mtime, tz=timezone.utc).strftime("%Y-%m-%d")
+    fname = f"{date_prefix}_{_slugify(ws_name, 'repo', 20)}_{_slugify(title, 'session', 32)}_{cid[:8]}.md"
+    target_path = export_root / fname
+    sections = [
+        f"# {title}", "", f"- **Session ID**: `{cid}`", f"- **Repository / Project**: `{ws_name}`",
+        f"- **Date**: `{date_prefix}`", f"- **Steps**: `{meta.get('step_count', 0)}`", "",
+    ]
+    if walk_text:
+        sections.extend(["## Walkthrough & Verification Summary", "", walk_text, ""])
+    if plan_text:
+        sections.extend(["## Implementation Plan & Architecture", "", plan_text, ""])
+    compiled_md = "\n".join(sections).rstrip() + "\n"
+    new_digest = hashlib.sha256(compiled_md.encode("utf-8")).hexdigest()
+    state_label = "created"
+    if target_path.is_file():
+        try:
+            old_digest = hashlib.sha256(target_path.read_bytes()).hexdigest()
+        except Exception:
+            old_digest = ""
+        if old_digest == new_digest:
+            state_label = "unchanged"
+        else:
+            if not dry_run:
+                target_path.write_text(compiled_md, encoding="utf-8")
+            state_label = "updated"
+    elif not dry_run:
+        target_path.write_text(compiled_md, encoding="utf-8")
+    return state_label, {
+        "file": fname, "conversation_id": cid, "title": title, "repository": ws_name,
+        "sync_state": state_label, "bytes": len(compiled_md.encode("utf-8")),
+    }
+
+
 def export_notebook_bundle(
-    brain_dir: Path,
-    db_file: Path,
-    bg_dir: Path,
-    projects_map: dict[str, dict[str, Any]],
-    limit: int = 25,
-    dry_run: bool = False,
+    brain_dir: Path, db_file: Path, bg_dir: Path, projects_map: dict[str, dict[str, Any]],
+    limit: int = 25, dry_run: bool = False,
 ) -> dict[str, Any]:
     """Export completed session implementation_plan.md and walkthrough.md artifacts with SHA-256 deduplication."""
     export_root = Path(os.getenv("AGY_NOTEBOOK_EXPORT_DIR", str(bg_dir / "notebook_exports"))).expanduser()
     if not dry_run:
         export_root.mkdir(parents=True, exist_ok=True)
-
-    meta_by_id: dict[str, dict[str, Any]] = {}
-    if db_file.is_file():
-        try:
-            with closing(sqlite3.connect(f"file:{db_file}?mode=ro", uri=True)) as con:
-                rows = con.execute(
-                    "SELECT conversation_id, title, step_count, last_modified_time, workspace_uris, project_id "
-                    "FROM conversation_summaries WHERE parent_conversation_id IS NULL OR parent_conversation_id = '' "
-                    "ORDER BY last_modified_time DESC LIMIT ?",
-                    (max(limit * 3, 60),),
-                ).fetchall()
-            for row in rows:
-                cid, pid = str(row[0] or ""), str(row[5] or "")
-                pname = projects_map.get(pid, {}).get("name", pid or "workspace")
-                ws_name = pname
-                try:
-                    uris = json.loads(str(row[4] or "[]"))
-                    if uris and isinstance(uris, list):
-                        first_u = re.sub(r"^file://", "", str(uris[0])).rstrip("/")
-                        if first_u:
-                            ws_name = Path(first_u).name
-                except Exception:
-                    pass
-                meta_by_id[cid] = {
-                    "title": str(row[1] or cid),
-                    "step_count": int(row[2] or 0),
-                    "last_modified": str(row[3] or ""),
-                    "project_name": pname,
-                    "workspace_name": ws_name,
-                }
-        except Exception:
-            pass
-
-    created_count, updated_count, unchanged_count = 0, 0, 0
+    meta_by_id = _load_notebook_session_meta(db_file, projects_map, limit)
+    counts = {"created": 0, "updated": 0, "unchanged": 0}
     exported_files: list[dict[str, Any]] = []
     if not brain_dir.is_dir():
-        return {"export_dir": str(export_root), "dry_run": dry_run, "created": 0, "updated": 0, "unchanged": 0, "files": []}
-
+        return {"export_dir": str(export_root), "dry_run": dry_run, "total_exported": 0, **counts, "files": []}
     candidate_dirs = sorted(
         [d for d in brain_dir.iterdir() if d.is_dir() and not d.name.startswith(".")],
-        key=lambda p: p.stat().st_mtime if p.exists() else 0,
-        reverse=True,
+        key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True,
     )
-
     for sdir in candidate_dirs:
         if len(exported_files) >= limit:
             break
-        walk_path = sdir / "walkthrough.md"
-        plan_path = sdir / "implementation_plan.md"
-        has_walk = walk_path.is_file() and walk_path.stat().st_size > 40
-        has_plan = plan_path.is_file() and plan_path.stat().st_size > 40
+        has_walk = (sdir / "walkthrough.md").is_file() and (sdir / "walkthrough.md").stat().st_size > 40
+        has_plan = (sdir / "implementation_plan.md").is_file() and (sdir / "implementation_plan.md").stat().st_size > 40
         if not has_walk and not has_plan:
             continue
-
-        cid = sdir.name
-        meta = meta_by_id.get(cid, {})
-        title = str(meta.get("title") or cid)
-        ws_name = str(meta.get("workspace_name") or meta.get("project_name") or "workspace")
-        last_mod = str(meta.get("last_modified") or "")
-        date_prefix = last_mod[:10] if len(last_mod) >= 10 and last_mod[4:5] == "-" else datetime.fromtimestamp(
-            sdir.stat().st_mtime, tz=timezone.utc
-        ).strftime("%Y-%m-%d")
-
-        fname = f"{date_prefix}_{_slugify(ws_name, 'repo', 20)}_{_slugify(title, 'session', 32)}_{cid[:8]}.md"
-        target_path = export_root / fname
-
-        walk_text = walk_path.read_text(encoding="utf-8", errors="replace").strip() if has_walk else ""
-        plan_text = plan_path.read_text(encoding="utf-8", errors="replace").strip() if has_plan else ""
-
-        sections = [
-            f"# {title}",
-            "",
-            f"- **Session ID**: `{cid}`",
-            f"- **Repository / Project**: `{ws_name}`",
-            f"- **Date**: `{date_prefix}`",
-            f"- **Steps**: `{meta.get('step_count', 0)}`",
-            "",
-        ]
-        if walk_text:
-            sections.extend(["## Walkthrough & Verification Summary", "", walk_text, ""])
-        if plan_text:
-            sections.extend(["## Implementation Plan & Architecture", "", plan_text, ""])
-
-        compiled_md = "\n".join(sections).rstrip() + "\n"
-        new_digest = hashlib.sha256(compiled_md.encode("utf-8")).hexdigest()
-
-        state_label = "created"
-        if target_path.is_file():
-            try:
-                old_digest = hashlib.sha256(target_path.read_bytes()).hexdigest()
-                if old_digest == new_digest:
-                    state_label = "unchanged"
-                    unchanged_count += 1
-                else:
-                    if not dry_run:
-                        target_path.write_text(compiled_md, encoding="utf-8")
-                    state_label = "updated"
-                    updated_count += 1
-            except Exception:
-                if not dry_run:
-                    target_path.write_text(compiled_md, encoding="utf-8")
-                state_label = "updated"
-                updated_count += 1
-        else:
-            if not dry_run:
-                target_path.write_text(compiled_md, encoding="utf-8")
-            created_count += 1
-
-        exported_files.append({
-            "file": fname,
-            "conversation_id": cid,
-            "title": title,
-            "repository": ws_name,
-            "sync_state": state_label,
-            "bytes": len(compiled_md.encode("utf-8")),
-        })
-
-    return {
-        "export_dir": str(export_root),
-        "dry_run": dry_run,
-        "total_exported": len(exported_files),
-        "created": created_count,
-        "updated": updated_count,
-        "unchanged": unchanged_count,
-        "files": exported_files,
-    }
+        state_label, rec = _sync_notebook_markdown_file(sdir, export_root, meta_by_id.get(sdir.name, {}), dry_run)
+        counts[state_label] += 1
+        exported_files.append(rec)
+    return {"export_dir": str(export_root), "dry_run": dry_run, "total_exported": len(exported_files), **counts, "files": exported_files}
 
 def inspect_multi_repo_drift(
     gitlab_dir: Path | None = None,

@@ -32,6 +32,7 @@ from agy_nexus.config import (
     TTL_SECONDS, get_antigravity_config_repo, get_polyglot_mcp_token,
     get_praxis_mcp_token, is_unlocked, normalize_phrase, verify_passphrase,
 )
+from agy_nexus.hygiene import resolve_source_repo_root
 from agy_nexus.media import discover_visual_artifacts, sign_media_url, verify_and_resolve_media
 from agy_nexus.search import _search_workspaces_and_history
 from agy_nexus.session_tree import build_project_session_tree
@@ -135,6 +136,21 @@ def _test_stats_and_http_routes(test_secret: str) -> Any:
     return app
 
 
+def _ensure_probe_git_repo(probe_dir: Path) -> Path:
+    shutil.rmtree(probe_dir, ignore_errors=True)
+    probe_dir.mkdir(parents=True, exist_ok=True)
+    for cmd in (
+        ["git", "init", "-q"],
+        ["git", "config", "user.email", "selftest@example.com"],
+        ["git", "config", "user.name", "SelfTest"],
+    ):
+        subprocess.run(cmd, cwd=str(probe_dir), check=True)
+    (probe_dir / "README.md").write_text("# probe\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=str(probe_dir), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=str(probe_dir), check=True)
+    return probe_dir
+
+
 def _test_drift_media_and_isolation(test_phrase: str, expected_hash: str, orig_hash: str) -> None:
     """Verify multi-repo drift, HMAC media signing, 3-tier path resolver, and git diff."""
     drift_res = inspect_multi_repo_drift(AGY_GITLAB_DIR, AGY_DATA_DIR, workspace_override="ALL")
@@ -146,7 +162,7 @@ def _test_drift_media_and_isolation(test_phrase: str, expected_hash: str, orig_h
         assert nb_res2["unchanged"] == nb_res1["total_exported"]
     print(f"  [+] Multi-repo drift audit ({drift_res['scanned_repositories_count']} repos) & Notebook SHA-256 deduplication ({nb_res1['total_exported']} bundles): PASS")
 
-    test_repo_dir = Path(__file__).resolve().parents[2]
+    test_repo_dir = resolve_source_repo_root(__file__) or AGY_CONFIG_DIR
     cfg.PASS_HASH = expected_hash
     try:
         artifacts = discover_visual_artifacts("", str(test_repo_dir), limit=5)
@@ -158,20 +174,27 @@ def _test_drift_media_and_isolation(test_phrase: str, expected_hash: str, orig_h
         cfg.PASS_HASH = orig_hash
     print(f"  [+] Visual Artifact HMAC /web/media/ signing, sandbox & discovery ({len(artifacts)} artifacts): PASS")
 
+    tier2_ws = next(
+        (d for d in (AGY_PROJECTS_DIR, AGY_GITLAB_DIR, test_repo_dir.parent) if d.is_dir() and (d / test_repo_dir.name).is_dir()),
+        test_repo_dir.parent,
+    )
     tier2_res = _resolve_and_read_files(
         f"{test_repo_dir.name}/src/agy_nexus/session_tree.py", max_chars_per_file=500,
-        ws=AGY_PROJECTS_DIR if AGY_PROJECTS_DIR.is_dir() else AGY_GITLAB_DIR,
+        ws=tier2_ws,
     )
     assert isinstance(tier2_res, dict) and tier2_res.get("error") is None and tier2_res.get("auto_resolved_workspace")
     tree_bundle = build_project_session_tree(active_only=False, limit=10)
     assert "PROJECT -> CHAT -> SESSION ID HIERARCHY" in tree_bundle.get("ascii_tree", "")
     from agy_nexus.tools_workspace import inspect_git_diff
     cfg.PASS_HASH = expected_hash
+    tmp_probe_git = AGY_DATA_DIR / "worktrees" / "_selftest_git_probe"
     try:
-        single_diff_obj = json.loads(inspect_git_diff(workspace_override=str(test_repo_dir), spoken_passphrase=test_phrase))
+        target_diff_ws = test_repo_dir if (test_repo_dir / ".git").exists() else _ensure_probe_git_repo(tmp_probe_git)
+        single_diff_obj = json.loads(inspect_git_diff(workspace_override=str(target_diff_ws), spoken_passphrase=test_phrase))
         assert single_diff_obj.get("ok") is True and "branch" in single_diff_obj
     finally:
         cfg.PASS_HASH = orig_hash
+        shutil.rmtree(tmp_probe_git, ignore_errors=True)
     print(f"  [+] Parallel Session Isolation, 3-Tier Path Resolver, Session Tree & Single-Repo Git Diff ({tree_bundle['projects_count']} projects): PASS")
 
 
@@ -200,7 +223,7 @@ def _test_skills_polyglot_and_outline(sessions: list[dict[str, Any]], test_phras
         test_job_file.unlink(missing_ok=True)
     print("  [+] Content-Aware Skill Auto-Router, In-Flight Mutex & Session Health Warning: PASS")
 
-    pkg_root = Path(__file__).resolve().parents[2]
+    pkg_root = resolve_source_repo_root(__file__)
     hyg_map = get_modular_hygiene_summary(Path(__file__).resolve().parent)
     assert not hyg_map["syntax_errors"] and hyg_map["violations_over_650"] == 0, f"Modular hygiene failed: {hyg_map}"
     assert polyglot_repo_map(workspace=str(pkg_root), path_prefix="src/agy_nexus", limit=40).get("matched_files", 0) >= 25
@@ -235,8 +258,8 @@ def _test_skills_polyglot_and_outline(sessions: list[dict[str, Any]], test_phras
 def _run_host_bridge_checks(dummy_dir: Path, dummy_cid: str, test_phrase: str, test_secret: str) -> None:
     """Exercise repo-prefixed handoff queue and Host Bridge zero-trust security gates."""
     from agy_nexus.handoff import send_handoff_and_resume
-    repo_root = Path(__file__).resolve().parents[2]
-    if str(repo_root) not in sys.path:
+    repo_root = resolve_source_repo_root(__file__)
+    if repo_root is not None and str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
     import host_bridge.agy_host_bridge as hb_mod
     from host_bridge.bridge_security import (
@@ -265,6 +288,7 @@ def _run_host_bridge_checks(dummy_dir: Path, dummy_cid: str, test_phrase: str, t
     hb_srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), hb_mod.HostBridgeHandler)
     threading.Thread(target=hb_srv.serve_forever, daemon=True).start()
     cfg.AGY_HOST_BRIDGE_URL = f"http://127.0.0.1:{hb_srv.server_port}/agentapi"
+    tmp_hb_git = AGY_DATA_DIR / "worktrees" / "_selftest_hb_git"
     try:
         def _hb(body: dict, hdrs: dict[str, str]) -> tuple[int, dict]:
             req = urllib.request.Request(cfg.AGY_HOST_BRIDGE_URL, data=json.dumps(body).encode("utf-8"), headers=hdrs, method="POST")
@@ -278,7 +302,9 @@ def _run_host_bridge_checks(dummy_dir: Path, dummy_cid: str, test_phrase: str, t
         assert _hb({"action": "discover"}, {"Content-Type": "application/json", "X-Bridge-Token": "wrong_" + "0" * 40})[0] == 401
         assert _hb({"action": "discover"}, {"Content-Type": "application/json", "X-Bridge-Token": exp_tok, "Origin": "https://evil.example"})[0] == 403
         assert _hb({"action": "git-inspect", "workspace_path": str(Path.home())}, cfg.get_host_bridge_headers())[1].get("ok") is False
-        assert _hb({"action": "git-inspect", "workspace_path": str(get_antigravity_config_repo()), "summary_only": True}, cfg.get_host_bridge_headers())[1].get("ok") is True
+        cfg_repo = get_antigravity_config_repo()
+        git_inspect_ws = cfg_repo if (cfg_repo / ".git").exists() else (repo_root if (repo_root is not None and (repo_root / ".git").exists()) else _ensure_probe_git_repo(tmp_hb_git))
+        assert _hb({"action": "git-inspect", "workspace_path": str(git_inspect_ws), "summary_only": True}, cfg.get_host_bridge_headers())[1].get("ok") is True
 
         captured: list[dict] = []
         hb_mod.MOCK_ACTION_HANDLER = lambda p: (captured.append(p) or {"ok": True, "returncode": 0, "conversation_id": p.get("conversation_id", dummy_cid)})
@@ -293,6 +319,7 @@ def _run_host_bridge_checks(dummy_dir: Path, dummy_cid: str, test_phrase: str, t
         hb_mod.BRIDGE_TOKEN_OVERRIDE = ""
         hb_srv.shutdown()
         hb_srv.server_close()
+        shutil.rmtree(tmp_hb_git, ignore_errors=True)
         cfg.AGY_HOST_BRIDGE_URL, cfg.PATH_SECRET, cfg.HOST_BRIDGE_TOKEN = orig_url, orig_sec, orig_tok
 
 

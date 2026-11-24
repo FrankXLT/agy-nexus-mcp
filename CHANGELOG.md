@@ -4,6 +4,20 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.8] — 2026-11-24
+
+### Added & Improved
+- **Public GHCR OCI Container & `--stdio` Transport Mode (`Dockerfile`, `.dockerignore`, `src/agy_nexus/server.py`, `src/agy_nexus/config.py`, `src/agy_nexus/hygiene.py`, `ascii_models.py`, `stats_aggregator.py`, `middleware.py`, `code_health.py`)**:
+  - Added slim `python:3.12-slim` `Dockerfile` (`git`, `grep`, `pip install --no-cache-dir .`, `EXPOSE 8765`, `ENTRYPOINT ["agy-nexus-mcp"]`, `io.modelcontextprotocol.server.name="io.github.FrankXLT/agy-nexus-mcp"`, `org.opencontainers.image.source`) and `.dockerignore` excluding `.git`, `.venv`, caches, `.env*`, and `*secrets*`.
+  - Implemented `--stdio` transport in `server.py` (`_offload_sync_mcp_tools(mcp)` + `mcp.run(transport="stdio", show_banner=False)`), bypassing HTTP-only `PATH_SECRET` checks and unset `PASS_HASH` exits with zero `stdout` banner noise and diagnostics strictly on `sys.stderr`, while hardening `verify_passphrase` / `is_unlocked` to reject empty or non-64-hex `PASS_HASH` values fail-closed.
+  - Added `resolve_package_resource_dir` / `resolve_package_root` in `hygiene.py` so non-editable wheel and container installs resolve `agents/` and `web/` seamlessly, plus CI clean-`HOME` resilience across `tools_workspace.py`, `workspace.py`, and `selftest_runner.py`.
+- **Official MCP Registry (`2025-12-11`) & Zero-Secret GitHub OIDC Workflow (`server.json`, `.github/workflows/publish-mcp.yml`, `pyproject.toml`, `README.md`)**:
+  - Added schema-validated `server.json` (`io.github.FrankXLT/agy-nexus-mcp`, `< 100`-char description, `ghcr.io/frankxlt/agy-nexus-mcp:4.0.8` OCI `stdio` package with `--stdio` and optional secret `PASS_HASH`).
+  - Added `.github/workflows/publish-mcp.yml` triggered on `push` (`v*` tags) and `workflow_dispatch` (`release_tag`), running `pytest`, `--self-test` runners, `--stdio` container smoke test, multi-arch GHCR push (`:version` + `:latest`), Sigstore `cosign` (`v4.1.2`) verification of `mcp-publisher` (`v1.8.1`), `jq` sync, `validate`, `login github-oidc`, and `publish`.
+  - Added `<!-- mcp-name: io.github.FrankXLT/agy-nexus-mcp -->` + GHCR `--stdio` usage and updated stale `v4.0.6` headings to `v4.0.8` in `README.md`, added `[project.urls]` in `pyproject.toml`, and synced all 12 `agents/*.md` files (`12/12 SYNCED`).
+- **Workflow Baseline, Tests & PWA Sync (`docs/WORKFLOWS.md`, `docs/DEPLOYMENT.md`, `web/`, `tests/test_v408_ghcr_stdio_and_registry.py`)**:
+  - Added `Workflow 7: WF-07 — Public GHCR Container, Stdio Mode & MCP Registry OIDC Publishing` and Common Terms (`GHCR OCI Package`, `MCP Registry Manifest`, `Stdio Container Mode`) to `docs/WORKFLOWS.md`, bumped `4.0.8` (`agy-nexus-v4.0.8`), and verified full `pytest` + `--self-test` + Docker `--stdio` smoke suite.
+
 ## [4.0.7] — 2026-11-23
 
 ### Added & Improved
