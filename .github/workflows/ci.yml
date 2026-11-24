@@ -32,7 +32,7 @@ jobs:
       - name: Install package and test dependencies
         run: |
           python3 -m pip install --upgrade pip
-          pip install --no-cache-dir . pytest pytest-asyncio
+          pip install --no-cache-dir . pytest pytest-asyncio jsonschema
 
       - name: Run pytest and self-tests
         run: |
@@ -40,9 +40,10 @@ jobs:
           python3 ag_bridge.py --self-test
           python3 -m agy_nexus.tools_praxis --self-test
 
-      - name: Check agent parity, catalog docs sync, and build zero-leak showcase
+      - name: Check agent parity, catalog schema/docs sync, and build zero-leak showcase
         run: |
           python3 scripts/sync_agents.py --check
+          python3 scripts/catalog_sync.py --validate-strict --require-jsonschema
           python3 scripts/catalog_sync.py --render-docs --check
           python3 scripts/build_github_showcase.py
 

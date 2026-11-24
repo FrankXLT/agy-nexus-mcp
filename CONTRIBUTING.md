@@ -17,6 +17,7 @@ To keep `main` protected with GitHub Repository Rulesets and required status che
      - `python3 ag_bridge.py --self-test`
      - `python3 -m agy_nexus.tools_praxis --self-test`
      - `python3 scripts/sync_agents.py --check`
+     - `python3 scripts/catalog_sync.py --validate-strict --require-jsonschema` (`schemas/*.schema.json` + `catalog_validator.py`)
      - `python3 scripts/catalog_sync.py --render-docs --check` (`model_catalog.json` + `cost_ledger.json` -> `docs/PRICING_HISTORY.md`)
      - `python3 scripts/build_github_showcase.py` (`0` privacy leaks)
      - Local `docker build` + `--stdio` JSON-RPC container smoke check (`initialize`, `tools/list`, `list_models_and_agents`, and fail-closed `list_saved_sessions`)
@@ -24,7 +25,7 @@ To keep `main` protected with GitHub Repository Rulesets and required status che
    - Once the **`verify`** check passes and review is approved, merge the Pull Request into `main`.
    - Pushing a release tag (`v*`) triggers `.github/workflows/publish-mcp.yml` to build multi-arch GHCR OCI images (`linux/amd64`, `linux/arm64`) and publish `server.json` to the Official MCP Registry via GitHub OIDC.
 3. **Automated Price Book Bot PRs (`bot/catalog-sync`)**:
-   - `.github/workflows/catalog-sync.yml` runs weekly (or manually via `workflow_dispatch`) with `permissions: { contents: write, pull-requests: write, models: read }`, parses public rate feeds fail-closed without modifying locked `antigravity_ide` fields, and updates a single reusable **`bot/catalog-sync`** -> `main` PR.
+   - `.github/workflows/catalog-sync.yml` runs weekly (or manually via `workflow_dispatch`) with `permissions: { contents: write, pull-requests: write, models: read }`, parses public rate feeds fail-closed without modifying locked `antigravity_ide` fields, validates `--validate-strict --require-jsonschema`, enforces a `git diff --name-only` path allowlist (`model_catalog.json`, `cost_ledger.json`, `docs/PRICING_HISTORY.md` only), and updates a single reusable **`bot/catalog-sync`** -> `main` PR.
    - To enable bot PR creation in GitHub Repository Settings:
      - Open **Settings -> Actions -> General -> Workflow permissions** and check **Allow GitHub Actions to create and approve pull requests**.
      - Under **Settings -> Rules -> Rulesets**, protect `main` with **Require a pull request before merging** and **Require status checks (`verify`)** so automated catalog updates always pass full verification before human merge.
@@ -33,15 +34,15 @@ To keep `main` protected with GitHub Repository Rulesets and required status che
 
 ## 2. Repository Layout & Modular Rules
 
-Before submitting a Pull Request, please review [`AGENTS.md`](AGENTS.md) and adhere to these structural standards:
+Before submitting a Pull Request, please review [`AGENTS.md`](AGENTS.md), [`.github/README.md`](.github/README.md), and [`src/agy_nexus/data/README.md`](src/agy_nexus/data/README.md), and adhere to these structural standards:
 
 1. **Keep Modules Cohesive (`<= 500 Lines` Target, `650 Lines` Hard Ceiling, Functions `<= 100 Lines`)**:
    - Place backend code inside `src/agy_nexus/` in cohesive domain modules without artificial micro-file sprawl.
    - Keep frontend code split cleanly inside `web/` and `web/v9/` (`web/index.html` and `web/v9/index.html` must remain byte-identical, and every asset under `web/v9/` must be registered in `PWA_ASSETS` in `src/agy_nexus/web_routes.py` and `SHELL_NAMES` in `web/sw.js` with `0 !important` and `0` disallowed Unicode pictographs).
-   - Keep Price Book ground truth strictly inside two repo-tracked JSON files (`src/agy_nexus/data/model_catalog.json` + `src/agy_nexus/data/cost_ledger.json`) and regenerate [`docs/PRICING_HISTORY.md`](docs/PRICING_HISTORY.md) via `python3 scripts/catalog_sync.py --render-docs`.
+   - Keep Price Book ground truth strictly inside two repo-tracked JSON files (`src/agy_nexus/data/model_catalog.json` + `src/agy_nexus/data/cost_ledger.json`) validated against `src/agy_nexus/data/schemas/*.schema.json`, and regenerate [`docs/PRICING_HISTORY.md`](docs/PRICING_HISTORY.md) via `python3 scripts/catalog_sync.py --render-docs`.
    - Do not add loose Python helper files to the repository root (`ag_bridge.py` is the only root Python file, acting as a thin compatibility shim).
 2. **Preserve the Multi-Layer Security Gate**:
-   - Never bypass, weaken, or disable `PATH_SECRET`, `is_unlocked()`, `try_inline_unlock()`, `/praxis/` and `/polyglot/` LAN-only `403` guards, `is_sensitive_filename()`, or `.is_relative_to()` path-traversal checks.
+   - Never bypass, weaken, or disable `PATH_SECRET`, `is_unlocked()`, `try_inline_unlock()`, `/praxis/` and `/polyglot/` LAN-only `403` guards, `is_sensitive_filename()`, `.is_relative_to()` path-traversal checks, or `catalog_validator.py` anti-injection checks.
 3. **Zero Personal Data or Lockfile Churn**:
    - Do not include personal hostnames, emails, private LAN IPs, real domain names, or local user paths in code, docs, or screenshots (capture screenshots strictly via `/web?demo=1`).
    - Do not commit `uv.lock`, `.venv/`, or `secrets.env`.
@@ -53,10 +54,11 @@ Before submitting a Pull Request, please review [`AGENTS.md`](AGENTS.md) and adh
 Run the local verification suite before opening a Pull Request:
 
 ```bash
-uv run --with pytest --with pytest-asyncio pytest
+uv run --with pytest --with pytest-asyncio --with jsonschema pytest
 python3 ag_bridge.py --self-test
 python3 -m agy_nexus.tools_praxis --self-test
 python3 scripts/sync_agents.py --check
+python3 scripts/catalog_sync.py --validate-strict --require-jsonschema
 python3 scripts/catalog_sync.py --render-docs --check
 python3 scripts/build_github_showcase.py
 ```

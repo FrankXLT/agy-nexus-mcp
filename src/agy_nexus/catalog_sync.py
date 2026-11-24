@@ -6,6 +6,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -18,27 +19,27 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from agy_nexus.catalog_validator import (
+    MAX_CATALOG_BYTES,
+    is_safe_catalog_source_url,
+    parse_catalog_json_bytes,
+    read_bounded_regular_file,
+    validate_catalog_override_doc,
+    validate_catalog_pair_strict,
+)
+
 DATA_DIR = Path(__file__).resolve().parent / "data"
 REPO_CATALOG_PATH = DATA_DIR / "model_catalog.json"
 REPO_LEDGER_PATH = DATA_DIR / "cost_ledger.json"
 RAW_UPSTREAM_BASE = "https://raw.githubusercontent.com/FrankXLT/agy-nexus-mcp/main/src/agy_nexus/data"
 _PINNED_UPSTREAM_HOSTS = frozenset({"raw.githubusercontent.com", "gist.githubusercontent.com"})
 SYNC_CACHE_TTL_SECONDS = 86400
-MAX_CATALOG_BYTES = 524288
 _CATALOG_FS_LOCK = threading.RLock()
-_UNSAFE_URL_RE = re.compile(r"[\s\x00-\x1f\x7f()<>\[\]|`\"']")
 
 
 def is_safe_https_url(raw_url: str) -> bool:
-    """Validate strictly HTTPS URL without whitespace, control chars, or Markdown injection tokens."""
-    u = str(raw_url or "").strip()
-    if not u or _UNSAFE_URL_RE.search(u):
-        return False
-    try:
-        parts = urllib.parse.urlsplit(u)
-    except Exception:
-        return False
-    return parts.scheme.lower() == "https" and bool(parts.netloc) and not any(c.isspace() for c in parts.netloc)
+    """Validate strictly HTTPS URL pinned to allowlisted vendor hosts without SSRF or injection chars."""
+    return is_safe_catalog_source_url(raw_url)
 
 
 def _resolve_data_dir(data_dir: Path | None = None) -> Path:
@@ -81,63 +82,21 @@ def _sha256_bytes(raw: bytes) -> str:
 
 def load_bundled_catalog_pair() -> tuple[dict[str, Any], dict[str, Any]]:
     """Load the repo-tracked (model_catalog.json, cost_ledger.json) ground-truth pair."""
-    cat = json.loads(REPO_CATALOG_PATH.read_text(encoding="utf-8"))
-    led = json.loads(REPO_LEDGER_PATH.read_text(encoding="utf-8")) if REPO_LEDGER_PATH.is_file() else {"models": {}}
+    cat = parse_catalog_json_bytes(read_bounded_regular_file(REPO_CATALOG_PATH))
+    led = parse_catalog_json_bytes(read_bounded_regular_file(REPO_LEDGER_PATH)) if REPO_LEDGER_PATH.is_file() else {"models": {}}
     return cat, led
 
 
 def validate_catalog_pair(catalog_obj: Any, ledger_obj: Any) -> list[str]:
-    """Validate two-file Price Book schema, revision types, URLs, and micro-USD epochs."""
-    errs: list[str] = []
-    if not isinstance(catalog_obj, dict) or not isinstance(ledger_obj, dict):
-        return ["Catalog and cost_ledger payloads must be JSON objects."]
-    rev = catalog_obj.get("catalog_revision")
-    if isinstance(rev, bool) or not isinstance(rev, int) or rev < 1:
-        errs.append("model_catalog.catalog_revision must be an integer >= 1.")
-    models = catalog_obj.get("models")
-    if not isinstance(models, list) or not models:
-        errs.append("model_catalog.models must be a non-empty list.")
-        return errs
-    led_models = ledger_obj.get("models")
-    if not isinstance(led_models, dict):
-        errs.append("cost_ledger.models must be a dictionary keyed by model key.")
-        return errs
-    for idx, m in enumerate(models):
-        if not isinstance(m, dict) or not str(m.get("key") or "").strip():
-            errs.append(f"model_catalog.models[{idx}] missing key.")
-            continue
-        mk = str(m["key"])
-        pub = m.get("public_api")
-        ide = m.get("antigravity_ide")
-        if not isinstance(pub, dict) or not isinstance(ide, dict):
-            errs.append(f"Model '{mk}' must define public_api and antigravity_ide sections.")
-        else:
-            s_url = str(pub.get("source_url") or "")
-            if s_url and not is_safe_https_url(s_url):
-                errs.append(f"Model '{mk}' public_api.source_url must be a clean https:// URL.")
-        l_entry = led_models.get(mk)
-        epochs = (l_entry or {}).get("rate_epochs") if isinstance(l_entry, dict) else m.get("rate_epochs")
-        if not isinstance(epochs, list) or not epochs:
-            errs.append(f"Model '{mk}' missing non-empty rate_epochs in cost_ledger.json.")
-            continue
-        for e_i, ep in enumerate(epochs):
-            if not isinstance(ep, dict):
-                errs.append(f"{mk}.rate_epochs[{e_i}] must be an object.")
-                continue
-            for k in ("input_micros", "output_micros", "cache_read_micros"):
-                val = ep.get(k)
-                if isinstance(val, bool) or not isinstance(val, int) or val < 0:
-                    errs.append(f"{mk}.rate_epochs[{e_i}].{k} must be non-negative int.")
-            ep_url = str(ep.get("source_url") or "")
-            if ep_url and not is_safe_https_url(ep_url):
-                errs.append(f"{mk}.rate_epochs[{e_i}].source_url must be a clean https:// URL.")
-    return errs
+    """Validate two-file Price Book schema, bounds, URLs, and anti-injection string hygiene."""
+    return validate_catalog_pair_strict(catalog_obj, ledger_obj)
 
 
 def assert_antigravity_ide_untouched(base_cat: dict[str, Any], cand_cat: dict[str, Any]) -> list[str]:
-    """Ensure automated catalog sync never alters locked antigravity_ide fields on existing models."""
+    """Ensure automated catalog sync never alters or removes locked antigravity_ide fields on existing models."""
     base_by_key = {str(m.get("key")): m for m in (base_cat.get("models") or []) if isinstance(m, dict)}
-    diffs: list[str] = []
+    cand_by_key = {str(m.get("key")): m for m in (cand_cat.get("models") or []) if isinstance(m, dict)}
+    diffs: list[str] = [mk for mk in base_by_key if mk not in cand_by_key]
     for m in cand_cat.get("models") or []:
         if not isinstance(m, dict):
             continue
@@ -198,17 +157,15 @@ def load_active_override_pair(
         bundled_revision = int(b_cat.get("catalog_revision") or 1)
     with _CATALOG_FS_LOCK:
         try:
-            raw = ov_path.read_bytes()
-            if len(raw) > MAX_CATALOG_BYTES:
-                return None, False
-            doc = json.loads(raw.decode("utf-8"))
+            raw = read_bounded_regular_file(ov_path, max_bytes=MAX_CATALOG_BYTES)
+            doc = parse_catalog_json_bytes(raw, max_bytes=MAX_CATALOG_BYTES)
             if not isinstance(doc, dict):
                 return None, False
-            ov_rev = int(doc.get("catalog_revision") or 0)
-            if ov_rev <= int(bundled_revision):
+            ov_rev = doc.get("catalog_revision")
+            if not isinstance(ov_rev, bool) and isinstance(ov_rev, int) and ov_rev <= int(bundled_revision):
                 ov_path.unlink(missing_ok=True)
                 return None, True
-            if validate_catalog_pair(doc.get("model_catalog"), doc.get("cost_ledger")):
+            if validate_catalog_override_doc(doc):
                 return None, False
             return doc, False
         except Exception:
@@ -341,15 +298,23 @@ def _fetch_upstream_pair(base_url: str = RAW_UPSTREAM_BASE, timeout: float = 3.0
         try:
             with opener.open(req, timeout=timeout) as resp:
                 raw = resp.read(MAX_CATALOG_BYTES + 1)
-                if len(raw) > MAX_CATALOG_BYTES:
-                    return False, None, None, f"{fname} exceeded max byte limit"
-                out.append(json.loads(raw.decode("utf-8")))
+                out.append(parse_catalog_json_bytes(raw, max_bytes=MAX_CATALOG_BYTES))
         except Exception as exc:
             return False, None, None, f"Upstream fetch unavailable ({fname}): {str(exc)[:100]}"
     errs = validate_catalog_pair(out[0], out[1])
     if errs:
         return False, None, None, f"Invalid upstream Price Book schema: {errs[0]}"
     return True, out[0], out[1], ""
+
+
+def _validate_upstream_candidate(f_cat: Any, f_led: Any) -> str:
+    errs = validate_catalog_pair(f_cat, f_led)
+    if errs:
+        return f"Invalid upstream Price Book schema: {errs[0]}"
+    for label, obj in (("model_catalog", f_cat), ("cost_ledger", f_led)):
+        if len(json.dumps(obj).encode("utf-8")) > MAX_CATALOG_BYTES:
+            return f"{label} exceeds {MAX_CATALOG_BYTES} byte cap."
+    return ""
 
 
 def get_catalog_sync_status(
@@ -368,14 +333,21 @@ def get_catalog_sync_status(
     cached: dict[str, Any] = {}
     if cache_path.is_file():
         try:
-            loaded = json.loads(cache_path.read_text(encoding="utf-8"))
+            loaded = parse_catalog_json_bytes(
+                read_bounded_regular_file(cache_path, max_bytes=MAX_CATALOG_BYTES * 2 + 4096),
+                max_bytes=MAX_CATALOG_BYTES * 2 + 4096,
+            )
             if isinstance(loaded, dict):
                 cached = loaded
         except Exception:
             cached = {}
     now_epoch = time.time()
-    is_fresh = bool(cached.get("fetched_epoch") and (now_epoch - float(cached.get("fetched_epoch") or 0.0)) < SYNC_CACHE_TTL_SECONDS)
+    raw_ep = cached.get("fetched_epoch")
+    ep_val = float(raw_ep) if (not isinstance(raw_ep, bool) and isinstance(raw_ep, (int, float)) and math.isfinite(float(raw_ep))) else 0.0
+    is_fresh = bool(0.0 < ep_val <= now_epoch + 300.0 and (now_epoch - ep_val) < SYNC_CACHE_TTL_SECONDS)
     up_cat, up_led = cached.get("upstream_catalog"), cached.get("upstream_ledger")
+    if not (isinstance(up_cat, dict) and isinstance(up_led, dict)):
+        up_cat, up_led = None, None
     fetch_err = str(cached.get("error") or "")
     checked_at = str(cached.get("checked_at") or "")
     status = str(cached.get("status") or "UNKNOWN")
@@ -385,10 +357,16 @@ def get_catalog_sync_status(
         ok, f_cat, f_led, err = fetcher()
         checked_at = datetime.now(timezone.utc).isoformat()
         if ok and f_cat and f_led:
-            up_cat, up_led, fetch_err, status = f_cat, f_led, "", "OK"
+            cand_err = _validate_upstream_candidate(f_cat, f_led)
+            if cand_err:
+                up_cat, up_led, fetch_err, status = None, None, cand_err, "INVALID_UPSTREAM"
+            else:
+                up_cat, up_led, fetch_err, status = f_cat, f_led, "", "OK"
         else:
             fetch_err = err or "Upstream check unreachable"
             status = "OFFLINE"
+            if up_cat is not None and _validate_upstream_candidate(up_cat, up_led):
+                up_cat, up_led = None, None
         _atomic_write_json_600(cache_path, {
             "status": status, "checked_at": checked_at, "fetched_epoch": now_epoch,
             "error": fetch_err, "upstream_catalog": up_cat, "upstream_ledger": up_led,
@@ -397,8 +375,13 @@ def get_catalog_sync_status(
         status = "NOT_CHECKED"
 
     eff_rev = int(meta["effective_revision"])
-    up_rev = int(up_cat.get("catalog_revision") or eff_rev) if isinstance(up_cat, dict) else eff_rev
-    upd_avail = bool(isinstance(up_cat, dict) and isinstance(up_led, dict) and not validate_catalog_pair(up_cat, up_led) and up_rev > eff_rev)
+    if isinstance(up_cat, dict) and isinstance(up_led, dict):
+        cached_err = _validate_upstream_candidate(up_cat, up_led)
+        if cached_err:
+            up_cat, up_led, fetch_err, status = None, None, cached_err, "INVALID_UPSTREAM"
+    raw_rev = up_cat.get("catalog_revision") if isinstance(up_cat, dict) else None
+    up_rev = raw_rev if (not isinstance(raw_rev, bool) and isinstance(raw_rev, int)) else eff_rev
+    upd_avail = bool(isinstance(up_cat, dict) and isinstance(up_led, dict) and up_rev > eff_rev)
     diff = compute_catalog_diff((eff_cat, eff_led), (up_cat, up_led)) if upd_avail and up_cat and up_led else None
     local_edits = detect_local_catalog_edits()
     return {
@@ -429,7 +412,17 @@ def accept_catalog_override(
         if candidate_catalog is None or candidate_ledger is None:
             st = get_catalog_sync_status(d_dir, b_dir, allow_network=allow_fetch, refresh=allow_fetch)
             cache_p = b_dir / "catalog_sync_cache.json"
-            cached = json.loads(cache_p.read_text(encoding="utf-8")) if cache_p.is_file() else {}
+            cached: dict[str, Any] = {}
+            if cache_p.is_file():
+                try:
+                    loaded = parse_catalog_json_bytes(
+                        read_bounded_regular_file(cache_p, max_bytes=MAX_CATALOG_BYTES * 2 + 4096),
+                        max_bytes=MAX_CATALOG_BYTES * 2 + 4096,
+                    )
+                    if isinstance(loaded, dict):
+                        cached = loaded
+                except Exception:
+                    cached = {}
             candidate_catalog, candidate_ledger = cached.get("upstream_catalog"), cached.get("upstream_ledger")
             if candidate_catalog is None or candidate_ledger is None:
                 return {"ok": False, "error": st.get("error") or "No validated upstream catalog snapshot cached."}
@@ -444,6 +437,11 @@ def accept_catalog_override(
             "accepted_at": datetime.now(timezone.utc).isoformat(), "source": "upstream_main",
             "model_catalog": candidate_catalog, "cost_ledger": candidate_ledger,
         }
+        ov_errs = validate_catalog_override_doc(ov_doc)
+        if ov_errs:
+            return {"ok": False, "error": "; ".join(ov_errs[:3])}
+        if len((json.dumps(ov_doc, indent=2) + "\n").encode("utf-8")) > MAX_CATALOG_BYTES:
+            return {"ok": False, "error": f"Override payload exceeds {MAX_CATALOG_BYTES} byte limit."}
         ov_path = d_dir / "catalog_override.json"
         _atomic_write_json_600(ov_path, ov_doc)
         if on_change is not None:

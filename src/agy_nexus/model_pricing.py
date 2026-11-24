@@ -17,40 +17,48 @@ from agy_nexus.catalog_sync import (
 import threading
 
 DEFAULT_SPLIT = (0.05, 0.94, 0.01)
-_CATALOG_CACHE: dict[tuple[str, int, int, int], dict[str, Any]] = {}
+_CATALOG_CACHE: dict[tuple[str, tuple[int, int], tuple[int, int], tuple[int, int]], dict[str, Any]] = {}
+_CACHE_EPOCH = 0
 _CACHE_LOCK = threading.Lock()
 
 
-def _safe_mtime_ns(p: Path) -> int:
+def _safe_file_sig(p: Path) -> tuple[int, int]:
     try:
-        return p.stat().st_mtime_ns
+        st = p.stat()
+        return (st.st_mtime_ns, st.st_size)
     except OSError:
-        return 0
+        return (0, 0)
 
 
 def clear_model_catalog_cache() -> None:
     """Clear in-memory merged catalog cache after override accept/reset."""
+    global _CACHE_EPOCH
     with _CACHE_LOCK:
         _CATALOG_CACHE.clear()
+        _CACHE_EPOCH += 1
 
 
 def load_model_catalog(data_dir: Path | None = None) -> dict[str, Any]:
-    """Load merged repo Price Book (model_catalog + cost_ledger) plus newer AGY_DATA_DIR/catalog_override.json."""
+    """Load merged repo Price Book (model_catalog + cost_ledger) plus newer validated AGY_DATA_DIR/catalog_override.json."""
     d_dir = _resolve_data_dir(data_dir)
-    ck = (str(d_dir), _safe_mtime_ns(d_dir / "catalog_override.json"), _safe_mtime_ns(CATALOG_PATH), _safe_mtime_ns(COST_LEDGER_DATA_PATH))
+    ov_p = d_dir / "catalog_override.json"
+    ck = (str(d_dir), _safe_file_sig(ov_p), _safe_file_sig(CATALOG_PATH), _safe_file_sig(COST_LEDGER_DATA_PATH))
     with _CACHE_LOCK:
         cached = _CATALOG_CACHE.get(ck)
         if cached is not None:
             return cached
+        epoch_before = _CACHE_EPOCH
     cat, led, meta = get_effective_catalog_pair(d_dir)
     merged = merge_catalog_and_ledger(
         cat, led, override_active=bool(meta["override_active"]), bundled_revision=int(meta["bundled_revision"])
     )
-    ck_after = (str(d_dir), _safe_mtime_ns(d_dir / "catalog_override.json"), _safe_mtime_ns(CATALOG_PATH), _safe_mtime_ns(COST_LEDGER_DATA_PATH))
-    with _CACHE_LOCK:
-        if len(_CATALOG_CACHE) > 8:
-            _CATALOG_CACHE.clear()
-        _CATALOG_CACHE[ck_after] = merged
+    ck_after = (str(d_dir), _safe_file_sig(ov_p), _safe_file_sig(CATALOG_PATH), _safe_file_sig(COST_LEDGER_DATA_PATH))
+    if ck_after == ck or (meta.get("retired_stale_override") and ck_after[1] == (0, 0)):
+        with _CACHE_LOCK:
+            if _CACHE_EPOCH == epoch_before:
+                if len(_CATALOG_CACHE) > 8:
+                    _CATALOG_CACHE.clear()
+                _CATALOG_CACHE[ck_after] = merged
     return merged
 
 

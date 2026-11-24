@@ -32,7 +32,7 @@ jobs:
       - name: Install test dependencies
         run: |
           python3 -m pip install --upgrade pip
-          pip install --no-cache-dir . pytest pytest-asyncio
+          pip install --no-cache-dir . pytest pytest-asyncio jsonschema
 
       - name: Run fail-closed numeric Price Book sync
         run: |
@@ -64,6 +64,7 @@ jobs:
               "",
               "### Guardrails Verified",
               "- `antigravity_ide` tiers, placeholders & IDE context caps preserved untouched.",
+              "- Strict JSON schema (`--validate-strict`) and anti-injection allowlists verified.",
               "- `docs/PRICING_HISTORY.md` regenerated deterministically via `scripts/catalog_sync.py --render-docs`.",
           ]
           print("\n".join(lines))
@@ -78,10 +79,32 @@ jobs:
             mv "$RUNNER_TEMP/pr_body_ai.md" "$RUNNER_TEMP/pr_body.md"
           fi
 
-      - name: Validate schema, docs sync, and full pytest suite before opening PR
+      - name: Validate schema, docs sync, path allowlist, and full pytest suite before opening PR
         run: |
-          python3 scripts/catalog_sync.py --render-docs --check
           pytest
+          python3 scripts/catalog_sync.py --validate-strict --require-jsonschema
+          python3 scripts/catalog_sync.py --render-docs --check
+          python3 - <<'PY'
+          import subprocess, sys
+          from pathlib import Path
+          sys.path.insert(0, str(Path("src").resolve()))
+          from agy_nexus.catalog_sync import assert_antigravity_ide_untouched
+          from agy_nexus.catalog_validator import parse_catalog_json_bytes, read_bounded_regular_file, verify_catalog_bot_changed_paths
+          diff_out = subprocess.check_output(["git", "-c", "core.quotePath=false", "diff", "--no-renames", "--name-only", "-z", "HEAD"])
+          untracked = subprocess.check_output(["git", "-c", "core.quotePath=false", "ls-files", "--others", "--exclude-standard", "-z"])
+          paths = [p.decode("utf-8", errors="surrogateescape") for p in (diff_out + untracked).split(b"\x00") if p]
+          bad = verify_catalog_bot_changed_paths(paths)
+          if bad:
+              raise SystemExit(f"Blocked catalog-sync PR touching disallowed paths: {bad}")
+          for p in paths:
+              if Path(p).is_symlink():
+                  raise SystemExit(f"Blocked symlink at allowlisted path: {p}")
+          base_cat = parse_catalog_json_bytes(subprocess.check_output(["git", "show", "HEAD:src/agy_nexus/data/model_catalog.json"]))
+          cur_cat = parse_catalog_json_bytes(read_bounded_regular_file(Path("src/agy_nexus/data/model_catalog.json")))
+          if ide_diffs := assert_antigravity_ide_untouched(base_cat, cur_cat):
+              raise SystemExit(f"Blocked locked antigravity_ide change: {ide_diffs}")
+          print("catalog-sync path allowlist OK:", paths)
+          PY
 
       - name: Push or update single reusable bot/catalog-sync PR against main
         env:
@@ -96,6 +119,25 @@ jobs:
           git fetch origin bot/catalog-sync || true
           git checkout -B bot/catalog-sync
           git add src/agy_nexus/data/model_catalog.json src/agy_nexus/data/cost_ledger.json docs/PRICING_HISTORY.md
+          python3 - <<'PY'
+          import subprocess, sys
+          from pathlib import Path
+          sys.path.insert(0, str(Path("src").resolve()))
+          from agy_nexus.catalog_validator import ALLOWED_CATALOG_BOT_PATHS
+          raw_entries = subprocess.check_output(["git", "-c", "core.quotePath=false", "diff", "--cached", "--raw", "--no-renames", "-z"])
+          tokens = raw_entries.split(b"\x00")
+          i = 0
+          while i < len(tokens):
+              if not tokens[i]:
+                  i += 1
+                  continue
+              meta = tokens[i].decode("utf-8", errors="surrogateescape")
+              path = tokens[i + 1].decode("utf-8", errors="surrogateescape") if i + 1 < len(tokens) else ""
+              i += 2
+              new_mode = meta.split()[1] if len(meta.split()) >= 2 else ""
+              if path not in ALLOWED_CATALOG_BOT_PATHS or new_mode != "100644":
+                  raise SystemExit(f"Blocked staged entry: path={path!r} mode={new_mode!r}")
+          PY
           git commit -m "chore(catalog): sync public Price Book rates"
           git push --force-with-lease origin bot/catalog-sync
           OPEN_PR=$(gh pr list --head bot/catalog-sync --base main --state open --json number --jq '.[0].number // empty')

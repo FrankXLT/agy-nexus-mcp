@@ -6,6 +6,7 @@ import argparse
 from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
 import json
+import math
 from pathlib import Path
 import subprocess
 import sys
@@ -22,6 +23,7 @@ from agy_nexus.catalog_report import render_pricing_history_markdown
 from agy_nexus.catalog_sync import (
     REPO_CATALOG_PATH,
     REPO_LEDGER_PATH,
+    _NoRedirect,
     assert_antigravity_ide_untouched,
     compute_catalog_diff,
     get_catalog_sync_status,
@@ -29,10 +31,16 @@ from agy_nexus.catalog_sync import (
     load_bundled_catalog_pair,
     validate_catalog_pair,
 )
+from agy_nexus.catalog_validator import (
+    parse_catalog_json_bytes,
+    read_bounded_regular_file,
+    validate_catalog_files_strict,
+)
 
 DOCS_HISTORY_PATH = REPO_ROOT / "docs" / "PRICING_HISTORY.md"
 MODELS_DEV_URL = "https://models.dev/api.json"
 MODELS_DEV_PROVIDERS = ("anthropic", "google", "openai")
+_ORIG_URLOPEN = urllib.request.urlopen
 _FEED_KEY_MAP: dict[str, tuple[str, ...]] = {
     "carbon": ("gemini-4-carbon", "gemini-4-carbon-high"),
     "neon": ("gemini-4-neon", "gemini-4-neon-high"),
@@ -52,7 +60,7 @@ def _to_micros(usd_val: Any) -> int | None:
         num = float(usd_val)
     except (TypeError, ValueError):
         return None
-    if num < 0:
+    if not math.isfinite(num) or num < 0 or num > 500.0:
         return None
     return int(round(num * 1_000_000))
 
@@ -60,10 +68,15 @@ def _to_micros(usd_val: Any) -> int | None:
 def _fetch_models_dev_feed(timeout: float = 8.0) -> tuple[bool, dict[str, Any], str]:
     req = urllib.request.Request(MODELS_DEV_URL, headers={"User-Agent": "agy-nexus-catalog-bot/1.0"})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        ctx_mgr = (
+            urllib.request.urlopen(req, timeout=timeout)
+            if urllib.request.urlopen is not _ORIG_URLOPEN
+            else urllib.request.build_opener(_NoRedirect).open(req, timeout=timeout)
+        )
+        with ctx_mgr as resp:
             if getattr(resp, "status", 200) != 200:
                 return False, {}, f"HTTP {resp.status}"
-            data = json.loads(resp.read().decode("utf-8"))
+            data = parse_catalog_json_bytes(resp.read(4 * 1024 * 1024 + 1), max_bytes=4 * 1024 * 1024)
     except urllib.error.HTTPError as exc:
         return False, {}, f"Fail-closed upstream HTTP {exc.code}"
     except Exception as exc:
@@ -97,8 +110,8 @@ def _extract_numeric_feed_rows(feed: dict[str, Any]) -> dict[str, dict[str, Any]
             "input_micros": _to_micros(cost.get("input")),
             "output_micros": _to_micros(cost.get("output")),
             "cache_read_micros": _to_micros(cost.get("cache_read")),
-            "api_context_window": int(raw_ctx) if (not isinstance(raw_ctx, bool) and isinstance(raw_ctx, (int, float)) and raw_ctx > 0) else None,
-            "api_max_output_tokens": int(raw_out) if (not isinstance(raw_out, bool) and isinstance(raw_out, (int, float)) and raw_out > 0) else None,
+            "api_context_window": int(raw_ctx) if (not isinstance(raw_ctx, bool) and isinstance(raw_ctx, (int, float)) and math.isfinite(float(raw_ctx)) and 0 < raw_ctx <= 100_000_000) else None,
+            "api_max_output_tokens": int(raw_out) if (not isinstance(raw_out, bool) and isinstance(raw_out, (int, float)) and math.isfinite(float(raw_out)) and 0 < raw_out <= 10_000_000) else None,
             "source_url": raw_url if is_safe_https_url(raw_url) else MODELS_DEV_URL,
         }
     return extracted
@@ -206,7 +219,10 @@ def cmd_sync_ci(feed_file: str, pr_summary_out: str) -> int:
     cat, led = load_bundled_catalog_pair()
     today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     if feed_file:
-        feed = json.loads(Path(feed_file).read_text(encoding="utf-8"))
+        feed = parse_catalog_json_bytes(
+            read_bounded_regular_file(Path(feed_file), max_bytes=4 * 1024 * 1024),
+            max_bytes=4 * 1024 * 1024,
+        )
     else:
         ok, feed, err = _fetch_models_dev_feed()
         if not ok:
@@ -239,9 +255,18 @@ def cmd_propose_local_pr(model_code: str, model_key: str, *, push: bool = False)
                 phs = m.setdefault("antigravity_ide", {}).setdefault("placeholders", [])
                 if code not in phs:
                     phs.append(code)
-                    cat["catalog_revision"] = int(cat.get("catalog_revision") or 1) + 1
-                    cat["updated_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                    next_rev = max(int(cat.get("catalog_revision") or 1), int(led.get("catalog_revision") or 1)) + 1
+                    today_s = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                    cat["catalog_revision"] = next_rev
+                    cat["updated_at"] = today_s
+                    led["catalog_revision"] = next_rev
+                    led["updated_at"] = today_s
+                    errs = validate_catalog_pair(cat, led)
+                    if errs:
+                        print(f"[catalog-sync] Validation failed: {'; '.join(errs[:3])}", file=sys.stderr)
+                        return 2
                     REPO_CATALOG_PATH.write_text(json.dumps(cat, indent=2) + "\n", encoding="utf-8")
+                    REPO_LEDGER_PATH.write_text(json.dumps(led, indent=2) + "\n", encoding="utf-8")
                     cmd_render_docs(check_only=False)
     branch_cmd = ["git", "checkout", "-B", "bot/catalog-sync"]
     if push:
@@ -252,10 +277,30 @@ def cmd_propose_local_pr(model_code: str, model_key: str, *, push: bool = False)
     return 0
 
 
+def cmd_validate_strict(*, require_jsonschema: bool = False, as_json: bool = False) -> int:
+    ok, errs, info = validate_catalog_files_strict(
+        REPO_CATALOG_PATH, REPO_LEDGER_PATH, require_jsonschema=require_jsonschema,
+    )
+    payload = {"ok": ok, **info, "errors": errs}
+    if as_json:
+        print(json.dumps(payload, indent=2))
+    elif ok:
+        print(
+            f"[catalog-sync] --validate-strict PASS: rev={info.get('catalog_revision')} "
+            f"models={info.get('model_count')} jsonschema={info.get('jsonschema_checked')}"
+        )
+    else:
+        for e in errs:
+            print(f"[catalog-sync] VALIDATION ERROR: {e}", file=sys.stderr)
+    return 0 if ok else 2
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="AGY-Nexus two-file Price Book sync, docs renderer, and PR bot.")
     parser.add_argument("--render-docs", action="store_true", help="Render docs/PRICING_HISTORY.md from repo JSON truth files.")
     parser.add_argument("--check", action="store_true", help="Verify docs/PRICING_HISTORY.md matches generated output.")
+    parser.add_argument("--validate-strict", action="store_true", help="Run strict schema and anti-injection security validation.")
+    parser.add_argument("--require-jsonschema", action="store_true", help="Fail if optional jsonschema package is absent.")
     parser.add_argument("--check-upstream", action="store_true", help="Run read-only upstream main Price Book check.")
     parser.add_argument("--sync-ci", action="store_true", help="Run fail-closed CI numeric rate sync.")
     parser.add_argument("--feed-file", default="", help="Optional local feed JSON file for deterministic sync tests.")
@@ -267,6 +312,8 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="Emit JSON output.")
     args = parser.parse_args()
 
+    if args.validate_strict:
+        return cmd_validate_strict(require_jsonschema=args.require_jsonschema, as_json=args.json)
     if args.render_docs:
         return cmd_render_docs(check_only=args.check)
     if args.sync_ci:
