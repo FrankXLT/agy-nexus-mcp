@@ -39,6 +39,8 @@
     soloProject: (urlParams.get("project") || "").trim(),
     heatWeeks: window.innerWidth <= 560 ? 26 : 53,
     heatPinned: false,
+    heatSelectedDate: "",
+    heatPeriodKey: "",
     wsMode: "split",
     docMode: "rendered",
     railOpen: false,

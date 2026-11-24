@@ -62,11 +62,9 @@
     st.selectedSession = null;
     st.bucket = null;
     st.currentDocPath = "";
-    st.soloModel = "";
-    st.soloSubagent = "";
-    st.soloProject = "";
+    st.soloModel = ""; st.soloSubagent = ""; st.soloProject = "";
     st.pendingArtifact = "";
-    st.heatPinned = false;
+    st.heatPinned = false; st.heatSelectedDate = ""; st.heatPeriodKey = "";
     st.projectCaptureCounts = {};
     if (st.openProjects instanceof Set) st.openProjects.clear();
     if (st.showAllSessionsForProject instanceof Set) st.showAllSessionsForProject.clear();

@@ -204,15 +204,15 @@ console.log("V9_HEATMAP_OK");
 
 
 def test_v402_heatmap_css_and_workflows_contracts() -> None:
-    """Verify v9_analytics.css zero !important, <=500L, .is-out dimming, full-width tracks, and WORKFLOWS.md v4.0.2."""
+    """Verify v9_analytics.css zero !important, <=500L, matched-lightness .is-out tokens, full-width tracks, and WORKFLOWS.md."""
     css_txt = (V9_DIR / "v9_analytics.css").read_text(encoding="utf-8")
     assert len(css_txt.splitlines()) <= 500
     assert "!important" not in css_txt
     assert "justify-content: start;" not in css_txt
     assert "grid-auto-columns: minmax(10px, 1fr);" in css_txt
-    assert "filter: grayscale(0.92); opacity: 0.28;" in css_txt
-    assert '.v9-heat-cell.is-out[data-level="0"] { opacity: 0.42; }' in css_txt
-    assert ".v9-heat-cell.is-out:hover { filter: grayscale(0.25); opacity: 0.85; }" in css_txt
+    assert "opacity: 0.28;" not in css_txt
+    assert ".v9-heat-cell.is-out, .v9-heat-inspect-swatch.is-out { background: var(--v9-heat-out-0); }" in css_txt
+    assert '.v9-heat-cell.is-out[data-level="4"], .v9-heat-inspect-swatch.is-out[data-level="4"] { background: var(--v9-heat-out-4); }' in css_txt
     assert re.search(r"@media \(max-width:\s*639px\)[\s\S]*\.v9-heat-grid\s*\{\s*gap:\s*2px;\s*\}", css_txt)
 
     wf_txt = (REPO_ROOT / "docs" / "WORKFLOWS.md").read_text(encoding="utf-8")

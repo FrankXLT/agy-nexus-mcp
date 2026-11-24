@@ -202,7 +202,7 @@ def strip_png_metadata(src_path: Path, dst_path: Path) -> None:
 def _load_extra_banned_literals() -> set[str]:
     banned: set[str] = set()
     home_user = Path.home().name
-    if len(home_user) >= 3:
+    if len(home_user) >= 3 and home_user.lower() not in {"dev", "root", "user", "runner", "ubuntu", "actions", "docker"}:
         banned.add(home_user.lower())
     sec_p = Path.home() / ".config/ag-bridge-mcp/secrets.env"
     if sec_p.is_file():
