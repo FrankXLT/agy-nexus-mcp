@@ -6,7 +6,7 @@
     --v9-canvas: #F8FAFC; --v9-surface: #FFFFFF;
     --v9-chart-1: #1D4ED8; --v9-chart-2: #0F766E; --v9-chart-3: #6D28D9; --v9-chart-4: #B45309; --v9-chart-5: #475569;
     --v9-heat-0: #E2E8F0; --v9-heat-1: #DBEAFE; --v9-heat-2: #93C5FD; --v9-heat-3: #2563EB; --v9-heat-4: #1E3A8A;
-    --v9-heat-out-0: #EDF1F6; --v9-heat-out-1: #CFD4DC; --v9-heat-out-2: #9CA3AF; --v9-heat-out-3: #5D626B; --v9-heat-out-4: #2F333A;
+    --v9-heat-out-0: #EDF1F6; --v9-heat-out-1: #B6BDC8; --v9-heat-out-2: #848C99; --v9-heat-out-3: #4A4F57; --v9-heat-out-4: #22252B;
     --v9-heat-divider: #CBD5E1; --v9-heat-selected: rgba(225, 29, 72, 0.58);
     --v9-shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05);
   }
@@ -14,7 +14,7 @@
     --v9-canvas: #EDE9DF; --v9-surface: #FAF8F3;
     --v9-chart-1: #1E40AF; --v9-chart-2: #0F766E; --v9-chart-3: #7C2D12; --v9-chart-4: #B45309; --v9-chart-5: #57534E;
     --v9-heat-0: #DFD9CE; --v9-heat-1: #DBEAFE; --v9-heat-2: #93C5FD; --v9-heat-3: #1D4ED8; --v9-heat-4: #1E3A8A;
-    --v9-heat-out-0: #E9E4DB; --v9-heat-out-1: #CECCC7; --v9-heat-out-2: #9E9C97; --v9-heat-out-3: #5F5E5B; --v9-heat-out-4: #363533;
+    --v9-heat-out-0: #E9E4DB; --v9-heat-out-1: #B5B2AC; --v9-heat-out-2: #86847E; --v9-heat-out-3: #4C4B48; --v9-heat-out-4: #262523;
     --v9-heat-divider: #C4BCB0; --v9-heat-selected: rgba(225, 29, 72, 0.58);
     --v9-shadow-card: 0 1px 2px rgba(28, 25, 23, 0.05);
   }
@@ -22,7 +22,7 @@
     --v9-canvas: #161513; --v9-surface: #1F1E1B;
     --v9-chart-1: #60A5FA; --v9-chart-2: #2DD4BF; --v9-chart-3: #A78BFA; --v9-chart-4: #F59E0B; --v9-chart-5: #A8A29E;
     --v9-heat-0: #292723; --v9-heat-1: #1E3A8A; --v9-heat-2: #1D4ED8; --v9-heat-3: #3B82F6; --v9-heat-4: #93C5FD;
-    --v9-heat-out-0: #262420; --v9-heat-out-1: #424244; --v9-heat-out-2: #616164; --v9-heat-out-3: #8A8A8F; --v9-heat-out-4: #C0C1C5;
+    --v9-heat-out-0: #262420; --v9-heat-out-1: #58585B; --v9-heat-out-2: #78787C; --v9-heat-out-3: #A1A1A7; --v9-heat-out-4: #D6D7DC;
     --v9-heat-divider: #524F49; --v9-heat-selected: rgba(251, 113, 133, 0.68);
     --v9-shadow-card: none;
   }
@@ -30,7 +30,7 @@
     --v9-canvas: #090D16; --v9-surface: #0F1624;
     --v9-chart-1: #38BDF8; --v9-chart-2: #2DD4BF; --v9-chart-3: #A78BFA; --v9-chart-4: #FBBF24; --v9-chart-5: #94A3B8;
     --v9-heat-0: #1E293B; --v9-heat-1: #172554; --v9-heat-2: #1E40AF; --v9-heat-3: #2563EB; --v9-heat-4: #60A5FA;
-    --v9-heat-out-0: #172030; --v9-heat-out-1: #383D47; --v9-heat-out-2: #585E69; --v9-heat-out-3: #828894; --v9-heat-out-4: #B8BEC9;
+    --v9-heat-out-0: #172030; --v9-heat-out-1: #4F5663; --v9-heat-out-2: #707785; --v9-heat-out-3: #9AA1AE; --v9-heat-out-4: #CFD5E0;
     --v9-heat-divider: #3E4C63; --v9-heat-selected: rgba(251, 113, 133, 0.68);
     --v9-shadow-card: none;
   }

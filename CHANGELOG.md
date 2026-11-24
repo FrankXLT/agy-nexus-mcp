@@ -4,6 +4,17 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.9] — 2026-11-24
+
+### Added & Improved
+- **Two-File Price Book Ground Truth, 1-Click `/web` Update Banner & `catalog_override.json` (`src/agy_nexus/data/model_catalog.json`, `src/agy_nexus/data/cost_ledger.json`, `src/agy_nexus/catalog_sync.py`, `src/agy_nexus/catalog_report.py`, `src/agy_nexus/model_pricing.py`, `src/agy_nexus/web_routes.py`, `web/v9/v9_catalog_banner.*`, `docs/PRICING_HISTORY.md`)**:
+  - Added monotonic `catalog_revision` + `updated_at` to `model_catalog.json` and partitioned each model cleanly into `public_api` vs. locked `antigravity_ide` (`placeholders`, `tier_placeholders`, IDE `context_window` / `max_output_tokens`, `pool_key`, `target_pct`), while extracting effective-dated `rate_epochs` with `source_url` and `verified_at` into repo-tracked `src/agy_nexus/data/cost_ledger.json` and deterministic `docs/PRICING_HISTORY.md` rendering (`scripts/catalog_sync.py --render-docs`).
+  - Added 24h fail-open upstream check against protected `main`, git-checkout SHA-256 edit detection, calm `/web` disclosure banner (`Price Book rev <N> available`, native `<dialog id="v9CatalogDiffDialog">` diff preview, `[Accept Update]` writing atomically `0600` to `${AGY_DATA_DIR}/catalog_override.json` strictly behind passphrase auth `/web/api/catalog/{status,accept,reset}`, `[Reset Override]`, auto-retirement when repo catches up, and static showcase suppression).
+- **Intended-vs.-Actual Subagent Adjudication & Unmapped `M*` Barcode Alert (`telemetry_scanner.py`, `stats_series.py`, `stats_aggregator.py`, `stats_metrics.py`, `stats.py`, `tools_ops.py`, `web/v9/v9_analytics.js`)**:
+  - Fixed `resolve_subagent_model()` so `model: inherit` subagents (`claude-sentinel`, `claude-specialist`) inherit parent main-chat model execution instead of role-name guessing, bumped `CACHE_VERSION = 9` to retain explicit transcript model receipts alongside unrecognized raw model codes (`unmapped_models`), and surfaced Intended-vs.-Actual pills (`Intended: Sonnet 5.5 · Ran: 84% Carbon 4 (inherited)`) across `list_models_and_agents`, `stats`, and `390px`/`900px`/`1440px` `/web` Subagent Workload rows—plus 1-click GitHub Issue reporting for unmapped `M*` barcodes.
+- **Wave 1 Heatmap Precision, Grayscale Contrast Boost & Automated Bot/CI PR Workflows (`web/v9/v9_heatmap.js`, `web/v9/v9_shell.css`, `web/v9/v9_analytics.css`, `.github/workflows/ci.yml`, `.github/workflows/catalog-sync.yml`, `CONTRIBUTING.md`)**:
+  - Shipped matched-lightness `--v9-heat-out-1..4` out-of-window grayscale tokens boosted `8–10%` further from `--v9-heat-out-0` across all 4 themes (`Pure White`, `Warm Paper`, `Dark Paper`, `Obsidian`), `1px` stepped calendar month dividers, thin soft-red `.is-selected` ring with metric-pinned keyboard navigation, protected-`main` `ci.yml` (`verify` check), and weekly fail-closed `bot/catalog-sync` PR automation (`scripts/catalog_sync.py`).
+
 ## [4.0.8] — 2026-11-24
 
 ### Added & Improved

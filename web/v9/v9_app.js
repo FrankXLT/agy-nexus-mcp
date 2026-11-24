@@ -71,10 +71,11 @@
     if (st.projectCapturesLoaded instanceof Set) st.projectCapturesLoaded.clear();
     if (st.projectCapturesPending instanceof Set) st.projectCapturesPending.clear();
 
-    ["v9LightboxDialog", "sheetExportDialog", "v9UploadDialog"].forEach((id) => {
+    ["v9LightboxDialog", "sheetExportDialog", "v9UploadDialog", "v9CatalogDiffDialog"].forEach((id) => {
       const dlg = document.getElementById(id);
       if (dlg && dlg.open) dlg.close();
     });
+    if (V9.CatalogBanner?.reset) V9.CatalogBanner.reset();
     if (V9.Charts?.disposeAll) V9.Charts.disposeAll();
     if (V9.Lightbox?.reset) V9.Lightbox.reset();
     if (V9.Gallery?.reset) V9.Gallery.reset();
@@ -85,7 +86,7 @@
     if (V9.Workspace?.resetSensitiveState) V9.Workspace.resetSensitiveState();
     if (V9.Hierarchy?.reset) V9.Hierarchy.reset();
 
-    ["v9KpiGrid", "v9HeatHost", "v9ModelTableBody", "v9SubagentTableBody", "v9ProjTableWrap", "v9WireClientHost", "v9WireCallsHost", "v9HealthBody", "v9HeatSummary", "v9ModelPlotSub", "v9SubPlotSub", "v9ProjPlotSub", "v9ProjFoot", "v9CadenceSub", "v9CadenceFoot", "v9BillingBody", "v9BillingSub", "v9BillingFoot", "v9WireSub", "v9HealthSummary", "v9PeriodTriggerLabel"].forEach((id) => {
+    ["v9CatalogAlertHost", "v9CatalogDiffBody", "v9KpiGrid", "v9HeatHost", "v9ModelTableBody", "v9SubagentTableBody", "v9ProjTableWrap", "v9WireClientHost", "v9WireCallsHost", "v9HealthBody", "v9HeatSummary", "v9ModelPlotSub", "v9SubPlotSub", "v9ProjPlotSub", "v9ProjFoot", "v9CadenceSub", "v9CadenceFoot", "v9BillingBody", "v9BillingSub", "v9BillingFoot", "v9WireSub", "v9HealthSummary", "v9PeriodTriggerLabel"].forEach((id) => {
       const el = document.getElementById(id);
       if (el) el.innerHTML = "";
     });
@@ -181,6 +182,7 @@
     openSessionWorkspace,
     clearProjectScope,
     ensureWorkspaceTree,
+    reloadStats: loadStats,
   };
 
   function isDemoPresetAvailable(tf, hm) {
@@ -266,6 +268,7 @@
       sessionStorage.setItem("nexus_passphrase", st.passphrase);
       updateVisibility();
       renderBundle(b);
+      if (V9.CatalogBanner?.refreshStatusOnce) V9.CatalogBanner.refreshStatusOnce(b, () => loadStats());
       return true;
     } catch (err) {
       if (seq !== statsSeq) return false;
@@ -283,10 +286,11 @@
     const next = target === "workspace" ? "workspace" : "analytics";
     const changed = st.surfaceView !== next;
     st.surfaceView = next;
+    const diffDlg = document.getElementById("v9CatalogDiffDialog");
+    if (diffDlg && diffDlg.open) diffDlg.close();
     if (next === "analytics") {
       ["v9CapturesDialog", "v9LightboxDialog", "v9UploadDialog", "sheetExportDialog"].forEach((id) => {
-        const d = document.getElementById(id);
-        if (d && d.open) d.close();
+        const d = document.getElementById(id); if (d && d.open) d.close();
       });
     }
     V9.syncUrlState?.();
@@ -483,15 +487,9 @@
   bindAnalyticsAndAuthEvents();
   handleDeepLink();
   window.addEventListener("hashchange", () => switchSurface(window.location.hash === "#workspace" ? "workspace" : "analytics"));
-  window.addEventListener("v9-theme-changed", () => {
-    if (st.bundle && st.surfaceView === "analytics") requestAnimationFrame(() => renderBundle(st.bundle));
-  });
+  window.addEventListener("v9-theme-changed", () => { if (st.bundle && st.surfaceView === "analytics") requestAnimationFrame(() => renderBundle(st.bundle)); });
   updateVisibility();
   if (st.passphrase || st.demoMode) {
-    loadStats().then((ok) => {
-      if (ok && (st.passphrase || st.demoMode) && st.surfaceView === "workspace" && V9.Workspace) {
-        V9.Workspace.initWorkspace();
-      }
-    });
+    loadStats().then((ok) => { if (ok && (st.passphrase || st.demoMode) && st.surfaceView === "workspace" && V9.Workspace) V9.Workspace.initWorkspace(); });
   }
 })();

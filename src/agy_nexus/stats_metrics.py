@@ -199,8 +199,11 @@ def build_subagent_list_rows(
     main_mk: str,
     main_switch_date: str,
     agent_target_map: dict[str, str],
+    agent_role_specs: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Format subagent role accumulators with per-run min/avg/max/latest, >120 flags, and trailing 24h."""
+    """Format subagent role accumulators with per-run min/avg/max/latest, >120 flags, trailing 24h & intended-vs-actual adjudication."""
+    from agy_nexus.catalog_report import build_subagent_adjudication
+
     sa_sum = max(1, sum(int(v.get("steps", 0)) for v in agg["subagent_roles"].values()))
     out: list[dict[str, Any]] = []
     for rk, rv in sorted(agg["subagent_roles"].items(), key=lambda kv: kv[1]["steps"], reverse=True):
@@ -211,7 +214,9 @@ def build_subagent_list_rows(
         dom_mk = max(votes.items(), key=lambda kv: kv[1])[0] if votes else resolve_model_fn(
             rk, "", parent_model_map, main_mk, main_switch_date, e_iso, agent_target_map
         )[0]
-        dom_lbl = short_labels.get(dom_mk, dom_mk) + (" (inherit)" if agg["role_inherited"].get(rk) else "")
+        r_spec = (agent_role_specs or {}).get(rk.lower())
+        adj = build_subagent_adjudication(rk, votes, dom_mk, bool(agg["role_inherited"].get(rk)), r_spec, short_labels)
+        dom_lbl = short_labels.get(dom_mk, dom_mk) + (" (inherit)" if adj["is_inherited"] else "")
         denom = max(1, runs)
         l24_st = sum_slots_in_set(agg["s1_sub_steps"].get(rk), l24_slots) if has_l24 else None
         l24_tk = sum_slots_in_set(agg["s1_sub_toks"].get(rk), l24_slots) if has_l24 else None
@@ -227,6 +232,7 @@ def build_subagent_list_rows(
             "cost_usd_micros": cm_s, "est_cost_usd": round(cm_s / 1_000_000.0, 2),
             "share_pct": round((st_s / sa_sum) * 100.0, 1),
             "dominant_model_key": dom_mk, "dominant_model_label": dom_lbl,
+            **adj,
             "has_last_24h": has_l24, "last_24h_steps": l24_st, "last_24h_tokens": l24_tk,
             "last_24h_cost_usd": round(l24_cm / 1_000_000.0, 4) if l24_cm is not None else None,
         })

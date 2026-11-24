@@ -486,11 +486,11 @@ def test_v404_budgets_forced_colors_pwa_parity_and_workflows() -> None:
 
     assert "v9/v9_spark_bars.js" in web_routes.PWA_ASSETS
     sw_txt = (WEB_DIR / "sw.js").read_text(encoding="utf-8")
-    assert 'CACHE_NAME = "agy-nexus-v4.0.8"' in sw_txt
-    assert "/web/v9/v9_spark_bars.js?v=4.0.8" in sw_txt and '"v9/v9_spark_bars.js"' in sw_txt
+    assert 'CACHE_NAME = "agy-nexus-v4.0.9"' in sw_txt
+    assert "/web/v9/v9_spark_bars.js?v=4.0.9" in sw_txt and '"v9/v9_spark_bars.js"' in sw_txt
     html_txt = (V9_DIR / "index.html").read_text(encoding="utf-8")
     assert html_txt == (WEB_DIR / "index.html").read_text(encoding="utf-8")
-    assert '/web/v9/v9_spark_bars.js?v=4.0.8' in html_txt
+    assert '/web/v9/v9_spark_bars.js?v=4.0.9' in html_txt
 
     wf_txt = (REPO_ROOT / "docs" / "WORKFLOWS.md").read_text(encoding="utf-8")
     assert "Workflow 6:" in wf_txt and "v4.0.8" in wf_txt

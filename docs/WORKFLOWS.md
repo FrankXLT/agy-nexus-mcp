@@ -25,7 +25,10 @@ This document defines the primary user journeys, workflows, and operational ergo
 - **Out-of-Window Grayscale (`is-out`)**: Matched-lightness 4-step achromatic neutral gray heatmap cells outside the active period window (`--v9-heat-out-1..4`), keeping prior months clearly legible while `0`-activity cells stay subtle `level 0`.
 - **Stepped Month Divider**: Crisp `1px` light-gray stepped boundary line inside inter-cell heatmap gaps (`0px` change to cell geometry) marking calendar month boundaries mid-week wherever the `1st` of a month lands.
 - **Selected Cell Ring (`.is-selected`)**: Thin `1.5px` soft-red cell border synced with a matching red-bordered indicator square and explicit calendar date readout in the bottom-left heatmap legend.
-- **Protected-`main` PR CI Gate (`verify`)**: `.github/workflows/ci.yml` status check running on `develop` pushes and PRs into `main` or `develop` (`pytest`, both `--self-test` runners, `sync_agents.py --check`, `build_github_showcase.py`, and Docker `--stdio` smoke check).
+- **Protected-`main` PR CI Gate (`verify`)**: `.github/workflows/ci.yml` status check running on `develop` pushes and PRs into `main` or `develop` (`pytest`, both `--self-test` runners, `sync_agents.py --check`, `catalog_sync.py --render-docs --check`, `build_github_showcase.py`, and Docker `--stdio` smoke check).
+- **Price Book Override (`catalog_override.json`)**: User-accepted upstream catalog snapshot in `AGY_DATA_DIR` (`0600`) keeping repo files untouched until bundled `catalog_revision` catches up.
+- **Intended-vs-Actual Subagent Badge**: Subagent table indicator showing when `inherit` dropdown switches redirected runs to a different main-chat model (for example, `Intended: Sonnet 5.5 · Ran: 84% Carbon 4 (inherited)`).
+- **Unmapped Barcode Alert (`unmapped_models`)**: Explicit `/web` Analytics and `list_models_and_agents` notice highlighting unrecognized `M*` model codes with a 1-click GitHub Issue reporting link.
 
 ---
 
@@ -231,7 +234,31 @@ Developers on VS Code, Copilot CLI, Claude Code, and MCP Inspector expect zero-s
    - Launching `docker run -i --rm ghcr.io/frankxlt/agy-nexus-mcp:4.0.8 --stdio` runs `_offload_sync_mcp_tools(mcp)` and `mcp.run(transport="stdio", show_banner=False)` with `0` startup banner lines on `stdout` (all diagnostics route strictly to `sys.stderr`).
    - Without `PATH_SECRET` or `PASS_HASH`, `initialize`, `tools/list` (`11` tools), and deadbolt-safe `list_models_and_agents(style="ascii", include_skills=False, include_rules=False)` succeed immediately; private session and workspace tools return `LOCKED_RESPONSE` with `PASS_HASH` / `AG_BRIDGE_ENV_FILE` setup guidance unless a valid 64-hex `PASS_HASH` is configured and unlocked (`verify_passphrase` and `is_unlocked` stay strictly `False` when `PASS_HASH` is empty or invalid).
 3. **Local Workstation HTTP & `/web` Studio Continuity**:
-   - Running `docker compose up -d` or `python3 ag_bridge.py` without `--stdio` enforces `len(PATH_SECRET) >= 32` and `len(PASS_HASH) == 64`, preserves stateless Streamable HTTP routing, LAN-only `/praxis/` gating, and `/web` Studio (`CACHE_NAME = "agy-nexus-v4.0.8"`).
+   - Running `docker compose up -d` or `python3 ag_bridge.py` without `--stdio` enforces `len(PATH_SECRET) >= 32` and `len(PASS_HASH) == 64`, preserves stateless Streamable HTTP routing, LAN-only `/praxis/` gating, and `/web` Studio (`CACHE_NAME = "agy-nexus-v4.0.9"`).
 4. **Tagged GitHub Actions OIDC Release & First-Push Visibility Recovery**:
    - Pushing tag `v*` triggers `.github/workflows/publish-mcp.yml` (`permissions: { contents: read, packages: write, id-token: write }`), which runs `pytest`, `python3 ag_bridge.py --self-test`, and `python3 -m agy_nexus.tools_praxis --self-test`, smoke-tests `--stdio` locally, pushes `ghcr.io/frankxlt/agy-nexus-mcp:<version>` and `:latest`, verifies `mcp-publisher` (`v1.8.1`) with `sigstore/cosign-installer@v4.1.2`, syncs `server.json` via `jq`, validates, logs in via `./mcp-publisher login github-oidc`, and publishes to `https://registry.modelcontextprotocol.io`.
    - If GitHub initializes a brand-new GHCR package as Private on first push (`Package validation failed`), flipping package visibility to Public in GitHub UI and triggering **Run workflow** (`workflow_dispatch` with `release_tag`) completes registry publication without incrementing the version tag.
+
+---
+
+## Workflow 8: WF-08 — Shared Price Book Sync, Subagent Model Adjudication & Unmapped Barcode Alerts (`v4.0.9`)
+
+### User Goal
+Consume community-maintained pricing and model additions in `/web` and Gemini without manual JSON editing, spot whenever switching the IDE main-chat dropdown redirects `inherit` subagents to another model, and detect newly released unrecognized `M*` model codes with a 1-click issue report.
+
+### Why It Matters
+Vendor API rates and new Antigravity `MODEL_PLACEHOLDER_M*` codes evolve weekly. Separating public API specs and effective-dated rate epochs from locked IDE tier allocations lets users accept verified upstream updates into `${AGY_DATA_DIR}/catalog_override.json` safely, prevents silent subagent cost misattribution when `model: inherit` runs on Carbon 4, and eliminates silent fallback masking on unmapped models.
+
+### End-to-End Journey
+1. **Two-File Price Book Ground Truth & Locked `antigravity_ide` Metadata**:
+   - `src/agy_nexus/data/model_catalog.json` stores monotonic integer `catalog_revision` + `updated_at` and partitions every model into `public_api` (`api_context_window`, `api_max_output_tokens`, `source_url`, `verified_at`) vs. locked `antigravity_ide` (`pool_key`, `pool_label`, `quota_group`, IDE `context_window` / `max_output_tokens`, `placeholders`, `tier_placeholders`, `target_pct`).
+   - `src/agy_nexus/data/cost_ledger.json` stores effective-dated `rate_epochs` with `source_url` and `verified_at` per model epoch, and `scripts/catalog_sync.py --render-docs` deterministically compiles [`docs/PRICING_HISTORY.md`](PRICING_HISTORY.md).
+2. **1-Click `/web` Price Book Update Banner & Auto-Retiring `catalog_override.json` (`390px`, `900px`, `1440px`)**:
+   - When unlocked, `/web` triggers a cached 24h check against `raw.githubusercontent.com/FrankXLT/agy-nexus-mcp/main/src/agy_nexus/data/` (failing open cleanly offline and suppressed in static `?demo=1` showcases unless explicitly previewed) plus git-checkout SHA-256 edit detection.
+   - If a newer `catalog_revision` exists, a calm top banner displays `[Preview Diff]` (opening native `<dialog id="v9CatalogDiffDialog">`), passphrase-gated `[Accept Update]` (`POST /web/api/catalog/accept` writing `0600` `${AGY_DATA_DIR}/catalog_override.json`), and `[Reset Override]` (`POST /web/api/catalog/reset`). Stale overrides auto-retire cleanly whenever bundled `catalog_revision >= override.catalog_revision`.
+3. **Intended-vs.-Actual Subagent Adjudication & Unmapped `M*` Barcode Alerts**:
+   - `telemetry_scanner.py` (`CACHE_VERSION = 9`), `stats_series.py`, `stats_aggregator.py`, and `stats_metrics.py` preserve `targetModel` intent (`agents/*.md`) alongside real executed model receipts (fixing `inherit` resolution on roles like `claude-sentinel`), rendering `Intended: Sonnet 5.5 · Ran: 84% Carbon 4 (inherited)` across `/web` (`390px`, `900px`, `1440px`), `stats`, and `list_models_and_agents`.
+   - Unrecognized model codes (`MODEL_PLACEHOLDER_M610`, etc.) populate explicit `unmapped_models` (`id`, `steps`, `tokens`, `last_seen`, `issue_url`) and display a non-blocking banner with a 1-click pre-filled GitHub Issue link (`FrankXLT/agy-nexus-mcp`).
+4. **Weekly Fail-Closed `bot/catalog-sync` PR Workflow (`.github/workflows/catalog-sync.yml`)**:
+   - Compares numeric parsed rate feeds weekly without modifying `antigravity_ide`, halts cleanly on `403` or missing anchors, invokes `gh models run` only when numeric changes exist, enforces `pytest` and `scripts/catalog_sync.py --render-docs --check`, and updates a single reusable `bot/catalog-sync` PR targeting protected `main`.
+

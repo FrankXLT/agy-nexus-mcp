@@ -60,11 +60,13 @@ PWA_ASSETS: dict[str, bytes] = {
     "v9/v9_analytics.css": b"text/css; charset=utf-8",
     "v9/v9_workspace.css": b"text/css; charset=utf-8",
     "v9/v9_tables_and_rail.css": b"text/css; charset=utf-8",
+    "v9/v9_catalog_banner.css": b"text/css; charset=utf-8",
     "v9/v9_state.js": b"application/javascript; charset=utf-8",
     "v9/v9_table_sort.js": b"application/javascript; charset=utf-8",
     "v9/v9_spark_bars.js": b"application/javascript; charset=utf-8",
     "v9/v9_demo_docs.js": b"application/javascript; charset=utf-8",
     "v9/v9_demo_adapter.js": b"application/javascript; charset=utf-8",
+    "v9/v9_catalog_banner.js": b"application/javascript; charset=utf-8",
     "v9/v9_billing.js": b"application/javascript; charset=utf-8",
     "v9/v9_charts.js": b"application/javascript; charset=utf-8",
     "v9/v9_heatmap.js": b"application/javascript; charset=utf-8",
@@ -86,6 +88,65 @@ PWA_ASSETS: dict[str, bytes] = {
     "v9/vendor/echarts-schedule-heatmap.js": b"application/javascript; charset=utf-8",
     "v9/vendor/echarts-quiet-adapter.js": b"application/javascript; charset=utf-8",
 }
+
+
+def _extract_passphrase(headers: list[tuple[bytes, bytes]]) -> str:
+    for hk, hv in headers:
+        if hk.lower() == b"x-nexus-passphrase":
+            return hv.decode("utf-8", errors="ignore").strip()
+    return ""
+
+
+async def _send_json_resp(send: Any, status: int, payload: dict[str, Any]) -> None:
+    body_b = json.dumps(payload).encode("utf-8")
+    await send({
+        "type": "http.response.start", "status": status,
+        "headers": [
+            (b"content-type", b"application/json"), (b"content-length", str(len(body_b)).encode("ascii")),
+            (b"cache-control", b"no-store, no-cache, private"), (b"x-content-type-options", b"nosniff"),
+        ],
+    })
+    await send({"type": "http.response.body", "body": body_b})
+
+
+async def _handle_catalog_api(headers: list[tuple[bytes, bytes]], req_path: str, method: str, raw_qs: str, send: Any) -> bool:
+    """Authenticate and handle /web/api/catalog/{status,accept,reset} Price Book sync endpoints."""
+    from agy_nexus.catalog_sync import accept_catalog_override, get_catalog_sync_status, reset_catalog_override
+    from agy_nexus.model_pricing import clear_model_catalog_cache
+
+    if not verify_passphrase(_extract_passphrase(headers)):
+        await _send_json_resp(send, 401, {"ok": False, "error": "Invalid spoken deadbolt passphrase."})
+        return True
+    action = req_path.rsplit("/web/api/catalog/", 1)[-1].strip("/")
+    qs_map = urllib.parse.parse_qs(raw_qs, keep_blank_values=True) if raw_qs else {}
+    if action == "status" and method in ("GET", "POST"):
+        refresh = (qs_map.get("refresh", ["0"])[0] or "0").strip().lower() in ("1", "true", "yes")
+        st = await anyio.to_thread.run_sync(
+            functools.partial(get_catalog_sync_status, data_dir=AGY_DATA_DIR, bg_dir=AGY_BG_DIR, allow_network=True, refresh=refresh)
+        )
+        await _send_json_resp(send, 200, {"ok": True, "catalog_sync": st})
+        return True
+    if action == "accept" and method == "POST":
+        res = await anyio.to_thread.run_sync(
+            functools.partial(accept_catalog_override, data_dir=AGY_DATA_DIR, bg_dir=AGY_BG_DIR, allow_fetch=True, on_change=clear_model_catalog_cache)
+        )
+        if not res.get("ok"):
+            await _send_json_resp(send, 400, res)
+            return True
+        st = await anyio.to_thread.run_sync(
+            functools.partial(get_catalog_sync_status, data_dir=AGY_DATA_DIR, bg_dir=AGY_BG_DIR, allow_network=False)
+        )
+        await _send_json_resp(send, 200, {**res, "catalog_sync": st})
+        return True
+    if action == "reset" and method == "POST":
+        res = reset_catalog_override(data_dir=AGY_DATA_DIR, on_change=clear_model_catalog_cache)
+        st = await anyio.to_thread.run_sync(
+            functools.partial(get_catalog_sync_status, data_dir=AGY_DATA_DIR, bg_dir=AGY_BG_DIR, allow_network=False)
+        )
+        await _send_json_resp(send, 200, {**res, "catalog_sync": st})
+        return True
+    await _send_json_resp(send, 405, {"ok": False, "error": "Unsupported catalog sync action or method."})
+    return True
 
 
 async def _serve_static_or_media(web_dir: Path, req_path: str, method: str, send: Any) -> bool:
@@ -146,11 +207,7 @@ async def _serve_static_or_media(web_dir: Path, req_path: str, method: str, send
 
 async def _handle_web_stats(headers: list[tuple[bytes, bytes]], raw_qs: str, t0: float, send: Any) -> bool:
     """Authenticate and return /web/api/stats JSON bundle."""
-    supplied_pass = ""
-    for hk, hv in headers:
-        if hk.lower() == b"x-nexus-passphrase":
-            supplied_pass = hv.decode("utf-8", errors="ignore").strip()
-            break
+    supplied_pass = _extract_passphrase(headers)
 
     qs_map = urllib.parse.parse_qs(raw_qs, keep_blank_values=True) if raw_qs else {}
     period_val = (qs_map.get("period", ["current_month"])[0] or "current_month").strip()
@@ -166,12 +223,7 @@ async def _handle_web_stats(headers: list[tuple[bytes, bytes]], raw_qs: str, t0:
     compact_sessions_val = (qs_map.get("compact_sessions", ["0"])[0] or "0").strip().lower() in ("1", "true", "yes")
 
     if not verify_passphrase(supplied_pass):
-        err_b = json.dumps({"ok": False, "error": "Invalid spoken deadbolt passphrase."}).encode("utf-8")
-        await send({
-            "type": "http.response.start", "status": 401,
-            "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(err_b)).encode("ascii")), (b"cache-control", b"no-store")],
-        })
-        await send({"type": "http.response.body", "body": err_b})
+        await _send_json_resp(send, 401, {"ok": False, "error": "Invalid spoken deadbolt passphrase."})
         print("[agy-nexus] http=GET rpc=web_stats_unauthorized tool=- status=401 bytes=0 ms=1", flush=True)
         return True
 
@@ -230,6 +282,9 @@ async def handle_web_request(
             await send({"type": "http.response.body", "body": b"" if method == "HEAD" else html_bytes})
             print(f"[agy-nexus] http={method} rpc=web_ui tool=- status=200 bytes={len(html_bytes)} ms=1", flush=True)
             return True
+
+    if "/web/api/catalog/" in req_path:
+        return await _handle_catalog_api(headers, req_path, method, raw_qs, send)
 
     if method in ("GET", "HEAD") and "/web/" in req_path and not req_path.endswith("/web/api/stats"):
         if await _serve_static_or_media(web_dir, req_path, method, send):

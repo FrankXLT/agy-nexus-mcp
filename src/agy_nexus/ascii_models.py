@@ -214,9 +214,11 @@ def render_ascii_models_status(
             f"{r['role'][:19]:<19} {r['model'][:7]:<7} {r['target'][:17]:<17} {r['effort'][:6]:<6} {r['perms'][:5]:<5} {r['cap'][:5]:<5} {r['sync'][:4]:<4}"
         ))
 
+    cat_rev = int(cat.get("effective_catalog_revision") or cat.get("catalog_revision") or 1)
+    ovr_s = "OVR" if cat.get("override_active") else "REPO"
     synced_cnt = sum(1 for r in roster if r["sync"] == "SYNCED")
     lines.extend([
-        _box_full(f"Agent Parity: {synced_cnt}/{len(roster)} SYNCED (run sync_agents.py for host update)"),
+        _box_full(f"Agent Parity: {synced_cnt}/{len(roster)} SYNCED | PriceBook r{cat_rev} ({ovr_s})"),
         "╠══════════════════════════════════════════════════════════════════════════╣",
         _box_full(_format_subscription_tiers_line(cat.get("subscription_tiers") or [])),
         _box_full(

@@ -55,12 +55,12 @@ def test_v408_server_json_manifest_and_github_oidc_workflow() -> None:
     assert manifest["name"] == "io.github.FrankXLT/agy-nexus-mcp"
     assert manifest["title"] == "AGY-Nexus MCP"
     assert 1 <= len(manifest["description"]) <= 100
-    assert manifest["version"] == agy_nexus.__version__ == "4.0.8"
+    assert manifest["version"] == agy_nexus.__version__ == "4.0.9"
     assert manifest["repository"] == {"url": "https://github.com/FrankXLT/agy-nexus-mcp", "source": "github"}
 
     pkg = manifest["packages"][0]
     assert pkg["registryType"] == "oci"
-    assert pkg["identifier"] == "ghcr.io/frankxlt/agy-nexus-mcp:4.0.8"
+    assert pkg["identifier"] == "ghcr.io/frankxlt/agy-nexus-mcp:4.0.9"
     assert pkg["transport"] == {"type": "stdio"}
     assert pkg["packageArguments"] == [{
         "type": "positional",
@@ -83,14 +83,14 @@ def test_v408_server_json_manifest_and_github_oidc_workflow() -> None:
 
 
 def test_v408_readme_pyproject_workflows_agent_parity_and_budgets() -> None:
-    """Verify README mcp-name & v4.0.8 headings, pyproject URLs, WF-07, 12/12 agent sync, and <=500L/<=100L budgets."""
+    """Verify README mcp-name & v4.0.9 headings, pyproject URLs, WF-07, 12/12 agent sync, and <=500L/<=100L budgets."""
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     assert "<!-- mcp-name: io.github.FrankXLT/agy-nexus-mcp -->" in readme
-    assert "ghcr.io/frankxlt/agy-nexus-mcp:4.0.8" in readme and "--stdio" in readme
+    assert "ghcr.io/frankxlt/agy-nexus-mcp:4.0.9" in readme and "--stdio" in readme
     assert not re.search(r"^#{1,6}.*\bv4\.0\.6\b", readme, re.M), "Stale v4.0.6 heading left in README.md"
 
     pyproj = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'version = "4.0.8"' in pyproj and "[project.urls]" in pyproj
+    assert 'version = "4.0.9"' in pyproj and "[project.urls]" in pyproj
     assert 'Repository = "https://github.com/FrankXLT/agy-nexus-mcp"' in pyproj
 
     dep_doc = (REPO_ROOT / "docs" / "DEPLOYMENT.md").read_text(encoding="utf-8")

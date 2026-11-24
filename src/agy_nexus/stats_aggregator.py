@@ -77,9 +77,8 @@ def load_db_conversations(db_file: Path) -> dict[str, dict[str, Any]]:
 from agy_nexus.hygiene import resolve_package_resource_dir
 
 
-def load_agent_target_map(agy_config_dir: Path) -> dict[str, str]:
-    """Map subagent names from tracked agents/*.md and user AGY_CONFIG_DIR/agents/*.md to model keys."""
-    out: dict[str, str] = {}
+def _iter_agent_frontmatter(agy_config_dir: Path) -> list[tuple[str, str, dict[str, Any]]]:
+    rows: list[tuple[str, str, dict[str, Any]]] = []
     repo_agents = resolve_package_resource_dir("agents", __file__)
     for root in (repo_agents, agy_config_dir / "agents"):
         if not root.is_dir():
@@ -91,22 +90,47 @@ def load_agent_target_map(agy_config_dir: Path) -> dict[str, str]:
                 fm, _ = parse_markdown_frontmatter(md_path.read_text(encoding="utf-8", errors="replace"))
             except OSError:
                 continue
-            raw_m = str(fm.get("model") or "").strip().lower()
-            tgt = str(fm.get("targetModel") or "").strip()
-            stem = str(fm.get("name") or md_path.stem).strip().lower()
-            val = "inherit" if raw_m == "inherit" else classify_model_key(tgt if (tgt and "/" not in tgt) else (raw_m or stem), stem)
-            out[stem] = val
-            out[md_path.stem.lower()] = val
+            rows.append((str(fm.get("name") or md_path.stem).strip().lower(), md_path.stem.lower(), fm))
+    return rows
+
+
+def load_agent_target_map(agy_config_dir: Path) -> dict[str, str]:
+    """Map subagent names from tracked agents/*.md and user AGY_CONFIG_DIR/agents/*.md to model keys."""
+    out: dict[str, str] = {}
+    for stem, file_stem, fm in _iter_agent_frontmatter(agy_config_dir):
+        raw_m = str(fm.get("model") or "").strip().lower()
+        tgt = str(fm.get("targetModel") or "").strip()
+        val = "inherit" if raw_m == "inherit" else classify_model_key(tgt if (tgt and "/" not in tgt) else (raw_m or stem), stem)
+        out[stem] = out[file_stem] = val
+    return out
+
+
+def load_agent_role_specs(agy_config_dir: Path) -> dict[str, dict[str, Any]]:
+    """Parse both intended targetModel(s) and YAML runtime model mode for intended-vs-actual adjudication."""
+    from agy_nexus.model_pricing import get_model_specs_map
+
+    short_map = {k: str(v.get("short_label") or k) for k, v in get_model_specs_map().items()}
+    out: dict[str, dict[str, Any]] = {}
+    for stem, file_stem, fm in _iter_agent_frontmatter(agy_config_dir):
+        raw_m = str(fm.get("model") or "").strip().lower()
+        tgt = str(fm.get("targetModel") or "").strip()
+        parts = [p.strip() for p in tgt.split("/") if p.strip()] if tgt else []
+        keys = [classify_model_key(p, stem) for p in parts] if parts else ([] if raw_m == "inherit" else [classify_model_key(raw_m or stem, stem)])
+        uniq_keys = list(dict.fromkeys(keys))
+        lbl = " / ".join(short_map.get(k, k) for k in uniq_keys) if uniq_keys else ""
+        spec = {"yaml_model": raw_m, "is_inherit": raw_m == "inherit", "intended_model_keys": uniq_keys, "intended_model_key": (uniq_keys[0] if uniq_keys else ""), "intended_model_label": lbl}
+        out[stem] = out[file_stem] = spec
     return out
 
 
 def init_agg_state() -> dict[str, Any]:
-    """Initialize 8-model aggregation accumulators for live, orphaned, and archived usage."""
+    """Initialize 8-model aggregation accumulators for live, orphaned, archived & unmapped usage."""
     m_keys = get_canonical_model_keys()
     return {
         "subagent_roles": {},
         "role_model_votes": {},
         "role_inherited": {},
+        "unmapped_models": {},
         "model_totals": {mk: 0 for mk in m_keys},
         "model_tokens": {mk: 0 for mk in m_keys},
         "model_cost": {mk: 0 for mk in m_keys},
@@ -146,6 +170,13 @@ def _fold_slot_metrics(
     has_cost_slots = "slot_1h_cost_micros" in cdata
     est_base_mk = classify_model_key(str(cdata.get("last_conv_model") or main_mk or "argon"))
 
+    exp_days = cdata.get("explicit_day_models") or {}
+    s1_mods, s1_mtoks, s1_mc_src = cdata.get("slot_1h_models") or {}, cdata.get("slot_1h_model_tokens") or {}, cdata.get("slot_1h_model_cost_micros") or {}
+    exp_day_keys: dict[str, set[str]] = {
+        ds_k: {classify_model_key(k) for k, v in em.items() if int(v) > 0}
+        for ds_k, em in exp_days.items() if is_sub and isinstance(em, dict) and em
+    } if isinstance(exp_days, dict) else {}
+
     for sl_k, sl_cnt in s1_st_src.items():
         if s_iso <= sl_k[:10] <= e_iso:
             agg["s1_tot_steps"][sl_k] = agg["s1_tot_steps"].get(sl_k, 0) + sl_cnt
@@ -153,8 +184,16 @@ def _fold_slot_metrics(
             r_stat["s1_steps"][sl_k] = r_stat["s1_steps"].get(sl_k, 0) + sl_cnt
             if is_sub:
                 agg["s1_sub_steps"].setdefault(agent_role, {})[sl_k] = agg["s1_sub_steps"].get(agent_role, {}).get(sl_k, 0) + sl_cnt
-                smk, _ = resolve_subagent_model(agent_role, root_cid, parent_model_map, main_mk, main_switch_date, sl_k, agent_target_map)
-                agg["s1_mod_steps"].setdefault(smk, {})[sl_k] = agg["s1_mod_steps"].get(smk, {}).get(sl_k, 0) + sl_cnt
+                smk = resolve_subagent_model(agent_role, root_cid, parent_model_map, main_mk, main_switch_date, sl_k, agent_target_map)[0]
+                ek = exp_day_keys.get(sl_k[:10])
+                m_sl = s1_mods.get(sl_k)
+                if ek and isinstance(m_sl, dict) and m_sl:
+                    for mk_r, mv in m_sl.items():
+                        mk_n = classify_model_key(mk_r)
+                        dst_mk = mk_n if mk_n in ek else smk
+                        agg["s1_mod_steps"].setdefault(dst_mk, {})[sl_k] = agg["s1_mod_steps"].get(dst_mk, {}).get(sl_k, 0) + int(mv)
+                else:
+                    agg["s1_mod_steps"].setdefault(smk, {})[sl_k] = agg["s1_mod_steps"].get(smk, {}).get(sl_k, 0) + sl_cnt
 
     for sl_k, sl_tk in s1_tk_src.items():
         if not (s_iso <= sl_k[:10] <= e_iso):
@@ -163,44 +202,45 @@ def _fold_slot_metrics(
         agg["s1_tot_toks"][sl_k] = agg["s1_tot_toks"].get(sl_k, 0) + sl_tk_i
         r_stat["s1_toks"][sl_k] = r_stat["s1_toks"].get(sl_k, 0) + sl_tk_i
         if is_sub:
-            smk, _ = resolve_subagent_model(agent_role, root_cid, parent_model_map, main_mk, main_switch_date, sl_k, agent_target_map)
+            smk = resolve_subagent_model(agent_role, root_cid, parent_model_map, main_mk, main_switch_date, sl_k, agent_target_map)[0]
             agg["s1_sub_toks"].setdefault(agent_role, {})[sl_k] = agg["s1_sub_toks"].get(agent_role, {}).get(sl_k, 0) + sl_tk_i
-            agg["s1_mod_toks"].setdefault(smk, {})[sl_k] = agg["s1_mod_toks"].get(smk, {}).get(sl_k, 0) + sl_tk_i
-            if has_cost_slots and smk == est_base_mk:
-                sl_cs = int(s1_cs_src.get(sl_k, 0))
-            elif sl_k in s1_ps_src and isinstance(s1_ps_src[sl_k], list) and len(s1_ps_src[sl_k]) == 3:
-                sp_u, sp_c, sp_o = int(s1_ps_src[sl_k][0]), int(s1_ps_src[sl_k][1]), int(s1_ps_src[sl_k][2])
-                sl_cs = compute_step_cost_micros(smk, sl_k[:10], sp_u, sp_c, sp_o, bg_dir=bg_dir)
-            elif has_cost_slots:
+            ek, mt_sl, mc_sl = exp_day_keys.get(sl_k[:10]), s1_mtoks.get(sl_k), s1_mc_src.get(sl_k)
+            if ek and isinstance(mt_sl, dict) and mt_sl:
                 sl_cs = 0
+                for mk_r, mtv in mt_sl.items():
+                    mk_n, mtv_i = classify_model_key(mk_r), int(mtv)
+                    dst_mk = mk_n if mk_n in ek else smk
+                    c_add = int(mc_sl[mk_r]) if (dst_mk == mk_n and isinstance(mc_sl, dict) and mk_r in mc_sl) else compute_step_cost_micros(dst_mk, sl_k[:10], *split_estimated_tokens(mtv_i), bg_dir=bg_dir)
+                    agg["s1_mod_toks"].setdefault(dst_mk, {})[sl_k] = agg["s1_mod_toks"].get(dst_mk, {}).get(sl_k, 0) + mtv_i
+                    agg["s1_mod_cost"].setdefault(dst_mk, {})[sl_k] = agg["s1_mod_cost"].get(dst_mk, {}).get(sl_k, 0) + c_add
+                    sl_cs += c_add
             else:
-                sl_cs = compute_step_cost_micros(smk, sl_k[:10], *split_estimated_tokens(sl_tk_i), bg_dir=bg_dir)
+                agg["s1_mod_toks"].setdefault(smk, {})[sl_k] = agg["s1_mod_toks"].get(smk, {}).get(sl_k, 0) + sl_tk_i
+                if has_cost_slots and smk == est_base_mk:
+                    sl_cs = int(s1_cs_src.get(sl_k, 0))
+                elif sl_k in s1_ps_src and isinstance(s1_ps_src[sl_k], list) and len(s1_ps_src[sl_k]) == 3:
+                    sl_cs = compute_step_cost_micros(smk, sl_k[:10], int(s1_ps_src[sl_k][0]), int(s1_ps_src[sl_k][1]), int(s1_ps_src[sl_k][2]), bg_dir=bg_dir)
+                else:
+                    sl_cs = 0 if has_cost_slots else compute_step_cost_micros(smk, sl_k[:10], *split_estimated_tokens(sl_tk_i), bg_dir=bg_dir)
+                agg["s1_mod_cost"].setdefault(smk, {})[sl_k] = agg["s1_mod_cost"].get(smk, {}).get(sl_k, 0) + sl_cs
             agg["s1_sub_cost"].setdefault(agent_role, {})[sl_k] = agg["s1_sub_cost"].get(agent_role, {}).get(sl_k, 0) + sl_cs
-            agg["s1_mod_cost"].setdefault(smk, {})[sl_k] = agg["s1_mod_cost"].get(smk, {}).get(sl_k, 0) + sl_cs
         else:
-            sl_cs = int(s1_cs_src[sl_k]) if has_cost_slots else compute_step_cost_micros(
-                est_base_mk, sl_k[:10], *split_estimated_tokens(sl_tk_i), bg_dir=bg_dir
-            )
-        agg["s1_tot_cost"][sl_k] = agg["s1_tot_cost"].get(sl_k, 0) + sl_cs
-        r_stat["s1_cost"][sl_k] = r_stat["s1_cost"].get(sl_k, 0) + sl_cs
+            sl_cs = int(s1_cs_src[sl_k]) if has_cost_slots else compute_step_cost_micros(est_base_mk, sl_k[:10], *split_estimated_tokens(sl_tk_i), bg_dir=bg_dir)
+        agg["s1_tot_cost"][sl_k], r_stat["s1_cost"][sl_k] = agg["s1_tot_cost"].get(sl_k, 0) + sl_cs, r_stat["s1_cost"].get(sl_k, 0) + sl_cs
 
     if not is_sub:
-        for sl_k, m_dict in (cdata.get("slot_1h_models") or {}).items():
+        for sl_k, m_dict in s1_mods.items():
             if s_iso <= sl_k[:10] <= e_iso and isinstance(m_dict, dict):
                 for mk_r, mv in m_dict.items():
                     mk = classify_model_key(mk_r)
                     agg["s1_mod_steps"].setdefault(mk, {})[sl_k] = agg["s1_mod_steps"].get(mk, {}).get(sl_k, 0) + int(mv)
-        mc_src = cdata.get("slot_1h_model_cost_micros") or {}
-        for sl_k, mt_dict in (cdata.get("slot_1h_model_tokens") or {}).items():
+        for sl_k, mt_dict in s1_mtoks.items():
             if s_iso <= sl_k[:10] <= e_iso and isinstance(mt_dict, dict):
-                slot_c = mc_src.get(sl_k) if isinstance(mc_src, dict) else None
+                slot_c = s1_mc_src.get(sl_k) if isinstance(s1_mc_src, dict) else None
                 for mk_r, mtv in mt_dict.items():
-                    mk = classify_model_key(mk_r)
-                    mtv_i = int(mtv)
+                    mk, mtv_i = classify_model_key(mk_r), int(mtv)
+                    c_add = int(slot_c[mk_r]) if (isinstance(slot_c, dict) and mk_r in slot_c) else compute_step_cost_micros(mk, sl_k[:10], *split_estimated_tokens(mtv_i), bg_dir=bg_dir)
                     agg["s1_mod_toks"].setdefault(mk, {})[sl_k] = agg["s1_mod_toks"].get(mk, {}).get(sl_k, 0) + mtv_i
-                    c_add = int(slot_c[mk_r]) if (isinstance(slot_c, dict) and mk_r in slot_c) else compute_step_cost_micros(
-                        mk, sl_k[:10], *split_estimated_tokens(mtv_i), bg_dir=bg_dir
-                    )
                     agg["s1_mod_cost"].setdefault(mk, {})[sl_k] = agg["s1_mod_cost"].get(mk, {}).get(sl_k, 0) + c_add
 
 
@@ -211,8 +251,7 @@ def _fold_day_models_and_cost(
     agent_target_map: dict[str, str], bg_dir: Path,
 ) -> int:
     has_day_cost = "day_cost_micros" in cdata
-    dc_days, df_days = cdata.get("day_model_cost_micros") or {}, cdata.get("day_model_forecast_micros") or {}
-    dsp_days = cdata.get("day_model_token_splits") or {}
+    dc_days, df_days, dsp_days = cdata.get("day_model_cost_micros") or {}, cdata.get("day_model_forecast_micros") or {}, cdata.get("day_model_token_splits") or {}
     if has_day_cost and not is_sub:
         for ds, dc in (cdata.get("day_cost_micros") or {}).items():
             agg["daily_cost"][ds] = agg["daily_cost"].get(ds, 0) + int(dc)
@@ -227,15 +266,23 @@ def _fold_day_models_and_cost(
                     mc_o = int(dc_o[mk_r]) if (classify_model_key(mk_r) == smk_o and mk_r in dc_o) else compute_step_cost_micros(smk_o, ds, u_in, c_in, out_t, bg_dir=bg_dir)
                     agg["daily_cost"][ds] = agg["daily_cost"].get(ds, 0) + mc_o
 
+    exp_days = cdata.get("explicit_day_models") or {}
     for ds, dm_map in (cdata.get("day_models") or {}).items():
         if s_iso <= ds <= e_iso and isinstance(dm_map, dict):
             if is_sub:
                 smk, is_inh = resolve_subagent_model(agent_role, root_cid, parent_model_map, main_mk, main_switch_date, ds, agent_target_map)
-                c_sum = sum(int(v) for v in dm_map.values())
-                agg["model_totals"][smk] = agg["model_totals"].get(smk, 0) + c_sum
-                agg["role_model_votes"].setdefault(agent_role, {})[smk] = agg["role_model_votes"].get(agent_role, {}).get(smk, 0) + c_sum
-                if is_inh:
-                    agg["role_inherited"][agent_role] = True
+                exp_m = exp_days.get(ds) if isinstance(exp_days, dict) else None
+                votes_dst, exp_cnt = agg["role_model_votes"].setdefault(agent_role, {}), 0
+                if isinstance(exp_m, dict) and exp_m:
+                    for mk_r, mv in exp_m.items():
+                        mk, mv_i = classify_model_key(mk_r), int(mv)
+                        agg["model_totals"][mk], votes_dst[mk] = agg["model_totals"].get(mk, 0) + mv_i, votes_dst.get(mk, 0) + mv_i
+                        exp_cnt += mv_i
+                rem_cnt = max(0, sum(int(v) for v in dm_map.values()) - exp_cnt)
+                if rem_cnt > 0:
+                    agg["model_totals"][smk], votes_dst[smk] = agg["model_totals"].get(smk, 0) + rem_cnt, votes_dst.get(smk, 0) + rem_cnt
+                    if is_inh:
+                        agg["role_inherited"][agent_role] = True
             else:
                 for mk_r, mv in dm_map.items():
                     mk = classify_model_key(mk_r)
@@ -245,23 +292,22 @@ def _fold_day_models_and_cost(
     for ds, dtk_map in (cdata.get("day_model_tokens") or {}).items():
         if not (s_iso <= ds <= e_iso and isinstance(dtk_map, dict)):
             continue
+        exp_m = exp_days.get(ds) if (is_sub and isinstance(exp_days, dict)) else None
+        exp_keys = {classify_model_key(k) for k, v in exp_m.items() if int(v) > 0} if isinstance(exp_m, dict) and exp_m else set()
         smk = resolve_subagent_model(agent_role, root_cid, parent_model_map, main_mk, main_switch_date, ds, agent_target_map)[0] if is_sub else ""
         dc_map, df_map, dsp_map = dc_days.get(ds) or {}, df_days.get(ds) or {}, dsp_days.get(ds) or {}
         for mk_r, mtok in dtk_map.items():
             mk_raw_c = classify_model_key(mk_r)
-            mk_c = smk if is_sub else mk_raw_c
+            mk_c = mk_raw_c if (not is_sub or mk_raw_c in exp_keys) else smk
             mtok_i = int(mtok)
             agg["model_tokens"][mk_c] = agg["model_tokens"].get(mk_c, 0) + mtok_i
             sp = dsp_map.get(mk_r)
             u_in, c_in, out_t = (int(sp[0]), int(sp[1]), int(sp[2])) if (isinstance(sp, list) and len(sp) == 3) else split_estimated_tokens(mtok_i)
-            agg["tok_split"][0] += u_in
-            agg["tok_split"][1] += c_in
-            agg["tok_split"][2] += out_t
+            agg["tok_split"][0], agg["tok_split"][1], agg["tok_split"][2] = agg["tok_split"][0] + u_in, agg["tok_split"][1] + c_in, agg["tok_split"][2] + out_t
             same_mk = (not is_sub) or (mk_raw_c == mk_c)
             mc_v = int(dc_map[mk_r]) if (same_mk and mk_r in dc_map) else compute_step_cost_micros(mk_c, ds, u_in, c_in, out_t, bg_dir=bg_dir)
             mf_v = int(df_map[mk_r]) if (same_mk and mk_r in df_map) else compute_step_cost_micros(mk_c, ds, u_in, c_in, out_t, forecast=True, bg_dir=bg_dir)
-            agg["model_cost"][mk_c] = agg["model_cost"].get(mk_c, 0) + mc_v
-            agg["model_fore"][mk_c] = agg["model_fore"].get(mk_c, 0) + mf_v
+            agg["model_cost"][mk_c], agg["model_fore"][mk_c] = agg["model_cost"].get(mk_c, 0) + mc_v, agg["model_fore"].get(mk_c, 0) + mf_v
             win_cost += mc_v
             if not has_day_cost or is_sub:
                 agg["daily_cost"][ds] = agg["daily_cost"].get(ds, 0) + mc_v
@@ -274,7 +320,10 @@ def fold_live_conversations(
     agent_target_map: dict[str, str], bg_dir: Path,
 ) -> None:
     """Fold cached/scanned live conversations into daily, 1h slot, model, and workspace accumulators."""
+    from agy_nexus.catalog_report import fold_unmapped_models
+
     for cid, cdata in conv_cache.items():
+        fold_unmapped_models(agg["unmapped_models"], cdata.get("unmapped_models"), s_iso, e_iso)
         meta = db_convs.get(cid, {})
         is_sub, agent_role = bool(meta.get("is_subagent")), str(meta.get("agent_name") or "subagent")
         root_cid = resolve_root_conversation(cid, db_convs) if is_sub else cid
@@ -317,17 +366,9 @@ def fold_live_conversations(
                 agg["active_parent_convs"] += 1
             else:
                 rec = agg["subagent_roles"].setdefault(agent_role, init_subagent_role_record())
-                run_ts = (
-                    float(meta.get("last_updated_ts") or 0.0)
-                    or parse_iso_epoch(str(meta.get("last_modified") or ""))
-                    or float(cdata.get("mtime") or 0.0)
-                    or slot_key_epoch(cdata.get("slot_1h_steps"), DISPLAY_TZ)
-                )
-                over_120 = int(meta.get("step_count") or win_steps) > 120 or win_steps > 120
-                fold_subagent_run_sample(rec, win_steps, win_toks, win_cost, run_ts=run_ts, over_120=over_120)
-            we["steps"] += win_steps
-            we["tokens"] += win_toks
-            we["cost_usd_micros"] += win_cost
+                run_ts = (float(meta.get("last_updated_ts") or 0.0) or parse_iso_epoch(str(meta.get("last_modified") or "")) or float(cdata.get("mtime") or 0.0) or slot_key_epoch(cdata.get("slot_1h_steps"), DISPLAY_TZ))
+                fold_subagent_run_sample(rec, win_steps, win_toks, win_cost, run_ts=run_ts, over_120=(int(meta.get("step_count") or win_steps) > 120 or win_steps > 120))
+            we["steps"], we["tokens"], we["cost_usd_micros"] = we["steps"] + win_steps, we["tokens"] + win_toks, we["cost_usd_micros"] + win_cost
 
 
 def fold_orphaned_and_archived(
@@ -349,39 +390,21 @@ def fold_orphaned_and_archived(
         root_cid = resolve_root_conversation(cid, db_convs)
         ws_n = normalize_workspace_name((db_convs.get(root_cid) or meta).get("workspace") or "") or "unassigned"
         smk, is_inh = resolve_subagent_model(role, root_cid, parent_model_map, main_mk, main_switch_date, d_str, agent_target_map)
-        cm = compute_step_cost_micros(smk, d_str, u_in, c_in, out_t, bg_dir=bg_dir)
-        fm = compute_step_cost_micros(smk, d_str, u_in, c_in, out_t, forecast=True, bg_dir=bg_dir)
-        agg["daily_steps"][d_str] = agg["daily_steps"].get(d_str, 0) + st_c
-        agg["daily_tokens"][d_str] = agg["daily_tokens"].get(d_str, 0) + tok_est
-        agg["daily_cost"][d_str] = agg["daily_cost"].get(d_str, 0) + cm
+        cm, fm = compute_step_cost_micros(smk, d_str, u_in, c_in, out_t, bg_dir=bg_dir), compute_step_cost_micros(smk, d_str, u_in, c_in, out_t, forecast=True, bg_dir=bg_dir)
+        agg["daily_steps"][d_str], agg["daily_tokens"][d_str], agg["daily_cost"][d_str] = agg["daily_steps"].get(d_str, 0) + st_c, agg["daily_tokens"].get(d_str, 0) + tok_est, agg["daily_cost"].get(d_str, 0) + cm
         agg["s1_tot_steps"][s1_str], agg["s1_tot_toks"][s1_str], agg["s1_tot_cost"][s1_str] = agg["s1_tot_steps"].get(s1_str, 0) + st_c, agg["s1_tot_toks"].get(s1_str, 0) + tok_est, agg["s1_tot_cost"].get(s1_str, 0) + cm
-        agg["s1_sub_steps"].setdefault(role, {})[s1_str] = agg["s1_sub_steps"].get(role, {}).get(s1_str, 0) + st_c
-        agg["s1_sub_toks"].setdefault(role, {})[s1_str] = agg["s1_sub_toks"].get(role, {}).get(s1_str, 0) + tok_est
-        agg["s1_sub_cost"].setdefault(role, {})[s1_str] = agg["s1_sub_cost"].get(role, {}).get(s1_str, 0) + cm
-        agg["s1_ws_steps"].setdefault(ws_n, {})[s1_str] = agg["s1_ws_steps"].get(ws_n, {}).get(s1_str, 0) + st_c
-        agg["s1_mod_steps"].setdefault(smk, {})[s1_str] = agg["s1_mod_steps"].get(smk, {}).get(s1_str, 0) + st_c
-        agg["s1_mod_toks"].setdefault(smk, {})[s1_str] = agg["s1_mod_toks"].get(smk, {}).get(s1_str, 0) + tok_est
-        agg["s1_mod_cost"].setdefault(smk, {})[s1_str] = agg["s1_mod_cost"].get(smk, {}).get(s1_str, 0) + cm
+        for s_map, key_m, v_add in (("s1_sub_steps", role, st_c), ("s1_sub_toks", role, tok_est), ("s1_sub_cost", role, cm), ("s1_ws_steps", ws_n, st_c), ("s1_mod_steps", smk, st_c), ("s1_mod_toks", smk, tok_est), ("s1_mod_cost", smk, cm)):
+            agg[s_map].setdefault(key_m, {})[s1_str] = agg[s_map].get(key_m, {}).get(s1_str, 0) + v_add
         r_stat = agg["root_sess_stats"].setdefault(root_cid, {"win_steps": 0, "win_tokens": 0, "win_cost_micros": 0, "sub_runs": 0, "s1_steps": {}, "s1_toks": {}, "s1_cost": {}})
-        r_stat["win_steps"] += st_c
-        r_stat["win_tokens"] += tok_est
-        r_stat["win_cost_micros"] += cm
-        r_stat["sub_runs"] += 1
-        r_stat["s1_steps"][s1_str] = r_stat["s1_steps"].get(s1_str, 0) + st_c
-        r_stat["s1_toks"][s1_str] = r_stat["s1_toks"].get(s1_str, 0) + tok_est
-        r_stat["s1_cost"][s1_str] = r_stat["s1_cost"].get(s1_str, 0) + cm
+        r_stat["win_steps"], r_stat["win_tokens"], r_stat["win_cost_micros"], r_stat["sub_runs"] = r_stat["win_steps"] + st_c, r_stat["win_tokens"] + tok_est, r_stat["win_cost_micros"] + cm, r_stat["sub_runs"] + 1
+        r_stat["s1_steps"][s1_str], r_stat["s1_toks"][s1_str], r_stat["s1_cost"][s1_str] = r_stat["s1_steps"].get(s1_str, 0) + st_c, r_stat["s1_toks"].get(s1_str, 0) + tok_est, r_stat["s1_cost"].get(s1_str, 0) + cm
         rec = agg["subagent_roles"].setdefault(role, init_subagent_role_record())
-        run_ts = float(meta.get("last_updated_ts") or 0.0) or parse_iso_epoch(str(meta.get("last_modified") or ""))
-        fold_subagent_run_sample(rec, st_c, tok_est, cm, run_ts=run_ts, over_120=(st_c > 120))
+        fold_subagent_run_sample(rec, st_c, tok_est, cm, run_ts=(float(meta.get("last_updated_ts") or 0.0) or parse_iso_epoch(str(meta.get("last_modified") or ""))), over_120=(st_c > 120))
         we = agg["ws_map"].setdefault(ws_n, {"workspace": ws_n, "sessions": 0, "steps": 0, "tokens": 0, "cost_usd_micros": 0})
-        we["steps"] += st_c
-        we["tokens"] += tok_est
-        we["cost_usd_micros"] += cm
+        we["steps"], we["tokens"], we["cost_usd_micros"] = we["steps"] + st_c, we["tokens"] + tok_est, we["cost_usd_micros"] + cm
         agg["model_totals"][smk], agg["model_tokens"][smk] = agg["model_totals"].get(smk, 0) + st_c, agg["model_tokens"].get(smk, 0) + tok_est
         agg["model_cost"][smk], agg["model_fore"][smk] = agg["model_cost"].get(smk, 0) + cm, agg["model_fore"].get(smk, 0) + fm
-        agg["tok_split"][0] += u_in
-        agg["tok_split"][1] += c_in
-        agg["tok_split"][2] += out_t
+        agg["tok_split"][0], agg["tok_split"][1], agg["tok_split"][2] = agg["tok_split"][0] + u_in, agg["tok_split"][1] + c_in, agg["tok_split"][2] + out_t
         agg["role_model_votes"].setdefault(role, {})[smk] = agg["role_model_votes"].get(role, {}).get(smk, 0) + st_c
         if is_inh:
             agg["role_inherited"][role] = True

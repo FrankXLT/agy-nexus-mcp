@@ -245,9 +245,13 @@
       const barHtml = SB && entry.sm
         ? SB.renderSubagentWhisker(entry.sm, scaleMax, metric, col)
         : `<span class="v9-inline-share"><span class="va-inline-bar" role="img" aria-label="${pct}%"><span class="va-inline-bar-fill" style="inline-size:${Math.min(100, pct)}%;background:${col}"></span></span><span class="v9-inline-pct">${pct.toFixed(1)}%</span></span>`;
+      const adjStatus = String(item.adjudication_status || (item.model_diverged ? "diverged" : "aligned")).toLowerCase();
+      const adjText = item.adjudication_text || item.dominant_model_label || item.dominant_model_key || "—";
+      const adjDesktop = `<span class="v9-adj-pill" data-adj="${V9.escHtml(adjStatus)}">${V9.escHtml(adjText)}</span>`;
+      const adjMobile = adjText && adjText !== "—" ? `<span class="v9-sub-adj-mobile" data-adj="${V9.escHtml(adjStatus)}">${V9.escHtml(adjText)}</span>` : "";
       return `<tr class="${cls}" data-solo-sub="${V9.escHtml(item.role)}">
-        <td><span class="v9-swatch-dot" style="background:${col}"></span><span class="v9-cell-main">${V9.escHtml(item.role)}</span></td>
-        <td class="v9-col-secondary"><span class="v9-cell-sub">${V9.escHtml(item.dominant_model_label || item.dominant_model_key || "—")}</span></td>
+        <td><span class="v9-swatch-dot" style="background:${col}"></span><span class="v9-cell-main">${V9.escHtml(item.role)}</span>${adjMobile}</td>
+        <td class="v9-col-secondary">${adjDesktop}</td>
         <td class="v9-bar-cell">${barHtml}</td>
         <td class="num">${runs}</td>
         <td class="num">${V9.fmtNum(item.tokens)}</td>
@@ -329,7 +333,7 @@
     const watch = Array.isArray(mh.watchlist_and_exceptions) ? mh.watchlist_and_exceptions.slice(0, 12) : [];
     bodyEl.innerHTML = `
       <div class="v9-health-strip" style="padding-block:0.5rem">
-        <span>Release: ${V9.escHtml((ch.version && ch.version.status_label) || b.version || "4.0.8")}</span>
+        <span>Release: ${V9.escHtml((ch.version && ch.version.status_label) || b.version || "4.0.9")}</span>
         <span>Praxis Symbols: ${(ch.polyglot_health && ch.polyglot_health.total_symbols) || 0}</span>
         <span>Pinned Slots: ${rt.active_slots || 0} (${rt.pinned_calls || 0} pinned / ${rt.auto_resolved_calls || 0} auto)</span>
         <span>3-2-1 Backup: ${V9.escHtml(bk.status_label || "—")} (${V9.escHtml(bk.age || "—")})</span>
@@ -395,6 +399,9 @@
   }
 
   function renderAnalytics(b, rerenderFn, actions) {
+    if (V9.CatalogBanner && V9.CatalogBanner.render) {
+      V9.CatalogBanner.render(b, { onReload: actions && actions.reloadStats });
+    }
     renderKpiCards(b);
     renderModelTable(b, rerenderFn);
     renderSubagentTable(b, rerenderFn);

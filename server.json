@@ -8,11 +8,11 @@
     "source": "github"
   },
   "websiteUrl": "https://FrankXLT.github.io/agy-nexus-mcp/",
-  "version": "4.0.8",
+  "version": "4.0.9",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/frankxlt/agy-nexus-mcp:4.0.8",
+      "identifier": "ghcr.io/frankxlt/agy-nexus-mcp:4.0.9",
       "transport": {
         "type": "stdio"
       },

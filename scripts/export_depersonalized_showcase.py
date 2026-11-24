@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-scripts/export_depersonalized_showcase.py — Export Live Telemetry to Public v4.0.8 Showcases.
+scripts/export_depersonalized_showcase.py — Export Live Telemetry to Public v4.0.9 Showcases.
 
 Reads live workstation bundles (current_month, last_month, qtd, ytd, last_30d, last_90d, last_year),
 Workspace Explorer tree, bundled demo docs, and Code Health, applies deterministic 1-to-1 SHA-256-keyed
@@ -180,6 +180,7 @@ class ShowcaseDepersonalizer:
                 if rep:
                     out = re.sub(rf"(?<![A-Za-z0-9]){re.escape(part)}(?![A-Za-z0-9])", rep, out)
         out = re.sub(r"\[([A-Za-z0-9]{2,5})-", lambda m: f"[{_SCRUB_TOKEN_REPLACEMENTS.get(_h12(m.group(1)), m.group(1))}-", out)
+        out = re.sub(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", lambda m: self.uuid_alias(m.group(0)), out, flags=re.I)
         return out
 
     def alias_workspace_path(self, raw_ws: str, repo_slug_hint: str = "") -> str:
@@ -310,22 +311,20 @@ def depersonalize_stats_bundle(raw_bundle: dict[str, Any], dp: ShowcaseDepersona
 
     ch = b.get("code_health") or {}
     if isinstance(ch.get("version"), dict):
-        ch["version"] = {
-            "installed": __version__, "remote": f"v{__version__}",
-            "status": "up_to_date", "status_label": f"Up to Date (v{__version__})",
-            "status_dot": "#10b981", "repo": "github.com/FrankXLT/agy-nexus-mcp",
-        }
+        ch["version"] = {"installed": __version__, "remote": f"v{__version__}", "status": "up_to_date", "status_label": f"Up to Date (v{__version__})", "status_dot": "#10b981", "repo": "github.com/FrankXLT/agy-nexus-mcp"}
     for sub_k in ("polyglot_health", "local_lsp", "ast_integrity"):
         if sub_k in ch:
             ch[sub_k] = scrub_obj(ch[sub_k])
     for sk in ("wire_telemetry", "model_drift_status", "subagent_list", "subagent_role_breakdown", "subagent_series"):
         if sk in b:
             b[sk] = scrub_obj(b[sk])
+    b["unmapped_models"], b["unmapped_issue_url"] = [], ""
+    if isinstance(b.get("catalog_sync"), dict):
+        rev = int(b["catalog_sync"].get("bundled_revision") or 2)
+        b["catalog_sync"] = {"status": "OK", "bundled_revision": rev, "effective_revision": rev, "upstream_revision": rev, "override_active": False, "update_available": False, "local_repo_dirty": False}
     bk = b.get("backup_321") or {}
     if bk.get("head_sha"):
-        bk["head_sha"] = dp.sha_alias(str(bk["head_sha"]))
-        bk["origin_sha"] = bk["head_sha"]
-        bk["gitlab_sha"] = bk["head_sha"]
+        bk["head_sha"] = bk["origin_sha"] = bk["gitlab_sha"] = dp.sha_alias(str(bk["head_sha"]))
         bk["short_sha"] = bk["head_sha"][:7]
     rt = b.get("routing_telemetry") or {}
     for sl in rt.get("slots") or []:

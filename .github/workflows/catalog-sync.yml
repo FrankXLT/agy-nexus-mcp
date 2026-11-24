@@ -1,0 +1,106 @@
+name: Catalog Price Book Sync
+
+on:
+  schedule:
+    - cron: "15 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  models: read
+
+concurrency:
+  group: catalog-sync-main
+  cancel-in-progress: false
+
+jobs:
+  sync-catalog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install --no-cache-dir . pytest pytest-asyncio
+
+      - name: Run fail-closed numeric Price Book sync
+        run: |
+          python3 scripts/catalog_sync.py --sync-ci --pr-summary-out "$RUNNER_TEMP/catalog_sync_summary.json"
+
+      - name: Summarize numeric catalog diff via GitHub Models (conditional)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -s "$RUNNER_TEMP/catalog_sync_summary.json" ]; then
+            exit 0
+          fi
+          python3 - <<'PY' > "$RUNNER_TEMP/pr_body.md"
+          import json
+          import os
+          from pathlib import Path
+          data = json.loads((Path(os.environ["RUNNER_TEMP"]) / "catalog_sync_summary.json").read_text(encoding="utf-8"))
+          if not data.get("changed"):
+              print("NO_CHANGES")
+              raise SystemExit(0)
+          diff = data.get("diff") or {}
+          lines = [
+              f"## Automated Price Book Update (`rev {data.get('revision')}`)",
+              "",
+              f"Updated models: {', '.join(data.get('changed_models') or [])}",
+              "",
+              "### Numeric Deltas",
+              *[f"- {ln}" for ln in (diff.get("summary_lines") or [])],
+              "",
+              "### Guardrails Verified",
+              "- `antigravity_ide` tiers, placeholders & IDE context caps preserved untouched.",
+              "- `docs/PRICING_HISTORY.md` regenerated deterministically via `scripts/catalog_sync.py --render-docs`.",
+          ]
+          print("\n".join(lines))
+          PY
+          if ! grep -q '^NO_CHANGES$' "$RUNNER_TEMP/pr_body.md" && gh models --help >/dev/null 2>&1; then
+            {
+              cat "$RUNNER_TEMP/pr_body.md"
+              echo ""
+              echo "### Change Note Summary (GitHub Models)"
+              gh models run openai/gpt-4o-mini "Summarize these pricing catalog changes concisely in 2 bullet points:" < "$RUNNER_TEMP/pr_body.md" || true
+            } > "$RUNNER_TEMP/pr_body_ai.md"
+            mv "$RUNNER_TEMP/pr_body_ai.md" "$RUNNER_TEMP/pr_body.md"
+          fi
+
+      - name: Validate schema, docs sync, and full pytest suite before opening PR
+        run: |
+          python3 scripts/catalog_sync.py --render-docs --check
+          pytest
+
+      - name: Push or update single reusable bot/catalog-sync PR against main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$(git status --porcelain src/agy_nexus/data/ docs/PRICING_HISTORY.md)" ]; then
+            echo "No numeric Price Book changes detected; skipping PR creation."
+            exit 0
+          fi
+          git config user.name "agy-catalog-bot[bot]"
+          git config user.email "agy-catalog-bot[bot]@users.noreply.github.com"
+          git fetch origin bot/catalog-sync || true
+          git checkout -B bot/catalog-sync
+          git add src/agy_nexus/data/model_catalog.json src/agy_nexus/data/cost_ledger.json docs/PRICING_HISTORY.md
+          git commit -m "chore(catalog): sync public Price Book rates"
+          git push --force-with-lease origin bot/catalog-sync
+          OPEN_PR=$(gh pr list --head bot/catalog-sync --base main --state open --json number --jq '.[0].number // empty')
+          if [ -n "$OPEN_PR" ]; then
+            gh pr edit "$OPEN_PR" --body-file "$RUNNER_TEMP/pr_body.md"
+          else
+            gh pr create --base main --head bot/catalog-sync --title "chore(catalog): sync public Price Book rates" --body-file "$RUNNER_TEMP/pr_body.md"
+          fi
