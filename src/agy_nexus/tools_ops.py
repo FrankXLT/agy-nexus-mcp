@@ -291,7 +291,7 @@ def manage_background_run(
         compact_bundle = {k: v for k, v in bundle.items() if k not in drop_keys}
         return compact_payload_to_wire_budget({
             "ok": True, "action": "stats",
-            "assistant_guidance": f"Display ascii_mobile_report inside a fenced ```text code block first followed by a concise 3-bullet summary of Google 20x Pool share, Partner Weekly Pacing vs Target, and Top Projects. Sequential read-only follow-up calls are permitted (one call at a time, never in parallel). {REPLY_PROMPT_GUIDANCE}",
+            "assistant_guidance": f"Display ascii_mobile_report inside a fenced ```text code block first followed by a concise 3-bullet summary of Google 20x Pool share, Dual-Pool Quota & Resets, and Top Projects. Sequential read-only follow-up calls are permitted (one call at a time, never in parallel). {REPLY_PROMPT_GUIDANCE}",
             **compact_bundle,
         }, serializer=_compact_json)
     if action_clean in ("telemetry", "wire", "logs"):
@@ -420,7 +420,7 @@ def list_models_and_agents(
     style: str = "json",
     spoken_passphrase: str = "",
 ) -> str:
-    """List Antigravity agents, skills (skill_scope_filter=core|all|plugin:<name>), rules, scope policy, Quota Pacing & LS status. Pass style='ascii' with include_skills=False, include_rules=False for deadbolt-safe 76-col matrix."""
+    """List Antigravity agents, skills (skill_scope_filter=core|all|plugin:<name>), rules, scope policy, Quota & Resets & LS status. Pass style='ascii' with include_skills=False, include_rules=False for deadbolt-safe 76-col matrix."""
     style_clean = (style or "json").strip().lower()
     is_deadbolt_safe_ascii = (
         style_clean == "ascii"

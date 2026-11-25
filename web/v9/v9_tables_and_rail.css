@@ -114,15 +114,17 @@
   .v9-spk {
     display: inline-flex;
     align-items: center;
-    gap: 0.42rem;
+    gap: 0.55rem;
     inline-size: 100%;
-    min-inline-size: 146px;
+    min-inline-size: 164px;
   }
   .v9-spk-track {
     position: relative;
     flex: 1 1 80px;
     min-inline-size: 66px;
     block-size: 16px;
+    padding-inline: 5px;
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
   }
@@ -198,6 +200,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: flex-end;
+    flex: 0 0 auto;
     gap: 0.22rem;
     font-family: var(--font-mono);
     font-size: var(--ts-xs);
@@ -231,6 +234,21 @@
   .v9-lg-sw.is-caret { inline-size: 10px; block-size: 10px; color: var(--text-primary); }
   .v9-lg-sw.is-dot, .v9-lg-sw.is-idle { inline-size: 8px; block-size: 8px; border-radius: 999px; border: 1.5px solid var(--bg-surface); background: var(--accent-primary); }
   .v9-lg-sw.is-idle { background: var(--bg-surface); border-color: var(--text-muted); }
+  /* Unregistered / Ad-hoc Subagent Rollup & Indented Child Rows */
+  .v9-sub-rollup-row td { background: var(--bg-elevated); color: var(--text-secondary); }
+  .v9-sub-rollup-row td:first-child { color: var(--text-primary); }
+  .v9-sub-rollup-btn {
+    display: inline-flex; align-items: center; justify-content: flex-start; gap: 0.34rem; inline-size: 100%;
+    min-block-size: 24px; padding: 0.08rem 0.2rem; background: transparent; border: 0;
+    border-radius: var(--radius-xs); font: inherit; font-weight: 600; color: inherit; text-align: start; cursor: pointer;
+  }
+  .v9-sub-rollup-btn:hover { color: var(--accent-primary); }
+  .v9-sub-rollup-btn:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; color: var(--text-primary); }
+  .v9-sub-chev { flex-shrink: 0; color: var(--text-muted); transition: transform 0.14s ease; }
+  .v9-sub-rollup-btn[aria-expanded="true"] .v9-sub-chev { transform: rotate(90deg); color: var(--text-primary); }
+  .v9-sub-unreg-child td:first-child { padding-inline-start: 1.35rem; }
+  .v9-sub-unreg-child td { color: var(--text-secondary); }
+
   @media (forced-colors: active) {
     .v9-whisk-bar,
     .v9-caret-fill,
@@ -252,39 +270,24 @@
     white-space: nowrap;
   }
 
+  @media (max-width: 1099px) {
+    .v9-stage .v9-spk { flex-direction: column; align-items: stretch; gap: 3px; min-inline-size: 84px; }
+    .v9-stage .v9-spk-track { flex: none; inline-size: 100%; min-inline-size: 72px; block-size: 13px; padding-inline: 4px; box-sizing: border-box; }
+    .v9-stage .v9-spk-val { min-inline-size: 0; justify-content: flex-start; flex-wrap: wrap; font-size: 11px; }
+  }
+
   @media (max-width: 639px) {
     .v9-stage .v9-table th:has(> .v9-th-sort) { padding: 0; }
     .v9-stage .v9-th-sort { min-inline-size: 0; padding: 0.24rem 0.22rem; font-size: 11px; gap: 0.12rem; }
     .v9-stage .v9-bar-cell { min-inline-size: 74px; }
-    .v9-stage .v9-spk {
-      flex-direction: column;
-      align-items: stretch;
-      gap: 2px;
-      min-inline-size: 68px;
-    }
-    .v9-stage .v9-spk-track { flex: none; min-inline-size: 64px; block-size: 12px; }
-    .v9-stage .v9-spk-val { min-inline-size: 0; justify-content: flex-start; flex-wrap: wrap; font-size: 11px; }
+    .v9-stage .v9-sub-unreg-child td:first-child { padding-inline-start: 0.9rem; }
+    .v9-stage .v9-sub-rollup-btn { min-block-size: 26px; white-space: normal; line-height: 1.25; }
   }
 
   /* Ensure 4 swatches + [Compact | Comfortable] fit comfortably inside 280px rail even under 4K rem scaling */
-  .v9-nav-rail .v9-rail-footer {
-    padding: 4px 6px;
-    gap: 4px;
-  }
-  .v9-nav-rail .v9-swatch-row {
-    gap: 2px;
-  }
-  .v9-nav-rail .v9-swatch-btn {
-    inline-size: 26px;
-    block-size: 28px;
-    min-block-size: 28px;
-  }
-  .v9-nav-rail .v9-swatch-circle {
-    inline-size: 18px;
-    block-size: 18px;
-  }
-  .v9-nav-rail .v9-rail-footer .va-tb-group .va-tb-btn {
-    padding: 2px 5px;
-    font-size: 11px;
-  }
+  .v9-nav-rail .v9-rail-footer { padding: 4px 6px; gap: 4px; }
+  .v9-nav-rail .v9-swatch-row { gap: 2px; }
+  .v9-nav-rail .v9-swatch-btn { inline-size: 26px; block-size: 28px; min-block-size: 28px; }
+  .v9-nav-rail .v9-swatch-circle { inline-size: 18px; block-size: 18px; }
+  .v9-nav-rail .v9-rail-footer .va-tb-group .va-tb-btn { padding: 2px 5px; font-size: 11px; }
 }

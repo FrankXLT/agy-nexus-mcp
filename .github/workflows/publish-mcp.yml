@@ -107,7 +107,7 @@ jobs:
           assert proc.wait(timeout=15) == 0, stderr
           assert set(parsed.keys()) >= {1, 2, 3}, (parsed, stderr)
           assert "result" in parsed[1] and len(parsed[2]["result"]["tools"]) == 11
-          assert "SUBAGENT ROSTER (12)" in parsed[3]["result"]["content"][0]["text"]
+          assert "SUBAGENT ROSTER (13)" in parsed[3]["result"]["content"][0]["text"]
           print("Docker stdio smoke test OK")
           PY
 

@@ -5,6 +5,7 @@ agy-nexus-mcp — Rich (76-Col) Box-Drawn Monospace TUI Telemetry Renderer
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from . import __version__
@@ -150,16 +151,44 @@ def _bucket_clock_pct(bucket: dict[str, Any], default_sec: int, now_ep: float) -
     return 0.0
 
 
-def _rich_pace_line(tag: str, bkt: dict[str, Any], default_sec: int, now_ep: float) -> str:
-    u = max(0.0, min(100.0, float(bkt.get("used_pct", 0.0) or 0.0)))
+def _finite_pct(val: Any) -> float | None:
+    """Parse val as a finite float clamped to [0.0, 100.0], or None if invalid/non-finite."""
+    if val is None or isinstance(val, bool):
+        return None
+    try:
+        num = float(val)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, min(100.0, num)) if math.isfinite(num) else None
+
+
+def _bkt_rem_pct(bkt: dict[str, Any]) -> float:
+    """Return finite remaining percentage [0.0, 100.0] from remaining_pct or 100 - used_pct."""
+    rem = _finite_pct(bkt.get("remaining_pct"))
+    if rem is not None:
+        return rem
+    used = _finite_pct(bkt.get("used_pct"))
+    return 100.0 - used if used is not None else 100.0
+
+
+def _rich_quota_line(
+    tag: str, bkt: dict[str, Any], default_sec: int, now_ep: float, is_cd: bool = False
+) -> str:
+    """Format a single 35-col quota bucket line showing % remaining and reset timer."""
+    del default_sec
+    rem = _bkt_rem_pct(bkt)
     has_r = bool(bkt.get("has_active_reset"))
-    if not has_r and u <= 0.05:
-        return f"{tag}: Stdby [······] idle  OK"[:35]
-    clk = _bucket_clock_pct(bkt, default_sec, now_ep)
-    bar = build_quota_bar_with_pin(u, clk, 6)
+    cd = bool(is_cd or bkt.get("_is_cooldown") or bkt.get("is_cooldown"))
+    if not has_r and rem >= 99.95 and not cd:
+        return f"{tag}: Stdby [██████] 100%  OK "[:35]
+    filled = max(0, min(6, int(round((rem / 100.0) * 6))))
+    bar = ("█" * filled) + ("·" * (6 - filled))
     rst = _fmt_reset_short(bkt, now_ep)
-    zone = "HOT" if (u >= 85.0 or (has_r and (u - clk) > 15.0)) else ("WRM" if (has_r and (u - clk) > 0.0) else "OK ")
-    return f"{tag}:{u:>3.0f}/c{clk:<2.0f}[{bar}] {rst:<4} {zone}"[:35]
+    lvl = "LIM" if (cd or rem < 10.0) else ("LOW" if rem < 25.0 else "OK ")
+    return f"{tag}:{rem:>3.0f}% lft [{bar}] {rst:<5} {lvl}"[:35]
+
+
+_rich_pace_line = _rich_quota_line
 
 
 def _resolve_rich_target_split(quota: dict[str, Any], models: list[dict[str, Any]]) -> tuple[float, str]:
@@ -193,16 +222,17 @@ def _format_rich_quota_lines(quota: dict[str, Any], models: list[dict[str, Any]]
     g5, gw = g_p.get("bucket_5h") or {}, g_p.get("bucket_weekly") or {}
     c5, cw = c_p.get("bucket_5h") or {}, c_p.get("bucket_weekly") or {}
     if lq.get("is_fresh") and (g5 or gw):
-        c5_u, cw_u = float(c5.get("used_pct", 0.0) or 0.0), float(cw.get("used_pct", 0.0) or 0.0)
-        if c5_u > 0.05 or cw_u > 0.05:
-            p_bkt, p_tag, p_sec = (c5, "5h", 5 * 3600) if c5_u > 0.05 else (cw, "Wk", 7 * 86400)
-            p_u, p_clk = (c5_u if c5_u > 0.05 else cw_u), _bucket_clock_pct(p_bkt, p_sec, now_ep)
-            l3 = f"P:{p_tag}{p_u:>2.0f}/c{p_clk:<2.0f} G{round(g_shr):.0f}/{round(p_shr):.0f}({tgt_lbl}) 429:{g_429}"
+        g_cd = str(g_p.get("status", "HEALTHY")).upper() not in ("HEALTHY", "OK", "")
+        c5_rem, cw_rem = _bkt_rem_pct(c5), _bkt_rem_pct(cw)
+        if c5_rem < 99.95 or cw_rem < 99.95:
+            p_bkt, p_tag, p_rem = (c5, "5h", c5_rem) if c5_rem < 99.95 else (cw, "Wk", cw_rem)
+            p_rst = _fmt_reset_short(p_bkt, now_ep)
+            l3 = f"P:{p_tag}{p_rem:>3.0f}% {p_rst} G{round(g_shr):.0f}/{round(p_shr):.0f} 429:{g_429}"
         else:
             l3 = f"Split:{round(g_shr):.0f}/{round(p_shr):.0f} T{tgt_lbl} P:Stby 429:{g_429}"
         return [
-            _rich_pace_line("G 5h", g5, 5 * 3600, now_ep),
-            _rich_pace_line("G Wk", gw, 7 * 86400, now_ep),
+            _rich_quota_line("G 5h", g5, 5 * 3600, now_ep, is_cd=bool(g_cd and _bkt_rem_pct(g5) <= _bkt_rem_pct(gw))),
+            _rich_quota_line("G Wk", gw, 7 * 86400, now_ep, is_cd=bool(g_cd and _bkt_rem_pct(gw) < _bkt_rem_pct(g5))),
             l3[:35],
         ]
     b5g, b7g = g_p.get("burn_5h") or {}, g_p.get("burn_7d") or {}
@@ -304,7 +334,7 @@ def render_ascii_rich(bundle: dict[str, Any]) -> str:
         _box_full(f"▄▀█ █▀▀ █▄█ ▄▄ █▄░█ █▀▀ ▀▄▀ █░█ █▀   v{__version__} // RICH TELEMETRY RIG"),
         _box_full(f"█▀█ █▄█ ░█░ ░░ █░▀█ ██▄ █░█ █▄█ ▄█   WINDOW: {cal_days}d ({e_dt} ◄── {s_dt})"),
         "╠════════════════════════════════════╦═════════════════════════════════════╣",
-        _box_split("QUOTA PACING & POOL SPLIT", "STEP & TOOL VELOCITY"),
+        _box_split("QUOTA & RESETS & POOL SPLIT", "STEP & TOOL VELOCITY"),
         _box_split(q_lines[0], f"Total : {tot_steps:,} steps | {tot_tools:,} tools"),
         _box_split(q_lines[1], f"Active: {tot_steps // act_days:,} s/act-d ({act_days}d active)"),
         _box_split(q_lines[2], f"Calend: {tot_steps // cal_days:,} s/cal-d ({tot_chats}c, {tot_subs}r)"),

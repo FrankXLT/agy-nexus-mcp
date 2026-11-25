@@ -134,16 +134,19 @@
   function renderWhiskerMarkup({ min, avg, max, dot, hasDot, scaleMax, color, state, tip, readout, flagHtml }) {
     const den = Math.max(1e-6, fin(scaleMax || max, 1));
     const mnP = clampPct((fin(min, 0) / den) * 100), mxP = clampPct((fin(max, 0) / den) * 100), avP = clampPct((fin(avg, 0) / den) * 100);
-    const barW = Math.max(3, mxP - mnP);
+    const rawW = mxP - mnP;
+    const barLeft = rawW < 2 ? Math.max(0, Math.min(mnP, 98)) : mnP;
+    const barW = mxP <= 0 ? 0 : Math.max(Math.min(2, 100 - barLeft), Math.min(100 - barLeft, rawW));
     const barCol = safeCol(state === "fault" ? "var(--status-danger)" : (state === "warn" ? "var(--status-warn)" : color));
     const tether = mnP > 1.5 ? `<span class="v9-whisk-tether" style="inline-size:${mnP.toFixed(1)}%"></span>` : "";
+    const barHtml = barW > 0 ? `<span class="v9-whisk-bar" style="inset-inline-start:${barLeft.toFixed(1)}%;inline-size:${barW.toFixed(1)}%;background:${esc(barCol)}"></span>` : "";
     let dotHtml = "";
     if (hasDot && dot != null) {
       const idle = fin(dot, 0) <= 0;
       const dP = idle ? 0 : clampPct((fin(dot, 0) / den) * 100);
       dotHtml = `<span class="v9-whisk-dot${idle ? " is-idle" : ""}" style="inset-inline-start:${dP.toFixed(1)}%;--v9-dot-bg:${idle ? "var(--bg-surface)" : esc(barCol)};--v9-dot-bd:${idle ? "var(--text-muted)" : "var(--bg-surface)"}"></span>`;
     }
-    return `<div class="v9-spk"${state ? ` data-state="${esc(state)}"` : ""} title="${esc(tip)}"><span class="v9-spk-track" role="img" aria-label="${esc(tip)}"><span class="v9-spk-rail">${tether}<span class="v9-whisk-bar" style="inset-inline-start:${mnP.toFixed(1)}%;inline-size:${barW.toFixed(1)}%;background:${esc(barCol)}"></span><span class="v9-whisk-avg" style="inset-inline-start:${avP.toFixed(1)}%"></span>${dotHtml}</span></span><span class="v9-spk-val">${esc(readout)}${flagHtml || ""}</span></div>`;
+    return `<div class="v9-spk"${state ? ` data-state="${esc(state)}"` : ""} title="${esc(tip)}"><span class="v9-spk-track" role="img" aria-label="${esc(tip)}"><span class="v9-spk-rail">${tether}${barHtml}<span class="v9-whisk-avg" style="inset-inline-start:${avP.toFixed(1)}%"></span>${dotHtml}</span></span><span class="v9-spk-val">${esc(readout)}${flagHtml || ""}</span></div>`;
   }
 
   function renderProjectWhisker(pm, scaleMax, metric, color) {

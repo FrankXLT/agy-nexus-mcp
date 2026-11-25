@@ -12,6 +12,7 @@ This directory contains the tracked agent definitions used by `agy-nexus-mcp`, `
 | `argon-surgeon.md` | Deep Systems Surgeon | `pro` | Gemini 4 Argon | Medium | Read-Write | State machines, async concurrency, algorithms (`1–3` files) |
 | `flash-auditor.md` | Rapid Test & Lint Runner | `flash` | Gemini 3.8 Flash | Low | Read+Exec | Executes unit tests, linters, and extracts minimal failure traces |
 | `argon-sentinel.md` | Invariant & Safety Auditor | `pro` | Gemini 4 Argon | High | Read-Only | Race conditions, resource leaks, and security invariant checks |
+| `carbon-sentinel.md` | Tab 1 Orthogonal Gate | `inherit` | Gemini 4 Carbon | High | Read-Only | Mode A Tab 1 security, auth & contract auditor (`0%` Partner) |
 | `claude-specialist.md` | Strike-2 Escalation Surgeon | `inherit` | Claude Sonnet 5.5 | Medium | Read-Write | Resolves Strike-2 bugs from `<3k` token escalation briefs |
 | `claude-sentinel.md` | Cross-Family Security Gate | `inherit` | Claude Sonnet 5.5 | High | Read-Only | Orthogonal auth, crypto, and `/dual-review` security audits |
 | `pool-failover.md` | Quota Arbitrage Dispatcher | `flash` | GPT-OSS 120B | Medium | Read+Exec | Queries `quota-router.sh` for Partner Pool failover routing |

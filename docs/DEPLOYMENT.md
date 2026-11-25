@@ -87,7 +87,7 @@ systemctl --user enable --now ag-bridge.service
 ### Option C: Public GHCR OCI Container (`--stdio` Mode for Local IDEs)
 Run directly in VS Code, Copilot CLI, Claude Code, or MCP Inspector over clean zero-stdout JSON-RPC without exposing an HTTP port or requiring `PATH_SECRET`:
 ```bash
-docker run -i --rm ghcr.io/frankxlt/agy-nexus-mcp:4.0.8 --stdio
+docker run -i --rm ghcr.io/frankxlt/agy-nexus-mcp:4.1.0 --stdio
 ```
 To unlock private session and workspace tools inside `--stdio` mode, pass a 64-hex `PASS_HASH` (or mount `secrets.env` via `-e AG_BRIDGE_ENV_FILE=/config/secrets.env`):
 ```bash
@@ -95,9 +95,9 @@ docker run -i --rm \
   -e PASS_HASH="<your-64-hex-sha256>" \
   -v "${HOME}/.gemini/antigravity:${HOME}/.gemini/antigravity:rw" \
   -v "${HOME}/agentic_workspace:${HOME}/agentic_workspace:ro" \
-  ghcr.io/frankxlt/agy-nexus-mcp:4.0.8 --stdio
+  ghcr.io/frankxlt/agy-nexus-mcp:4.1.0 --stdio
 ```
-- **First-Push GHCR Visibility Recovery (`Package validation failed`)**: GitHub initializes new `ghcr.io/<owner>/<repo>` container packages as Private on their first tagged push. If the `Publish GHCR OCI & MCP Registry` workflow fails at `./mcp-publisher publish` with `Package validation failed`, open **GitHub Package Settings -> Change visibility -> Public** once, then trigger **Actions -> Publish GHCR OCI & MCP Registry -> Run workflow** (`workflow_dispatch`, setting `release_tag` to `v4.0.8`) to finish registry publication without burning a new tag.
+- **First-Push GHCR Visibility Recovery (`Package validation failed`)**: GitHub initializes new `ghcr.io/<owner>/<repo>` container packages as Private on their first tagged push. If the `Publish GHCR OCI & MCP Registry` workflow fails at `./mcp-publisher publish` with `Package validation failed`, open **GitHub Package Settings -> Change visibility -> Public** once, then trigger **Actions -> Publish GHCR OCI & MCP Registry -> Run workflow** (`workflow_dispatch`, setting `release_tag` to `v4.1.0`) to finish registry publication without burning a new tag.
 
 ---
 
@@ -246,7 +246,7 @@ uv run python3 tests/run_permutation_suite.py
 - **Automated Upstream PRs (`.github/workflows/catalog-sync.yml`)**: Runs weekly (`contents: write`, `pull-requests: write`, `models: read`) against public rate feeds, updates only changed `public_api` / `cost_ledger.json` fields (`antigravity_ide` stays locked), regenerates `docs/PRICING_HISTORY.md`, runs `pytest`, and updates one `bot/catalog-sync` PR targeting `main`.
 - **Required GitHub Repository Settings**: Enable **Settings -> Actions -> General -> Allow GitHub Actions to create and approve pull requests** and protect `main` via **Settings -> Rules -> Rulesets** requiring PR approval plus the **`verify`** status check.
 
-### Build & Publish Interactive GitHub Pages Showcase (`v4.0.9`)
+### Build & Publish Interactive GitHub Pages Showcase (`v4.1.0`)
 Generate a zero-leak depersonalized static showcase in `build/gh-pages/` (stripping PNG metadata, aliasing private identifiers via SHA-256, and running `scan_showcase_privacy()`), preview locally, or dry-run/sync GitHub `main` + `gh-pages` + Release:
 ```bash
 python3 scripts/build_github_showcase.py --refresh

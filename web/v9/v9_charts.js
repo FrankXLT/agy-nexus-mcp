@@ -4,25 +4,102 @@
   const V9 = window.AgyV9;
   const chartMap = new Map();
   const resizeMap = new Map();
+  const pendingMap = new Map();
+  const PRIMARY_CHART_IDS = ["v9ModelChart", "v9SubagentChart", "v9ProjectChart"];
+  const OPTIONAL_CHART_IDS = ["v9CadenceChart", "v9WireScatterWrap"];
+  let layoutSyncRaf = 0;
+  let syncingLayout = false;
+
+  function isHostMeasurable(host) {
+    return Boolean(host && host.clientWidth > 0 && host.clientHeight > 0);
+  }
+
+  function clearWatcher(map, id) {
+    const unsub = map.get(id);
+    if (typeof unsub === "function") unsub();
+    map.delete(id);
+  }
+
+  function disposeChartEntry(id) {
+    const existing = chartMap.get(id);
+    if (existing && !existing.isDisposed()) existing.dispose();
+    chartMap.delete(id);
+    clearWatcher(resizeMap, id);
+  }
+
+  function measureSizeDelta(host, chart) {
+    const w = Math.round(host.clientWidth || 0);
+    const h = Math.round(host.clientHeight || 0);
+    const cw = chart && chart.getWidth ? Math.round(chart.getWidth() || 0) : 0;
+    const ch = chart && chart.getHeight ? Math.round(chart.getHeight() || 0) : 0;
+    return { w, h, mismatch: cw <= 0 || ch <= 0 || Math.abs(cw - w) > 1 || Math.abs(ch - h) > 1 };
+  }
+
+  function ensureChartSize(host, chart) {
+    if (!chart || chart.isDisposed() || !isHostMeasurable(host)) return;
+    const { w, h, mismatch } = measureSizeDelta(host, chart);
+    if (mismatch) chart.resize({ width: w, height: h });
+  }
+
+  function scheduleLayoutSync() {
+    if (layoutSyncRaf) return;
+    layoutSyncRaf = requestAnimationFrame(() => {
+      layoutSyncRaf = 0;
+      if (V9.state.bundle) syncChartsOnLayout(V9.state.bundle);
+    });
+  }
+
+  function bindHostWatcher(map, id, host, handler) {
+    clearWatcher(map, id);
+    if (!host) return;
+    const ro = typeof window.ResizeObserver === "function" ? new window.ResizeObserver(handler) : null;
+    if (ro) ro.observe(host);
+    window.addEventListener("resize", handler);
+    map.set(id, () => {
+      if (ro) ro.disconnect();
+      window.removeEventListener("resize", handler);
+    });
+  }
+
+  function watchUntilVisible(id, host) {
+    bindHostWatcher(pendingMap, id, host, () => {
+      if (host.isConnected === false || !isHostMeasurable(host)) return;
+      clearWatcher(pendingMap, id);
+      scheduleLayoutSync();
+    });
+  }
+
+  function attachResizeWatcher(id, host, chart) {
+    bindHostWatcher(resizeMap, id, host, () => {
+      if (!chart || chart.isDisposed() || host.isConnected === false || !isHostMeasurable(host)) return;
+      const { w, h, mismatch } = measureSizeDelta(host, chart);
+      if (mismatch) {
+        chart.resize({ width: w, height: h });
+        if (V9.state.bundle) scheduleRealign();
+      }
+    });
+  }
 
   function getOrInitChart(id) {
     const host = document.getElementById(id);
     if (!host || typeof window.echarts === "undefined") return null;
+    if (!isHostMeasurable(host)) {
+      disposeChartEntry(id);
+      watchUntilVisible(id, host);
+      return null;
+    }
+    clearWatcher(pendingMap, id);
     let chart = chartMap.get(id);
-    if (chart && chart.getDom && chart.getDom() === host && !chart.isDisposed()) return chart;
-    if (chart && !chart.isDisposed()) chart.dispose();
+    if (chart && chart.getDom && chart.getDom() === host && !chart.isDisposed()) {
+      ensureChartSize(host, chart);
+      if (!resizeMap.has(id)) attachResizeWatcher(id, host, chart);
+      return chart;
+    }
+    disposeChartEntry(id);
     chart = window.echarts.init(host, null, { renderer: "svg" });
     chartMap.set(id, chart);
-    const oldUnsub = resizeMap.get(id);
-    if (typeof oldUnsub === "function") oldUnsub();
-    if (window.QuietEChartsDefaults && typeof window.QuietEChartsDefaults.observeChartResize === "function") {
-      resizeMap.set(id, window.QuietEChartsDefaults.observeChartResize(host, chart, {
-        onResize: () => {
-          chart.resize();
-          if (V9.state.bundle) scheduleRealign();
-        },
-      }));
-    }
+    ensureChartSize(host, chart);
+    attachResizeWatcher(id, host, chart);
     return chart;
   }
 
@@ -279,6 +356,7 @@
     clearTimeout(alignTimer);
     alignTimer = setTimeout(() => {
       if (!V9.state.bundle) return;
+      if (V9.state.surfaceView && V9.state.surfaceView !== "analytics") return;
       renderAllCharts(V9.state.bundle);
     }, 60);
   }
@@ -302,18 +380,17 @@
     const host = document.getElementById(hostId);
     if (!host) return;
     if (!opt) {
-      const existing = chartMap.get(hostId);
-      if (existing && !existing.isDisposed()) existing.dispose();
-      chartMap.delete(hostId);
-      const unsub = resizeMap.get(hostId);
-      if (typeof unsub === "function") unsub();
-      resizeMap.delete(hostId);
+      disposeChartEntry(hostId);
+      clearWatcher(pendingMap, hostId);
       host.innerHTML = `<div class="v9-warmup-box">${V9.escHtml(emptyMsg)}</div>`;
       return;
     }
     if (host.querySelector(".v9-warmup-box")) host.innerHTML = "";
     const ch = getOrInitChart(hostId);
-    if (ch) ch.setOption(opt, true);
+    if (ch) {
+      if (isHostMeasurable(host)) ensureChartSize(host, ch);
+      ch.setOption(opt, true);
+    }
   }
 
   function highlightSeries(chartId, seriesName, on) {
@@ -340,12 +417,18 @@
     syncSecondaryAlignmentDom(isTwoUp);
 
     const wirePkg = buildWireScatterOption(b, t, fullW);
-    const c1 = getOrInitChart("v9ModelChart");
-    const c2 = getOrInitChart("v9SubagentChart");
-    const c3 = getOrInitChart("v9ProjectChart");
-    if (c1) c1.setOption(optModel, true);
-    if (c2) c2.setOption(optSub, true);
-    if (c3) c3.setOption(optProj, true);
+    [
+      ["v9ModelChart", optModel],
+      ["v9SubagentChart", optSub],
+      ["v9ProjectChart", optProj],
+    ].forEach(([id, opt]) => {
+      const host = document.getElementById(id);
+      const ch = getOrInitChart(id);
+      if (ch) {
+        if (isHostMeasurable(host)) ensureChartSize(host, ch);
+        ch.setOption(opt, true);
+      }
+    });
     disposeOrRenderHost("v9CadenceChart", cadPkg.opt, "Hourly activity breakdown unavailable");
 
     const cadSub = document.getElementById("v9CadenceSub");
@@ -356,13 +439,37 @@
     disposeOrRenderHost("v9WireScatterWrap", wirePkg.opt, "Warming up — 0 samples collected");
   }
 
+  function hostNeedsSync(id, optional) {
+    const host = document.getElementById(id);
+    if (!isHostMeasurable(host)) return false;
+    if (optional && host.querySelector(".v9-warmup-box") && !pendingMap.has(id)) return false;
+    const ch = chartMap.get(id);
+    if (!ch || ch.isDisposed() || (ch.getDom && ch.getDom() !== host)) return true;
+    return measureSizeDelta(host, ch).mismatch;
+  }
+
+  function syncChartsOnLayout(b) {
+    if (!b || (V9.state.surfaceView && V9.state.surfaceView !== "analytics")) return;
+    if (syncingLayout) return;
+    if (layoutSyncRaf) { cancelAnimationFrame(layoutSyncRaf); layoutSyncRaf = 0; }
+    const needsSync = PRIMARY_CHART_IDS.some((id) => hostNeedsSync(id, false))
+      || OPTIONAL_CHART_IDS.some((id) => hostNeedsSync(id, true));
+    if (!needsSync) return;
+    try {
+      syncingLayout = true;
+      renderAllCharts(b);
+    } finally {
+      syncingLayout = false;
+    }
+  }
+
   function disposeAll() {
     clearTimeout(alignTimer);
-    resizeMap.forEach((fn) => { if (typeof fn === "function") fn(); });
-    resizeMap.clear();
+    if (layoutSyncRaf) { cancelAnimationFrame(layoutSyncRaf); layoutSyncRaf = 0; }
+    [pendingMap, resizeMap].forEach((m) => { m.forEach((fn) => { if (typeof fn === "function") fn(); }); m.clear(); });
     chartMap.forEach((c) => { if (c && !c.isDisposed()) c.dispose(); });
     chartMap.clear();
   }
 
-  V9.Charts = { renderAllCharts, disposeAll, scheduleRealign, highlightSeries };
+  V9.Charts = { renderAllCharts, syncChartsOnLayout, disposeAll, scheduleRealign, highlightSeries };
 })();

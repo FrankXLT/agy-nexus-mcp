@@ -127,29 +127,51 @@ def is_surgical_fast_path(eff_exec_mode: str, eff_handoff_mode: str, body_clean:
     )
 
 
+_CANONICAL_ROLE_ALLOWLIST = (
+    "`flash-scout`, `argon-architect`, `flash-surgeon`, `hydrogen-surgeon`, "
+    "`neon-surgeon`, `argon-surgeon`, `flash-auditor`, `argon-sentinel`, "
+    "`carbon-sentinel`, `claude-specialist`, `claude-sentinel`, `pool-failover`"
+)
+
+_THIN_COORDINATOR_LAW = (
+    "**Thin-Coordinator Law**: Main Chat (`Gemini 4 Carbon`) stays a lightweight `< 250`-step coordinator and MUST obey the **12-role Canonical Subagent Role Allowlist** "
+    f"({_CANONICAL_ROLE_ALLOWLIST}). "
+    "Never invent task-prefixed or ad-hoc `TypeName`s (e.g., `wave1-argon-sentinel`, `diff-auditor`) or fall back to built-in `\"research\"` / `\"self\"`. "
+    "If any canonical role is missing from `<subagents>`, register that exact canonical role via `define_subagent` before `invoke_subagent`."
+)
+
+
 def build_execution_lifecycle_footer(eff_exec_mode: str, eff_handoff_mode: str, body_clean: str) -> str:
     """Return proportional Tier 1 Surgical Fast-Path or Tier 2 Full 4-Step Dual-Review footer."""
     if is_surgical_fast_path(eff_exec_mode, eff_handoff_mode, body_clean):
         verify_step = (
-            "3. **Release Gate & Verification**: Run `pytest` + `--self-test` directly and perform the concise `dual-review` pre-release verification on unreviewed diffs before publishing/closing out.\n"
+            "3. **Release Gate & Verification**: Run `pytest` + `--self-test` directly (or 1 bounded `flash-auditor` pass) and perform concise `argon-sentinel` + `carbon-sentinel` pre-release verification on unreviewed diffs before publishing/closing out.\n"
             if eff_handoff_mode == "release_closeout"
-            else "3. **Fast Verification**: Run `pytest` + `--self-test` directly (or 1 quick `flash-auditor` pass) — **skipping** multi-subagent `argon-sentinel` + `research` Dual-Review unless `4+` source modules or security/auth boundaries are modified.\n"
+            else "3. **Fast Verification**: Run `pytest` + `--self-test` directly (or 1 quick `flash-auditor` pass) — **skipping** `argon-sentinel` + `carbon-sentinel` Multi-Agent Dual-Review unless `4+` source modules or security/auth boundaries change.\n"
         )
         return (
             "\n---\n\n"
-            "## Surgical Fast-Path Lifecycle (`fast` Mode — Main-Chat Carbon 4 Direct)\n\n"
-            "1. **Direct Scout (`polyglot_outline` / `view_file`)**: Read attached `SKILL.md` contracts and inspect target spans directly in **Main Chat (`Gemini 4 Carbon`)**. Do **NOT** spawn `flash-scout` or `flash-surgeon` subagents when `<= 3` files are touched.\n"
+            "## Surgical Fast-Path Lifecycle (`fast` Mode — Thin-Coordinator Direct)\n\n"
+            f"- {_THIN_COORDINATOR_LAW}\n\n"
+            "1. **Direct Scout (`polyglot_outline` / `view_file`)**: Read attached `SKILL.md` contracts and inspect target spans directly in **Main Chat (`Gemini 4 Carbon`)** via `agy-praxis-mcp` / `serena`. Do **NOT** spawn `flash-scout` or surgeons when `< 3` files are touched.\n"
             "2. **Surgical Edit (`<= 500L`/file)**: Apply edits directly in Main Chat (`<= 500` lines/file, `650L` ceiling, functions `<= 100` lines), update `docs/WORKFLOWS.md` if behavior changed, and preserve `PWA_ASSETS` + `web/sw.js` parity if `web/` changed.\n"
             + verify_step
             + "4. **Local Restart & Preview**: Restart `ag-bridge-mcp` whenever Python/web files change, run 1 concise browser check when `web/` UI changed, and halt at local staging if `allow_chained_publish=False`.\n"
         )
     return (
         "\n---\n\n"
-        "## Mandatory 4-Step Execution Lifecycle & Verification Gate (Carbon 4 Main-Chat + Subagent Hybrid)\n\n"
-        "1. **Scout (`agy-praxis-mcp` / Serena LSP / `flash-scout`)**: Read all attached `SKILL.md` contracts first. Call `agy-praxis-mcp` (`polyglot_map`, `polyglot_search`, `polyglot_outline`) or Serena LSP tools to locate exact `Lstart-Lend` spans; search the repo for all connected routes, static asset allowlists (e.g. `PWA_ASSETS`), caches, and responsive containers beyond any files Gemini named. For multi-file discovery, dispatch `flash-scout` (`model='flash'`).\n"
-        "2. **Implement (Main-Chat `Gemini 4 Carbon` / `argon-surgeon` / `flash-surgeon`)**: Execute 1–2 file surgical symbolic edits or complex logic directly in Main Chat (on **Gemini 4 Carbon**) or via `argon-surgeon` (`model='pro'`); fan out 3+ file or mechanical refactors (`<= 500 lines/file`, hard ceiling 650 lines, functions `<= 100` lines) to `flash-surgeon` (`model='flash'`). Keep `docs/WORKFLOWS.md` updated whenever workflows or edge-case rules are added or clarified.\n"
-        "3. **Audit (`flash-auditor` & Intra-Google Dual-Review)**: Invoke `flash-auditor` (`model='flash'`) to run syntax/unit/smoke checks and verify `git diff` (or pit `argon-sentinel` `model='pro'` against Main-Chat **Gemini 4 Carbon** for architectural/security review) before marking `task.md` complete (Rule 8.1: no solo signoff).\n"
-        "4. **Visual & Preview Gate**: If any `.html`, `.css`, or frontend `.js` files were modified, run `~/.gemini/config/skills/visual-architecture-system/scripts/verify_visual_contract.py` against the local page and save desktop + mobile screenshots to the session artifact directory. Test actual user click-through flows (logged-out/locked state, unlocked state, and 390px / 900px / 1440px widths on target app's real port) rather than just checking if selectors exist in HTML. When `allow_chained_publish=False`, halt at local staging + preview without pushing or redeploying (restarting the local `ag-bridge-mcp` service/container whenever Python/web files change so fixes take effect in memory immediately).\n"
+        "## Mandatory 4-Step Execution Lifecycle & Thin-Coordinator Verification Gate\n\n"
+        f"- {_THIN_COORDINATOR_LAW}\n\n"
+        "1. **Scout (`agy-praxis-mcp` / Serena LSP / `flash-scout`)**: Read attached `SKILL.md` contracts first. Use `agy-praxis-mcp` (`polyglot_map`, `polyglot_search`, `polyglot_outline`) or `serena` LSP directly when `< 3` files; delegate reconnaissance across `3+` unfamiliar modules to `flash-scout` (`model='flash'`, `20–50` steps) to locate connected routes, static allowlists (e.g., `PWA_ASSETS`), caches, and responsive containers.\n"
+        "2. **Implement (Parallel Surgeon Dispatch Matrix)**: Delegate multi-file work (`1–2` owned files per dispatch, `40–80` target steps, hard `<= 120` cap, `<= 500L`/file, `650L` ceiling, functions `<= 100L`):\n"
+        "   - `flash-surgeon` (`model='flash'`): mechanical edits, tests, docs, version bumps, cohesive splits.\n"
+        "   - `hydrogen-surgeon` (`model='flash'`, `targetModel: \"Gemini 4 Hydrogen\"`): default everyday `2–4` file feature and API wiring.\n"
+        "   - `neon-surgeon` (`model='pro'`, `targetModel: \"Gemini 4 Neon\"`): Quiet UI CSS geometry, client state, SVG/ECharts charts.\n"
+        "   - `argon-surgeon` (`model='pro'`, `targetModel: \"Gemini 4 Argon\"`): `1–2` complex concurrency, state-machine, or algorithmic files.\n"
+        "   - `argon-architect` (`model='pro'`): 1M+ context blueprinting & `OWNED_FILES` task splits when needed.\n"
+        "   Update `docs/WORKFLOWS.md` whenever behavior changes.\n"
+        "3. **Audit (`flash-auditor` & Tab 1 Intra-Google Dual-Review)**: Invoke `flash-auditor` (`model='flash'`, `40–80` steps) for bounded-flag test/lint/self-test verification. Run Tab 1 Intra-Google Dual-Review pairing `argon-sentinel` (`model='pro'`) + `carbon-sentinel` (`model='inherit'`) — strictly shell-free read-only scoped to `review_diff.patch` + touched `Lstart-Lend` spans (`0%` Partner quota; never `\"research\"` or `claude-sentinel` on Gemini tabs!). Escalate Strike-2 blockers via a `<3k` brief to Tab 2 (`claude-specialist` / Mode B `claude-sentinel`).\n"
+        "4. **Visual & Preview Gate**: If any `.html`, `.css`, or frontend `.js` files were modified, run `~/.gemini/config/skills/visual-architecture-system/scripts/verify_visual_contract.py` against the local page and save desktop + mobile screenshots to the session artifact directory. Test actual user click-through flows (logged-out/locked state, unlocked state, and `390px` / `900px` / `1440px` widths on target app's real port) rather than just checking if selectors exist in HTML. When `allow_chained_publish=False`, halt at local staging + preview without pushing or redeploying (restarting the local `ag-bridge-mcp` service/container whenever Python/web files change so fixes take effect in memory immediately).\n"
     )
 
 
@@ -162,16 +184,19 @@ def build_existing_session_lifecycle_text(
     """Return proportional lifecycle instructions for follow-up wakeup prompts on existing sessions."""
     if is_surgical_fast_path(eff_exec_mode, eff_handoff_mode, body_clean):
         return (
-            "Follow the Surgical Fast-Path Lifecycle (Main-Chat Carbon 4 Direct):\n"
-            "1. Scout: Read attached SKILL.md contracts and inspect target spans directly via polyglot_outline / view_file (skip flash-scout/flash-surgeon for <= 3 files).\n"
-            "2. Implement: Apply surgical edits directly in Main Chat (<= 500 lines/file, ceiling 650L, functions <= 100L) and update docs/WORKFLOWS.md if behavior changed.\n"
-            "3. Verify: Run pytest + --self-test directly (skip multi-agent Dual-Review unless 4+ files or security boundaries change).\n"
+            "Follow the Surgical Fast-Path Lifecycle (Thin-Coordinator Direct):\n"
+            f"- {_THIN_COORDINATOR_LAW}\n"
+            "1. Scout: Read attached SKILL.md contracts and inspect target spans directly via polyglot_outline / view_file / serena (skip flash-scout and surgeons when < 3 files).\n"
+            "2. Implement: Apply surgical edits directly in Main Chat (<= 500L/file, 650L ceiling, functions <= 100L) and update docs/WORKFLOWS.md if behavior changed.\n"
+            "3. Verify: Run pytest + --self-test directly (or 1 quick flash-auditor pass) — skip argon-sentinel + carbon-sentinel Multi-Agent Dual-Review unless 4+ source modules or security/auth boundaries change.\n"
             f"4. Gate: {gate_directive}"
         )
     return (
-        "Follow the 4-Step Execution Lifecycle (Carbon 4 Main-Chat + Subagent Hybrid):\n"
-        "1. Scout: Read attached SKILL.md contracts; use agy-praxis-mcp (polyglot_map, polyglot_search, polyglot_outline) or Serena LSP tools directly for 1-2 files, or flash-scout (model='flash') for multi-file discovery.\n"
-        "2. Implement: Execute 1-2 file surgical symbolic edits (replace_symbol_body) or complex logic directly in Main Chat (Gemini 4 Carbon) or via argon-surgeon (model='pro'); fan out 3+ file / mechanical refactors (<= 500 lines/file, ceiling 650L, functions <= 100L) to flash-surgeon (model='flash').\n"
-        "3. Audit: Invoke flash-auditor (model='flash') or Intra-Google Dual-Review (argon-sentinel model='pro' vs Carbon 4) to verify git diff and run unit/smoke tests before marking task.md complete (Rule 8.1: no solo signoff).\n"
+        "Follow the Mandatory 4-Step Execution Lifecycle (Thin-Coordinator Hybrid):\n"
+        f"- {_THIN_COORDINATOR_LAW}\n"
+        "1. Scout: Read attached SKILL.md contracts first; use agy-praxis-mcp (polyglot_map, polyglot_search, polyglot_outline) or serena LSP directly when < 3 files, or delegate 3+ unfamiliar modules to flash-scout (model='flash', 20-50 steps).\n"
+        "2. Implement (Parallel Surgeon Dispatch Matrix — 1-2 owned files/dispatch, 40-80 target steps, hard <= 120 cap, <= 500L/file, 650L ceiling, functions <= 100L): flash-surgeon (model='flash': mechanical/tests/docs/version/splits), hydrogen-surgeon (model='flash', Gemini 4 Hydrogen: default 2-4 file feature/API wiring), neon-surgeon (model='pro', Gemini 4 Neon: Quiet UI CSS/client state/SVG/ECharts), argon-surgeon (model='pro', Gemini 4 Argon: 1-2 complex concurrency/state-machine/algorithm files), argon-architect (model='pro': 1M+ blueprinting & OWNED_FILES splits). Update docs/WORKFLOWS.md whenever behavior changes.\n"
+        "3. Audit: Invoke flash-auditor (model='flash', 40-80 steps) for bounded-flag test/lint/self-test verification, plus Tab 1 Intra-Google Dual-Review pairing argon-sentinel (model='pro') + carbon-sentinel (model='inherit') — strictly shell-free read-only scoped to review_diff.patch + touched Lstart-Lend spans (0% Partner quota; never \"research\" or claude-sentinel on Gemini tabs!). Escalate Strike-2 blockers via a <3k brief to Tab 2 (claude-specialist / Mode B claude-sentinel).\n"
         f"4. Gate: {gate_directive}"
     )
+

@@ -36,7 +36,7 @@ All server implementation code lives in `src/agy_nexus/`. The root `ag_bridge.py
 | `src/agy_nexus/retirement.py` | ~203 | Terminal session closeout & in-place retirement manifest (`RETIRED.json`), deferred `retire_after_closeout` closeout directives, prior-session baton extractor, and job-first 1-tap `Yes` `suggested_actions` engine |
 | `src/agy_nexus/code_health.py` | ~324 | Cached GitHub `/releases/latest` + `/tags` highest-semver comparator (`installed` vs `remote`), `<= 500L` (`650L` ceiling) modular hygiene scanner, and Polyglot symbol health aggregator |
 | `src/agy_nexus/stats_series.py` | ~278 | `1h` adaptive base slot grids (`24h` daily for Year), stacked model/subagent/project velocity series, and canonical Top-10 project-to-session hierarchy bands |
-| `src/agy_nexus/stats.py` | ~418 | Unified telemetry builder (`build_nexus_stats_bundle`) combining Dual-Pool quota pacing, 52-week muted calendar matrix, full-span Year `24h` daily / sub-daily series, and 3-tier ASCII views |
+| `src/agy_nexus/stats.py` | ~418 | Unified telemetry builder (`build_nexus_stats_bundle`) combining Dual-Pool Quota & Resets, 52-week muted calendar matrix, full-span Year `24h` daily / sub-daily series, and 3-tier ASCII views |
 | `src/agy_nexus/workflows.py` | ~303 | Cross-app workflow implementations (`inspect_multi_repo_drift`, `export_notebook_bundle` with `dry_run` preview & SHA-256 deduplication, quarantine handoff staging) |
 | `src/agy_nexus/media_discovery.py` | ~401 | `<2ms` header-only image dimension parser (`read_image_dimensions_fast`), session ownership windowing (`0001-` sentinel rescue, nanosecond-safe `parse_iso_epoch`), symlink-safe depth-bounded walkers, and `git status` media classification |
 | `src/agy_nexus/media.py` | ~407 | 7-day (`604800s`) HMAC-SHA256 `/web/media/` signer, canonical PWA deep-link builder (`workspace_url`), verified public HTTPS origin resolver, and bucket visual discovery |
@@ -114,20 +114,25 @@ All server implementation code lives in `src/agy_nexus/`. The root `ag_bridge.py
 
 ---
 
-## 4. Bundled 8-Agent Orthogonal Roster (`agents/`)
+## 4. Bundled 13-Agent Orthogonal Roster (`agents/`)
 
-The `agents/` directory contains ready-to-use subagent definitions (`~/.gemini/config/agents/*.md`) organized by **(Quota Pool × Thinking Effort × Tool Permissions)**:
+The `agents/` directory contains ready-to-use agent definitions (`~/.gemini/config/agents/*.md` — 12 subagent roles enforcing a `<= 120`-step ceiling plus the `swarm-orchestrator` coordinator) organized by **(Quota Pool × Thinking Effort × Tool Permissions)**:
 
 | # | Agent File | Model Tier | Thinking | Tools | Role |
 | :---: | :--- | :--- | :---: | :---: | :--- |
-| 1 | [`agents/flash-scout.md`](agents/flash-scout.md) | `flash` | Low | Read-Only | High-speed directory mapper, symbol indexer, and grep scanner |
-| 2 | [`agents/argon-architect.md`](agents/argon-architect.md) | `pro` | High | Read-Only | System blueprinting, schema design, and task decomposition |
-| 3 | [`agents/flash-surgeon.md`](agents/flash-surgeon.md) | `flash` | Medium | Read-Write | High-volume CRUD, mechanical refactors, and UI/CSS edits |
-| 4 | [`agents/argon-surgeon.md`](agents/argon-surgeon.md) | `pro` | Medium | Read-Write | Complex state machines, concurrency, and multi-module refactors |
-| 5 | [`agents/flash-auditor.md`](agents/flash-auditor.md) | `flash` | Low | Read+Exec | Rapid test suite and compiler/linter verifier |
-| 6 | [`agents/argon-sentinel.md`](agents/argon-sentinel.md) | `pro` | High | Read-Only | Security, invariant, race-condition, and resource-leak auditor |
-| 7 | [`agents/claude-specialist.md`](agents/claude-specialist.md) | `inherit` | High | Read-Write | Partner-pool Strike-2 escalation specialist |
-| 8 | [`agents/claude-sentinel.md`](agents/claude-sentinel.md) | `inherit` | High | Read-Only | Partner-pool adversarial security & architecture reviewer |
+| 1 | [`agents/flash-scout.md`](agents/flash-scout.md) | `flash` *(Gemini 3.8 Flash)* | Low | `Read+Exec` | High-speed directory mapper, symbol indexer, and grep scanner (`<= 120` steps) |
+| 2 | [`agents/argon-architect.md`](agents/argon-architect.md) | `pro` *(Gemini 4 Carbon / Argon)* | High | `Read-Only` | 1M+ context blueprinting, schema design, and task decomposition (`<= 120` steps) |
+| 3 | [`agents/flash-surgeon.md`](agents/flash-surgeon.md) | `flash` *(Gemini 3.8 Flash)* | Medium | `Read-Write` | Mechanical edits, CRUD, tests, docs, version bumps, and splits (`<= 120` steps) |
+| 4 | [`agents/hydrogen-surgeon.md`](agents/hydrogen-surgeon.md) | `flash` *(Gemini 4 Hydrogen)* | Medium | `Read-Write` | Everyday multi-file feature/API wiring & `<= 500L` module splits (`<= 120` steps) |
+| 5 | [`agents/neon-surgeon.md`](agents/neon-surgeon.md) | `pro` *(Gemini 4 Neon)* | Medium | `Read-Write` | Quiet UI CSS geometry, client state, and SVG/ECharts charts (`<= 120` steps) |
+| 6 | [`agents/argon-surgeon.md`](agents/argon-surgeon.md) | `pro` *(Gemini 4 Argon)* | Medium | `Read-Write` | Complex state machines, concurrency, and algorithmic refactors (`<= 120` steps) |
+| 7 | [`agents/flash-auditor.md`](agents/flash-auditor.md) | `flash` *(Gemini 3.8 Flash)* | Low | `Read+Exec` | Bounded-flag/timeout test, build, and compiler/linter verifier (`<= 120` steps) |
+| 8 | [`agents/argon-sentinel.md`](agents/argon-sentinel.md) | `pro` *(Gemini 4 Argon)* | High | `Read-Only` *(shell-free)* | Diff-scoped invariant, race-condition, and resource-leak auditor (`<= 120` steps) |
+| 9 | [`agents/carbon-sentinel.md`](agents/carbon-sentinel.md) | `inherit` *(Gemini 4 Carbon)* | High | `Read-Only` *(shell-free)* | Tab 1 Mode A orthogonal security, auth & contract auditor (`0%` Partner, `<= 120` steps) |
+| 10 | [`agents/claude-specialist.md`](agents/claude-specialist.md) | `inherit` *(Claude Sonnet 5.5)* | Medium | `Read-Write` | Tab 2 Partner-pool Strike-2 escalation specialist (`<= 120` steps) |
+| 11 | [`agents/claude-sentinel.md`](agents/claude-sentinel.md) | `inherit` *(Claude Sonnet 5.5)* | High | `Read-Only` *(shell-free)* | Tab 2 Mode B Partner-pool adversarial security & architecture reviewer (`<= 120` steps) |
+| 12 | [`agents/pool-failover.md`](agents/pool-failover.md) | `flash` *(GPT-OSS 120B)* | Medium | `Read+Exec` | Partner-pool quota arbitrage & failover dispatcher via `quota-router.sh` (`<= 120` steps) |
+| 13 | [`agents/swarm-orchestrator.md`](agents/swarm-orchestrator.md) | `inherit` *(Gemini 4 Carbon)* | Medium | `Main Agent` | Thin-orchestrator Dual-Tab routing coordinator (`< 250` steps) |
 
 ---
 

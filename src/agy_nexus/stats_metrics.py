@@ -215,6 +215,7 @@ def build_subagent_list_rows(
             rk, "", parent_model_map, main_mk, main_switch_date, e_iso, agent_target_map
         )[0]
         r_spec = (agent_role_specs or {}).get(rk.lower())
+        is_reg = bool(r_spec and r_spec.get("is_subagent", True))
         adj = build_subagent_adjudication(rk, votes, dom_mk, bool(agg["role_inherited"].get(rk)), r_spec, short_labels)
         dom_lbl = short_labels.get(dom_mk, dom_mk) + (" (inherit)" if adj["is_inherited"] else "")
         denom = max(1, runs)
@@ -231,6 +232,7 @@ def build_subagent_list_rows(
             "last_run_cost_usd": round(int(rv.get("last_run_cost_micros", 0)) / 1_000_000.0, 4),
             "cost_usd_micros": cm_s, "est_cost_usd": round(cm_s / 1_000_000.0, 2),
             "share_pct": round((st_s / sa_sum) * 100.0, 1),
+            "is_registered": is_reg,
             "dominant_model_key": dom_mk, "dominant_model_label": dom_lbl,
             **adj,
             "has_last_24h": has_l24, "last_24h_steps": l24_st, "last_24h_tokens": l24_tk,

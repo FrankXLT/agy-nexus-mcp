@@ -5,6 +5,7 @@ agy-nexus-mcp — Default (72-Col) & Quick (40-Col) Monospace ASCII Telemetry Re
 
 from __future__ import annotations
 
+import math
 from datetime import datetime
 from typing import Any
 
@@ -202,6 +203,34 @@ def _build_default_tables_72(
     return lines
 
 
+def _finite_pct(val: Any) -> float | None:
+    """Parse val as a finite float clamped to [0.0, 100.0], or None if invalid/non-finite."""
+    if val is None or isinstance(val, bool):
+        return None
+    try:
+        num = float(val)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, min(100.0, num)) if math.isfinite(num) else None
+
+
+def _resolve_partner_wk_left(quota: dict[str, Any]) -> float:
+    """Resolve partner weekly remaining% from claude.bucket_weekly or legacy quota fields."""
+    c_wk = ((quota.get("pools") or {}).get("claude") or {}).get("bucket_weekly") or {}
+    rem = _finite_pct(c_wk.get("remaining_pct"))
+    if rem is not None:
+        return round(max(0.0, min(100.0, rem)), 1)
+    used = _finite_pct(c_wk.get("used_pct"))
+    if used is not None:
+        return round(max(0.0, min(100.0, 100.0 - used)), 1)
+    for val in quota.values():
+        if isinstance(val, dict):
+            ceil = _finite_pct(val.get("recommended_cumulative_ceiling_pct"))
+            if ceil is not None:
+                return round(max(0.0, min(100.0, 100.0 - ceil)), 1)
+    return 85.7
+
+
 def render_ascii_default(bundle: dict[str, Any]) -> str:
     """Render Default 72-Column Stats: 2-col split header (40┆31), then full-width 72-col sections."""
     kpis, period = bundle.get("kpis") or {}, bundle.get("period") or {}
@@ -227,7 +256,7 @@ def render_ascii_default(bundle: dict[str, Any]) -> str:
     g_bar, p_bar = build_quota_bar_with_pin(g_pct, 90.0, 10), build_quota_bar_with_pin(p_used, 10.0, 10)
     g_pool = (quota.get("pools") or {}).get("google") or {}
     g_429, g_stat = int(g_pool.get("total_429_count", 0)), ("HEALTHY" if g_pool.get("status", "HEALTHY") == "HEALTHY" else "COOLDWN")
-    wk_left = round(max(0.0, 100.0 - float((quota.get("partner_weekly_pacing") or {}).get("recommended_cumulative_ceiling_pct", 14.3))), 1)
+    wk_left = _resolve_partner_wk_left(quota)
     w_calls, w_avg, w_max = int(wire.get("total_recorded_calls", 0)), float(wire.get("avg_kb", 0.0)), float(wire.get("max_kb", 0.0))
     w_tok, w_pct = fmt_tok(int(wire.get("total_mcp_tokens", 0)), False), int(round(float(wire.get("budget_compliance_pct", 100.0))))
     by_prod = wire.get("by_product") or {}
@@ -247,7 +276,7 @@ def render_ascii_default(bundle: dict[str, Any]) -> str:
         _sr(f"AGY-NEXUS v{__version__} // {cal_days}d ({e_dt} ◄── {s_dt})", f" {rel_label[:30]}"),
         "════════════════════════════════════════╪═══════════════════════════════",
         _sr(f"GOOGLE 20x : {g_pct:>5.1f}% [{g_bar}] {g_stat}", f" {g_429}x 429s | Ultra-20x (T:>=90%)"),
-        _sr(f"PARTNER 1x : {p_rem:>5.1f}% [{p_bar}] ON PACE", f" {wk_left:>4.1f}% Wk Left | Lim <=14.3%/d"),
+        _sr(f"PARTNER 1x : {p_rem:>5.1f}% [{p_bar}] OK     ", f" {wk_left:>4.1f}% Wk Left | Lim <=14.3%/d"),
         _sr(f"STEPS/TOOLS: {tot_steps:,}s | {tot_tools:,}t | {tot_chats}c", f" {tot_steps // act_days:,} s/act-d | {tot_steps // cal_days:,} s/cal-d"),
         _sr(f"TOKEN BURN : {fmt_tok(tot_tok)} | ${tot_cost:,.2f}", f" {fmt_rate(tot_tok / act_days)}/d | ${cost_d:,.2f}/d ({tot_subs}r)"),
         _sr(f"MCP WIRE   : {w_pct}% <20KB (avg {w_avg:.1f}/{w_max:.1f}KB)", f" {w_calls} req ({w_tok} tok) | {w_client}"),
@@ -308,7 +337,7 @@ def render_ascii_quick(bundle: dict[str, Any]) -> str:
     p_rem = max(0.0, 100.0 - max(0.0, 100.0 - g_pct))
     g_bar, p_bar = build_quota_bar_with_pin(g_pct, 90.0, 10), build_quota_bar_with_pin(100.0 - g_pct, 10.0, 10)
     g_429 = int(((quota.get("pools") or {}).get("google") or {}).get("total_429_count", 0))
-    wk_left = int(round(max(0.0, 100.0 - float((quota.get("partner_weekly_pacing") or {}).get("recommended_cumulative_ceiling_pct", 14.3)))))
+    wk_left = int(round(_resolve_partner_wk_left(quota)))
     code_health = bundle.get("code_health") or {}
     v_info, m_info = code_health.get("version") or {}, code_health.get("modular_hygiene") or {}
     poly_info = code_health.get("polyglot_health") or code_health.get("ast_integrity") or {}

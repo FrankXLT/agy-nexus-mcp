@@ -118,7 +118,20 @@ def load_agent_role_specs(agy_config_dir: Path) -> dict[str, dict[str, Any]]:
         keys = [classify_model_key(p, stem) for p in parts] if parts else ([] if raw_m == "inherit" else [classify_model_key(raw_m or stem, stem)])
         uniq_keys = list(dict.fromkeys(keys))
         lbl = " / ".join(short_map.get(k, k) for k in uniq_keys) if uniq_keys else ""
-        spec = {"yaml_model": raw_m, "is_inherit": raw_m == "inherit", "intended_model_keys": uniq_keys, "intended_model_key": (uniq_keys[0] if uniq_keys else ""), "intended_model_label": lbl}
+        raw_main = fm.get("mainAgent")
+        is_main = raw_main if isinstance(raw_main, bool) else str(raw_main or "").strip().lower() in ("true", "1", "yes")
+        raw_sub = fm.get("subagent")
+        sub_ok = raw_sub if isinstance(raw_sub, bool) else str(raw_sub or "").strip().lower() not in ("false", "0", "no")
+        is_sub = (not is_main) and sub_ok
+        spec = {
+            "yaml_model": raw_m,
+            "is_inherit": raw_m == "inherit",
+            "intended_model_keys": uniq_keys,
+            "intended_model_key": (uniq_keys[0] if uniq_keys else ""),
+            "intended_model_label": lbl,
+            "is_main_agent": is_main,
+            "is_subagent": is_sub,
+        }
         out[stem] = out[file_stem] = spec
     return out
 

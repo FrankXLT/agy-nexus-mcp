@@ -17,3 +17,4 @@ secrets.env*
 *.secrets*
 !scripts/init_secrets.py
 .DS_Store
+.serena

@@ -340,7 +340,7 @@ function generateDemoBundle(periodKey) {
     version: "3.2.5",
     period: { key: pk, label: cfg.label, resolution: cfg.res, active_days: winActiveDays, total_days: cfg.days },
     kpis: { total_conversations: builtProjs.reduce((a, p) => a + p.sessions.length, 0), total_subagents_spawned: 148, window_steps: totWinSteps, period_steps: totWinSteps, window_tool_calls: Math.round(totWinSteps * 0.51), window_tokens: totWinToks, active_days: winActiveDays },
-    quota_and_pools: { active_tier_profile: "ultra-20x", pools: { google: { status: "HEALTHY" }, claude: { status: "HEALTHY" } }, partner_weekly_pacing: { day_of_week_index: 3, daily_target_pct: 14.28, recommended_cumulative_ceiling_pct: 42.8 } },
+    quota_and_pools: { active_tier_profile: "ultra-20x", pools: { google: { status: "HEALTHY" }, claude: { status: "HEALTHY" } }, partner_weekly_window: { day_of_week_index: 3, daily_target_pct: 14.28, recommended_cumulative_ceiling_pct: 42.8 } },
     model_usage_vs_target,
     subagent_role_breakdown: subBreakdown,
     top_workspaces: top_projects.map((p) => ({ workspace: p.project_name, sessions: p.sessions.length, steps: p.window_steps, tokens: p.window_tokens, share_pct: p.share_pct })),

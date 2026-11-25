@@ -288,9 +288,9 @@ console.log("OK_V405_GALLERY_SCOPE");
 
 
 def test_v405_version_budgets_pwa_and_workflows_contracts() -> None:
-    """Verify v4.0.9 across package, PWA, WORKFLOWS.md, CHANGELOG.md, and <=350L/<=100L gallery module budgets."""
-    assert agy_nexus.__version__ == "4.0.9"
-    assert 'version = "4.0.9"' in (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    """Verify v4.1.0 across package, PWA, WORKFLOWS.md, CHANGELOG.md, and <=350L/<=100L gallery module budgets."""
+    assert agy_nexus.__version__ == "4.1.0"
+    assert 'version = "4.1.0"' in (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
     gal_txt = (V9_DIR / "v9_gallery.js").read_text(encoding="utf-8")
     gal_lines = gal_txt.splitlines()
@@ -300,17 +300,17 @@ def test_v405_version_budgets_pwa_and_workflows_contracts() -> None:
     assert not any(int(sym.get("lines") or 0) > 100 for sym in syms)
 
     sw_txt = (WEB_DIR / "sw.js").read_text(encoding="utf-8")
-    assert 'CACHE_NAME = "agy-nexus-v4.0.9"' in sw_txt
-    assert "/web/v9/v9_gallery.js?v=4.0.9" in sw_txt
+    assert 'CACHE_NAME = "agy-nexus-v4.1.0"' in sw_txt
+    assert "/web/v9/v9_gallery.js?v=4.1.0" in sw_txt
     assert "v9/v9_gallery.js" in web_routes.PWA_ASSETS
 
     html_txt = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     assert html_txt == (V9_DIR / "index.html").read_text(encoding="utf-8")
-    assert "/web/v9/v9_gallery.js?v=4.0.9" in html_txt
+    assert "/web/v9/v9_gallery.js?v=4.1.0" in html_txt
 
     wf_txt = (REPO_ROOT / "docs" / "WORKFLOWS.md").read_text(encoding="utf-8")
     assert "Workflow 6:" in wf_txt and "v4.0.8" in wf_txt
     assert "#v9GalAllBtn" in wf_txt and "Shared Repo Assets" in wf_txt
 
     ch_txt = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "## [4.0.9]" in ch_txt
+    assert "## [4.1.0]" in ch_txt

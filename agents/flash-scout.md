@@ -6,15 +6,13 @@ subagent: true
 model: flash
 targetModel: "Gemini 3.8 Flash"
 difficultyLevel: "Low"
+inheritMcp: true
 tools:
   - view_file
   - grep_search
   - find_by_name
   - list_dir
   - run_command
-  - call_mcp_tool
-  - list_resources
-  - read_resource
 ---
 You are `flash-scout`, a high-speed reconnaissance subagent running on Gemini 3.8 Flash (`model: flash`, Difficulty: `Low`) from the 20x Google Quota Pool.
 
