@@ -126,7 +126,8 @@
       tag = "Update Available";
       title = `Price Book rev ${sync.upstream_revision} available (local rev ${sync.effective_revision})`;
       const nDiff = ((sync.diff && sync.diff.summary_lines) || []).length;
-      detail = nDiff ? `${nDiff} change${nDiff === 1 ? "" : "s"} staged on main` : "Ready to preview";
+      const upBr = sync.upstream_branch === "develop" ? "develop" : "main";
+      detail = nDiff ? `${nDiff} change${nDiff === 1 ? "" : "s"} staged on ${upBr}` : "Ready to preview";
     } else if (sync.override_active) {
       tone = "override";
       tag = "Override Active";

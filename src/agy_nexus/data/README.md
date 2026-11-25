@@ -30,7 +30,8 @@ Every entry inside `model_catalog.json` separates public vendor specs from local
 ## 3. Revision Monotonicity & Safe Local Overrides (`catalog_override.json`)
 
 - Both files share an integer `catalog_revision >= 1` (`updated_at` in `YYYY-MM-DD`).
-- Running instances check `raw.githubusercontent.com/FrankXLT/agy-nexus-mcp/main/src/agy_nexus/data/` at most once every 24 hours (`${AGY_BG_DIR}/catalog_sync_cache.json`, fail-open when offline).
+- Running instances resolve their upstream GitHub branch strictly within `{"main", "develop"}` via `AGY_CATALOG_BRANCH` (auto-detecting local `develop` Git checkouts and failing closed to `"main"` in standalone containers/wheels) and check `raw.githubusercontent.com/FrankXLT/agy-nexus-mcp/{branch}/src/agy_nexus/data/` at most once every 24 hours (`${AGY_BG_DIR}/catalog_sync_cache.json`, auto-invalidating whenever `upstream_branch` changes and failing open offline).
+- `scripts/catalog_sync.py --sync-ci` streams up to `16 MiB` from `models.dev` in memory while keeping stored `model_catalog.json`, `cost_ledger.json`, and `catalog_override.json` strictly `<= 256 KB` (`262,144` bytes), and never downgrades higher curated `public_api` context/output token limits when external feeds lag behind.
 - When unlocked in `/web`, users can preview diffs in `<dialog id="v9CatalogDiffDialog">` and accept an update via `POST /web/api/catalog/accept`, writing `${AGY_DATA_DIR}/catalog_override.json` atomically (`chmod 0600`) without modifying git-tracked files.
 - `load_active_override_pair()` and `load_model_catalog()` re-validate every override before use, automatically fall back to the repo-bundled pair if an override is tampered with or corrupt, and auto-retire overrides once the bundled `catalog_revision` catches up.
 

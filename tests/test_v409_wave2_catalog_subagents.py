@@ -137,7 +137,14 @@ def test_wave2_web_catalog_api_auth_gates(tmp_path: Path, monkeypatch: pytest.Mo
     cand_cat["catalog_revision"] = int(cat["catalog_revision"]) + 2
     cand_led["catalog_revision"] = cand_cat["catalog_revision"]
     (bg_dir / "catalog_sync_cache.json").write_text(
-        json.dumps({"status": "OK", "checked_at": "2026-11-24T12:00:00Z", "fetched_epoch": time.time(), "upstream_catalog": cand_cat, "upstream_ledger": cand_led}),
+        json.dumps({
+            "status": "OK",
+            "upstream_branch": catalog_sync.resolve_catalog_upstream_branch(),
+            "checked_at": "2026-11-24T12:00:00Z",
+            "fetched_epoch": time.time(),
+            "upstream_catalog": cand_cat,
+            "upstream_ledger": cand_led,
+        }),
         encoding="utf-8",
     )
 
@@ -284,7 +291,7 @@ def test_wave2_catalog_sync_script_workflow_and_docs(monkeypatch: pytest.MonkeyP
     assert ok_pin is False and "unpinned" in err_pin.lower()
 
     wf_sync = (REPO_ROOT / ".github" / "workflows" / "catalog-sync.yml").read_text(encoding="utf-8")
-    for tok in ("contents: write", "pull-requests: write", "models: read", "bot/catalog-sync", "RUNNER_TEMP", "git fetch origin bot/catalog-sync", "gh models run", "pytest", "--render-docs --check"):
+    for tok in ("contents: write", "pull-requests: write", "models: read", "bot/catalog-sync", "bot/catalog-sync-develop", "RUNNER_TEMP", "git fetch origin", "gh models run", "pytest", "--render-docs --check"):
         assert tok in wf_sync, f"Missing workflow token: {tok}"
     assert "hashFiles('/tmp/" not in wf_sync
 

@@ -76,7 +76,7 @@ def test_v408_server_json_manifest_and_github_oidc_workflow() -> None:
         '- "v*"', "workflow_dispatch:", "release_tag:", "contents: read",
         "packages: write", "id-token: write", "MCP_PUBLISHER_VERSION: v1.8.1",
         "pytest", "python3 ag_bridge.py --self-test", "python3 -m agy_nexus.tools_praxis --self-test",
-        "--stdio", "docker/build-push-action@v6", "sigstore/cosign-installer@v4.1.2",
+        "--stdio", "docker/build-push-action@v7", "sigstore/cosign-installer@v4.1.2",
         "cosign verify-blob", "./mcp-publisher validate", "./mcp-publisher login github-oidc", "./mcp-publisher publish",
     ):
         assert token in wf, f"Missing workflow token: {token}"

@@ -4,6 +4,14 @@ on:
   schedule:
     - cron: "15 6 * * 1"
   workflow_dispatch:
+  push:
+    branches:
+      - develop
+    paths:
+      - ".github/workflows/catalog-sync.yml"
+      - "scripts/catalog_sync.py"
+      - "src/agy_nexus/catalog_sync.py"
+      - "src/agy_nexus/catalog_validator.py"
 
 permissions:
   contents: write
@@ -11,23 +19,28 @@ permissions:
   models: read
 
 concurrency:
-  group: catalog-sync-main
+  group: catalog-sync-${{ github.ref_name || 'main' }}
   cancel-in-progress: false
 
 jobs:
   sync-catalog:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout main branch
-        uses: actions/checkout@v4
+      - name: Checkout repository branch
+        uses: actions/checkout@v6
         with:
-          ref: main
+          ref: ${{ github.ref_name || 'main' }}
           fetch-depth: 1
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
 
       - name: Install test dependencies
         run: |
@@ -106,18 +119,24 @@ jobs:
           print("catalog-sync path allowlist OK:", paths)
           PY
 
-      - name: Push or update single reusable bot/catalog-sync PR against main
+      - name: Push or update single reusable branch-aware Price Book PR
         env:
           GH_TOKEN: ${{ github.token }}
+          BASE_BRANCH: ${{ github.ref_name || 'main' }}
         run: |
           if [ -z "$(git status --porcelain src/agy_nexus/data/ docs/PRICING_HISTORY.md)" ]; then
             echo "No numeric Price Book changes detected; skipping PR creation."
             exit 0
           fi
+          case "$BASE_BRANCH" in
+            main) BOT_BRANCH="bot/catalog-sync" ;;
+            develop) BOT_BRANCH="bot/catalog-sync-develop" ;;
+            *) echo "Blocked unsupported base branch: $BASE_BRANCH" >&2; exit 1 ;;
+          esac
           git config user.name "agy-catalog-bot[bot]"
           git config user.email "agy-catalog-bot[bot]@users.noreply.github.com"
-          git fetch origin bot/catalog-sync || true
-          git checkout -B bot/catalog-sync
+          git fetch origin "+refs/heads/$BOT_BRANCH:refs/remotes/origin/$BOT_BRANCH" || true
+          git checkout -B "$BOT_BRANCH"
           git add src/agy_nexus/data/model_catalog.json src/agy_nexus/data/cost_ledger.json docs/PRICING_HISTORY.md
           python3 - <<'PY'
           import subprocess, sys
@@ -139,10 +158,10 @@ jobs:
                   raise SystemExit(f"Blocked staged entry: path={path!r} mode={new_mode!r}")
           PY
           git commit -m "chore(catalog): sync public Price Book rates"
-          git push --force-with-lease origin bot/catalog-sync
-          OPEN_PR=$(gh pr list --head bot/catalog-sync --base main --state open --json number --jq '.[0].number // empty')
+          git push --force-with-lease origin "$BOT_BRANCH"
+          OPEN_PR=$(gh pr list --head "$BOT_BRANCH" --base "$BASE_BRANCH" --state open --json number --jq '.[0].number // empty')
           if [ -n "$OPEN_PR" ]; then
             gh pr edit "$OPEN_PR" --body-file "$RUNNER_TEMP/pr_body.md"
           else
-            gh pr create --base main --head bot/catalog-sync --title "chore(catalog): sync public Price Book rates" --body-file "$RUNNER_TEMP/pr_body.md"
+            gh pr create --base "$BASE_BRANCH" --head "$BOT_BRANCH" --title "chore(catalog): sync public Price Book rates" --body-file "$RUNNER_TEMP/pr_body.md"
           fi

@@ -40,6 +40,7 @@ from agy_nexus.catalog_validator import (
 DOCS_HISTORY_PATH = REPO_ROOT / "docs" / "PRICING_HISTORY.md"
 MODELS_DEV_URL = "https://models.dev/api.json"
 MODELS_DEV_PROVIDERS = ("anthropic", "google", "openai")
+MAX_FEED_BYTES = 16 * 1024 * 1024
 _ORIG_URLOPEN = urllib.request.urlopen
 _FEED_KEY_MAP: dict[str, tuple[str, ...]] = {
     "carbon": ("gemini-4-carbon", "gemini-4-carbon-high"),
@@ -76,7 +77,7 @@ def _fetch_models_dev_feed(timeout: float = 8.0) -> tuple[bool, dict[str, Any], 
         with ctx_mgr as resp:
             if getattr(resp, "status", 200) != 200:
                 return False, {}, f"HTTP {resp.status}"
-            data = parse_catalog_json_bytes(resp.read(4 * 1024 * 1024 + 1), max_bytes=4 * 1024 * 1024)
+            data = parse_catalog_json_bytes(resp.read(MAX_FEED_BYTES + 1), max_bytes=MAX_FEED_BYTES)
     except urllib.error.HTTPError as exc:
         return False, {}, f"Fail-closed upstream HTTP {exc.code}"
     except Exception as exc:
@@ -132,7 +133,7 @@ def apply_numeric_feed_updates(
     feed: dict[str, Any],
     today_iso: str,
 ) -> tuple[bool, dict[str, Any], dict[str, Any], dict[str, Any]]:
-    """Apply verified numeric pricing/limit diffs without touching locked antigravity_ide fields."""
+    """Apply verified numeric pricing/limit diffs without downgrading curated token floors or touching antigravity_ide."""
     parsed = _extract_numeric_feed_rows(feed)
     new_cat, new_led = deepcopy(cat), deepcopy(led)
     led_models = new_led.setdefault("models", {})
@@ -148,7 +149,9 @@ def apply_numeric_feed_updates(
         mod_changed = False
         for api_k in ("api_context_window", "api_max_output_tokens"):
             nv = upd.get(api_k)
-            if isinstance(nv, int) and nv > 0 and pub.get(api_k) != nv:
+            cur_v = pub.get(api_k)
+            cur_int = cur_v if (not isinstance(cur_v, bool) and isinstance(cur_v, int) and cur_v > 0) else 0
+            if isinstance(nv, int) and not isinstance(nv, bool) and nv > cur_int:
                 pub[api_k] = nv
                 mod_changed = True
         epochs = (led_models.setdefault(mk, {})).setdefault("rate_epochs", [])
@@ -220,8 +223,8 @@ def cmd_sync_ci(feed_file: str, pr_summary_out: str) -> int:
     today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     if feed_file:
         feed = parse_catalog_json_bytes(
-            read_bounded_regular_file(Path(feed_file), max_bytes=4 * 1024 * 1024),
-            max_bytes=4 * 1024 * 1024,
+            read_bounded_regular_file(Path(feed_file), max_bytes=MAX_FEED_BYTES),
+            max_bytes=MAX_FEED_BYTES,
         )
     else:
         ok, feed, err = _fetch_models_dev_feed()
@@ -324,7 +327,7 @@ def main() -> int:
     if args.json:
         print(json.dumps(st, indent=2))
     else:
-        print(f"[catalog-sync] status={st['status']} effective=r{st['effective_revision']} upstream=r{st['upstream_revision']} update={st['update_available']}")
+        print(f"[catalog-sync] status={st['status']} branch={st.get('upstream_branch', 'main')} effective=r{st['effective_revision']} upstream=r{st['upstream_revision']} update={st['update_available']}")
     return 0
 
 

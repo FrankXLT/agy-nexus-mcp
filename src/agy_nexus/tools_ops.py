@@ -378,7 +378,7 @@ def _collect_runtime_model_audit() -> dict[str, Any]:
     sync = get_catalog_sync_status(data_dir=AGY_DATA_DIR, bg_dir=AGY_BG_DIR, allow_network=False)
     compact_sync = {
         k: sync.get(k) for k in (
-            "status", "checked_at", "bundled_revision", "effective_revision",
+            "status", "upstream_branch", "checked_at", "bundled_revision", "effective_revision",
             "upstream_revision", "override_active", "update_available", "local_repo_dirty",
         )
     }

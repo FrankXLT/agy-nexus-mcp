@@ -31,10 +31,38 @@ from agy_nexus.catalog_validator import (
 DATA_DIR = Path(__file__).resolve().parent / "data"
 REPO_CATALOG_PATH = DATA_DIR / "model_catalog.json"
 REPO_LEDGER_PATH = DATA_DIR / "cost_ledger.json"
-RAW_UPSTREAM_BASE = "https://raw.githubusercontent.com/FrankXLT/agy-nexus-mcp/main/src/agy_nexus/data"
+ALLOWED_CATALOG_BRANCHES = frozenset({"main", "develop"})
+RAW_UPSTREAM_TEMPLATE = "https://raw.githubusercontent.com/FrankXLT/agy-nexus-mcp/{branch}/src/agy_nexus/data"
+RAW_UPSTREAM_BASE = RAW_UPSTREAM_TEMPLATE.format(branch="main")
 _PINNED_UPSTREAM_HOSTS = frozenset({"raw.githubusercontent.com", "gist.githubusercontent.com"})
 SYNC_CACHE_TTL_SECONDS = 86400
 _CATALOG_FS_LOCK = threading.RLock()
+
+
+def resolve_catalog_upstream_branch(repo_root: Path | None = None) -> str:
+    """Resolve upstream Price Book branch strictly within {'main', 'develop'} (env override -> local develop -> fail-closed 'main')."""
+    env_b = os.getenv("AGY_CATALOG_BRANCH", "").strip().lower()
+    if env_b:
+        return env_b if env_b in ALLOWED_CATALOG_BRANCHES else "main"
+    root = repo_root or Path(__file__).resolve().parent.parent.parent
+    if not (root / ".git").exists():
+        return "main"
+    try:
+        proc = subprocess.run(
+            ["git", "-c", "safe.directory=*", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=str(root), capture_output=True, text=True, timeout=1.5, check=False,
+        )
+        if proc.returncode == 0 and proc.stdout.strip() == "develop":
+            return "develop"
+    except Exception:
+        pass
+    return "main"
+
+
+def get_upstream_base_url(branch: str | None = None, repo_root: Path | None = None) -> str:
+    """Return raw.githubusercontent.com base URL for an allowlisted upstream Price Book branch."""
+    eff = branch.strip().lower() if isinstance(branch, str) and branch.strip().lower() in ALLOWED_CATALOG_BRANCHES else resolve_catalog_upstream_branch(repo_root)
+    return RAW_UPSTREAM_TEMPLATE.format(branch=eff)
 
 
 def is_safe_https_url(raw_url: str) -> bool:
@@ -317,6 +345,19 @@ def _validate_upstream_candidate(f_cat: Any, f_led: Any) -> str:
     return ""
 
 
+def _read_sync_cache(cache_path: Path) -> dict[str, Any]:
+    if not cache_path.is_file():
+        return {}
+    try:
+        loaded = parse_catalog_json_bytes(
+            read_bounded_regular_file(cache_path, max_bytes=MAX_CATALOG_BYTES * 2 + 4096),
+            max_bytes=MAX_CATALOG_BYTES * 2 + 4096,
+        )
+        return loaded if isinstance(loaded, dict) else {}
+    except Exception:
+        return {}
+
+
 def get_catalog_sync_status(
     data_dir: Path | None = None,
     bg_dir: Path | None = None,
@@ -329,31 +370,24 @@ def get_catalog_sync_status(
     d_dir = _resolve_data_dir(data_dir)
     b_dir = _resolve_bg_dir(bg_dir, d_dir)
     eff_cat, eff_led, meta = get_effective_catalog_pair(d_dir)
+    upstream_branch = resolve_catalog_upstream_branch()
     cache_path = b_dir / "catalog_sync_cache.json"
-    cached: dict[str, Any] = {}
-    if cache_path.is_file():
-        try:
-            loaded = parse_catalog_json_bytes(
-                read_bounded_regular_file(cache_path, max_bytes=MAX_CATALOG_BYTES * 2 + 4096),
-                max_bytes=MAX_CATALOG_BYTES * 2 + 4096,
-            )
-            if isinstance(loaded, dict):
-                cached = loaded
-        except Exception:
-            cached = {}
+    cached = _read_sync_cache(cache_path)
     now_epoch = time.time()
+    cached_branch = str(cached.get("upstream_branch") or "main").strip().lower()
+    branch_mismatch = bool(cached and cached_branch != upstream_branch)
     raw_ep = cached.get("fetched_epoch")
     ep_val = float(raw_ep) if (not isinstance(raw_ep, bool) and isinstance(raw_ep, (int, float)) and math.isfinite(float(raw_ep))) else 0.0
-    is_fresh = bool(0.0 < ep_val <= now_epoch + 300.0 and (now_epoch - ep_val) < SYNC_CACHE_TTL_SECONDS)
-    up_cat, up_led = cached.get("upstream_catalog"), cached.get("upstream_ledger")
+    is_fresh = False if branch_mismatch else bool(0.0 < ep_val <= now_epoch + 300.0 and (now_epoch - ep_val) < SYNC_CACHE_TTL_SECONDS)
+    up_cat, up_led = (None, None) if branch_mismatch else (cached.get("upstream_catalog"), cached.get("upstream_ledger"))
     if not (isinstance(up_cat, dict) and isinstance(up_led, dict)):
         up_cat, up_led = None, None
-    fetch_err = str(cached.get("error") or "")
-    checked_at = str(cached.get("checked_at") or "")
-    status = str(cached.get("status") or "UNKNOWN")
+    fetch_err = "" if branch_mismatch else str(cached.get("error") or "")
+    checked_at = "" if branch_mismatch else str(cached.get("checked_at") or "")
+    status = "NOT_CHECKED" if branch_mismatch else str(cached.get("status") or "UNKNOWN")
 
     if (refresh or not is_fresh) and allow_network:
-        fetcher = upstream_fetcher or _fetch_upstream_pair
+        fetcher = upstream_fetcher or (lambda: _fetch_upstream_pair(get_upstream_base_url(upstream_branch)))
         ok, f_cat, f_led, err = fetcher()
         checked_at = datetime.now(timezone.utc).isoformat()
         if ok and f_cat and f_led:
@@ -368,8 +402,8 @@ def get_catalog_sync_status(
             if up_cat is not None and _validate_upstream_candidate(up_cat, up_led):
                 up_cat, up_led = None, None
         _atomic_write_json_600(cache_path, {
-            "status": status, "checked_at": checked_at, "fetched_epoch": now_epoch,
-            "error": fetch_err, "upstream_catalog": up_cat, "upstream_ledger": up_led,
+            "status": status, "upstream_branch": upstream_branch, "checked_at": checked_at,
+            "fetched_epoch": now_epoch, "error": fetch_err, "upstream_catalog": up_cat, "upstream_ledger": up_led,
         })
     elif not is_fresh and not cached:
         status = "NOT_CHECKED"
@@ -385,7 +419,8 @@ def get_catalog_sync_status(
     diff = compute_catalog_diff((eff_cat, eff_led), (up_cat, up_led)) if upd_avail and up_cat and up_led else None
     local_edits = detect_local_catalog_edits()
     return {
-        "status": status, "checked_at": checked_at, "error": fetch_err if not upd_avail else "",
+        "status": status, "upstream_branch": upstream_branch, "checked_at": checked_at,
+        "error": fetch_err if not upd_avail else "",
         "bundled_revision": int(meta["bundled_revision"]), "effective_revision": eff_rev, "upstream_revision": up_rev,
         "updated_at": str(eff_cat.get("updated_at") or ""), "override_active": bool(meta["override_active"]),
         "override_accepted_at": str(meta["accepted_at"]), "retired_stale_override": bool(meta["retired_stale_override"]),
@@ -410,20 +445,14 @@ def accept_catalog_override(
     b_rev = int(b_cat.get("catalog_revision") or 1)
     with _CATALOG_FS_LOCK:
         if candidate_catalog is None or candidate_ledger is None:
-            st = get_catalog_sync_status(d_dir, b_dir, allow_network=allow_fetch, refresh=allow_fetch)
-            cache_p = b_dir / "catalog_sync_cache.json"
-            cached: dict[str, Any] = {}
-            if cache_p.is_file():
-                try:
-                    loaded = parse_catalog_json_bytes(
-                        read_bounded_regular_file(cache_p, max_bytes=MAX_CATALOG_BYTES * 2 + 4096),
-                        max_bytes=MAX_CATALOG_BYTES * 2 + 4096,
-                    )
-                    if isinstance(loaded, dict):
-                        cached = loaded
-                except Exception:
-                    cached = {}
-            candidate_catalog, candidate_ledger = cached.get("upstream_catalog"), cached.get("upstream_ledger")
+            pre_cached = _read_sync_cache(b_dir / "catalog_sync_cache.json")
+            need_refresh = bool(allow_fetch and not isinstance(pre_cached.get("upstream_catalog"), dict))
+            st = get_catalog_sync_status(d_dir, b_dir, allow_network=allow_fetch, refresh=need_refresh)
+            cached = _read_sync_cache(b_dir / "catalog_sync_cache.json")
+            if str(cached.get("upstream_branch") or "main").strip().lower() == resolve_catalog_upstream_branch():
+                candidate_catalog, candidate_ledger = cached.get("upstream_catalog"), cached.get("upstream_ledger")
+            else:
+                candidate_catalog, candidate_ledger = None, None
             if candidate_catalog is None or candidate_ledger is None:
                 return {"ok": False, "error": st.get("error") or "No validated upstream catalog snapshot cached."}
         errs = validate_catalog_pair(candidate_catalog, candidate_ledger)
