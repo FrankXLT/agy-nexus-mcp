@@ -4,6 +4,26 @@ All notable changes to **AGY-Nexus MCP** (`agy-nexus-mcp`) are documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.0] — 2026-11-25
+
+### Added & Improved
+- **13-Role Dual-Pool Agent Sync & `carbon-sentinel` (`agents/*.md`, `agents/README.md`, `AGENTS.md`, `README.md`, `.github/workflows/{ci,publish-mcp}.yml`, `tests/test_v408_ghcr_stdio_and_registry.py`)**:
+  - Synced all 13 global agent definitions (`13/13` `scripts/sync_agents.py --check` parity), adding [`agents/carbon-sentinel.md`](agents/carbon-sentinel.md) for Tab 1 Mode A Intra-Google Dual-Review (`model: inherit` on Gemini 4 Carbon at `0%` Partner usage), `inheritMcp: true` across role definitions, and strictly shell-free read-only sentinels (`argon-sentinel`, `carbon-sentinel`, `claude-sentinel`).
+- **Thin-Coordinator Multi-Surgeon Handoffs (`src/agy_nexus/handoff_templates.py`, `src/agy_nexus/target_resolver.py`)**:
+  - Enforced the `< 250`-step Main-Chat coordinator ceiling and 12-role Canonical Subagent Allowlist (`flash-scout`, `argon-architect`, `flash-surgeon`, `hydrogen-surgeon`, `neon-surgeon`, `argon-surgeon`, `flash-auditor`, `argon-sentinel`, `carbon-sentinel`, `claude-specialist`, `claude-sentinel`, `pool-failover`), delegating multi-file edits to `1–2` owned files per surgeon and prohibiting ad-hoc task-prefixed roles or `"research"`/`"self"` fallbacks.
+- **Card 4 `Quota & Resets` (% Remaining) & Terminology Scrub (`web/v9/{v9_quota_cards.js,v9_quota_cards.css,v9_analytics.js}`, `src/agy_nexus/{ascii_rich,ascii_default,telemetry_scanner,tools_ops}.py`, `scripts/build_github_showcase.py`, `skills/agy-nexus-stats/SKILL.md`)**:
+  - Replaced Card 4 with Option 1 **`Quota & Resets`**, rendering one `5px` semantic `<progress>` bar per active quota window filled to **`% remaining`** (`100%` down to `0%`) with `OK` (`>= 25%` left), `LOW LEFT` (`10%–24.9%`), `NEAR LIMIT` (`< 10%` or cooldown), `STALE`, and `IDE OFFLINE` pills, `!isCooldown` standby guard, 1-line Partner standby footer auto-expanding below `99.95%`, `<= 479px` compact labels, `@media (forced-colors: active)` support, `NaN`/string bounds guards, and full removal of `"Quota Pacing"`, `"ON PACE"`, `"WARM"`, and `"HOT"` wording across UI, ASCII rigs, telemetry, docs, and showcase data.
+- **Collapsible `Unregistered / Ad-hoc` Subagent Rollup (`src/agy_nexus/{stats_metrics,stats_aggregator}.py`, `web/v9/{v9_analytics.js,v9_tables_and_rail.css}`)**:
+  - Tagged every row in `subagent_list` with `is_registered: bool` against canonical definitions (`agents/*.md`) and grouped historical or ad-hoc roles in `#v9SubagentTableBody` under a single collapsible `Unregistered / Ad-hoc (N roles)` `<button aria-expanded>` summary row with keyboard focus restoration.
+- **Release Packaging, Ignore Hygiene & Showcase (`pyproject.toml`, `server.json`, `.gitignore`, `.dockerignore`, `web/`, `docs/WORKFLOWS.md`, `tests/test_v410_wave1_quota_resets_and_rollup.py`)**:
+  - Ignored `.serena/` workspace metadata, bumped package/MCP Registry/GHCR (`:4.1.0`) and PWA/SW (`agy-nexus-v4.1.0`) metadata, and refreshed depersonalized `web/demo_snapshot.js` + `README.md` (`0` leaks).
+
+### Fixed
+- **Post-Unlock & Layout-Change Blank ECharts Daily Charts (`web/v9/{v9_charts.js,v9_app.js}`)**:
+  - Deferred `echarts.init()` on `0x0` hidden hosts, reconciled stale chart widths via `ResizeObserver`, and added `syncChartsOnLayout()` across unlock, `Analytics`/`Workspace` switches, and viewport/rail resizes.
+- **Tablet `900px–1024px` `PER-RUN` Whisker Overlap (`web/v9/{v9_spark_bars.js,v9_tables_and_rail.css}`)**:
+  - Stacked the `PER-RUN` range track and `avg · max` readout cleanly below `1099px` with `5px` horizontal clearance and clamped near-`100%` whisker bar percentages.
+
 ## [4.0.9] — 2026-11-25
 
 ### Added & Improved

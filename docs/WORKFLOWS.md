@@ -247,14 +247,14 @@ Developers on VS Code, Copilot CLI, Claude Code, and MCP Inspector expect zero-s
    - Launching `docker run -i --rm ghcr.io/frankxlt/agy-nexus-mcp:4.0.8 --stdio` runs `_offload_sync_mcp_tools(mcp)` and `mcp.run(transport="stdio", show_banner=False)` with `0` startup banner lines on `stdout` (all diagnostics route strictly to `sys.stderr`).
    - Without `PATH_SECRET` or `PASS_HASH`, `initialize`, `tools/list` (`11` tools), and deadbolt-safe `list_models_and_agents(style="ascii", include_skills=False, include_rules=False)` succeed immediately; private session and workspace tools return `LOCKED_RESPONSE` with `PASS_HASH` / `AG_BRIDGE_ENV_FILE` setup guidance unless a valid 64-hex `PASS_HASH` is configured and unlocked (`verify_passphrase` and `is_unlocked` stay strictly `False` when `PASS_HASH` is empty or invalid).
 3. **Local Workstation HTTP & `/web` Studio Continuity**:
-   - Running `docker compose up -d` or `python3 ag_bridge.py` without `--stdio` enforces `len(PATH_SECRET) >= 32` and `len(PASS_HASH) == 64`, preserves stateless Streamable HTTP routing, LAN-only `/praxis/` gating, and `/web` Studio (`CACHE_NAME = "agy-nexus-v4.0.9"`).
+   - Running `docker compose up -d` or `python3 ag_bridge.py` without `--stdio` enforces `len(PATH_SECRET) >= 32` and `len(PASS_HASH) == 64`, preserves stateless Streamable HTTP routing, LAN-only `/praxis/` gating, and `/web` Studio (`CACHE_NAME = "agy-nexus-v4.1.0"`).
 4. **Tagged GitHub Actions OIDC Release & First-Push Visibility Recovery**:
    - Pushing tag `v*` triggers `.github/workflows/publish-mcp.yml` (`permissions: { contents: read, packages: write, id-token: write }`), which runs `pytest`, `python3 ag_bridge.py --self-test`, and `python3 -m agy_nexus.tools_praxis --self-test`, smoke-tests `--stdio` locally, pushes `ghcr.io/frankxlt/agy-nexus-mcp:<version>` and `:latest`, verifies `mcp-publisher` (`v1.8.1`) with `sigstore/cosign-installer@v4.1.2`, syncs `server.json` via `jq`, validates, logs in via `./mcp-publisher login github-oidc`, and publishes to `https://registry.modelcontextprotocol.io`.
    - If GitHub initializes a brand-new GHCR package as Private on first push (`Package validation failed`), flipping package visibility to Public in GitHub UI and triggering **Run workflow** (`workflow_dispatch` with `release_tag`) completes registry publication without incrementing the version tag.
 
 ---
 
-## Workflow 8: WF-08 — Shared Price Book Sync, Subagent Model Adjudication & Unmapped Barcode Alerts (`v4.0.9`)
+## Workflow 8: WF-08 — Shared Price Book Sync, Subagent Model Adjudication & Unmapped Barcode Alerts (`v4.1.0`)
 
 ### User Goal
 Consume community-maintained pricing and model additions in `/web` and Gemini without manual JSON editing, spot whenever switching the IDE main-chat dropdown redirects `inherit` subagents to another model, and detect newly released unrecognized `M*` model codes with a 1-click issue report.

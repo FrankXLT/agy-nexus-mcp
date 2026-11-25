@@ -88,7 +88,7 @@ def _read_package_version(src_root: Path) -> str:
         m = re.search(r'^version\s*=\s*"([^"]+)"', pyproject.read_text(encoding="utf-8"), re.M)
         if m:
             return m.group(1).strip()
-    return "4.0.9"
+    return "4.1.0"
 
 
 def _extract_changelog_section(src_root: Path, version: str) -> str:
@@ -219,7 +219,7 @@ def main() -> int:
     parser.add_argument("--repo", default="agy-nexus-mcp", help="Target GitHub repository name")
     parser.add_argument(
         "--description",
-        default="AGY-Nexus v4.0.9: Shared Two-File Price Book & 1-Click Overrides, Intended-vs-Actual Subagent Adjudication, Unmapped M* Barcode Alerts, bot/catalog-sync PRs, Zero-stdout --stdio & GHCR OCI MCP Server, Quiet UI v9.3.0 Studio, Praxis Semantic Gateway & 12-Agent Orchestrator.",
+        default="AGY-Nexus v4.1.0: Quota & Resets (% Left), 13-Agent Dual-Pool Sync & carbon-sentinel, Thin-Coordinator Handoffs, Collapsible Unregistered Subagent Rollup, Price Book Sync, Zero-Stdout --stdio & GHCR OCI MCP Server, Quiet UI v9.3.0 Studio & Praxis Gateway.",
         help="GitHub repository description",
     )
     parser.add_argument("--private", action="store_true", help="Create repository as private (default: public)")
@@ -235,7 +235,7 @@ def main() -> int:
     src_root = Path(__file__).resolve().parent.parent
     pkg_version = _read_package_version(src_root)
     tag_name = f"v{pkg_version}"
-    rel_title = args.release_title.strip() or f"{tag_name} — Public GHCR OCI Container, --stdio Mode & MCP Registry OIDC"
+    rel_title = args.release_title.strip() or f"{tag_name} — Quota & Resets, 13-Agent Sync & Thin-Coordinator Handoffs"
     showcase_dir = src_root / "build" / "gh-pages"
     pages_res = build_showcase(showcase_dir, refresh=False) if not args.no_pages else {"files": 0, "bytes": 0, "privacy_findings": 0}
     if args.dry_run:

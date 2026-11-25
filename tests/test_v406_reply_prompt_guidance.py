@@ -240,16 +240,16 @@ def test_v406_all_tools_emit_reply_guidance_and_stay_under_wire_cap(
 
 
 def test_v406_version_docs_and_modular_line_budgets() -> None:
-    """Verify 4.0.9 version parity, preserved WORKFLOWS 1-6, and strict <=500L / <=220L budgets."""
-    assert agy_nexus.__version__ == "4.0.9"
-    assert 'version = "4.0.9"' in (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert "## [4.0.9]" in (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8").splitlines()[6]
+    """Verify 4.1.0 version parity, preserved WORKFLOWS 1-6, and strict <=500L / <=220L budgets."""
+    assert agy_nexus.__version__ == "4.1.0"
+    assert 'version = "4.1.0"' in (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert "## [4.1.0]" in (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8").splitlines()[6]
     wf_txt = (REPO_ROOT / "docs" / "WORKFLOWS.md").read_text(encoding="utf-8")
     for n in range(1, 7):
         assert f"## Workflow {n}:" in wf_txt
-    assert "v4.0.9" in wf_txt and "@Agy Nexus Mcp" in wf_txt and "<FollowUp" in wf_txt
+    assert "v4.1.0" in wf_txt and "@Agy Nexus Mcp" in wf_txt and "<FollowUp" in wf_txt
     assert (REPO_ROOT / "web" / "index.html").read_text(encoding="utf-8") == (REPO_ROOT / "web" / "v9" / "index.html").read_text(encoding="utf-8")
-    assert 'CACHE_NAME = "agy-nexus-v4.0.9"' in (REPO_ROOT / "web" / "sw.js").read_text(encoding="utf-8")
+    assert 'CACHE_NAME = "agy-nexus-v4.1.0"' in (REPO_ROOT / "web" / "sw.js").read_text(encoding="utf-8")
 
     budgets = {
         "retirement.py": 220, "handoff.py": 500, "tools_media.py": 500,

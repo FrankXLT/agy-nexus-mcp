@@ -65,7 +65,7 @@
 
   const getDemoWorkspaceTree = () => ((window.DEMO_SNAPSHOT && window.DEMO_SNAPSHOT.workspace_tree)
     ? cloneJson(window.DEMO_SNAPSHOT.workspace_tree)
-    : { ok: true, version: "4.0.9", queue: { staged_count: 0, tickets: [] }, projects: [] });
+    : { ok: true, version: "4.1.0", queue: { staged_count: 0, tickets: [] }, projects: [] });
 
   function getDemoSessionBucket(sessionId) {
     const tree = V9.state.wsTree || getDemoWorkspaceTree();
