@@ -369,17 +369,26 @@
     if (!host || !host.dataset || host.dataset.v9HeatResizeBound) return;
     host.dataset.v9HeatResizeBound = "1";
     const onResize = () => {
-      if (!lastHeatBundle) return;
-      const curW = Number(host.clientWidth || 0) || Number(window.innerWidth || 0);
+      if (!lastHeatBundle || !V9.state.bundle || !host.clientWidth) return;
+      const curW = Number(host.clientWidth);
       if (Math.abs(curW - lastHeatWidth) < 2) return;
       clearTimeout(heatResizeTimer);
-      heatResizeTimer = setTimeout(() => { if (lastHeatBundle) renderHeatmap(lastHeatBundle); }, 80);
+      heatResizeTimer = setTimeout(() => {
+        if (lastHeatBundle && V9.state.bundle && host.clientWidth) renderHeatmap(lastHeatBundle);
+      }, 80);
     };
     if (typeof ResizeObserver === "function") {
       new ResizeObserver(onResize).observe(host);
     } else if (typeof window.addEventListener === "function") {
       window.addEventListener("resize", onResize);
     }
+  }
+
+  function reset() {
+    clearTimeout(heatResizeTimer);
+    heatResizeTimer = null;
+    lastHeatBundle = null;
+    lastHeatWidth = 0;
   }
 
   function renderHeatmap(b) {
@@ -460,6 +469,6 @@
 
   V9.Heatmap = {
     renderHeatmap, buildWeeksMatrix, buildMonthLabels, resolveGridGeometry, buildMonthDividerPath,
-    computeQuartiles, computeMetricLevel, formatCalendarDate, resolveWindowTag, findSpatialCandidate,
+    computeQuartiles, computeMetricLevel, formatCalendarDate, resolveWindowTag, findSpatialCandidate, reset,
   };
 })();

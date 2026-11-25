@@ -142,12 +142,30 @@ def test_wave5_probe_prefers_https_or_falls_back_to_http() -> None:
             res = ls_quota_probe.probe_local_language_server(now_epoch=now_ep)
     assert res is not None and res["ls_alive"] is True and res["transport"].startswith("http://127.0.0.1:")
 
-    # Masked ss -tlnp Process column (ProtectHome=read-only systemd user unit) falls back to ephemeral 127.0.0.1 ports
+    # Masked ss -tlnp Process column (ProtectHome=read-only systemd user unit) falls back to ephemeral 127.0.0.1 ports; other UIDs/system.slice filtered out
     ps_mock = mock.Mock(stdout="language_server_linux --csrf_token tok123 --extension_server_port 41234\n")
-    ss_masked = mock.Mock(stdout="LISTEN 0 4096 127.0.0.1:44361 0.0.0.0:*\nLISTEN 0 128 127.0.0.1:8765 0.0.0.0:*\n")
+    ss_masked = mock.Mock(stdout="LISTEN 0 4096 127.0.0.1:44361 0.0.0.0:* uid:999999\nLISTEN 0 128 127.0.0.1:45123 0.0.0.0:* cgroup:/system.slice/foo.service\nLISTEN 0 4096 127.0.0.1:44362 0.0.0.0:*\nLISTEN 0 128 127.0.0.1:8765 0.0.0.0:*\n")
     with mock.patch("agy_nexus.ls_quota_probe.subprocess.run", side_effect=[ps_mock, ss_masked]):
         tok, found_ports = ls_quota_probe._discover_ls_listeners()
-    assert tok == "tok123" and found_ports[0] == 44361 and 8765 not in found_ports and 41234 in found_ports
+    assert tok == "tok123" and found_ports[0] == 44362 and 44361 not in found_ports and 45123 not in found_ports and 8765 not in found_ports and 41234 in found_ports
+
+    # Real loopback server returning 200 {} (non-LS) must never receive X-Codeium-Csrf-Token
+    import http.server, threading
+    seen_hdrs: list[str] = []
+    class _StubH(http.server.BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            seen_hdrs.append(str(self.headers.get("X-Codeium-Csrf-Token") or ""))
+            self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers()
+            self.wfile.write(b'{"status":"ok"}')
+        def log_message(self, *a: object) -> None:
+            pass
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _StubH)
+    t = threading.Thread(target=srv.serve_forever, daemon=True); t.start()
+    try:
+        assert ls_quota_probe._post_loopback_rpc("http", srv.server_address[1], "GetUserStatus", "csrf-secret") is None
+        assert seen_hdrs == [""], f"CSRF token leaked to non-LS listener: {seen_hdrs}"
+    finally:
+        srv.shutdown(); srv.server_close()
 
 
 def test_wave5_pool_window_burn_and_ascii_rich_width() -> None:
@@ -439,3 +457,27 @@ def test_wave5_malformed_ls_values_and_demo_sanitizer_budget() -> None:
     assert "--v9-heat-cell: 16px; --v9-heat-gap: 3px;" in an_css
     assert "--v9-heat-cell: 10px; --v9-heat-gap: 3px;" in an_css
     assert "window.innerWidth <= 560" not in (WEB_V9 / "v9_app.js").read_text(encoding="utf-8")
+    assert "V9.Heatmap?.reset" in (WEB_V9 / "v9_app.js").read_text(encoding="utf-8")
+    assert "function reset()" in (WEB_V9 / "v9_heatmap.js").read_text(encoding="utf-8")
+
+    # Zero-activity window must yield 0/0 split (never 0/100), and falsy 0.0 partner share must stay 0.0 in showcase sanitizer
+    zero_lines = ascii_rich._format_rich_quota_lines(
+        {"live_quota": {"is_fresh": False, "state": "IDE_OFFLINE"}, "pools": {"google": {}, "claude": {}}},
+        [{"pool_key": "google", "actual_pct": 0.0, "target_pct": 90.0}, {"pool_key": "claude", "actual_pct": 0.0, "target_pct": 10.0}],
+        1795600000.0,
+    )
+    assert "Split   0/0 %" in zero_lines[0], zero_lines
+    zero_demo = build_github_showcase.sanitize_demo_quota_and_pools(
+        {"pools": {"google": {"call_share_pct": 100.0}, "claude": {"call_share_pct": 0.0}}}, []
+    )
+    assert zero_demo["pools"]["claude"]["call_share_pct"] == 0.0
+
+    # Unmapped private repo names and titles must fail closed in ShowcaseDepersonalizer
+    import export_depersonalized_showcase as eds
+    dp = eds.ShowcaseDepersonalizer()
+    p_alias = dp.alias_project_name("priv-id", "Ultra Secret Internal Project", "ultra-secret-internal-repo")
+    t_alias = dp.alias_title("Secret Internal Milestone Title", "telemetry-ingestor", "k-priv")
+    assert "Secret" not in p_alias and "Ultra" not in p_alias
+    assert "Secret" not in t_alias and "Milestone" not in t_alias
+    for py_p in (SRC_DIR / "agy_nexus" / "ls_quota_probe.py", SRC_DIR / "agy_nexus" / "stats.py", SRC_DIR / "agy_nexus" / "ascii_rich.py", SCRIPTS_DIR / "export_depersonalized_showcase.py", SCRIPTS_DIR / "build_github_showcase.py"):
+        assert len(py_p.read_text(encoding="utf-8").splitlines()) <= 500, f"{py_p.name} > 500L"

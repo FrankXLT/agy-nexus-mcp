@@ -76,6 +76,7 @@
       if (dlg && dlg.open) dlg.close();
     });
     if (V9.CatalogBanner?.reset) V9.CatalogBanner.reset();
+    if (V9.Heatmap?.reset) V9.Heatmap.reset();
     if (V9.Charts?.disposeAll) V9.Charts.disposeAll();
     if (V9.Lightbox?.reset) V9.Lightbox.reset();
     if (V9.Gallery?.reset) V9.Gallery.reset();

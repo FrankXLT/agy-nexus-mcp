@@ -346,8 +346,9 @@ def compute_pool_window_burn(
         b5, bw = po.get("bucket_5h") or {}, po.get("bucket_weekly") or {}
         use_r5 = is_fresh and bool(b5.get("has_active_reset") and b5.get("window_start_epoch"))
         use_rw = is_fresh and bool(bw.get("has_active_reset") and bw.get("window_start_epoch"))
-        s5 = float(b5["window_start_epoch"]) if use_r5 else (now_ep - 5 * 3600)
-        sw = float(bw["window_start_epoch"]) if use_rw else (now_ep - 7 * 86400)
+        floor_ep = now_ep - 8 * 86400
+        s5 = max(floor_ep, float(b5["window_start_epoch"])) if use_r5 else (now_ep - 5 * 3600)
+        sw = max(floor_ep, float(bw["window_start_epoch"])) if use_rw else (now_ep - 7 * 86400)
         slots_5[pk] = _slot_set_for_epoch_span(min(s5, now_ep), now_ep, display_tz)
         slots_7[pk] = _slot_set_for_epoch_span(min(sw, now_ep), now_ep, display_tz)
         win_src[pk] = ("reset_window" if use_r5 else "trailing_5h", "reset_window" if use_rw else "trailing_7d")

@@ -20,6 +20,7 @@ import subprocess
 import tempfile
 import time
 from typing import Any
+import urllib.error
 import urllib.request
 
 from agy_nexus.model_pricing import classify_model_key, get_model_specs_map
@@ -99,11 +100,12 @@ def _discover_ls_listeners() -> tuple[str, list[int]]:
                 break
     if not csrf:
         return "", []
-    ss_out = subprocess.run(["ss", "-tlnp"], capture_output=True, text=True, timeout=1.5, check=False).stdout
-    ports: list[int] = []
-    ephemeral: list[int] = []
-    other_hi: list[int] = []
+    uid_tag = f"uid:{os.getuid()}"
+    ss_out = subprocess.run(["ss", "-tlnep"], capture_output=True, text=True, timeout=1.5, check=False).stdout
+    ports, ephemeral, other_hi = [], [], []
     for ln in ss_out.splitlines():
+        if ("uid:" in ln and uid_tag not in ln) or "/system.slice/" in ln:
+            continue
         has_ls = "language_server" in ln
         for pm in re.finditer(r"127\.0\.0\.1:(\d+)", ln):
             p = int(pm.group(1))
@@ -120,22 +122,45 @@ def _discover_ls_listeners() -> tuple[str, list[int]]:
     return csrf, ports
 
 
+def _build_loopback_opener(scheme: str) -> urllib.request.OpenerDirector:
+    handlers: list[Any] = [urllib.request.ProxyHandler({}), _NoRedirect()]
+    if scheme == "https":
+        handlers.append(urllib.request.HTTPSHandler(context=_EMPTY_SSL_CTX))
+    return urllib.request.build_opener(*handlers)
+
+
+def _is_connect_ls_port(scheme: str, port: int, timeout: float) -> bool:
+    """Preflight 127.0.0.1:port without CSRF; only true LS answers HTTP 401 unauthenticated JSON."""
+    url = f"{scheme}://127.0.0.1:{int(port)}/exa.language_server_pb.LanguageServerService/GetUserStatus"
+    req = urllib.request.Request(url, data=b"{}", headers={"Content-Type": "application/json", "Connect-Protocol-Version": "1"}, method="POST")
+    try:
+        with _build_loopback_opener(scheme).open(req, timeout=timeout):
+            return False
+    except urllib.error.HTTPError as exc:
+        if exc.code != 401:
+            return False
+        try:
+            body = json.loads(exc.read(4096).decode("utf-8", errors="replace"), parse_constant=_reject_nonfinite)
+            return isinstance(body, dict) and body.get("code") == "unauthenticated"
+        except Exception:
+            return False
+    except Exception:
+        return False
+
+
 def _post_loopback_rpc(scheme: str, port: int, method: str, csrf: str, timeout: float = _LOOPBACK_TIMEOUT_SEC) -> dict[str, Any] | None:
     """Execute one Connect-RPC POST strictly against 127.0.0.1 (no proxy, no redirect, loopback-only TLS)."""
     if scheme not in ("https", "http") or not (1 <= int(port) <= 65535):
         return None
+    if method == "GetUserStatus" and not _is_connect_ls_port(scheme, port, timeout):
+        return None
     url = f"{scheme}://127.0.0.1:{int(port)}/exa.language_server_pb.LanguageServerService/{method}"
-    handlers: list[Any] = [urllib.request.ProxyHandler({}), _NoRedirect()]
-    if scheme == "https":
-        handlers.append(urllib.request.HTTPSHandler(context=_EMPTY_SSL_CTX))
-    opener = urllib.request.build_opener(*handlers)
     req = urllib.request.Request(
-        url,
-        data=b"{}",
+        url, data=b"{}",
         headers={"Content-Type": "application/json", "Connect-Protocol-Version": "1", "X-Codeium-Csrf-Token": csrf},
         method="POST",
     )
-    with opener.open(req, timeout=timeout) as resp:
+    with _build_loopback_opener(scheme).open(req, timeout=timeout) as resp:
         data = json.loads(resp.read(MAX_SNAPSHOT_BYTES * 4).decode("utf-8", errors="replace"), parse_constant=_reject_nonfinite)
         return data if isinstance(data, dict) else None
 
@@ -200,7 +225,7 @@ def _extract_sanitized_configs(status_data: dict[str, Any], now_epoch: float) ->
     for c in cfgs if isinstance(cfgs, list) else []:
         if not isinstance(c, dict):
             continue
-        mid = str(_as_dict(c.get("modelOrAlias")).get("model") or "").strip()
+        mid = str(_as_dict(c.get("modelOrAlias")).get("model") or "").strip()[:128]
         lbl = str(c.get("label") or "").strip()[:64]
         if not mid and not lbl:
             continue
@@ -210,7 +235,7 @@ def _extract_sanitized_configs(status_data: dict[str, Any], now_epoch: float) ->
         rf = max(0.0, min(1.0, _safe_float(qinfo.get("remainingFraction"), 1.0)))
         rt_raw = str(qinfo.get("resetTime") or "").strip() or None
         rt_epoch = parse_utc_epoch(rt_raw) if rt_raw else None
-        if is_untouched_rolling_reset(rf, "", rt_epoch, now_epoch, 5 * 3600):
+        if rt_epoch is None or is_untouched_rolling_reset(rf, "", rt_epoch, now_epoch, 5 * 3600):
             rt_raw = None
         out.append({
             "modelOrAlias": {"model": mid},
@@ -315,16 +340,14 @@ def probe_local_language_server(timeout: float = _LOOPBACK_TIMEOUT_SEC, *, now_e
                 status_data = _post_loopback_rpc(scheme, port, "GetUserStatus", csrf, timeout=timeout)
             except Exception:
                 continue
-            if not status_data:
+            if not isinstance(status_data, dict) or not isinstance(status_data.get("userStatus"), dict):
                 continue
             try:
                 summary_data = _post_loopback_rpc(scheme, port, "RetrieveUserQuotaSummary", csrf, timeout=timeout)
             except Exception:
                 summary_data = None
             try:
-                return sanitize_ls_responses(
-                    status_data, summary_data, transport=f"{scheme}://127.0.0.1:{port}", now_epoch=now_epoch,
-                )
+                return sanitize_ls_responses(status_data, summary_data, transport=f"{scheme}://127.0.0.1:{port}", now_epoch=now_epoch)
             except Exception:
                 continue
     return None
@@ -344,15 +367,12 @@ def _atomic_write_json_600(path: Path, payload: dict[str, Any]) -> None:
                 fh.write("\n")
             os.replace(tmp_name, path)
         except Exception:
-            if fd >= 0:
-                try:
-                    os.close(fd)
-                except OSError:
-                    pass
-            try:
-                os.unlink(tmp_name)
-            except OSError:
-                pass
+            for fn in ((lambda: os.close(fd)) if fd >= 0 else None, lambda: os.unlink(tmp_name)):
+                if fn:
+                    try:
+                        fn()
+                    except OSError:
+                        pass
             raise
         finally:
             fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
@@ -369,31 +389,23 @@ def write_quota_snapshot(bg_dir: Path, live_payload: dict[str, Any] | None, *, n
     if snap_path.is_file() and not snap_path.is_symlink():
         try:
             if snap_path.stat().st_size <= MAX_SNAPSHOT_BYTES:
-                loaded = json.loads(snap_path.read_text(encoding="utf-8"))
+                loaded = json.loads(snap_path.read_text(encoding="utf-8"), parse_constant=_reject_nonfinite)
                 if isinstance(loaded, dict) and loaded.get("schema_version") == 1:
                     prev = loaded
         except Exception:
             prev = {}
     now_iso = datetime.fromtimestamp(now_ep, tz=timezone.utc).isoformat()
     offline_payload = {
-        **prev,
-        "schema_version": 1,
-        "source": prev.get("source") or "antigravity_ls",
-        "ls_alive": False,
-        "checked_at": now_iso,
-        "checked_epoch": round(now_ep, 3),
-        "pools": prev.get("pools") or {},
-        "client_model_configs": prev.get("client_model_configs") or [],
+        **prev, "schema_version": 1, "source": prev.get("source") or "antigravity_ls", "ls_alive": False,
+        "checked_at": now_iso, "checked_epoch": round(now_ep, 3),
+        "pools": prev.get("pools") or {}, "client_model_configs": prev.get("client_model_configs") or [],
     }
     _atomic_write_json_600(snap_path, offline_payload)
     return offline_payload
 
 
 def read_quota_snapshot(
-    bg_dir: Path | None,
-    *,
-    max_stale_seconds: int = DEFAULT_MAX_STALE_SECONDS,
-    now_epoch: float | None = None,
+    bg_dir: Path | None, *, max_stale_seconds: int = DEFAULT_MAX_STALE_SECONDS, now_epoch: float | None = None,
 ) -> dict[str, Any]:
     """Read and validate `${AGY_BG_DIR}/live_quota_snapshot.json`, returning freshness and state metadata."""
     now_ep = float(now_epoch if now_epoch is not None else time.time())
@@ -415,22 +427,12 @@ def read_quota_snapshot(
     ls_alive = bool(data.get("ls_alive"))
     is_fresh = bool(ls_alive and age_sec is not None and age_sec <= max_stale_seconds)
     state = "LIVE" if is_fresh else ("IDE_OFFLINE" if not ls_alive else "STALE")
-    return {
-        **data,
-        "state": state,
-        "is_fresh": is_fresh,
-        "source": "host_snapshot",
-        "snapshot_age_seconds": age_sec,
-    }
+    return {**data, "state": state, "is_fresh": is_fresh, "source": "host_snapshot", "snapshot_age_seconds": age_sec}
 
 
 def probe_or_read_quota_snapshot(
-    bg_dir: Path | None,
-    *,
-    allow_subprocess: bool = True,
-    write_if_live: bool = False,
-    max_stale_seconds: int = DEFAULT_MAX_STALE_SECONDS,
-    now_epoch: float | None = None,
+    bg_dir: Path | None, *, allow_subprocess: bool = True, write_if_live: bool = False,
+    max_stale_seconds: int = DEFAULT_MAX_STALE_SECONDS, now_epoch: float | None = None,
 ) -> dict[str, Any]:
     """Try live loopback LS probe first (host), falling back transparently to host snapshot (Docker/CLI)."""
     if allow_subprocess:
@@ -446,14 +448,11 @@ def probe_or_read_quota_snapshot(
 
 
 def enrich_quota_and_pools(
-    pools_out: dict[str, dict[str, Any]],
-    *,
-    bg_dir: Path | None = None,
-    allow_subprocess: bool = True,
-    now_epoch: float | None = None,
+    pools_out: dict[str, dict[str, Any]], *, bg_dir: Path | None = None,
+    allow_subprocess: bool = True, write_if_live: bool = False, now_epoch: float | None = None,
 ) -> dict[str, Any]:
     """Attach live or snapshot 5h/weekly quota buckets and freshness metadata into pools_out; return live_quota dict."""
-    snap = probe_or_read_quota_snapshot(bg_dir, allow_subprocess=allow_subprocess, write_if_live=True, now_epoch=now_epoch)
+    snap = probe_or_read_quota_snapshot(bg_dir, allow_subprocess=allow_subprocess, write_if_live=write_if_live, now_epoch=now_epoch)
     s_pools = _as_dict(snap.get("pools"))
     for pk in ("google", "claude"):
         sp = _as_dict(s_pools.get(pk))
@@ -463,8 +462,7 @@ def enrich_quota_and_pools(
         for bk_key in ("bucket_5h", "bucket_weekly"):
             if isinstance(sp.get(bk_key), dict):
                 dst[bk_key] = dict(sp[bk_key])
-    ut = _as_dict(snap.get("user_tier"))
-    ps = _as_dict(snap.get("plan_status"))
+    ut, ps = _as_dict(snap.get("user_tier")), _as_dict(snap.get("plan_status"))
     return {
         "state": str(snap.get("state") or "UNAVAILABLE"),
         "ls_alive": bool(snap.get("ls_alive")),

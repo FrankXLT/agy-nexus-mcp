@@ -250,8 +250,10 @@ def _attach_pool_burn_and_shares(
         display_tz=DISPLAY_TZ, bg_dir=bg_dir,
     )
     g_shr = round(sum(float(m.get("actual_pct", 0.0)) for m in model_comp if str(m.get("pool_key") or "").lower() == "google"), 1)
+    p_raw = sum(float(m.get("actual_pct", 0.0)) for m in model_comp if str(m.get("pool_key") or "").lower() != "google")
+    p_shr = round(max(0.0, 100.0 - g_shr), 1) if (g_shr + p_raw) > 0.0 else 0.0
     pools = quota_info.setdefault("pools", {})
-    for pk, shr in (("google", g_shr), ("claude", round(max(0.0, 100.0 - g_shr), 1))):
+    for pk, shr in (("google", g_shr), ("claude", p_shr)):
         po = pools.setdefault(pk, {})
         po["call_share_pct"] = shr
         po.update(burn_map.get(pk) or {})

@@ -121,9 +121,12 @@ def _fmt_reset_short(bucket: dict[str, Any] | None, now_ep: float) -> str:
     if not isinstance(bucket, dict) or not bucket.get("has_active_reset"):
         return "idle"
     rt_ep = _parse_reset_ep(bucket)
-    if rt_ep is None:
+    if rt_ep is not None:
+        rem_s = max(0, int(round(rt_ep - now_ep)))
+    elif isinstance(bucket.get("offset_seconds"), (int, float)) and not isinstance(bucket.get("offset_seconds"), bool):
+        rem_s = max(0, int(round(float(bucket["offset_seconds"]))))
+    else:
         return "actv"
-    rem_s = max(0, int(round(rt_ep - now_ep)))
     if rem_s <= 60:
         return "soon"
     if rem_s < 3600:
@@ -178,8 +181,13 @@ def _format_rich_quota_lines(quota: dict[str, Any], models: list[dict[str, Any]]
     pools = quota.get("pools") or {}
     g_p, c_p = pools.get("google") or {}, pools.get("claude") or {}
     g_429 = int(g_p.get("total_429_count", 0) or 0) + int(c_p.get("total_429_count", 0) or 0)
-    g_shr = sum(float(m.get("actual_pct", 0.0)) for m in models if is_google_pool_model(m)) if models else float(g_p.get("call_share_pct", 0.0) or 0.0)
-    p_shr = max(0.0, 100.0 - g_shr) if (models or g_p.get("call_share_pct") is not None) else float(c_p.get("call_share_pct", 0.0) or 0.0)
+    if models:
+        g_shr = sum(float(m.get("actual_pct", 0.0)) for m in models if is_google_pool_model(m))
+        p_raw = sum(float(m.get("actual_pct", 0.0)) for m in models if not is_google_pool_model(m))
+        p_shr = max(0.0, 100.0 - g_shr) if (g_shr + p_raw) > 0.0 else 0.0
+    else:
+        g_shr = float(g_p.get("call_share_pct", 0.0) or 0.0)
+        p_shr = float(c_p.get("call_share_pct", 0.0) or 0.0)
     tgt_g, tgt_lbl = _resolve_rich_target_split(quota, models)
     lq = quota.get("live_quota") or {}
     g5, gw = g_p.get("bucket_5h") or {}, g_p.get("bucket_weekly") or {}

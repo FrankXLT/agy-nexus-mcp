@@ -198,8 +198,12 @@ def sanitize_demo_quota_and_pools(qp: dict[str, Any] | None, models: list[dict[s
     mod_list = list(models or [])
     g_src = pools.get("google") if isinstance(pools.get("google"), dict) else {}
     p_src = pools.get("claude") if isinstance(pools.get("claude"), dict) else {}
-    g_share = g_src.get("call_share_pct") if g_src.get("call_share_pct") is not None else sum(float(m.get("actual_pct") or 0) for m in mod_list if "google" in str(m.get("pool") or "").lower())
-    p_share = p_src.get("call_share_pct") if p_src.get("call_share_pct") is not None else sum(float(m.get("actual_pct") or 0) for m in mod_list if "partner" in str(m.get("pool") or "").lower())
+    g_share = g_src.get("call_share_pct")
+    if g_share is None:
+        g_share = sum(float(m.get("actual_pct") or 0) for m in mod_list if "google" in str(m.get("pool") or "").lower()) if mod_list else 86.4
+    p_share = p_src.get("call_share_pct")
+    if p_share is None:
+        p_share = sum(float(m.get("actual_pct") or 0) for m in mod_list if "partner" in str(m.get("pool") or "").lower()) if mod_list else max(0.0, 100.0 - float(g_share))
     g5 = g_src.get("bucket_5h") if isinstance(g_src.get("bucket_5h"), dict) else {}
     g_wk = g_src.get("bucket_weekly") if isinstance(g_src.get("bucket_weekly"), dict) else {}
     p_wk = p_src.get("bucket_weekly") if isinstance(p_src.get("bucket_weekly"), dict) else {}
@@ -213,17 +217,17 @@ def sanitize_demo_quota_and_pools(qp: dict[str, Any] | None, models: list[dict[s
     src["pools"] = {
         "google": {
             "status": "HEALTHY", "cooldown_remaining_seconds": 0, "total_429_count": int(g_src.get("total_429_count") or 0),
-            "call_share_pct": round(float(g_share or 86.4), 1),
-            "bucket_5h": {"window": "5h", "window_seconds": 18000, "used_pct": g5_used, "remaining_pct": round(100.0 - g5_used, 1), "has_active_reset": True, "offset_seconds": 10320, "description": "Gemini Models"},
-            "bucket_weekly": {"window": "weekly", "window_seconds": 604800, "used_pct": g_wk_used, "remaining_pct": round(100.0 - g_wk_used, 1), "has_active_reset": True, "offset_seconds": 356400, "description": "Gemini Models"},
+            "call_share_pct": round(float(g_share), 1),
+            "bucket_5h": {"window": "5h", "window_seconds": 18000, "used_pct": g5_used, "remaining_pct": round(100.0 - g5_used, 1), "elapsed_pct": 42.7, "has_active_reset": True, "offset_seconds": 10320, "description": "Gemini Models"},
+            "bucket_weekly": {"window": "weekly", "window_seconds": 604800, "used_pct": g_wk_used, "remaining_pct": round(100.0 - g_wk_used, 1), "elapsed_pct": 41.1, "has_active_reset": True, "offset_seconds": 356400, "description": "Gemini Models"},
             "burn_5h": _sanitized_burn(g_src.get("burn_5h"), 640, 41_200_000, 14.8, "demo_5h"),
             "burn_7d": _sanitized_burn(g_src.get("burn_7d"), 14_820, 942_000_000, 318.4, "demo_7d"),
         },
         "claude": {
             "status": "HEALTHY", "cooldown_remaining_seconds": 0, "total_429_count": int(p_src.get("total_429_count") or 0),
-            "call_share_pct": round(float(p_share or 13.6), 1),
-            "bucket_5h": {"window": "5h", "window_seconds": 18000, "used_pct": 0.0, "remaining_pct": 100.0, "has_active_reset": False, "description": "Claude and GPT models"},
-            "bucket_weekly": {"window": "weekly", "window_seconds": 604800, "used_pct": p_wk_used, "remaining_pct": round(100.0 - p_wk_used, 1), "has_active_reset": True, "offset_seconds": 356400, "description": "Claude and GPT models"},
+            "call_share_pct": round(float(p_share), 1),
+            "bucket_5h": {"window": "5h", "window_seconds": 18000, "used_pct": 0.0, "remaining_pct": 100.0, "elapsed_pct": 0.0, "has_active_reset": False, "description": "Claude and GPT models"},
+            "bucket_weekly": {"window": "weekly", "window_seconds": 604800, "used_pct": p_wk_used, "remaining_pct": round(100.0 - p_wk_used, 1), "elapsed_pct": 41.1, "has_active_reset": True, "offset_seconds": 356400, "description": "Claude and GPT models"},
             "burn_5h": _sanitized_burn(p_src.get("burn_5h"), 0, 0, 0.0, "demo_5h"),
             "burn_7d": _sanitized_burn(p_src.get("burn_7d"), 1_840, 118_500_000, 49.2, "demo_7d"),
         },
