@@ -176,7 +176,7 @@ for (const metric of ["steps", "tokens", "cost"]) {
   ctx.window.AgyV9.state.metric = metric;
   HM.renderHeatmap({ heatmap_series: series });
   assert.ok(hostEl.innerHTML.includes(`v9-heat-months" style="inline-size:`));
-  assert.ok(hostEl.innerHTML.includes(`v9-heat-grid" style="grid-template-columns:repeat(52,12px)"`));
+  assert.ok(hostEl.innerHTML.includes(`v9-heat-grid" style="grid-template-columns:repeat(52,16px)"`));
   const lvl3or4 = (hostEl.innerHTML.match(/data-level="(?:3|4)"/g) || []).length;
   assert.ok(lvl3or4 >= 12, `Metric ${metric} collapsed under spike day: only ${lvl3or4} level 3/4 cells`);
 }
@@ -194,7 +194,7 @@ assert.strictEqual(HM.computeMetricLevel({ cost_usd: 112 }, "cost", HM.computeQu
 ctx.window.innerWidth = 390;
 ctx.window.AgyV9.state.heatPinned = false;
 HM.renderHeatmap({ heatmap_series: series });
-assert.ok(hostEl.innerHTML.includes("grid-template-columns:repeat(26,9px)"));
+assert.ok(hostEl.innerHTML.includes("grid-template-columns:repeat(26,10px)"));
 console.log("V9_HEATMAP_OK");
 """,
         encoding="utf-8",
@@ -214,7 +214,7 @@ def test_v402_heatmap_css_and_workflows_contracts() -> None:
     assert "opacity: 0.28;" not in css_txt
     assert ".v9-heat-cell.is-out, .v9-heat-inspect-swatch.is-out { background: var(--v9-heat-out-0); }" in css_txt
     assert '.v9-heat-cell.is-out[data-level="4"], .v9-heat-inspect-swatch.is-out[data-level="4"] { background: var(--v9-heat-out-4); }' in css_txt
-    assert re.search(r"@media \(max-width:\s*639px\)[\s\S]*--v9-heat-cell:\s*9px;\s*--v9-heat-gap:\s*4px;", css_txt)
+    assert re.search(r"@media \(max-width:\s*639px\)[\s\S]*--v9-heat-cell:\s*10px;\s*--v9-heat-gap:\s*3px;", css_txt)
 
     wf_txt = (REPO_ROOT / "docs" / "WORKFLOWS.md").read_text(encoding="utf-8")
     assert "Workflow 6:" in wf_txt and "v4.0.8" in wf_txt

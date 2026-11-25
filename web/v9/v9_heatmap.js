@@ -48,13 +48,13 @@
     const count = Math.max(1, Number(colsCount || 52));
     const vw = Number(window.innerWidth || 1280);
     const isNarrow = vw <= 639;
-    const gapPx = isNarrow ? 4 : 5;
-    const dowReserve = isNarrow ? 22 : 36;
+    const gapPx = 3;
+    const dowReserve = isNarrow ? 20 : 36;
     const rawHostW = host && Number(host.clientWidth) > 0 ? Number(host.clientWidth) : 0;
-    const fallbackW = isNarrow ? Math.max(280, vw - 30) : Math.min(1380, Math.max(320, vw - 56));
+    const fallbackW = isNarrow ? Math.max(280, vw - 26) : Math.min(1380, Math.max(320, vw - 56));
     const availGridW = Math.max(160, (rawHostW || fallbackW) - dowReserve);
     const rawCell = Math.floor((availGridW - Math.max(0, count - 1) * gapPx) / count);
-    const cellPx = Math.max(8, Math.min(12, rawCell));
+    const cellPx = Math.max(8, Math.min(16, rawCell));
     const pitch = cellPx + gapPx;
     const gridW = count * cellPx + Math.max(0, count - 1) * gapPx;
     const gridH = 7 * cellPx + 6 * gapPx;

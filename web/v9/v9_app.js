@@ -4,7 +4,7 @@
   const V9 = window.AgyV9;
   const st = V9.state;
   let statsSeq = 0;
-  let lastMobileHeat = window.innerWidth <= 560;
+  let lastMobileHeat = window.innerWidth <= 639;
 
   function syncActiveProjChip(b) {
     const wrap = document.getElementById("v9ActiveProjWrap");
@@ -436,7 +436,7 @@
     let lastDesktopRail = window.innerWidth >= 1100;
     let resizeRailTimer = null;
     window.addEventListener("resize", () => {
-      const nowMob = window.innerWidth <= 560;
+      const nowMob = window.innerWidth <= 639;
       if (nowMob !== lastMobileHeat) {
         lastMobileHeat = nowMob;
         if (!st.heatPinned) st.heatWeeks = nowMob ? 26 : 53;

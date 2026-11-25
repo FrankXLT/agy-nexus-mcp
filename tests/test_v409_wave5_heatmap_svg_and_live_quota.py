@@ -245,18 +245,21 @@ const HM = ctx.window.AgyV9.Heatmap;
 const AN = ctx.window.AgyV9.Analytics;
 
 const g1440 = HM.resolveGridGeometry(53, { clientWidth: 1360 });
-assert.strictEqual(g1440.cellPx, 12);
-assert.strictEqual(g1440.gapPx, 5);
+assert.strictEqual(g1440.cellPx, 16);
+assert.strictEqual(g1440.gapPx, 3);
+const g1440Pinned = HM.resolveGridGeometry(53, { clientWidth: 1100 });
+assert.strictEqual(g1440Pinned.cellPx, 16);
+assert.strictEqual(g1440Pinned.gapPx, 3);
 
 ctx.window.innerWidth = 900;
 const g900 = HM.resolveGridGeometry(53, { clientWidth: 840 });
-assert.strictEqual(g900.cellPx, 10);
-assert.strictEqual(g900.gapPx, 5);
+assert.strictEqual(g900.cellPx, 12);
+assert.strictEqual(g900.gapPx, 3);
 
 ctx.window.innerWidth = 390;
 const g390 = HM.resolveGridGeometry(26, { clientWidth: 360 });
-assert.strictEqual(g390.cellPx, 9);
-assert.strictEqual(g390.gapPx, 4);
+assert.strictEqual(g390.cellPx, 10);
+assert.strictEqual(g390.gapPx, 3);
 
 ctx.window.innerWidth = 1440;
 const series = [];
@@ -271,12 +274,23 @@ const { cols } = HM.buildWeeksMatrix(series, 53);
 const labels = HM.buildMonthLabels(cols);
 assert.strictEqual(labels[49], "Nov");
 assert.strictEqual(labels[48], "");
-const dPath = HM.buildMonthDividerPath(cols, 12, 5);
+const dPath = HM.buildMonthDividerPath(cols, 16, 3);
 assert.ok(dPath.includes("M") && dPath.includes("L"));
+const segCoords = Array.from(dPath.matchAll(/[ML]([0-9.]+) ([0-9.]+)/g)).map((m) => [Number(m[1]), Number(m[2])]);
+assert.ok(segCoords.length >= 20, "Expected stepped month divider coordinates");
+for (const [x, y] of segCoords) {
+  const xHalf = Math.abs((x % 1) - 0.5) < 1e-6;
+  const yHalf = Math.abs((y % 1) - 0.5) < 1e-6;
+  assert.ok(xHalf || Number.isInteger(x), `Unexpected x coordinate ${x}`);
+  assert.ok(yHalf || Number.isInteger(y), `Unexpected y coordinate ${y}`);
+  if (x > 0 && x < g1440.gridW) assert.ok(xHalf, `Inner divider x=${x} must snap to .5 gutter center`);
+}
 HM.renderHeatmap({ period: { key: "current_month", start_date: "2026-11-01", end_date: "2026-11-25" }, heatmap_series: series });
 assert.ok(!heatHost.innerHTML.includes("has-month-left"));
 assert.ok(!heatHost.innerHTML.includes("Upcoming calendar day"));
-assert.ok(heatHost.innerHTML.includes(`style="inset-inline-start:${49 * 17}px">Nov</span>`));
+assert.ok(heatHost.innerHTML.includes(`style="inset-inline-start:${49 * 19}px">Nov</span>`));
+assert.ok(heatHost.innerHTML.includes(`viewBox="0 0 ${g1440.gridW} ${g1440.gridH}"`));
+assert.ok(heatHost.innerHTML.includes("--v9-heat-cell:16px;--v9-heat-gap:3px"));
 
 const future5h = new Date(Date.now() + 7500000).toISOString();
 const futureWk = new Date(Date.now() + 345600000).toISOString();
@@ -364,8 +378,16 @@ def test_wave5_malformed_ls_values_and_demo_sanitizer_budget() -> None:
     assert "2026-11-25T15:00:00Z" not in raw_dump
     assert sanitized["pools"]["google"]["bucket_5h"]["offset_seconds"] == 10320
 
-    for rel in ("v9_analytics.css", "v9_shell.css", "v9_heatmap.js", "v9_analytics.js", "v9_demo_adapter.js"):
+    for rel in ("v9_analytics.css", "v9_shell.css", "v9_heatmap.js", "v9_analytics.js", "v9_demo_adapter.js", "v9_app.js"):
         p = WEB_V9 / rel
         lines = p.read_text(encoding="utf-8").splitlines()
         assert len(lines) <= 500, f"{rel} exceeded 500L ({len(lines)})"
         assert "!important" not in p.read_text(encoding="utf-8"), f"!important found in {rel}"
+
+    an_css = (WEB_V9 / "v9_analytics.css").read_text(encoding="utf-8")
+    assert "stroke-width: 1; stroke-linecap: butt; stroke-linejoin: miter;" in an_css
+    assert "outline: 2px solid Highlight; outline-offset: -2px;" in an_css
+    assert ":is(.v9-card, .va-card):has(#v9HeatHost)" in an_css
+    assert "--v9-heat-cell: 16px; --v9-heat-gap: 3px;" in an_css
+    assert "--v9-heat-cell: 10px; --v9-heat-gap: 3px;" in an_css
+    assert "window.innerWidth <= 560" not in (WEB_V9 / "v9_app.js").read_text(encoding="utf-8")
