@@ -171,12 +171,18 @@ def _normalize_bucket(raw: dict[str, Any], default_window: str, now_epoch: float
         rt_raw, rt_epoch = None, None
     has_reset = bool(rt_raw and rt_epoch and rt_epoch > (now_epoch - 60))
     win_start_epoch = round(rt_epoch - win_sec, 3) if (has_reset and rt_epoch and rt_epoch > now_epoch) else None
+    elapsed_pct = 0.0
+    if has_reset and rt_epoch is not None:
+        rem_sec = max(0.0, min(float(win_sec), rt_epoch - now_epoch))
+        elapsed_pct = round(max(0.0, min(100.0, (1.0 - rem_sec / float(win_sec)) * 100.0)), 1)
     return {
         "bucket_id": str(raw.get("bucketId") or "")[:32],
         "window": "weekly" if win_sec > 86400 else "5h",
+        "window_seconds": win_sec,
         "remaining_fraction": round(rf, 6),
         "used_pct": round((1.0 - rf) * 100.0, 1),
         "remaining_pct": round(rf * 100.0, 1),
+        "elapsed_pct": elapsed_pct,
         "reset_time": rt_raw if has_reset else None,
         "reset_epoch": round(rt_epoch, 3) if (has_reset and rt_epoch) else None,
         "window_start_epoch": win_start_epoch,

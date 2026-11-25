@@ -106,13 +106,24 @@ def _build_rich_model_and_tables(
     return lines
 
 
+def _parse_reset_ep(bucket: dict[str, Any]) -> float | None:
+    rt_ep = bucket.get("reset_epoch")
+    if isinstance(rt_ep, (int, float)) and not isinstance(rt_ep, bool):
+        return float(rt_ep)
+    rt_str = str(bucket.get("reset_time") or "").strip()
+    if rt_str:
+        from agy_nexus.ls_quota_probe import parse_utc_epoch
+        return parse_utc_epoch(rt_str)
+    return None
+
+
 def _fmt_reset_short(bucket: dict[str, Any] | None, now_ep: float) -> str:
     if not isinstance(bucket, dict) or not bucket.get("has_active_reset"):
         return "idle"
-    rt_ep = bucket.get("reset_epoch")
-    if not isinstance(rt_ep, (int, float)):
+    rt_ep = _parse_reset_ep(bucket)
+    if rt_ep is None:
         return "actv"
-    rem_s = max(0, int(round(float(rt_ep) - now_ep)))
+    rem_s = max(0, int(round(rt_ep - now_ep)))
     if rem_s <= 60:
         return "soon"
     if rem_s < 3600:
@@ -122,24 +133,69 @@ def _fmt_reset_short(bucket: dict[str, Any] | None, now_ep: float) -> str:
     return f"{rem_s // 86400}d{(rem_s % 86400) // 3600}h"
 
 
+def _bucket_clock_pct(bucket: dict[str, Any], default_sec: int, now_ep: float) -> float:
+    if not isinstance(bucket, dict) or not bucket.get("has_active_reset"):
+        return 0.0
+    win_sec = max(1, int(bucket.get("window_seconds") or default_sec))
+    rt_ep = _parse_reset_ep(bucket)
+    if rt_ep is not None:
+        rem = max(0.0, min(float(win_sec), rt_ep - now_ep))
+        return round(max(0.0, min(100.0, (1.0 - rem / float(win_sec)) * 100.0)), 1)
+    raw = bucket.get("elapsed_pct")
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        return max(0.0, min(100.0, float(raw)))
+    return 0.0
+
+
+def _rich_pace_line(tag: str, bkt: dict[str, Any], default_sec: int, now_ep: float) -> str:
+    u = max(0.0, min(100.0, float(bkt.get("used_pct", 0.0) or 0.0)))
+    has_r = bool(bkt.get("has_active_reset"))
+    if not has_r and u <= 0.05:
+        return f"{tag}: Stdby [······] idle  OK"[:35]
+    clk = _bucket_clock_pct(bkt, default_sec, now_ep)
+    bar = build_quota_bar_with_pin(u, clk, 6)
+    rst = _fmt_reset_short(bkt, now_ep)
+    zone = "HOT" if (u >= 85.0 or (has_r and (u - clk) > 15.0)) else ("WRM" if (has_r and (u - clk) > 0.0) else "OK ")
+    return f"{tag}:{u:>3.0f}/c{clk:<2.0f}[{bar}] {rst:<4} {zone}"[:35]
+
+
+def _resolve_rich_target_split(quota: dict[str, Any], models: list[dict[str, Any]]) -> tuple[float, str]:
+    tts = quota.get("tier_target_split")
+    if isinstance(tts, dict) and tts.get("label"):
+        return float(tts.get("google_target_pct", 90.0)), str(tts["label"])
+    if models:
+        g_t = round(sum(float(m.get("target_pct", 0.0) or 0.0) for m in models if is_google_pool_model(m)), 1)
+        p_t = round(max(0.0, 100.0 - g_t), 1)
+        if g_t > 0:
+            fmt = lambda n: str(int(round(n))) if abs(n - round(n)) < 0.05 else f"{n:.1f}"
+            return g_t, f"{fmt(g_t)}/{fmt(p_t)}"
+    if str(quota.get("active_tier_profile") or "").strip().lower() == "ultra-5x":
+        return 75.0, "75/25"
+    return 90.0, "90/10"
+
+
 def _format_rich_quota_lines(quota: dict[str, Any], models: list[dict[str, Any]], now_ep: float) -> list[str]:
     pools = quota.get("pools") or {}
     g_p, c_p = pools.get("google") or {}, pools.get("claude") or {}
-    g_429 = int(g_p.get("total_429_count", 0) or 0)
-    g_shr = sum(float(m.get("actual_pct", 0.0)) for m in models if is_google_pool_model(m))
-    p_shr = max(0.0, 100.0 - g_shr)
+    g_429 = int(g_p.get("total_429_count", 0) or 0) + int(c_p.get("total_429_count", 0) or 0)
+    g_shr = sum(float(m.get("actual_pct", 0.0)) for m in models if is_google_pool_model(m)) if models else float(g_p.get("call_share_pct", 0.0) or 0.0)
+    p_shr = max(0.0, 100.0 - g_shr) if (models or g_p.get("call_share_pct") is not None) else float(c_p.get("call_share_pct", 0.0) or 0.0)
+    tgt_g, tgt_lbl = _resolve_rich_target_split(quota, models)
     lq = quota.get("live_quota") or {}
     g5, gw = g_p.get("bucket_5h") or {}, g_p.get("bucket_weekly") or {}
     c5, cw = c_p.get("bucket_5h") or {}, c_p.get("bucket_weekly") or {}
     if lq.get("is_fresh") and (g5 or gw):
-        g5_u, gw_u = float(g5.get("used_pct", 0.0)), float(gw.get("used_pct", 0.0))
-        c5_u, cw_u = float(c5.get("used_pct", 0.0)), float(cw.get("used_pct", 0.0))
-        g_bar = build_quota_bar_with_pin(g5_u, gw_u, 7)
-        p_bar = build_quota_bar_with_pin(c5_u, cw_u, 7)
+        c5_u, cw_u = float(c5.get("used_pct", 0.0) or 0.0), float(cw.get("used_pct", 0.0) or 0.0)
+        if c5_u > 0.05 or cw_u > 0.05:
+            p_bkt, p_tag, p_sec = (c5, "5h", 5 * 3600) if c5_u > 0.05 else (cw, "Wk", 7 * 86400)
+            p_u, p_clk = (c5_u if c5_u > 0.05 else cw_u), _bucket_clock_pct(p_bkt, p_sec, now_ep)
+            l3 = f"P:{p_tag}{p_u:>2.0f}/c{p_clk:<2.0f} G{round(g_shr):.0f}/{round(p_shr):.0f}({tgt_lbl}) 429:{g_429}"
+        else:
+            l3 = f"Split:{round(g_shr):.0f}/{round(p_shr):.0f} T{tgt_lbl} P:Stby 429:{g_429}"
         return [
-            f"G 5h:{g5_u:>3.0f}%u [{g_bar}] Wk:{gw_u:>2.0f}%u {_fmt_reset_short(g5, now_ep):>4}"[:35],
-            f"P 5h:{c5_u:>3.0f}%u [{p_bar}] Wk:{cw_u:>2.0f}%u {_fmt_reset_short(c5, now_ep):>4}"[:35],
-            f"429s:{g_429} | Shr G:{g_shr:.0f}% | WkRst:{_fmt_reset_short(gw, now_ep)}"[:35],
+            _rich_pace_line("G 5h", g5, 5 * 3600, now_ep),
+            _rich_pace_line("G Wk", gw, 7 * 86400, now_ep),
+            l3[:35],
         ]
     b5g, b7g = g_p.get("burn_5h") or {}, g_p.get("burn_7d") or {}
     b5c, b7c = c_p.get("burn_5h") or {}, c_p.get("burn_7d") or {}
@@ -147,12 +203,59 @@ def _format_rich_quota_lines(quota: dict[str, Any], models: list[dict[str, Any]]
     tok_5h = fmt_tok(int(b5g.get("tokens", 0)) + int(b5c.get("tokens", 0)), False)
     usd_5h = format_usd(float(b5g.get("cost_usd", 0.0) or 0.0) + float(b5c.get("cost_usd", 0.0) or 0.0))
     usd_7d = format_usd(float(b7g.get("cost_usd", 0.0) or 0.0) + float(b7c.get("cost_usd", 0.0) or 0.0))
-    g_bar, p_bar = build_quota_bar_with_pin(g_shr, 90.0, 9), build_quota_bar_with_pin(p_shr, 10.0, 9)
+    split_bar = build_quota_bar_with_pin(g_shr, tgt_g, 9)
     return [
-        f"G-20x:{g_shr:>4.0f}% [{g_bar}] {state_lbl}"[:35],
-        f"P-1x :{p_shr:>4.0f}% [{p_bar}] 5h:{tok_5h}"[:35],
-        f"429s:{g_429} | 5h:{usd_5h} | 7d:{usd_7d}"[:35],
+        f"Split {round(g_shr):>3}/{round(p_shr):<2}% [{split_bar}] {state_lbl}"[:35],
+        f"Tgt {tgt_lbl} | 429:{g_429} | 5h:{tok_5h}"[:35],
+        f"Burn 5h:{usd_5h} | 7d:{usd_7d}"[:35],
     ]
+
+
+def _build_rich_activity_section(
+    bundle: dict[str, Any], series: list[dict[str, Any]], kpis: dict[str, Any], act_days: int, tot_steps: int, tot_subs: int, workspaces: list[dict[str, Any]],
+) -> list[str]:
+    """Build 13-week activity matrix and 8h horizon curve sections for 76-col rich output."""
+    lines = [_box_full("DAILY ACTIVITY MATRIX (NOW: W01 ──► W13)     [·· 0  ░░ <1k  ▒▒ <4k  ██]")]
+    weeks_13 = build_reversed_weeks(series, num_weeks=13)
+    lines.append(_box_full("Wk   " + " ".join(f"W{i + 1:02d}" for i in range(13)) + "  ┌─ PEAK DAY ─┐"))
+    pk = kpis.get("peak_day") or {"date": "", "steps": 0}
+    box_side = [
+        f"│ {fmt_short_date(str(pk.get('date') or '')):<10} │",
+        f"│ {int(pk.get('steps') or 0):>6,} stp │",
+        "├────────────┤",
+        f"│ Act: {act_days:>2}d   │",
+        f"│ Avg: {fmt_k(tot_steps / act_days):>5} │",
+        f"│ Sub: {tot_subs:>3}r  │",
+        "└────────────┘",
+    ]
+    cmap3 = {0: "···", 1: "░░░", 2: "▒▒▒", 3: "▓▓▓", 4: "███"}
+    for wd_idx, d_name in enumerate(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]):
+        c3 = " ".join(cmap3.get(int((w["days"].get(wd_idx) or {}).get("level", 0)), "···") for w in weeks_13)
+        lines.append(_box_full(f"{d_name}  {c3}  {box_side[wd_idx]}"))
+    max_wk = max(max((w["steps"] for w in weeks_13), default=1), 1)
+    sp3 = ["───", "▁▁▁", "▂▂▂", "▃▃▃", "▄▄▄", "▅▅▅", "▆▆▆", "███"]
+    vol3 = " ".join("───" if w["steps"] <= 0 else sp3[min(7, max(1, int(round((w["steps"] / float(max_wk)) * 7))))] for w in weeks_13)
+    stp3 = " ".join(_fmt_wk_3c(int(w["steps"])) for w in weeks_13)
+    lines.extend([
+        _box_full(f"Vol  {vol3}  PeakWk:{fmt_k(max_wk):>5}"),
+        _box_full(f"Steps {stp3}"),
+        "╠══════════════════════════════════════════════════════════════════════════╣",
+    ])
+    c_rows, c_dates, pk_8h, avg_8h = build_reversed_8h_stack_canvas(bundle, width=64, height=6)
+    old_lbl = fmt_short_date(c_dates[-1]).upper() if c_dates else "OLDER"
+    lines.extend([
+        _box_full(f"8H SUB-DAILY HORIZON CURVE & PROJECT STACK (NOW ──► {old_lbl})"),
+        _box_full(f"{fmt_k(pk_8h):>4} ╷{c_rows[0]}"), _box_full(f"{fmt_k(pk_8h * 0.78):>4} ┤{c_rows[1]}"),
+        _box_full(f"{fmt_k(pk_8h * 0.55):>4} ┤{c_rows[2]}"), _box_full(f"{fmt_k(avg_8h):>4} ┼{c_rows[3]}"),
+        _box_full(f"{fmt_k(pk_8h * 0.18):>4} ┤{c_rows[4]}"), _box_full(f"   0 ╵{c_rows[5]}"),
+        _box_full("     └─▲───────────▲───────────▲───────────▲───────────▲───────────▲───"),
+    ])
+    tl = [fmt_short_date(c_dates[min(len(c_dates) - 1, idx)]) for idx in (0, 13, 26, 39, 52, 63)]
+    lines.append(_box_full(f"      {tl[0]:<11} {tl[1]:<11} {tl[2]:<11} {tl[3]:<11} {tl[4]:<11} {tl[5]:<6}"))
+    leg = [f"[{s}]{str(w.get('workspace', ''))[:12]}({float(w.get('share_pct', 0.0)):.0f}%)" for s, w in zip(["█", "▓", "▒"], workspaces[:3])]
+    if leg:
+        lines.append(_box_full("      Stack: " + "  ".join(leg)))
+    return lines
 
 
 def render_ascii_rich(bundle: dict[str, Any]) -> str:
@@ -169,8 +272,7 @@ def render_ascii_rich(bundle: dict[str, Any]) -> str:
     cal_days = max(1, int(period.get("total_days", 90) or 90))
     tot_steps, tot_tools = int(kpis.get("window_steps", 0)), int(kpis.get("window_tool_calls", 0))
     tot_chats, tot_subs = int(kpis.get("total_conversations", 0)), int(kpis.get("total_subagents_spawned", 0))
-    tot_tok = int(kpis.get("window_tokens", 0))
-    tot_cost = float(kpis.get("window_cost_usd", 0.0) or 0.0)
+    tot_tok, tot_cost = int(kpis.get("window_tokens", 0)), float(kpis.get("window_cost_usd", 0.0) or 0.0)
     fore_cost = float(kpis.get("forecast_cost_usd", tot_cost) or tot_cost)
     cost_d = float(kpis.get("cost_per_day_usd", tot_cost / act_days) or 0.0)
 
@@ -194,7 +296,7 @@ def render_ascii_rich(bundle: dict[str, Any]) -> str:
         _box_full(f"▄▀█ █▀▀ █▄█ ▄▄ █▄░█ █▀▀ ▀▄▀ █░█ █▀   v{__version__} // RICH TELEMETRY RIG"),
         _box_full(f"█▀█ █▄█ ░█░ ░░ █░▀█ ██▄ █░█ █▄█ ▄█   WINDOW: {cal_days}d ({e_dt} ◄── {s_dt})"),
         "╠════════════════════════════════════╦═════════════════════════════════════╣",
-        _box_split("QUOTA USED vs RESET WINDOWS", "STEP & TOOL VELOCITY"),
+        _box_split("QUOTA PACING & POOL SPLIT", "STEP & TOOL VELOCITY"),
         _box_split(q_lines[0], f"Total : {tot_steps:,} steps | {tot_tools:,} tools"),
         _box_split(q_lines[1], f"Active: {tot_steps // act_days:,} s/act-d ({act_days}d active)"),
         _box_split(q_lines[2], f"Calend: {tot_steps // cal_days:,} s/cal-d ({tot_chats}c, {tot_subs}r)"),
@@ -211,50 +313,7 @@ def render_ascii_rich(bundle: dict[str, Any]) -> str:
         ),
         _box_split(f"Remote   : {v_info.get('remote', 'unknown')}", "IDE MCP  : agy-praxis-mcp + Serena"),
         "╠════════════════════════════════════╩═════════════════════════════════════╣",
-        _box_full("DAILY ACTIVITY MATRIX (NOW: W01 ──► W13)     [·· 0  ░░ <1k  ▒▒ <4k  ██]"),
     ]
-
-    weeks_13 = build_reversed_weeks(series, num_weeks=13)
-    lines.append(_box_full("Wk   " + " ".join(f"W{i + 1:02d}" for i in range(13)) + "  ┌─ PEAK DAY ─┐"))
-    pk = kpis.get("peak_day") or {"date": "", "steps": 0}
-    box_side = [
-        f"│ {fmt_short_date(str(pk.get('date') or '')):<10} │",
-        f"│ {int(pk.get('steps') or 0):>6,} stp │",
-        "├────────────┤",
-        f"│ Act: {act_days:>2}d   │",
-        f"│ Avg: {fmt_k(tot_steps / act_days):>5} │",
-        f"│ Sub: {tot_subs:>3}r  │",
-        "└────────────┘",
-    ]
-    cmap3 = {0: "···", 1: "░░░", 2: "▒▒▒", 3: "▓▓▓", 4: "███"}
-    for wd_idx, d_name in enumerate(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]):
-        c3 = " ".join(cmap3.get(int((w["days"].get(wd_idx) or {}).get("level", 0)), "···") for w in weeks_13)
-        lines.append(_box_full(f"{d_name}  {c3}  {box_side[wd_idx]}"))
-
-    max_wk = max(max((w["steps"] for w in weeks_13), default=1), 1)
-    sp3 = ["───", "▁▁▁", "▂▂▂", "▃▃▃", "▄▄▄", "▅▅▅", "▆▆▆", "███"]
-    vol3 = " ".join("───" if w["steps"] <= 0 else sp3[min(7, max(1, int(round((w["steps"] / float(max_wk)) * 7))))] for w in weeks_13)
-    stp3 = " ".join(_fmt_wk_3c(int(w["steps"])) for w in weeks_13)
-    lines.extend([
-        _box_full(f"Vol  {vol3}  PeakWk:{fmt_k(max_wk):>5}"),
-        _box_full(f"Steps {stp3}"),
-        "╠══════════════════════════════════════════════════════════════════════════╣",
-    ])
-
-    c_rows, c_dates, pk_8h, avg_8h = build_reversed_8h_stack_canvas(bundle, width=64, height=6)
-    old_lbl = fmt_short_date(c_dates[-1]).upper() if c_dates else "OLDER"
-    lines.extend([
-        _box_full(f"8H SUB-DAILY HORIZON CURVE & PROJECT STACK (NOW ──► {old_lbl})"),
-        _box_full(f"{fmt_k(pk_8h):>4} ╷{c_rows[0]}"), _box_full(f"{fmt_k(pk_8h * 0.78):>4} ┤{c_rows[1]}"),
-        _box_full(f"{fmt_k(pk_8h * 0.55):>4} ┤{c_rows[2]}"), _box_full(f"{fmt_k(avg_8h):>4} ┼{c_rows[3]}"),
-        _box_full(f"{fmt_k(pk_8h * 0.18):>4} ┤{c_rows[4]}"), _box_full(f"   0 ╵{c_rows[5]}"),
-        _box_full("     └─▲───────────▲───────────▲───────────▲───────────▲───────────▲───"),
-    ])
-    tl = [fmt_short_date(c_dates[min(len(c_dates) - 1, idx)]) for idx in (0, 13, 26, 39, 52, 63)]
-    lines.append(_box_full(f"      {tl[0]:<11} {tl[1]:<11} {tl[2]:<11} {tl[3]:<11} {tl[4]:<11} {tl[5]:<6}"))
-    leg = [f"[{s}]{str(w.get('workspace', ''))[:12]}({float(w.get('share_pct', 0.0)):.0f}%)" for s, w in zip(["█", "▓", "▒"], workspaces[:3])]
-    if leg:
-        lines.append(_box_full("      Stack: " + "  ".join(leg)))
-
+    lines.extend(_build_rich_activity_section(bundle, series, kpis, act_days, tot_steps, tot_subs, workspaces))
     lines.extend(_build_rich_model_and_tables(models, billing, workspaces, subagents))
     return "\n".join(lines)

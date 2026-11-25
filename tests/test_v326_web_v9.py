@@ -151,7 +151,8 @@ def test_classic_cross_link_navbar_invariance_and_workbench_dom() -> None:
     assert "va-pane:not(.v9-nav-rail)" in v9_ws_css and "background-color: var(--bg-surface);" in v9_rail_css
     assert ">Activity Heatmap<" in v9_html and "52-Week Activity Heatmap" not in v9_html
     assert "d.future === true" in v9_hm_js
-    assert "ceilingPct < 99.5" in v9_an_js
+    assert "V9.QuotaCards" in v9_an_js
+    assert "v9-split-caret" in (V9_DIR / "v9_quota_cards.js").read_text(encoding="utf-8")
     assert "calls.length === 0" in v9_an_js
     assert "min-width: 350px" in v9_an_css and "repeat(2, minmax(0, 1fr))" in v9_an_css
     assert "flex-wrap: wrap;" in v9_ws_css

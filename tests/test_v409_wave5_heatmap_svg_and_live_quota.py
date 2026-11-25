@@ -201,10 +201,17 @@ def test_wave5_pool_window_burn_and_ascii_rich_width() -> None:
         "heatmap_series": [], "sub_daily_series": [], "model_usage_vs_target": [], "top_workspaces": [], "subagent_list": [],
     }
     rich_out = ascii_rich.render_ascii_rich(bundle)
-    assert "QUOTA USED vs RESET WINDOWS" in rich_out
-    assert "G 5h: 14%u" in rich_out
+    assert "QUOTA PACING & POOL SPLIT" in rich_out
+    assert "G 5h: 14/c" in rich_out
+    assert "90/10" in rich_out
     for ln in rich_out.splitlines():
         assert len(ln) == 76, f"Rich box line not 76 cols ({len(ln)}): {ln!r}"
+
+    from agy_nexus.model_pricing import get_pool_target_split
+    s20 = get_pool_target_split("ultra-20x")
+    s5 = get_pool_target_split("ultra-5x")
+    assert s20["google_target_pct"] == 90.0 and s20["partner_target_pct"] == 10.0 and s20["label"] == "90/10"
+    assert s5["google_target_pct"] == 75.0 and s5["partner_target_pct"] == 25.0 and s5["label"] == "75/25"
 
 
 _WAVE5_UI_PROBE_CJS = """
@@ -238,6 +245,8 @@ ctx.window.AgyV9 = {
   fmtNum: (n) => Math.round(Number(n || 0)).toLocaleString("en-US"),
   fmtUsd: (n) => `$${Number(n || 0).toFixed(2)}`,
 };
+vm.runInNewContext(fs.readFileSync("web/v9/v9_spark_bars.js", "utf-8"), ctx);
+vm.runInNewContext(fs.readFileSync("web/v9/v9_quota_cards.js", "utf-8"), ctx);
 vm.runInNewContext(fs.readFileSync("web/v9/v9_heatmap.js", "utf-8"), ctx);
 vm.runInNewContext(fs.readFileSync("web/v9/v9_analytics.js", "utf-8"), ctx);
 
@@ -292,41 +301,78 @@ assert.ok(heatHost.innerHTML.includes(`style="inset-inline-start:${49 * 19}px">N
 assert.ok(heatHost.innerHTML.includes(`viewBox="0 0 ${g1440.gridW} ${g1440.gridH}"`));
 assert.ok(heatHost.innerHTML.includes("--v9-heat-cell:16px;--v9-heat-gap:3px"));
 
-const future5h = new Date(Date.now() + 7500000).toISOString();
-const futureWk = new Date(Date.now() + 345600000).toISOString();
-AN.renderKpiCards({
+const sampleModels20x = [
+  { model_key: "carbon", label: "Gemini 4 Carbon", pool: "Google 20x", pool_key: "google", actual_calls: 900, actual_pct: 90.0, est_tokens: 9000000, est_cost_usd: 10.0, target_pct: 90.0, last_24h_steps: 90, last_24h_tokens: 900000, last_24h_cost_usd: 1.0 },
+  { model_key: "claude_sonnet_5_5", label: "Claude Sonnet 5.5", pool: "Partner 1x", pool_key: "claude", actual_calls: 100, actual_pct: 10.0, est_tokens: 1000000, est_cost_usd: 10.0, target_pct: 10.0, last_24h_steps: 10, last_24h_tokens: 100000, last_24h_cost_usd: 4.0 },
+];
+const future5h = new Date(Date.now() + 10080000).toISOString(); // 2h48m left -> 44% clk
+const futureWk = new Date(Date.now() + 352512000).toISOString(); // 41.7% wk clk
+const bundleCoolAndWarm = {
   period: { total_days: 30 },
-  kpis: { active_days: 10, window_steps: 500, window_tokens: 1000000, window_cost_usd: 4.5 },
+  kpis: { active_days: 10, window_steps: 1000, window_tokens: 10000000, window_cost_usd: 20.0 },
   quota_and_pools: {
     active_tier_profile: "ultra-20x",
-    active_mainchat_model: { label: "Gemini 4 Carbon" },
+    active_mainchat_model: { model_key: "carbon", label: "Gemini 4 Carbon" },
+    tier_target_split: { google_target_pct: 90.0, partner_target_pct: 10.0, label: "90/10" },
     live_quota: { state: "LIVE", ls_alive: true, is_fresh: true, snapshot_age_seconds: 5 },
-    partner_weekly_pacing: { recommended_cumulative_ceiling_pct: 57.1, daily_target_pct: 14.28 },
     pools: {
       google: {
-        status: "HEALTHY", call_share_pct: 84.0,
-        bucket_5h: { used_pct: 14.2, remaining_pct: 85.8, has_active_reset: true, reset_time: future5h },
-        bucket_weekly: { used_pct: 44.7, remaining_pct: 55.3, has_active_reset: true, reset_time: futureWk },
+        status: "HEALTHY", call_share_pct: 90.0, total_429_count: 0,
+        bucket_5h: { window: "5h", window_seconds: 18000, used_pct: 15.0, remaining_pct: 85.0, has_active_reset: true, reset_time: future5h },
+        bucket_weekly: { window: "weekly", window_seconds: 604800, used_pct: 47.3, remaining_pct: 52.7, has_active_reset: true, reset_time: futureWk },
         burn_5h: { steps: 120, tokens: 900000, cost_usd: 3.2 },
         burn_7d: { steps: 1500, tokens: 12000000, cost_usd: 42.1 },
       },
       claude: {
-        status: "HEALTHY", call_share_pct: 16.0, total_429_count: 0,
-        bucket_5h: { used_pct: 0.0, remaining_pct: 100.0, has_active_reset: false },
-        bucket_weekly: { used_pct: 18.5, remaining_pct: 81.5, has_active_reset: true, reset_time: futureWk },
+        status: "HEALTHY", call_share_pct: 10.0, total_429_count: 0,
+        bucket_5h: { window: "5h", window_seconds: 18000, used_pct: 0.0, remaining_pct: 100.0, has_active_reset: false },
+        bucket_weekly: { window: "weekly", window_seconds: 604800, used_pct: 0.0, remaining_pct: 100.0, has_active_reset: true, reset_time: futureWk },
         burn_5h: { steps: 0, tokens: 0, cost_usd: 0.0 },
-        burn_7d: { steps: 200, tokens: 2000000, cost_usd: 8.4 },
+        burn_7d: { steps: 0, tokens: 0, cost_usd: 0.0 },
       },
     },
   },
-  model_usage_vs_target: [],
-});
-assert.ok(kpiGrid.innerHTML.includes("Google 20x Pool"));
-assert.ok(kpiGrid.innerHTML.includes("Partner Pool"));
-assert.ok(kpiGrid.innerHTML.includes("14.2%") && kpiGrid.innerHTML.includes("85.8% left"));
-assert.ok(kpiGrid.innerHTML.includes('role="progressbar"'));
-assert.ok(kpiGrid.innerHTML.includes("Standby · 100% left"));
-assert.ok(kpiGrid.innerHTML.includes("Wk 44.7% used"));
+  model_usage_vs_target: sampleModels20x,
+};
+ctx.window.AgyV9.state.metric = "steps";
+AN.renderKpiCards(bundleCoolAndWarm);
+assert.ok(kpiGrid.innerHTML.includes("Pool Split") && kpiGrid.innerHTML.includes("Target 90/10"));
+assert.ok(kpiGrid.innerHTML.includes("90.0%</strong>") && kpiGrid.innerHTML.includes("10.0%</strong>"));
+assert.ok(kpiGrid.innerHTML.includes('class="v9-split-caret" style="inset-inline-start:90.0%"'));
+assert.ok(kpiGrid.innerHTML.includes("Carbon 4") && kpiGrid.innerHTML.includes("429s: 0"));
+assert.ok(kpiGrid.innerHTML.includes("Quota Pacing") && kpiGrid.innerHTML.includes(">WARM<"));
+assert.ok(kpiGrid.innerHTML.includes('class="v9-pace-prog" data-zone="cool" value="15.0"'));
+assert.ok(kpiGrid.innerHTML.includes('class="v9-pace-prog" data-zone="warm" value="47.3"'));
+assert.ok(kpiGrid.innerHTML.includes('Partner: </span>Standby · 0% Wk') && !kpiGrid.innerHTML.includes("P Wk"));
+
+ctx.window.AgyV9.state.metric = "cost";
+AN.renderKpiCards(bundleCoolAndWarm);
+assert.ok(kpiGrid.innerHTML.includes("50.0%</strong>"), "Switching metric to cost must recompute Card 3 Pool Split");
+
+ctx.window.AgyV9.state.metric = "steps";
+const bundlePartnerActive = JSON.parse(JSON.stringify(bundleCoolAndWarm));
+bundlePartnerActive.quota_and_pools.active_tier_profile = "ultra-5x";
+bundlePartnerActive.quota_and_pools.tier_target_split = { google_target_pct: 75.0, partner_target_pct: 25.0, label: "75/25" };
+bundlePartnerActive.model_usage_vs_target = [
+  Object.assign({}, sampleModels20x[0], { target_pct: 75.0 }),
+  Object.assign({}, sampleModels20x[1], { target_pct: 25.0 }),
+];
+bundlePartnerActive.quota_and_pools.pools.google.bucket_weekly.used_pct = 20.0; // cool
+bundlePartnerActive.quota_and_pools.pools.claude.bucket_weekly.used_pct = 18.5; // cool & >0 -> expands P Wk!
+AN.renderKpiCards(bundlePartnerActive);
+assert.ok(kpiGrid.innerHTML.includes("Target 75/25") && kpiGrid.innerHTML.includes('inset-inline-start:75.0%'));
+assert.ok(kpiGrid.innerHTML.includes(">ON PACE<") && kpiGrid.innerHTML.includes("<strong>P Wk</strong>"));
+
+const bundleHot = JSON.parse(JSON.stringify(bundleCoolAndWarm));
+bundleHot.quota_and_pools.pools.google.bucket_5h.used_pct = 86.0;
+AN.renderKpiCards(bundleHot);
+assert.ok(kpiGrid.innerHTML.includes(">HOT<") && kpiGrid.innerHTML.includes('data-zone="hot"'));
+
+const bundleCachedOff = JSON.parse(JSON.stringify(bundleCoolAndWarm));
+bundleCachedOff.quota_and_pools.live_quota = { state: "IDE_OFFLINE", ls_alive: false, is_fresh: false, snapshot_age_seconds: null };
+AN.renderKpiCards(bundleCachedOff);
+assert.ok(!kpiGrid.innerHTML.includes("· offline"), "Must never append '· offline' when snapshot_age_seconds is null");
+assert.ok(kpiGrid.innerHTML.includes("v9-pace-list is-dimmed"));
 
 AN.renderKpiCards({
   period: { total_days: 30 }, kpis: {},
@@ -339,7 +385,7 @@ console.log("V409_WAVE5_UI_OK");
 
 
 def test_wave5_heatmap_svg_dividers_and_kpi_quota_dom(tmp_path: Path) -> None:
-    """Verify SVG stepped divider geometry, future-cell clipping, Monday headers, Pool KPIs, and demo countdown shift."""
+    """Verify SVG stepped divider geometry, future-cell clipping, Monday headers, Pool Split & Quota Pacing KPIs, and demo countdown shift."""
     probe = tmp_path / "wave5_ui_probe.cjs"
     probe.write_text(_WAVE5_UI_PROBE_CJS, encoding="utf-8")
     proc = subprocess.run(["node", str(probe)], cwd=str(REPO_ROOT), capture_output=True, text=True, check=False)
@@ -377,8 +423,10 @@ def test_wave5_malformed_ls_values_and_demo_sanitizer_budget() -> None:
     assert "secret_host_Leak" not in raw_dump and "expanse.lan" not in raw_dump and "drop" not in raw_dump
     assert "2026-11-25T15:00:00Z" not in raw_dump
     assert sanitized["pools"]["google"]["bucket_5h"]["offset_seconds"] == 10320
+    assert sanitized["tier_target_split"]["label"] == "90/10"
+    assert sanitized["pools"]["google"]["bucket_5h"]["window_seconds"] == 18000
 
-    for rel in ("v9_analytics.css", "v9_shell.css", "v9_heatmap.js", "v9_analytics.js", "v9_demo_adapter.js", "v9_app.js"):
+    for rel in ("v9_analytics.css", "v9_quota_cards.css", "v9_shell.css", "v9_heatmap.js", "v9_quota_cards.js", "v9_analytics.js", "v9_demo_adapter.js", "v9_app.js"):
         p = WEB_V9 / rel
         lines = p.read_text(encoding="utf-8").splitlines()
         assert len(lines) <= 500, f"{rel} exceeded 500L ({len(lines)})"

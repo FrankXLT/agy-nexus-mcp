@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 from agy_nexus.catalog_report import record_unmapped_model_hit
 from agy_nexus.model_pricing import (
     classify_model_key, classify_model_key_status, compute_step_cost_micros, get_canonical_model_keys,
-    get_placeholder_map, get_target_allocation_map, split_estimated_tokens,
+    get_placeholder_map, get_pool_target_split, get_target_allocation_map, split_estimated_tokens,
 )
 
 CACHE_VERSION = 9
@@ -235,7 +235,6 @@ def _read_json_or_text(path: Path, is_json: bool = False) -> Any:
     except Exception:
         return None
 
-
 def get_live_quota_and_pool_status(data_or_config_dir: Path, config_dir: Path | None = None, *, bg_dir: Path | None = None) -> dict[str, Any]:
     """Read Dual-Pool Quota Pacing, active Main-Chat model, 429 cooldowns, and live LS/snapshot reset buckets."""
     from agy_nexus.ls_quota_probe import enrich_quota_and_pools
@@ -261,7 +260,7 @@ def get_live_quota_and_pool_status(data_or_config_dir: Path, config_dir: Path | 
         "active_tier_profile": active_profile, "active_mainchat_model": get_active_mainchat_model(data_dir),
         "pools": pools_out, "live_quota": live_quota,
         "partner_weekly_pacing": {"day_of_week_index": day_idx, "daily_target_pct": 14.28, "recommended_cumulative_ceiling_pct": round(min(100.0, day_idx * 14.28), 1)},
-        "target_model_allocation": MODEL_TARGET_ALLOCATION.get(active_profile, MODEL_TARGET_ALLOCATION["ultra-20x"]),
+        "tier_target_split": get_pool_target_split(active_profile), "target_model_allocation": MODEL_TARGET_ALLOCATION.get(active_profile, MODEL_TARGET_ALLOCATION["ultra-20x"]),
         "recent_quota_events": (state_data.get("events") or [])[-8:],
     }
 

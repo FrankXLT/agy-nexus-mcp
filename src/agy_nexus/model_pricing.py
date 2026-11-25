@@ -111,6 +111,15 @@ def get_target_allocation_map(profile: str = "ultra-20x") -> dict[str, dict[str,
     return out
 
 
+def get_pool_target_split(profile: str = "ultra-20x") -> dict[str, Any]:
+    """Return dynamic Google vs Partner target split totals derived from active model catalog."""
+    targets = get_target_allocation_map(profile)
+    g_pct = round(sum(float(v.get("target_pct", 0.0)) for v in targets.values() if v.get("pool_key") == "google"), 1)
+    p_pct = round(sum(float(v.get("target_pct", 0.0)) for v in targets.values() if v.get("pool_key") != "google"), 1)
+    fmt = lambda n: str(int(round(n))) if abs(n - round(n)) < 0.05 else f"{n:.1f}"
+    return {"google_target_pct": g_pct, "partner_target_pct": p_pct, "label": f"{fmt(g_pct)}/{fmt(p_pct)}"}
+
+
 _FAMILY_TOKEN_TABLE: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("claude_opus_5_5", ("opus",)),
     ("claude_sonnet_5_5", ("sonnet", "claude")),

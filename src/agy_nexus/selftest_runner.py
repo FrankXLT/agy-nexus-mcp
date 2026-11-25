@@ -120,7 +120,7 @@ def _test_stats_and_http_routes(test_secret: str) -> Any:
         "workspace_resizer.js", "health.js", "markdown_renderer.js", "gallery_view.js", "explorer.js", "app.js",
         "v9/v9_state.js", "v9/v9_table_sort.js", "v9/v9_spark_bars.js",
         "v9/v9_demo_docs.js", "v9/v9_demo_adapter.js", "v9/v9_catalog_banner.js", "v9/v9_billing.js",
-        "v9/v9_charts.js", "v9/v9_heatmap.js", "v9/v9_analytics.js", "v9/v9_project_view.js",
+        "v9/v9_charts.js", "v9/v9_heatmap.js", "v9/v9_quota_cards.js", "v9/v9_analytics.js", "v9/v9_project_view.js",
         "v9/v9_hierarchy.js", "v9/v9_markdown.js", "v9/v9_workspace.js", "v9/v9_gallery.js",
         "v9/v9_lightbox.js", "v9/v9_app.js",
     )

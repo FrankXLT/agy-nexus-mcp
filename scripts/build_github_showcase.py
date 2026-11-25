@@ -185,8 +185,12 @@ def _sanitized_burn(raw: Any, fb_steps: int, fb_tok: int, fb_usd: float, src: st
 
 def sanitize_demo_quota_and_pools(qp: dict[str, Any] | None, models: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Return a clean, zero-PII quota_and_pools object with relative 5h/Weekly demo countdown offsets."""
+    from agy_nexus.model_pricing import get_pool_target_split
+
     raw_src = qp if isinstance(qp, dict) else {}
     src = {k: raw_src[k] for k in ("active_tier_profile", "partner_weekly_pacing") if k in raw_src}
+    tier_prof = str(src.get("active_tier_profile") or "ultra-20x")
+    src["tier_target_split"] = get_pool_target_split(tier_prof)
     if isinstance(raw_src.get("active_mainchat_model"), dict):
         am = raw_src["active_mainchat_model"]
         src["active_mainchat_model"] = {k: am[k] for k in ("model_key", "label", "state_updated_date") if k in am}
@@ -210,16 +214,16 @@ def sanitize_demo_quota_and_pools(qp: dict[str, Any] | None, models: list[dict[s
         "google": {
             "status": "HEALTHY", "cooldown_remaining_seconds": 0, "total_429_count": int(g_src.get("total_429_count") or 0),
             "call_share_pct": round(float(g_share or 86.4), 1),
-            "bucket_5h": {"used_pct": g5_used, "remaining_pct": round(100.0 - g5_used, 1), "has_active_reset": True, "offset_seconds": 10320, "description": "Gemini Models"},
-            "bucket_weekly": {"used_pct": g_wk_used, "remaining_pct": round(100.0 - g_wk_used, 1), "has_active_reset": True, "offset_seconds": 356400, "description": "Gemini Models"},
+            "bucket_5h": {"window": "5h", "window_seconds": 18000, "used_pct": g5_used, "remaining_pct": round(100.0 - g5_used, 1), "has_active_reset": True, "offset_seconds": 10320, "description": "Gemini Models"},
+            "bucket_weekly": {"window": "weekly", "window_seconds": 604800, "used_pct": g_wk_used, "remaining_pct": round(100.0 - g_wk_used, 1), "has_active_reset": True, "offset_seconds": 356400, "description": "Gemini Models"},
             "burn_5h": _sanitized_burn(g_src.get("burn_5h"), 640, 41_200_000, 14.8, "demo_5h"),
             "burn_7d": _sanitized_burn(g_src.get("burn_7d"), 14_820, 942_000_000, 318.4, "demo_7d"),
         },
         "claude": {
             "status": "HEALTHY", "cooldown_remaining_seconds": 0, "total_429_count": int(p_src.get("total_429_count") or 0),
             "call_share_pct": round(float(p_share or 13.6), 1),
-            "bucket_5h": {"used_pct": 0.0, "remaining_pct": 100.0, "has_active_reset": False, "description": "Claude and GPT models"},
-            "bucket_weekly": {"used_pct": p_wk_used, "remaining_pct": round(100.0 - p_wk_used, 1), "has_active_reset": True, "offset_seconds": 356400, "description": "Claude and GPT models"},
+            "bucket_5h": {"window": "5h", "window_seconds": 18000, "used_pct": 0.0, "remaining_pct": 100.0, "has_active_reset": False, "description": "Claude and GPT models"},
+            "bucket_weekly": {"window": "weekly", "window_seconds": 604800, "used_pct": p_wk_used, "remaining_pct": round(100.0 - p_wk_used, 1), "has_active_reset": True, "offset_seconds": 356400, "description": "Claude and GPT models"},
             "burn_5h": _sanitized_burn(p_src.get("burn_5h"), 0, 0, 0.0, "demo_5h"),
             "burn_7d": _sanitized_burn(p_src.get("burn_7d"), 1_840, 118_500_000, 49.2, "demo_7d"),
         },
