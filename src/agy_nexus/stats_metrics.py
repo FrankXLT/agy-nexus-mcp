@@ -199,8 +199,11 @@ def build_subagent_list_rows(
     main_mk: str,
     main_switch_date: str,
     agent_target_map: dict[str, str],
+    agent_role_specs: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Format subagent role accumulators with per-run min/avg/max/latest, >120 flags, and trailing 24h."""
+    """Format subagent role accumulators with per-run min/avg/max/latest, >120 flags, trailing 24h & intended-vs-actual adjudication."""
+    from agy_nexus.catalog_report import build_subagent_adjudication
+
     sa_sum = max(1, sum(int(v.get("steps", 0)) for v in agg["subagent_roles"].values()))
     out: list[dict[str, Any]] = []
     for rk, rv in sorted(agg["subagent_roles"].items(), key=lambda kv: kv[1]["steps"], reverse=True):
@@ -211,7 +214,9 @@ def build_subagent_list_rows(
         dom_mk = max(votes.items(), key=lambda kv: kv[1])[0] if votes else resolve_model_fn(
             rk, "", parent_model_map, main_mk, main_switch_date, e_iso, agent_target_map
         )[0]
-        dom_lbl = short_labels.get(dom_mk, dom_mk) + (" (inherit)" if agg["role_inherited"].get(rk) else "")
+        r_spec = (agent_role_specs or {}).get(rk.lower())
+        adj = build_subagent_adjudication(rk, votes, dom_mk, bool(agg["role_inherited"].get(rk)), r_spec, short_labels)
+        dom_lbl = short_labels.get(dom_mk, dom_mk) + (" (inherit)" if adj["is_inherited"] else "")
         denom = max(1, runs)
         l24_st = sum_slots_in_set(agg["s1_sub_steps"].get(rk), l24_slots) if has_l24 else None
         l24_tk = sum_slots_in_set(agg["s1_sub_toks"].get(rk), l24_slots) if has_l24 else None
@@ -227,6 +232,7 @@ def build_subagent_list_rows(
             "cost_usd_micros": cm_s, "est_cost_usd": round(cm_s / 1_000_000.0, 2),
             "share_pct": round((st_s / sa_sum) * 100.0, 1),
             "dominant_model_key": dom_mk, "dominant_model_label": dom_lbl,
+            **adj,
             "has_last_24h": has_l24, "last_24h_steps": l24_st, "last_24h_tokens": l24_tk,
             "last_24h_cost_usd": round(l24_cm / 1_000_000.0, 4) if l24_cm is not None else None,
         })
@@ -287,3 +293,94 @@ def build_model_comparison_rows(
             "status": "ON_TARGET" if abs(dp) <= 12.0 else ("OVER_TARGET" if dp > 12.0 else "UNDER_TARGET"),
         })
     return out
+
+
+def _slot_set_for_epoch_span(start_epoch: float, end_epoch: float, tz: Any) -> set[str]:
+    s_dt = datetime.fromtimestamp(start_epoch, tz=tz).replace(minute=0, second=0, microsecond=0)
+    e_dt = datetime.fromtimestamp(end_epoch, tz=tz).replace(minute=0, second=0, microsecond=0)
+    out: set[str] = set()
+    cur = s_dt
+    while cur <= e_dt:
+        out.add(cur.strftime("%Y-%m-%dT%H"))
+        cur += timedelta(hours=1)
+    return out
+
+
+def _add_pool_burn(acc: dict[str, list[int]], slots_5: set[str], slots_7: set[str], sl_k: str, pk: str, st: int, tk: int, cm: int) -> None:
+    if sl_k in slots_5:
+        b5 = acc[pk]["5h"]
+        b5[0], b5[1], b5[2] = b5[0] + st, b5[1] + tk, b5[2] + cm
+    if sl_k in slots_7:
+        b7 = acc[pk]["7d"]
+        b7[0], b7[1], b7[2] = b7[0] + st, b7[1] + tk, b7[2] + cm
+
+
+def compute_pool_window_burn(
+    full_conv_cache: dict[str, dict[str, Any]],
+    db_convs: dict[str, dict[str, Any]],
+    quota_info: dict[str, Any],
+    now_loc: datetime,
+    *,
+    specs: dict[str, dict[str, Any]],
+    classify_fn: Any,
+    compute_cost_fn: Any,
+    split_fn: Any,
+    resolve_root_fn: Any,
+    resolve_subagent_fn: Any,
+    parent_model_map: dict[str, str],
+    main_mk: str,
+    main_switch_date: str,
+    agent_target_map: dict[str, str],
+    display_tz: Any,
+    bg_dir: Any,
+) -> dict[str, dict[str, Any]]:
+    """Compute steps, tokens, and API-equivalent USD burned inside each pool's active 5h and 7d windows."""
+    now_ep = now_loc.timestamp()
+    pools = quota_info.get("pools") or {}
+    is_fresh = bool((quota_info.get("live_quota") or {}).get("is_fresh"))
+    slots_5: dict[str, set[str]] = {}
+    slots_7: dict[str, set[str]] = {}
+    win_src: dict[str, tuple[str, str]] = {}
+    for pk in ("google", "claude"):
+        po = pools.get(pk) or {}
+        b5, bw = po.get("bucket_5h") or {}, po.get("bucket_weekly") or {}
+        use_r5 = is_fresh and bool(b5.get("has_active_reset") and b5.get("window_start_epoch"))
+        use_rw = is_fresh and bool(bw.get("has_active_reset") and bw.get("window_start_epoch"))
+        floor_ep = now_ep - 8 * 86400
+        s5 = max(floor_ep, float(b5["window_start_epoch"])) if use_r5 else (now_ep - 5 * 3600)
+        sw = max(floor_ep, float(bw["window_start_epoch"])) if use_rw else (now_ep - 7 * 86400)
+        slots_5[pk] = _slot_set_for_epoch_span(min(s5, now_ep), now_ep, display_tz)
+        slots_7[pk] = _slot_set_for_epoch_span(min(sw, now_ep), now_ep, display_tz)
+        win_src[pk] = ("reset_window" if use_r5 else "trailing_5h", "reset_window" if use_rw else "trailing_7d")
+    all_slots = slots_5["google"] | slots_7["google"] | slots_5["claude"] | slots_7["claude"]
+    acc = {pk: {"5h": [0, 0, 0], "7d": [0, 0, 0]} for pk in ("google", "claude")}
+    for cid, cdata in full_conv_cache.items():
+        meta = db_convs.get(cid, {})
+        is_sub, role = bool(meta.get("is_subagent")), str(meta.get("agent_name") or "subagent")
+        root_cid = resolve_root_fn(cid, db_convs) if is_sub else cid
+        s1_mods, s1_mtoks, s1_mc = cdata.get("slot_1h_models") or {}, cdata.get("slot_1h_model_tokens") or {}, cdata.get("slot_1h_model_cost_micros") or {}
+        s1_st, s1_tk, s1_cs = cdata.get("slot_1h_steps") or {}, cdata.get("slot_1h_tokens") or {}, cdata.get("slot_1h_cost_micros") or {}
+        exp_days = cdata.get("explicit_day_models") or {}
+        for sl_k in (set(s1_mods) | set(s1_mtoks) | set(s1_st)) & all_slots:
+            md_s, md_t, md_c = s1_mods.get(sl_k), s1_mtoks.get(sl_k), s1_mc.get(sl_k)
+            if isinstance(md_s, dict) or isinstance(md_t, dict):
+                ek = {classify_fn(k) for k, v in (exp_days.get(sl_k[:10]) or {}).items() if int(v) > 0} if is_sub else set()
+                smk = resolve_subagent_fn(role, root_cid, parent_model_map, main_mk, main_switch_date, sl_k, agent_target_map)[0] if is_sub else ""
+                for mk_r in set(md_s or {}) | set(md_t or {}):
+                    mk_raw = classify_fn(mk_r)
+                    dst_mk = mk_raw if (not is_sub or mk_raw in ek) else smk
+                    pk = "google" if str((specs.get(dst_mk) or {}).get("pool_key") or "google") == "google" else "claude"
+                    tk_v = int((md_t or {}).get(mk_r) or 0)
+                    cm_v = int(md_c[mk_r]) if (isinstance(md_c, dict) and mk_r in md_c and dst_mk == mk_raw) else compute_cost_fn(dst_mk, sl_k[:10], *split_fn(tk_v), bg_dir=bg_dir)
+                    _add_pool_burn(acc, slots_5[pk], slots_7[pk], sl_k, pk, int((md_s or {}).get(mk_r) or 0), tk_v, cm_v)
+            else:
+                dst_mk = resolve_subagent_fn(role, root_cid, parent_model_map, main_mk, main_switch_date, sl_k, agent_target_map)[0] if is_sub else classify_fn(str(cdata.get("last_conv_model") or main_mk or "argon"))
+                pk = "google" if str((specs.get(dst_mk) or {}).get("pool_key") or "google") == "google" else "claude"
+                _add_pool_burn(acc, slots_5[pk], slots_7[pk], sl_k, pk, int(s1_st.get(sl_k) or 0), int(s1_tk.get(sl_k) or 0), int(s1_cs.get(sl_k) or 0))
+    return {
+        pk: {
+            "burn_5h": {"steps": acc[pk]["5h"][0], "tokens": acc[pk]["5h"][1], "cost_usd": round(acc[pk]["5h"][2] / 1_000_000.0, 2), "window_source": win_src[pk][0]},
+            "burn_7d": {"steps": acc[pk]["7d"][0], "tokens": acc[pk]["7d"][1], "cost_usd": round(acc[pk]["7d"][2] / 1_000_000.0, 2), "window_source": win_src[pk][1]},
+        }
+        for pk in ("google", "claude")
+    }

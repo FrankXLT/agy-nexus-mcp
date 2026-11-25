@@ -61,6 +61,11 @@ def resolve_subagent_model(
         tgt = agent_target_map[r_low]
         if tgt != "inherit":
             return tgt, False
+        if parent_id and parent_model_map.get(parent_id):
+            return classify_model_key(parent_model_map[parent_id]), True
+        if main_mk and (not main_switch_date or (day_or_slot or "")[:10] >= main_switch_date):
+            return classify_model_key(main_mk), True
+        return "argon", True
     if any(k in r_low for k in ("opus", "sonnet", "claude", "gpt", "120b", "neon", "hydrogen", "flash", "argon", "carbon")):
         return classify_model_key(r_low, r_low), False
     if parent_id and parent_model_map.get(parent_id):
@@ -322,10 +327,11 @@ def build_series_and_project_hierarchy(
 ) -> dict[str, Any]:
     """Assemble velocity_series, model_series, subagent_series, workspace_series, and Top-10 project_hierarchy."""
     labels, groups, step_h, res_lbl = build_base_slot_grid(period_key, trimmed_days, today_iso, now_hour)
+    m_keys = get_canonical_model_keys()
     vel_steps, vel_toks, vel_cost = _sum_slots(s1_tot_steps, groups), _sum_slots(s1_tot_toks, groups), _sum_slots_usd(s1_tot_cost or {}, groups)
-    mod_layers = {mk: _sum_slots(s1_mod_steps.get(mk, {}), groups) for mk in MODEL_KEYS}
-    mod_tok_layers = {mk: _sum_slots(s1_mod_toks.get(mk, {}), groups) for mk in MODEL_KEYS}
-    mod_cost_layers = {mk: _sum_slots_usd((s1_mod_cost or {}).get(mk, {}), groups) for mk in MODEL_KEYS}
+    mod_layers = {mk: _sum_slots(s1_mod_steps.get(mk, {}), groups) for mk in m_keys}
+    mod_tok_layers = {mk: _sum_slots(s1_mod_toks.get(mk, {}), groups) for mk in m_keys}
+    mod_cost_layers = {mk: _sum_slots_usd((s1_mod_cost or {}).get(mk, {}), groups) for mk in m_keys}
 
     sub_keys = [s["role"] for s in subagent_list[:8]] + (["other-subagents"] if len(subagent_list) > 8 else [])
     other_sub = [s["role"] for s in subagent_list[8:]]
@@ -379,7 +385,7 @@ def build_series_and_project_hierarchy(
     return {
         "resolution": res_lbl, "step_hours": step_h, "groups": groups,
         "velocity_series": {"dates": labels, "step_hours": step_h, "values": vel_steps, "token_values": vel_toks, "cost_values": vel_cost, "resolution": res_lbl},
-        "model_series": {"keys": list(MODEL_KEYS), "dates": labels, "step_hours": step_h, "layers": mod_layers, "token_layers": mod_tok_layers, "cost_layers": mod_cost_layers, "resolution": res_lbl},
+        "model_series": {"keys": list(m_keys), "dates": labels, "step_hours": step_h, "layers": mod_layers, "token_layers": mod_tok_layers, "cost_layers": mod_cost_layers, "resolution": res_lbl},
         "subagent_series": {"keys": sub_keys, "dates": labels, "step_hours": step_h, "layers": sub_layers, "token_layers": sub_tok_layers, "cost_layers": sub_cost_layers, "resolution": res_lbl},
         "workspace_series": {"keys": ws_keys, "dates": labels, "step_hours": step_h, "layers": ws_layers, "resolution": res_lbl},
         "project_hierarchy": {"dates": labels, "step_hours": step_h, "resolution": res_lbl, "active_projects_count": len(active_projs), "idle_projects_count": len(idle_projs), "total_sessions_count": len(seen_cids), "latest_session_id": latest_cid, "top_projects": top_projects, "other_projects": other_projects, "idle_projects": idle_projs},

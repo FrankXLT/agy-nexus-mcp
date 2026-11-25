@@ -10,14 +10,16 @@
   <link rel="apple-touch-icon" href="/web/icon-192.png" />
   <link rel="manifest" id="v9ManifestLink" href="/web/manifest.webmanifest" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <link rel="stylesheet" href="/web/v9/v9_layers.css?v=4.0.8" />
-  <link rel="stylesheet" href="/web/v9/vendor/quiet-ui-tokens.css?v=4.0.8" />
-  <link rel="stylesheet" href="/web/v9/vendor/quiet-evidence-bundle.css?v=4.0.8" />
-  <link rel="stylesheet" href="/web/v9/v9_shell.css?v=4.0.8" />
-  <link rel="stylesheet" href="/web/v9/v9_rail.css?v=4.0.8" />
-  <link rel="stylesheet" href="/web/v9/v9_analytics.css?v=4.0.8" />
-  <link rel="stylesheet" href="/web/v9/v9_workspace.css?v=4.0.8" />
-  <link rel="stylesheet" href="/web/v9/v9_tables_and_rail.css?v=4.0.8" />
+  <link rel="stylesheet" href="/web/v9/v9_layers.css?v=4.0.9" />
+  <link rel="stylesheet" href="/web/v9/vendor/quiet-ui-tokens.css?v=4.0.9" />
+  <link rel="stylesheet" href="/web/v9/vendor/quiet-evidence-bundle.css?v=4.0.9" />
+  <link rel="stylesheet" href="/web/v9/v9_shell.css?v=4.0.9" />
+  <link rel="stylesheet" href="/web/v9/v9_rail.css?v=4.0.9" />
+  <link rel="stylesheet" href="/web/v9/v9_analytics.css?v=4.0.9" />
+  <link rel="stylesheet" href="/web/v9/v9_quota_cards.css?v=4.0.9" />
+  <link rel="stylesheet" href="/web/v9/v9_workspace.css?v=4.0.9" />
+  <link rel="stylesheet" href="/web/v9/v9_tables_and_rail.css?v=4.0.9" />
+  <link rel="stylesheet" href="/web/v9/v9_catalog_banner.css?v=4.0.9" />
 </head>
 <body>
   <header class="v9-topbar">
@@ -147,6 +149,7 @@
 
       <div class="v9-main-stage" id="v9MainStage">
         <section id="v9AnalyticsView" class="v9-stage hidden" role="tabpanel" aria-labelledby="v9TabAnalytics">
+          <div id="v9CatalogAlertHost" class="v9-catalog-alerts"></div>
           <div id="v9KpiGrid" class="va-kpi-gauge-grid" aria-label="Operational key metrics"></div>
 
           <section class="v9-card" aria-labelledby="v9HeatHeading">
@@ -377,31 +380,48 @@
     </div>
   </dialog>
 
+  <dialog id="v9CatalogDiffDialog" class="v9-dialog" closedby="any" aria-labelledby="v9CatalogDiffTitle">
+    <div class="v9-dialog-hdr">
+      <h2 id="v9CatalogDiffTitle" class="v9-dialog-title">Price Book Diff Preview</h2>
+      <button type="button" id="v9CatalogDiffCloseBtn" class="v9-nav-btn" aria-label="Close diff preview">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <span>Close</span>
+      </button>
+    </div>
+    <div id="v9CatalogDiffBody" class="v9-dialog-body"></div>
+    <div class="v9-dialog-ftr">
+      <button type="button" id="v9CatalogDiffCancelBtn" class="v9-nav-btn">Close</button>
+      <button type="button" id="v9CatalogDiffAcceptBtn" class="v9-nav-btn v9-btn-primary">Accept Update</button>
+    </div>
+  </dialog>
+
   <div id="v9SortStatus" class="v9-sr-only" role="status" aria-live="polite"></div>
   <div id="v9Toast" class="v9-toast hidden" role="status" aria-live="polite"></div>
 
-  <script src="/web/v9/vendor/echarts.min.js?v=4.0.8"></script>
-  <script src="/web/v9/vendor/quiet-evidence-bundle.js?v=4.0.8"></script>
-  <script src="/web/v9/vendor/echarts-layout-defaults.js?v=4.0.8"></script>
-  <script src="/web/v9/vendor/echarts-quiet-adapter.js?v=4.0.8"></script>
-  <script src="/web/demo_snapshot.js?v=4.0.8"></script>
-  <script src="/web/gallery_select.js?v=4.0.8"></script>
-  <script src="/web/sheet_builder.js?v=4.0.8"></script>
-  <script src="/web/v9/v9_state.js?v=4.0.8"></script>
-  <script src="/web/v9/v9_table_sort.js?v=4.0.8"></script>
-  <script src="/web/v9/v9_spark_bars.js?v=4.0.8"></script>
-  <script src="/web/v9/v9_demo_docs.js?v=4.0.8"></script>
-  <script src="/web/v9/v9_demo_adapter.js?v=4.0.8"></script>
-  <script src="/web/v9/v9_billing.js?v=4.0.8"></script>
-  <script src="/web/v9/v9_charts.js?v=4.0.8"></script>
-  <script src="/web/v9/v9_heatmap.js?v=4.0.8"></script>
-  <script src="/web/v9/v9_project_view.js?v=4.0.8"></script>
-  <script src="/web/v9/v9_analytics.js?v=4.0.8"></script>
-  <script src="/web/v9/v9_hierarchy.js?v=4.0.8"></script>
-  <script src="/web/v9/v9_markdown.js?v=4.0.8"></script>
-  <script src="/web/v9/v9_workspace.js?v=4.0.8"></script>
-  <script src="/web/v9/v9_gallery.js?v=4.0.8"></script>
-  <script src="/web/v9/v9_lightbox.js?v=4.0.8"></script>
-  <script src="/web/v9/v9_app.js?v=4.0.8"></script>
+  <script src="/web/v9/vendor/echarts.min.js?v=4.0.9"></script>
+  <script src="/web/v9/vendor/quiet-evidence-bundle.js?v=4.0.9"></script>
+  <script src="/web/v9/vendor/echarts-layout-defaults.js?v=4.0.9"></script>
+  <script src="/web/v9/vendor/echarts-quiet-adapter.js?v=4.0.9"></script>
+  <script src="/web/demo_snapshot.js?v=4.0.9"></script>
+  <script src="/web/gallery_select.js?v=4.0.9"></script>
+  <script src="/web/sheet_builder.js?v=4.0.9"></script>
+  <script src="/web/v9/v9_state.js?v=4.0.9"></script>
+  <script src="/web/v9/v9_table_sort.js?v=4.0.9"></script>
+  <script src="/web/v9/v9_spark_bars.js?v=4.0.9"></script>
+  <script src="/web/v9/v9_demo_docs.js?v=4.0.9"></script>
+  <script src="/web/v9/v9_demo_adapter.js?v=4.0.9"></script>
+  <script src="/web/v9/v9_catalog_banner.js?v=4.0.9"></script>
+  <script src="/web/v9/v9_billing.js?v=4.0.9"></script>
+  <script src="/web/v9/v9_charts.js?v=4.0.9"></script>
+  <script src="/web/v9/v9_heatmap.js?v=4.0.9"></script>
+  <script src="/web/v9/v9_project_view.js?v=4.0.9"></script>
+  <script src="/web/v9/v9_quota_cards.js?v=4.0.9"></script>
+  <script src="/web/v9/v9_analytics.js?v=4.0.9"></script>
+  <script src="/web/v9/v9_hierarchy.js?v=4.0.9"></script>
+  <script src="/web/v9/v9_markdown.js?v=4.0.9"></script>
+  <script src="/web/v9/v9_workspace.js?v=4.0.9"></script>
+  <script src="/web/v9/v9_gallery.js?v=4.0.9"></script>
+  <script src="/web/v9/v9_lightbox.js?v=4.0.9"></script>
+  <script src="/web/v9/v9_app.js?v=4.0.9"></script>
 </body>
 </html>

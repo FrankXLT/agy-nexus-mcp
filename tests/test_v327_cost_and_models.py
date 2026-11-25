@@ -6,7 +6,7 @@ import json
 import os
 import re
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -105,7 +105,7 @@ def test_cost_ledger_preserves_pruned_brain_history_and_stats_rollup(tmp_path: P
 
     old_cid = "aaaa1111-1111-4111-8111-111111111111"
     live_cid = "bbbb2222-2222-4222-8222-222222222222"
-    today_iso = date.today().strftime("%Y-%m-%d")
+    today_iso = datetime.now(stats.DISPLAY_TZ).date().strftime("%Y-%m-%d")
     old_raw_cdata = {
         "mtime": 1_790_000_000,
         "size": 1024,

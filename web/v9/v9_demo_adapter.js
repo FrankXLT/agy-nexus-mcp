@@ -46,30 +46,37 @@
     const raw = snap.bundles[spec.key] || snap.bundles.current_month || Object.values(snap.bundles)[0];
     if (!raw) return null;
     const bundle = cloneJson(raw);
+    const pools = bundle.quota_and_pools && bundle.quota_and_pools.pools ? Object.values(bundle.quota_and_pools.pools) : [];
+    pools.forEach((p) => ["bucket_5h", "bucket_weekly"].forEach((bk) => {
+      const bkt = p && p[bk];
+      if (!bkt) return;
+      const winSec = Number(bkt.window_seconds || (bk === "bucket_weekly" ? 604800 : 18000));
+      bkt.window_seconds = winSec;
+      if (bkt.has_active_reset && bkt.offset_seconds) {
+        bkt.reset_time = new Date(Date.now() + Number(bkt.offset_seconds) * 1000).toISOString();
+        bkt.elapsed_pct = Number((((winSec - Math.max(0, Math.min(winSec, Number(bkt.offset_seconds)))) / winSec) * 100).toFixed(1));
+      } else if (!bkt.has_active_reset) bkt.elapsed_pct = 0;
+    }));
     if (!bundle.code_health && snap.code_health) bundle.code_health = cloneJson(snap.code_health);
     return bundle;
   }
 
-  function getDemoBounds(timeframe, mode, offset) {
-    return resolveDemoSnapshotSpec(timeframe, mode, offset);
-  }
+  const getDemoBounds = (timeframe, mode, offset) => resolveDemoSnapshotSpec(timeframe, mode, offset);
 
-  function getDemoWorkspaceTree() {
-    const snap = window.DEMO_SNAPSHOT;
-    if (snap && snap.workspace_tree) return cloneJson(snap.workspace_tree);
-    return { ok: true, version: "4.0.8", queue: { staged_count: 0, tickets: [] }, projects: [] };
-  }
+  const getDemoWorkspaceTree = () => ((window.DEMO_SNAPSHOT && window.DEMO_SNAPSHOT.workspace_tree)
+    ? cloneJson(window.DEMO_SNAPSHOT.workspace_tree)
+    : { ok: true, version: "4.0.9", queue: { staged_count: 0, tickets: [] }, projects: [] });
 
   function getDemoSessionBucket(sessionId) {
     const tree = V9.state.wsTree || getDemoWorkspaceTree();
-    if (V9.DemoDocs) return V9.DemoDocs.getDemoSessionBucket(sessionId, tree);
-    return Promise.resolve({ ok: true, conversation_id: sessionId || "demo-session", artifacts: [], uploads: [], visual_artifacts: [], repo_visual_assets: [] });
+    return V9.DemoDocs
+      ? V9.DemoDocs.getDemoSessionBucket(sessionId, tree)
+      : Promise.resolve({ ok: true, conversation_id: sessionId || "demo-session", artifacts: [], uploads: [], visual_artifacts: [], repo_visual_assets: [] });
   }
 
-  function getDemoDocFile(relPath, bucket) {
-    if (V9.DemoDocs) return V9.DemoDocs.getDemoDocFile(relPath, bucket);
-    return Promise.resolve({ ok: true, rel_path: relPath || "session-summary.md", content: "", raw_content: "", size: 0 });
-  }
+  const getDemoDocFile = (relPath, bucket) => (V9.DemoDocs
+    ? V9.DemoDocs.getDemoDocFile(relPath, bucket)
+    : Promise.resolve({ ok: true, rel_path: relPath || "session-summary.md", content: "", raw_content: "", size: 0 }));
 
   function hierarchyProjects(h) {
     if (!h) return [];

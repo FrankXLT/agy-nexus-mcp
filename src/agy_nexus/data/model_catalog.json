@@ -1,5 +1,7 @@
 {
-  "catalog_version": "2026-11-22",
+  "catalog_revision": 2,
+  "updated_at": "2026-11-24",
+  "catalog_version": "2026-11-24",
   "currency": "USD",
   "micros_per_usd": 1000000,
   "tokens_per_rate_unit": 1000000,
@@ -53,48 +55,37 @@
       "short_label": "Carbon 4",
       "short_11": "Carbon 4   ",
       "short_7": "Carbon4",
-      "pool_key": "google",
-      "pool_label": "Google 20x",
-      "quota_group": "Gemini Models",
-      "context_window": 1048576,
-      "max_output_tokens": 65536,
-      "api_max_output_tokens": 262144,
-      "reasoning_tiers": ["Low", "Medium", "High"],
-      "placeholders": [
-        "MODEL_PLACEHOLDER_M427",
-        "MODEL_PLACEHOLDER_M437",
-        "MODEL_PLACEHOLDER_M438"
-      ],
-      "tier_placeholders": {
-        "Low": "MODEL_PLACEHOLDER_M438",
-        "Medium": "MODEL_PLACEHOLDER_M437",
-        "High": "MODEL_PLACEHOLDER_M427"
-      },
       "model_ids": [
         "gemini-4-carbon-high",
         "gemini-4-carbon-medium",
         "gemini-4-carbon-low"
       ],
       "aliases": ["gemini 4 carbon", "carbon"],
-      "target_pct": {"ultra-20x": 20.0, "ultra-5x": 12.0},
-      "rate_epochs": [
-        {
-          "effective_from": "2025-01-01",
-          "effective_to": "2026-11-30",
-          "input_micros": 2000000,
-          "output_micros": 10000000,
-          "cache_read_micros": 100000,
-          "note": "Introductory rate through Nov 30"
+      "public_api": {
+        "api_context_window": 1048576,
+        "api_max_output_tokens": 262144,
+        "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+        "verified_at": "2026-11-24"
+      },
+      "antigravity_ide": {
+        "pool_key": "google",
+        "pool_label": "Google 20x",
+        "quota_group": "Gemini Models",
+        "context_window": 1048576,
+        "max_output_tokens": 65536,
+        "reasoning_tiers": ["Low", "Medium", "High"],
+        "placeholders": [
+          "MODEL_PLACEHOLDER_M427",
+          "MODEL_PLACEHOLDER_M437",
+          "MODEL_PLACEHOLDER_M438"
+        ],
+        "tier_placeholders": {
+          "Low": "MODEL_PLACEHOLDER_M438",
+          "Medium": "MODEL_PLACEHOLDER_M437",
+          "High": "MODEL_PLACEHOLDER_M427"
         },
-        {
-          "effective_from": "2026-12-01",
-          "effective_to": null,
-          "input_micros": 4000000,
-          "output_micros": 20000000,
-          "cache_read_micros": 200000,
-          "note": "Scheduled Dec 1 standard rate"
-        }
-      ]
+        "target_pct": {"ultra-20x": 20.0, "ultra-5x": 12.0}
+      }
     },
     {
       "key": "neon",
@@ -102,25 +93,6 @@
       "short_label": "Neon 4",
       "short_11": "Neon 4     ",
       "short_7": "Neon 4 ",
-      "pool_key": "google",
-      "pool_label": "Google 20x",
-      "quota_group": "Gemini Models",
-      "context_window": 1048576,
-      "max_output_tokens": 65536,
-      "api_max_output_tokens": 262144,
-      "reasoning_tiers": ["Low", "Medium", "High", "XHigh"],
-      "placeholders": [
-        "MODEL_PLACEHOLDER_M532",
-        "MODEL_PLACEHOLDER_M533",
-        "MODEL_PLACEHOLDER_M534",
-        "MODEL_PLACEHOLDER_M535"
-      ],
-      "tier_placeholders": {
-        "Low": "MODEL_PLACEHOLDER_M534",
-        "Medium": "MODEL_PLACEHOLDER_M533",
-        "High": "MODEL_PLACEHOLDER_M532",
-        "XHigh": "MODEL_PLACEHOLDER_M535"
-      },
       "model_ids": [
         "gemini-4-neon-high",
         "gemini-4-neon-medium",
@@ -128,17 +100,33 @@
         "gemini-4-neon-xhigh"
       ],
       "aliases": ["gemini 4 neon", "neon"],
-      "target_pct": {"ultra-20x": 10.0, "ultra-5x": 5.0},
-      "rate_epochs": [
-        {
-          "effective_from": "2025-01-01",
-          "effective_to": null,
-          "input_micros": 3000000,
-          "output_micros": 15000000,
-          "cache_read_micros": 150000,
-          "note": "Standard rate"
-        }
-      ]
+      "public_api": {
+        "api_context_window": 1048576,
+        "api_max_output_tokens": 262144,
+        "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+        "verified_at": "2026-11-24"
+      },
+      "antigravity_ide": {
+        "pool_key": "google",
+        "pool_label": "Google 20x",
+        "quota_group": "Gemini Models",
+        "context_window": 1048576,
+        "max_output_tokens": 65536,
+        "reasoning_tiers": ["Low", "Medium", "High", "XHigh"],
+        "placeholders": [
+          "MODEL_PLACEHOLDER_M532",
+          "MODEL_PLACEHOLDER_M533",
+          "MODEL_PLACEHOLDER_M534",
+          "MODEL_PLACEHOLDER_M535"
+        ],
+        "tier_placeholders": {
+          "Low": "MODEL_PLACEHOLDER_M534",
+          "Medium": "MODEL_PLACEHOLDER_M533",
+          "High": "MODEL_PLACEHOLDER_M532",
+          "XHigh": "MODEL_PLACEHOLDER_M535"
+        },
+        "target_pct": {"ultra-20x": 10.0, "ultra-5x": 5.0}
+      }
     },
     {
       "key": "argon",
@@ -146,23 +134,6 @@
       "short_label": "Argon 4",
       "short_11": "Argon 4    ",
       "short_7": "Argon 4",
-      "pool_key": "google",
-      "pool_label": "Google 20x",
-      "quota_group": "Gemini Models",
-      "context_window": 1048576,
-      "max_output_tokens": 65536,
-      "api_max_output_tokens": 65536,
-      "reasoning_tiers": ["Low", "Medium", "High"],
-      "placeholders": [
-        "MODEL_PLACEHOLDER_M417",
-        "MODEL_PLACEHOLDER_M418",
-        "MODEL_PLACEHOLDER_M419"
-      ],
-      "tier_placeholders": {
-        "Low": "MODEL_PLACEHOLDER_M419",
-        "Medium": "MODEL_PLACEHOLDER_M418",
-        "High": "MODEL_PLACEHOLDER_M417"
-      },
       "model_ids": [
         "gemini-4-argon-high",
         "gemini-4-argon-medium",
@@ -176,25 +147,31 @@
         "gemini 3 pro",
         "gemini 2.5 pro"
       ],
-      "target_pct": {"ultra-20x": 25.0, "ultra-5x": 18.0},
-      "rate_epochs": [
-        {
-          "effective_from": "2025-01-01",
-          "effective_to": "2026-11-30",
-          "input_micros": 2000000,
-          "output_micros": 10000000,
-          "cache_read_micros": 100000,
-          "note": "Introductory rate through Nov 30"
+      "public_api": {
+        "api_context_window": 1048576,
+        "api_max_output_tokens": 65536,
+        "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+        "verified_at": "2026-11-24"
+      },
+      "antigravity_ide": {
+        "pool_key": "google",
+        "pool_label": "Google 20x",
+        "quota_group": "Gemini Models",
+        "context_window": 1048576,
+        "max_output_tokens": 65536,
+        "reasoning_tiers": ["Low", "Medium", "High"],
+        "placeholders": [
+          "MODEL_PLACEHOLDER_M417",
+          "MODEL_PLACEHOLDER_M418",
+          "MODEL_PLACEHOLDER_M419"
+        ],
+        "tier_placeholders": {
+          "Low": "MODEL_PLACEHOLDER_M419",
+          "Medium": "MODEL_PLACEHOLDER_M418",
+          "High": "MODEL_PLACEHOLDER_M417"
         },
-        {
-          "effective_from": "2026-12-01",
-          "effective_to": null,
-          "input_micros": 4000000,
-          "output_micros": 20000000,
-          "cache_read_micros": 200000,
-          "note": "Scheduled Dec 1 standard rate"
-        }
-      ]
+        "target_pct": {"ultra-20x": 25.0, "ultra-5x": 18.0}
+      }
     },
     {
       "key": "hydrogen",
@@ -202,28 +179,6 @@
       "short_label": "Hydrogen 4",
       "short_11": "Hydrogen 4 ",
       "short_7": "Hydro 4",
-      "pool_key": "google",
-      "pool_label": "Google 20x",
-      "quota_group": "Gemini Models",
-      "context_window": 1048576,
-      "max_output_tokens": 65536,
-      "api_max_output_tokens": 262144,
-      "reasoning_tiers": ["Low", "Medium", "High", "XHigh"],
-      "placeholders": [
-        "MODEL_PLACEHOLDER_M525",
-        "MODEL_PLACEHOLDER_M526",
-        "MODEL_PLACEHOLDER_M527",
-        "MODEL_PLACEHOLDER_M528",
-        "MODEL_PLACEHOLDER_M530",
-        "MODEL_PLACEHOLDER_M531",
-        "MODEL_PLACEHOLDER_M578"
-      ],
-      "tier_placeholders": {
-        "Low": "MODEL_PLACEHOLDER_M527",
-        "Medium": "MODEL_PLACEHOLDER_M526",
-        "High": "MODEL_PLACEHOLDER_M525",
-        "XHigh": "MODEL_PLACEHOLDER_M528"
-      },
       "model_ids": [
         "gemini-4-hydrogen-high",
         "gemini-4-hydrogen-medium",
@@ -234,17 +189,36 @@
         "gemini-4-hydrogen-sonar"
       ],
       "aliases": ["gemini 4 hydrogen", "hydrogen"],
-      "target_pct": {"ultra-20x": 15.0, "ultra-5x": 15.0},
-      "rate_epochs": [
-        {
-          "effective_from": "2025-01-01",
-          "effective_to": null,
-          "input_micros": 1500000,
-          "output_micros": 7500000,
-          "cache_read_micros": 75000,
-          "note": "Standard rate"
-        }
-      ]
+      "public_api": {
+        "api_context_window": 1048576,
+        "api_max_output_tokens": 262144,
+        "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+        "verified_at": "2026-11-24"
+      },
+      "antigravity_ide": {
+        "pool_key": "google",
+        "pool_label": "Google 20x",
+        "quota_group": "Gemini Models",
+        "context_window": 1048576,
+        "max_output_tokens": 65536,
+        "reasoning_tiers": ["Low", "Medium", "High", "XHigh"],
+        "placeholders": [
+          "MODEL_PLACEHOLDER_M525",
+          "MODEL_PLACEHOLDER_M526",
+          "MODEL_PLACEHOLDER_M527",
+          "MODEL_PLACEHOLDER_M528",
+          "MODEL_PLACEHOLDER_M530",
+          "MODEL_PLACEHOLDER_M531",
+          "MODEL_PLACEHOLDER_M578"
+        ],
+        "tier_placeholders": {
+          "Low": "MODEL_PLACEHOLDER_M527",
+          "Medium": "MODEL_PLACEHOLDER_M526",
+          "High": "MODEL_PLACEHOLDER_M525",
+          "XHigh": "MODEL_PLACEHOLDER_M528"
+        },
+        "target_pct": {"ultra-20x": 15.0, "ultra-5x": 15.0}
+      }
     },
     {
       "key": "flash_3_8",
@@ -252,28 +226,6 @@
       "short_label": "Flash 3.8",
       "short_11": "Flash 3.8  ",
       "short_7": "Flash38",
-      "pool_key": "google",
-      "pool_label": "Google 20x",
-      "quota_group": "Gemini Models",
-      "context_window": 1048576,
-      "max_output_tokens": 65536,
-      "api_max_output_tokens": 65536,
-      "reasoning_tiers": ["Low", "Medium", "High"],
-      "placeholders": [
-        "MODEL_PLACEHOLDER_M318",
-        "MODEL_PLACEHOLDER_M319",
-        "MODEL_PLACEHOLDER_M320",
-        "MODEL_PLACEHOLDER_M322",
-        "MODEL_PLACEHOLDER_M18",
-        "MODEL_PLACEHOLDER_M50",
-        "MODEL_PLACEHOLDER_M198"
-      ],
-      "tier_placeholders": {
-        "Low": "MODEL_PLACEHOLDER_M320",
-        "Medium": "MODEL_PLACEHOLDER_M319",
-        "High": "MODEL_PLACEHOLDER_M318",
-        "Tiered": "MODEL_PLACEHOLDER_M322"
-      },
       "model_ids": [
         "gemini-3.8-flash-high",
         "gemini-3.8-flash-medium",
@@ -291,25 +243,36 @@
         "gemini 2.5 lite",
         "gemini 3.5 flash lite"
       ],
-      "target_pct": {"ultra-20x": 20.0, "ultra-5x": 25.0},
-      "rate_epochs": [
-        {
-          "effective_from": "2025-01-01",
-          "effective_to": "2026-12-31",
-          "input_micros": 750000,
-          "output_micros": 3750000,
-          "cache_read_micros": 75000,
-          "note": "Introductory rate through Dec 31"
+      "public_api": {
+        "api_context_window": 1048576,
+        "api_max_output_tokens": 65536,
+        "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+        "verified_at": "2026-11-24"
+      },
+      "antigravity_ide": {
+        "pool_key": "google",
+        "pool_label": "Google 20x",
+        "quota_group": "Gemini Models",
+        "context_window": 1048576,
+        "max_output_tokens": 65536,
+        "reasoning_tiers": ["Low", "Medium", "High"],
+        "placeholders": [
+          "MODEL_PLACEHOLDER_M318",
+          "MODEL_PLACEHOLDER_M319",
+          "MODEL_PLACEHOLDER_M320",
+          "MODEL_PLACEHOLDER_M322",
+          "MODEL_PLACEHOLDER_M18",
+          "MODEL_PLACEHOLDER_M50",
+          "MODEL_PLACEHOLDER_M198"
+        ],
+        "tier_placeholders": {
+          "Low": "MODEL_PLACEHOLDER_M320",
+          "Medium": "MODEL_PLACEHOLDER_M319",
+          "High": "MODEL_PLACEHOLDER_M318",
+          "Tiered": "MODEL_PLACEHOLDER_M322"
         },
-        {
-          "effective_from": "2027-01-01",
-          "effective_to": null,
-          "input_micros": 1500000,
-          "output_micros": 7500000,
-          "cache_read_micros": 150000,
-          "note": "Scheduled Jan 1 standard rate"
-        }
-      ]
+        "target_pct": {"ultra-20x": 20.0, "ultra-5x": 25.0}
+      }
     },
     {
       "key": "claude_opus_5_5",
@@ -317,41 +280,37 @@
       "short_label": "Opus 5.5",
       "short_11": "Opus 5.5   ",
       "short_7": "Opus5.5",
-      "pool_key": "claude",
-      "pool_label": "Partner 1x",
-      "quota_group": "Claude and GPT models",
-      "context_window": 200000,
-      "max_output_tokens": 32000,
-      "api_context_window": 1000000,
-      "api_max_output_tokens": 128000,
-      "reasoning_tiers": ["Low", "Medium", "High"],
-      "placeholders": [
-        "MODEL_PLACEHOLDER_M400",
-        "MODEL_PLACEHOLDER_M401",
-        "MODEL_PLACEHOLDER_M402"
-      ],
-      "tier_placeholders": {
-        "Low": "MODEL_PLACEHOLDER_M400",
-        "Medium": "MODEL_PLACEHOLDER_M401",
-        "High": "MODEL_PLACEHOLDER_M402"
-      },
       "model_ids": [
         "claude-opus-5-5-low",
         "claude-opus-5-5-medium",
         "claude-opus-5-5-high"
       ],
       "aliases": ["claude opus 5.5", "opus 5.5", "opus"],
-      "target_pct": {"ultra-20x": 3.0, "ultra-5x": 7.0},
-      "rate_epochs": [
-        {
-          "effective_from": "2025-01-01",
-          "effective_to": null,
-          "input_micros": 4000000,
-          "output_micros": 20000000,
-          "cache_read_micros": 200000,
-          "note": "Standard rate"
-        }
-      ]
+      "public_api": {
+        "api_context_window": 1000000,
+        "api_max_output_tokens": 128000,
+        "source_url": "https://www.anthropic.com/pricing",
+        "verified_at": "2026-11-24"
+      },
+      "antigravity_ide": {
+        "pool_key": "claude",
+        "pool_label": "Partner 1x",
+        "quota_group": "Claude and GPT models",
+        "context_window": 200000,
+        "max_output_tokens": 32000,
+        "reasoning_tiers": ["Low", "Medium", "High"],
+        "placeholders": [
+          "MODEL_PLACEHOLDER_M400",
+          "MODEL_PLACEHOLDER_M401",
+          "MODEL_PLACEHOLDER_M402"
+        ],
+        "tier_placeholders": {
+          "Low": "MODEL_PLACEHOLDER_M400",
+          "Medium": "MODEL_PLACEHOLDER_M401",
+          "High": "MODEL_PLACEHOLDER_M402"
+        },
+        "target_pct": {"ultra-20x": 3.0, "ultra-5x": 7.0}
+      }
     },
     {
       "key": "claude_sonnet_5_5",
@@ -359,24 +318,6 @@
       "short_label": "Sonnet 5.5",
       "short_11": "Sonnet 5.5 ",
       "short_7": "Sonn5.5",
-      "pool_key": "claude",
-      "pool_label": "Partner 1x",
-      "quota_group": "Claude and GPT models",
-      "context_window": 200000,
-      "max_output_tokens": 64000,
-      "api_context_window": 1000000,
-      "api_max_output_tokens": 128000,
-      "reasoning_tiers": ["Low", "Medium", "High"],
-      "placeholders": [
-        "MODEL_PLACEHOLDER_M403",
-        "MODEL_PLACEHOLDER_M404",
-        "MODEL_PLACEHOLDER_M405"
-      ],
-      "tier_placeholders": {
-        "Low": "MODEL_PLACEHOLDER_M403",
-        "Medium": "MODEL_PLACEHOLDER_M404",
-        "High": "MODEL_PLACEHOLDER_M405"
-      },
       "model_ids": [
         "claude-sonnet-5-5-low",
         "claude-sonnet-5-5-medium",
@@ -390,17 +331,31 @@
         "claude 5.5",
         "claude"
       ],
-      "target_pct": {"ultra-20x": 5.0, "ultra-5x": 13.0},
-      "rate_epochs": [
-        {
-          "effective_from": "2025-01-01",
-          "effective_to": null,
-          "input_micros": 2000000,
-          "output_micros": 10000000,
-          "cache_read_micros": 100000,
-          "note": "Standard rate"
-        }
-      ]
+      "public_api": {
+        "api_context_window": 1000000,
+        "api_max_output_tokens": 128000,
+        "source_url": "https://www.anthropic.com/pricing",
+        "verified_at": "2026-11-24"
+      },
+      "antigravity_ide": {
+        "pool_key": "claude",
+        "pool_label": "Partner 1x",
+        "quota_group": "Claude and GPT models",
+        "context_window": 200000,
+        "max_output_tokens": 64000,
+        "reasoning_tiers": ["Low", "Medium", "High"],
+        "placeholders": [
+          "MODEL_PLACEHOLDER_M403",
+          "MODEL_PLACEHOLDER_M404",
+          "MODEL_PLACEHOLDER_M405"
+        ],
+        "tier_placeholders": {
+          "Low": "MODEL_PLACEHOLDER_M403",
+          "Medium": "MODEL_PLACEHOLDER_M404",
+          "High": "MODEL_PLACEHOLDER_M405"
+        },
+        "target_pct": {"ultra-20x": 5.0, "ultra-5x": 13.0}
+      }
     },
     {
       "key": "gpt_oss_120b",
@@ -408,31 +363,27 @@
       "short_label": "GPT-OSS 120B",
       "short_11": "GPT-OSS 120",
       "short_7": "GPT-120",
-      "pool_key": "gpt_oss",
-      "pool_label": "Partner 1x",
-      "quota_group": "Claude and GPT models",
-      "context_window": 128000,
-      "max_output_tokens": 16384,
-      "api_context_window": 131072,
-      "api_max_output_tokens": 32768,
-      "reasoning_tiers": ["Medium"],
-      "placeholders": ["MODEL_OPENAI_GPT_OSS_120B_MEDIUM"],
-      "tier_placeholders": {
-        "Medium": "MODEL_OPENAI_GPT_OSS_120B_MEDIUM"
-      },
       "model_ids": ["gpt-oss-120b-medium"],
       "aliases": ["gpt-oss 120b", "gpt_oss", "gpt-oss", "120b"],
-      "target_pct": {"ultra-20x": 2.0, "ultra-5x": 5.0},
-      "rate_epochs": [
-        {
-          "effective_from": "2025-01-01",
-          "effective_to": null,
-          "input_micros": 0,
-          "output_micros": 0,
-          "cache_read_micros": 0,
-          "note": "Partner failover default ($0.00 configurable override)"
-        }
-      ]
+      "public_api": {
+        "api_context_window": 131072,
+        "api_max_output_tokens": 32768,
+        "source_url": "https://models.dev/api.json",
+        "verified_at": "2026-11-24"
+      },
+      "antigravity_ide": {
+        "pool_key": "gpt_oss",
+        "pool_label": "Partner 1x",
+        "quota_group": "Claude and GPT models",
+        "context_window": 128000,
+        "max_output_tokens": 16384,
+        "reasoning_tiers": ["Medium"],
+        "placeholders": ["MODEL_OPENAI_GPT_OSS_120B_MEDIUM"],
+        "tier_placeholders": {
+          "Medium": "MODEL_OPENAI_GPT_OSS_120B_MEDIUM"
+        },
+        "target_pct": {"ultra-20x": 2.0, "ultra-5x": 5.0}
+      }
     }
   ]
 }

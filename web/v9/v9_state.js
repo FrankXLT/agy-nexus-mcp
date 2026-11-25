@@ -39,6 +39,8 @@
     soloProject: (urlParams.get("project") || "").trim(),
     heatWeeks: window.innerWidth <= 560 ? 26 : 53,
     heatPinned: false,
+    heatSelectedDate: "",
+    heatPeriodKey: "",
     wsMode: "split",
     docMode: "rendered",
     railOpen: false,
@@ -256,9 +258,9 @@
     navigator.serviceWorker.register(`${getBasePath()}/web/sw.js`, { scope: `${getBasePath() || ""}/` }).catch(() => {});
     let swReloading = false;
     navigator.serviceWorker.addEventListener("controllerchange", () => {
-      if (swReloading || sessionStorage.getItem("nexus_sw_reloaded") === "4.0.8") return;
+      if (swReloading || sessionStorage.getItem("nexus_sw_reloaded") === "4.0.9") return;
       swReloading = true;
-      sessionStorage.setItem("nexus_sw_reloaded", "4.0.8");
+      sessionStorage.setItem("nexus_sw_reloaded", "4.0.9");
       window.location.reload();
     });
   }

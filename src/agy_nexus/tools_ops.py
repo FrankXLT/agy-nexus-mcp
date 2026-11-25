@@ -141,6 +141,8 @@ def get_session_tree(
 
 def _dispatch_models_action(style_clean: str) -> str:
     from agy_nexus.ascii_models import render_ascii_models_status
+    from agy_nexus.catalog_report import build_unmapped_issue_url, finalize_unmapped_models
+    from agy_nexus.catalog_sync import get_catalog_sync_status
     from agy_nexus.cost_ledger import read_model_drift_status
     from agy_nexus.model_pricing import load_model_catalog
 
@@ -154,6 +156,8 @@ def _dispatch_models_action(style_clean: str) -> str:
             ),
             "ascii_models_report": render_ascii_models_status(data_dir=AGY_DATA_DIR, agy_config_dir=AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR),
         }, serializer=_compact_json)
+    drift = read_model_drift_status(AGY_BG_DIR)
+    unmapped = finalize_unmapped_models({}, drift_status=drift)
     return compact_payload_to_wire_budget({
         "ok": True, "action": "models", "style": style_clean,
         "assistant_guidance": (
@@ -161,8 +165,11 @@ def _dispatch_models_action(style_clean: str) -> str:
             "Sequential read-only follow-up calls are permitted (one call at a time, never in parallel). "
             + REPLY_PROMPT_GUIDANCE
         ),
-        "quota_and_pools": get_live_quota_and_pool_status(AGY_DATA_DIR, AGY_CONFIG_DIR),
-        "model_drift_status": read_model_drift_status(AGY_BG_DIR),
+        "quota_and_pools": get_live_quota_and_pool_status(AGY_DATA_DIR, AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR),
+        "model_drift_status": drift,
+        "catalog_sync": get_catalog_sync_status(data_dir=AGY_DATA_DIR, bg_dir=AGY_BG_DIR, allow_network=False),
+        "unmapped_models": unmapped,
+        "unmapped_issue_url": build_unmapped_issue_url(unmapped),
         "models": load_model_catalog().get("models") or [],
     }, serializer=_compact_json)
 
@@ -292,14 +299,14 @@ def manage_background_run(
             "ok": True, "action": "telemetry",
             "assistant_guidance": f"Wire telemetry and quota summary retrieved below. Sequential read-only follow-up calls are permitted (one call at a time, never in parallel). {REPLY_PROMPT_GUIDANCE}",
             "wire_telemetry": get_wire_telemetry_summary(AGY_BG_DIR, limit=25),
-            "quota_and_pools": get_live_quota_and_pool_status(AGY_DATA_DIR, AGY_CONFIG_DIR),
+            "quota_and_pools": get_live_quota_and_pool_status(AGY_DATA_DIR, AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR),
         }, serializer=_compact_json)
     return _handle_job_status_or_tail(action_clean, job_id, tail_lines, period)
 def _build_models_ascii_response() -> str:
     """Build deadbolt-safe <=76-col 8-model, subagent, pricing & drift report payload."""
     from agy_nexus.ascii_models import render_ascii_models_status
 
-    quota_status = get_live_quota_and_pool_status(AGY_DATA_DIR, AGY_CONFIG_DIR)
+    quota_status = get_live_quota_and_pool_status(AGY_DATA_DIR, AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR)
     active_profile = quota_status.get("active_tier_profile", quota_status.get("active_profile", "ultra-20x"))
     return compact_payload_to_wire_budget({
         "ok": True,
@@ -364,6 +371,46 @@ def _discover_host_bridge_summary() -> dict[str, Any]:
     return out
 
 
+def _collect_runtime_model_audit() -> dict[str, Any]:
+    from agy_nexus.catalog_sync import get_catalog_sync_status
+    from agy_nexus.stats import build_nexus_stats_bundle
+
+    sync = get_catalog_sync_status(data_dir=AGY_DATA_DIR, bg_dir=AGY_BG_DIR, allow_network=False)
+    compact_sync = {
+        k: sync.get(k) for k in (
+            "status", "upstream_branch", "checked_at", "bundled_revision", "effective_revision",
+            "upstream_revision", "override_active", "update_available", "local_repo_dirty",
+        )
+    }
+    sub_adj: list[dict[str, Any]] = []
+    unmapped: list[dict[str, Any]] = []
+    unmapped_url = ""
+    try:
+        b = build_nexus_stats_bundle(
+            brain_dir=AGY_BRAIN_DIR, db_file=AGY_DB_FILE, agy_config_dir=AGY_CONFIG_DIR,
+            bg_dir=AGY_BG_DIR, data_dir=AGY_DATA_DIR, period="last_30d",
+            include_ascii=False, compact_sessions=True,
+        )
+        for r in (b.get("subagent_list") or [])[:20]:
+            sub_adj.append({
+                "role": r.get("role"), "runs": r.get("runs"),
+                "intended": r.get("intended_model_label"), "actual": r.get("actual_model_label"),
+                "actual_pct": r.get("actual_dominant_pct"), "inherited": r.get("is_inherited"),
+                "diverged": r.get("model_diverged"), "status": r.get("adjudication_status"),
+                "text": r.get("adjudication_text"),
+            })
+        unmapped = b.get("unmapped_models") or []
+        unmapped_url = str(b.get("unmapped_issue_url") or "")
+    except Exception:
+        pass
+    return {
+        "subagent_adjudication": sub_adj,
+        "unmapped_models": unmapped,
+        "unmapped_issue_url": unmapped_url,
+        "catalog_sync": compact_sync,
+    }
+
+
 @mcp.tool(annotations=READONLY_ANNOTATIONS, output_schema=None)
 def list_models_and_agents(
     include_skills: bool = True,
@@ -393,9 +440,10 @@ def list_models_and_agents(
     plugin_bundles = collect_plugin_bundles_summary(AGY_CONFIG_DIR) if include_skills else []
     rules_inv = collect_rules_inventory(AGY_CONFIG_DIR, ws_path) if include_rules else {}
     session_scope = evaluate_session_customization_scope(ws_str, AGY_CONFIG_DIR, AGY_GITLAB_DIR)
-    quota_status = get_live_quota_and_pool_status(AGY_DATA_DIR, AGY_CONFIG_DIR)
+    quota_status = get_live_quota_and_pool_status(AGY_DATA_DIR, AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR)
     inspected_item = _inspect_customization_item(inspect_name, ws_path) if inspect_name.strip() else {}
     active_profile = quota_status.get("active_tier_profile", quota_status.get("active_profile", "ultra-20x"))
+    runtime_audit = _collect_runtime_model_audit()
     out_payload: dict[str, Any] = {
         "ok": True, "status": "OK",
         "assistant_guidance": (
@@ -415,6 +463,7 @@ def list_models_and_agents(
             "max_diff_chars": MAX_DIFF_CHARS, "max_transcript_turns": MAX_TRANSCRIPT_TURNS,
         },
         "language_server": _discover_host_bridge_summary(),
+        **runtime_audit,
     }
     if inspected_item:
         out_payload["inspected_item"] = inspected_item

@@ -32,19 +32,19 @@ WEB_DIR = PROJECT_ROOT / "web"
 
 
 def test_v321_version_consistency() -> None:
-    """Verify package version is 4.0.8 across pyproject.toml, package, index.html, and sw.js."""
-    assert agy_nexus.__version__ == "4.0.8"
+    """Verify package version is 4.0.9 across pyproject.toml, package, index.html, and sw.js."""
+    assert agy_nexus.__version__ == "4.0.9"
 
     pyproject_text = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'version = "4.0.8"' in pyproject_text
+    assert 'version = "4.0.9"' in pyproject_text
 
     index_html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
-    assert "?v=4.0.8" in index_html
-    assert 'href="/web/v9/v9_shell.css?v=4.0.8"' in index_html
+    assert "?v=4.0.9" in index_html
+    assert 'href="/web/v9/v9_shell.css?v=4.0.9"' in index_html
 
     sw_js = (WEB_DIR / "sw.js").read_text(encoding="utf-8")
-    assert 'CACHE_NAME = "agy-nexus-v4.0.8"' in sw_js
-    assert '"/web/v9/v9_shell.css?v=4.0.8"' in sw_js
+    assert 'CACHE_NAME = "agy-nexus-v4.0.9"' in sw_js
+    assert '"/web/v9/v9_shell.css?v=4.0.9"' in sw_js
 
 
 def test_render_ascii_session_tree_completed_label() -> None:

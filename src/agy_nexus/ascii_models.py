@@ -41,46 +41,14 @@ def _fmt_ctx(tokens: int) -> str:
     return str(tokens)
 
 
-def _fetch_ls_live_configs() -> list[dict[str, Any]]:
-    """Best-effort loopback query to local Language Server GetUserStatus without blocking (> 1.5s)."""
+def _fetch_ls_live_configs(bg_dir: Path | None = None) -> list[dict[str, Any]]:
+    """Best-effort query to local Language Server or fresh host snapshot without blocking (> 1.5s)."""
+    from agy_nexus.ls_quota_probe import probe_or_read_quota_snapshot
+
     try:
-        import re
-        import subprocess
-        out = subprocess.run(
-            ["ps", "-u", str(os.getuid()), "-o", "args"], capture_output=True, text=True, timeout=1.5, check=False
-        ).stdout
-        csrf = ""
-        for line in out.splitlines():
-            if "language_server" in line and "--csrf_token" in line:
-                m = re.search(r"--csrf_token[=\s]+([^\s]+)", line)
-                if m:
-                    csrf = m.group(1).strip()
-                    break
-        if not csrf:
-            return []
-        ss_out = subprocess.run(["ss", "-tlnp"], capture_output=True, text=True, timeout=1.5, check=False).stdout
-        ports: list[int] = []
-        for ln in ss_out.splitlines():
-            if "language_server" in ln:
-                pm = re.search(r"127\.0\.0\.1:(\d+)", ln)
-                if pm:
-                    ports.append(int(pm.group(1)))
-        no_proxy_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        for port in ports[:4]:
-            try:
-                req = urllib.request.Request(
-                    f"http://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/GetUserStatus",
-                    data=b"{}",
-                    headers={"Content-Type": "application/json", "Connect-Protocol-Version": "1", "X-Codeium-Csrf-Token": csrf},
-                    method="POST",
-                )
-                with no_proxy_opener.open(req, timeout=1.5) as resp:
-                    payload = json.loads(resp.read().decode("utf-8", errors="replace"))
-                    cfgs = ((payload.get("userStatus") or {}).get("cascadeModelConfigData") or {}).get("clientModelConfigs") or []
-                    if cfgs:
-                        return list(cfgs)
-            except Exception:
-                continue
+        snap = probe_or_read_quota_snapshot(bg_dir or AGY_BG_DIR, allow_subprocess=True, write_if_live=False)
+        if snap.get("is_fresh"):
+            return list(snap.get("client_model_configs") or [])
     except Exception:
         pass
     return []
@@ -160,7 +128,7 @@ def render_ascii_models_status(
     b_dir = bg_dir or AGY_BG_DIR
     cat = load_model_catalog()
     specs = get_model_specs_map()
-    quota = get_live_quota_and_pool_status(d_dir, c_dir)
+    quota = get_live_quota_and_pool_status(d_dir, c_dir, bg_dir=b_dir)
     main_info = quota.get("active_mainchat_model") or {}
     main_mk = str(main_info.get("model_key") or "carbon")
     main_lbl = str((specs.get(main_mk) or {}).get("short_label") or main_mk)
@@ -168,7 +136,7 @@ def render_ascii_models_status(
     pools = quota.get("pools") or {}
     g_p, c_p = pools.get("google") or {}, pools.get("claude") or {}
 
-    live_cfgs = ls_configs if ls_configs is not None else _fetch_ls_live_configs()
+    live_cfgs = ls_configs if ls_configs is not None else _fetch_ls_live_configs(bg_dir=b_dir)
     ls_rem = _ls_remaining_by_model_key(live_cfgs)
     drift = read_model_drift_status(b_dir)
     roster = _check_agent_roster_and_sync(c_dir)
@@ -214,9 +182,11 @@ def render_ascii_models_status(
             f"{r['role'][:19]:<19} {r['model'][:7]:<7} {r['target'][:17]:<17} {r['effort'][:6]:<6} {r['perms'][:5]:<5} {r['cap'][:5]:<5} {r['sync'][:4]:<4}"
         ))
 
+    cat_rev = int(cat.get("effective_catalog_revision") or cat.get("catalog_revision") or 1)
+    ovr_s = "OVR" if cat.get("override_active") else "REPO"
     synced_cnt = sum(1 for r in roster if r["sync"] == "SYNCED")
     lines.extend([
-        _box_full(f"Agent Parity: {synced_cnt}/{len(roster)} SYNCED (run sync_agents.py for host update)"),
+        _box_full(f"Agent Parity: {synced_cnt}/{len(roster)} SYNCED | PriceBook r{cat_rev} ({ovr_s})"),
         "╠══════════════════════════════════════════════════════════════════════════╣",
         _box_full(_format_subscription_tiers_line(cat.get("subscription_tiers") or [])),
         _box_full(

@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "catalog_revision": 2,
+  "updated_at": "2026-11-24",
+  "currency": "USD",
+  "micros_per_usd": 1000000,
+  "tokens_per_rate_unit": 1000000,
+  "models": {
+    "carbon": {
+      "label": "Gemini 4 Carbon",
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "verified_at": "2026-11-24",
+      "rate_epochs": [
+        {
+          "effective_from": "2025-01-01",
+          "effective_to": "2026-11-30",
+          "input_micros": 2000000,
+          "output_micros": 10000000,
+          "cache_read_micros": 100000,
+          "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+          "verified_at": "2026-11-24",
+          "note": "Introductory rate through Nov 30"
+        },
+        {
+          "effective_from": "2026-12-01",
+          "effective_to": null,
+          "input_micros": 4000000,
+          "output_micros": 20000000,
+          "cache_read_micros": 200000,
+          "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+          "verified_at": "2026-11-24",
+          "note": "Scheduled Dec 1 standard rate"
+        }
+      ]
+    },
+    "neon": {
+      "label": "Gemini 4 Neon",
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "verified_at": "2026-11-24",
+      "rate_epochs": [
+        {
+          "effective_from": "2025-01-01",
+          "effective_to": null,
+          "input_micros": 3000000,
+          "output_micros": 15000000,
+          "cache_read_micros": 150000,
+          "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+          "verified_at": "2026-11-24",
+          "note": "Standard rate"
+        }
+      ]
+    },
+    "argon": {
+      "label": "Gemini 4 Argon",
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "verified_at": "2026-11-24",
+      "rate_epochs": [
+        {
+          "effective_from": "2025-01-01",
+          "effective_to": "2026-11-30",
+          "input_micros": 2000000,
+          "output_micros": 10000000,
+          "cache_read_micros": 100000,
+          "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+          "verified_at": "2026-11-24",
+          "note": "Introductory rate through Nov 30"
+        },
+        {
+          "effective_from": "2026-12-01",
+          "effective_to": null,
+          "input_micros": 4000000,
+          "output_micros": 20000000,
+          "cache_read_micros": 200000,
+          "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+          "verified_at": "2026-11-24",
+          "note": "Scheduled Dec 1 standard rate"
+        }
+      ]
+    },
+    "hydrogen": {
+      "label": "Gemini 4 Hydrogen",
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "verified_at": "2026-11-24",
+      "rate_epochs": [
+        {
+          "effective_from": "2025-01-01",
+          "effective_to": null,
+          "input_micros": 1500000,
+          "output_micros": 7500000,
+          "cache_read_micros": 75000,
+          "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+          "verified_at": "2026-11-24",
+          "note": "Standard rate"
+        }
+      ]
+    },
+    "flash_3_8": {
+      "label": "Gemini 3.8 Flash",
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "verified_at": "2026-11-24",
+      "rate_epochs": [
+        {
+          "effective_from": "2025-01-01",
+          "effective_to": "2026-12-31",
+          "input_micros": 750000,
+          "output_micros": 3750000,
+          "cache_read_micros": 75000,
+          "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+          "verified_at": "2026-11-24",
+          "note": "Introductory rate through Dec 31"
+        },
+        {
+          "effective_from": "2027-01-01",
+          "effective_to": null,
+          "input_micros": 1500000,
+          "output_micros": 7500000,
+          "cache_read_micros": 150000,
+          "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+          "verified_at": "2026-11-24",
+          "note": "Scheduled Jan 1 standard rate"
+        }
+      ]
+    },
+    "claude_opus_5_5": {
+      "label": "Claude Opus 5.5",
+      "source_url": "https://www.anthropic.com/pricing",
+      "verified_at": "2026-11-24",
+      "rate_epochs": [
+        {
+          "effective_from": "2025-01-01",
+          "effective_to": null,
+          "input_micros": 4000000,
+          "output_micros": 20000000,
+          "cache_read_micros": 200000,
+          "source_url": "https://www.anthropic.com/pricing",
+          "verified_at": "2026-11-24",
+          "note": "Standard rate"
+        }
+      ]
+    },
+    "claude_sonnet_5_5": {
+      "label": "Claude Sonnet 5.5",
+      "source_url": "https://www.anthropic.com/pricing",
+      "verified_at": "2026-11-24",
+      "rate_epochs": [
+        {
+          "effective_from": "2025-01-01",
+          "effective_to": null,
+          "input_micros": 2000000,
+          "output_micros": 10000000,
+          "cache_read_micros": 100000,
+          "source_url": "https://www.anthropic.com/pricing",
+          "verified_at": "2026-11-24",
+          "note": "Standard rate"
+        }
+      ]
+    },
+    "gpt_oss_120b": {
+      "label": "GPT-OSS 120B",
+      "source_url": "https://models.dev/api.json",
+      "verified_at": "2026-11-24",
+      "rate_epochs": [
+        {
+          "effective_from": "2025-01-01",
+          "effective_to": null,
+          "input_micros": 0,
+          "output_micros": 0,
+          "cache_read_micros": 0,
+          "source_url": "https://models.dev/api.json",
+          "verified_at": "2026-11-24",
+          "note": "Partner failover default ($0.00 configurable override)"
+        }
+      ]
+    }
+  }
+}

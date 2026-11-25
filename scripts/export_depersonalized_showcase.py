@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-scripts/export_depersonalized_showcase.py — Export Live Telemetry to Public v4.0.8 Showcases.
+scripts/export_depersonalized_showcase.py — Export Live Telemetry to Public v4.0.9 Showcases.
 
 Reads live workstation bundles (current_month, last_month, qtd, ytd, last_30d, last_90d, last_year),
 Workspace Explorer tree, bundled demo docs, and Code Health, applies deterministic 1-to-1 SHA-256-keyed
@@ -13,9 +13,7 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = REPO_ROOT / "src"
-SCRIPTS_DIR = REPO_ROOT / "scripts"
-for _p in (str(SRC_DIR), str(SCRIPTS_DIR)):
+for _p in (str(REPO_ROOT / "src"), str(REPO_ROOT / "scripts")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -73,6 +71,7 @@ _DOMAIN_TITLES: dict[str, list[str]] = {
     "scratch-prototypes": ["Workspace Hygiene v1.0 — Session Archiver & Standardization"],
 }
 _FALLBACK_SLUGS: tuple[str, ...] = ("telemetry-ingestor", "edge-proxy-rs", "task-dispatcher", "media-pipeline", "auth-broker-oidc", "billing-ledger", "cache-shard-kv", "sensor-fusion-py")
+_FALLBACK_TITLES: tuple[str, ...] = ("Phase 1.0 — Core Pipeline Architecture & Modular Hygiene", "Phase 1.1 — Responsive Telemetry Surface & Parity Checks", "Phase 1.2 — Worker Buffering, Retry Backoff & Verification")
 _TARGET_SLUGS: frozenset[str] = PUBLIC_REPOS | {v[0] for v in _WS_HASH_ALIASES.values()} | set(_FALLBACK_SLUGS)
 _CLEAN_WORKTREE_LEAVES: tuple[str, ...] = ("feat_api_gateway", "fix_telemetry_sync", "perf_canvas_solver", "feat_oidc_auth", "fix_mobile_grid", "refactor_worker_pool", "feat_cache_layer", "fix_ws_reconnect")
 
@@ -142,23 +141,28 @@ class ShowcaseDepersonalizer:
 
     _SLUG_DISPLAY: dict[str, str] = {v[0]: v[1] for v in _WS_HASH_ALIASES.values()} | {
         "agy-nexus-mcp": "AGY Nexus MCP", "quiet-ui-skills": "Quiet UI Skills", "scratch-prototypes": "Scratch Prototypes",
+        "telemetry-ingestor": "Telemetry Ingestor", "edge-proxy-rs": "Edge Proxy", "task-dispatcher": "Task Dispatcher",
+        "media-pipeline": "Media Pipeline", "auth-broker-oidc": "Auth Broker OIDC", "billing-ledger": "Billing Ledger",
+        "cache-shard-kv": "Cache Shard KV", "sensor-fusion-py": "Sensor Fusion",
     }
+    _DISPLAY_CANON: dict[str, str] = {v.lower(): v for v in _SLUG_DISPLAY.values()}
 
     def alias_project_name(self, pid: str, pname: str, fallback_slug: str = "") -> str:
-        raw_p = (pname or "").strip()
+        raw_p, fb_low = (pname or "").strip(), (fallback_slug or "").strip().lower()
         low_p = raw_p.lower()
+        if low_p == "other projects" or pid == "__other_projects__":
+            return "Other Projects"
+        if low_p in self._DISPLAY_CANON:
+            return self._DISPLAY_CANON[low_p]
         if low_p in self._SLUG_DISPLAY:
             return self._SLUG_DISPLAY[low_p]
-        if fallback_slug.lower() in self._SLUG_DISPLAY:
-            return self._SLUG_DISPLAY[fallback_slug.lower()]
-        h_p = _h12(low_p)
-        if h_p in _WS_HASH_ALIASES:
-            return _WS_HASH_ALIASES[h_p][1]
-        if fallback_slug:
-            h_s = _h12(fallback_slug)
-            if h_s in _WS_HASH_ALIASES:
-                return _WS_HASH_ALIASES[h_s][1]
-        return self.scrub_text(raw_p) if raw_p else self.alias_repo(fallback_slug)
+        if fb_low in self._SLUG_DISPLAY:
+            return self._SLUG_DISPLAY[fb_low]
+        for cand in (low_p, fb_low):
+            if cand and _h12(cand) in _WS_HASH_ALIASES:
+                return _WS_HASH_ALIASES[_h12(cand)][1]
+        aliased_slug = self.alias_repo(fallback_slug or raw_p)
+        return self._SLUG_DISPLAY.get(aliased_slug) or aliased_slug.replace("-", " ").title()
 
     def scrub_text(self, text: str) -> str:
         if not text:
@@ -180,6 +184,7 @@ class ShowcaseDepersonalizer:
                 if rep:
                     out = re.sub(rf"(?<![A-Za-z0-9]){re.escape(part)}(?![A-Za-z0-9])", rep, out)
         out = re.sub(r"\[([A-Za-z0-9]{2,5})-", lambda m: f"[{_SCRUB_TOKEN_REPLACEMENTS.get(_h12(m.group(1)), m.group(1))}-", out)
+        out = re.sub(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", lambda m: self.uuid_alias(m.group(0)), out, flags=re.I)
         return out
 
     def alias_workspace_path(self, raw_ws: str, repo_slug_hint: str = "") -> str:
@@ -205,10 +210,8 @@ class ShowcaseDepersonalizer:
             return self.scrub_text(raw_title)
         if repo_slug == "quiet-ui-skills":
             return self.scrub_text(re.sub(r"\bHome\s+[A-Za-z]+\b", "Smart Telemetry", raw_title))
-        pool = _DOMAIN_TITLES.get(repo_slug)
-        if pool:
-            return pool[int(_h12(key_hint or raw_title or str(idx_fallback)), 16) % len(pool)]
-        return self.scrub_text(raw_title)
+        pool = _DOMAIN_TITLES.get(repo_slug) or _FALLBACK_TITLES
+        return pool[int(_h12(key_hint or raw_title or str(idx_fallback)), 16) % len(pool)]
 
     def alias_handoff_id(self, raw_hid: str) -> str:
         if not raw_hid or "-" not in raw_hid:
@@ -264,7 +267,7 @@ def _depersonalize_project_group(pg: dict[str, Any], dp: ShowcaseDepersonalizer)
     for idx_s, s in enumerate(out.get("sessions") or []):
         ws_orig = str(s.get("workspace_path") or "")
         new_ws = dp.alias_workspace_path(ws_orig, fallback_slug)
-        repo_s = new_ws.split("/")[-2] if "/worktrees/" in new_ws else Path(new_ws).name
+        repo_s = (new_ws.split("/")[-2] if "/worktrees/" in new_ws else Path(new_ws).name) if new_ws else (dp.alias_repo(fallback_slug) or "scratch-prototypes")
         s["conversation_id"] = dp.uuid_alias(str(s.get("conversation_id") or ""))
         s["project_id"], s["project_name"], s["workspace_path"] = out["project_id"], aliased_pname, new_ws
         s["workspace_short"] = Path(new_ws).name if new_ws else repo_s
@@ -277,6 +280,8 @@ def _depersonalize_project_group(pg: dict[str, Any], dp: ShowcaseDepersonalizer)
 
 
 def depersonalize_stats_bundle(raw_bundle: dict[str, Any], dp: ShowcaseDepersonalizer) -> dict[str, Any]:
+    from build_github_showcase import sanitize_demo_quota_and_pools
+
     b = copy.deepcopy(raw_bundle)
     b["version"] = __version__
     seen_ws_ids: set[int] = set()
@@ -287,11 +292,9 @@ def depersonalize_stats_bundle(raw_bundle: dict[str, Any], dp: ShowcaseDepersona
                 w["workspace"] = dp.alias_repo(str(w.get("workspace") or ""))
     ws_ser = b.get("workspace_series") or {}
     if isinstance(ws_ser, dict):
-        old_keys = list(ws_ser.get("keys") or [])
-        ws_ser["keys"] = [dp.alias_repo(k) for k in old_keys]
+        ws_ser["keys"] = [dp.alias_repo(k) for k in (ws_ser.get("keys") or [])]
         for map_k in ("layers", "token_layers"):
-            old_m = ws_ser.get(map_k) or {}
-            ws_ser[map_k] = {dp.alias_repo(k): v for k, v in old_m.items()}
+            ws_ser[map_k] = {dp.alias_repo(k): v for k, v in (ws_ser.get(map_k) or {}).items()}
     ph = b.get("project_hierarchy") or {}
     if ph.get("latest_session_id"):
         ph["latest_session_id"] = dp.uuid_alias(str(ph["latest_session_id"]))
@@ -310,31 +313,27 @@ def depersonalize_stats_bundle(raw_bundle: dict[str, Any], dp: ShowcaseDepersona
 
     ch = b.get("code_health") or {}
     if isinstance(ch.get("version"), dict):
-        ch["version"] = {
-            "installed": __version__, "remote": f"v{__version__}",
-            "status": "up_to_date", "status_label": f"Up to Date (v{__version__})",
-            "status_dot": "#10b981", "repo": "github.com/FrankXLT/agy-nexus-mcp",
-        }
+        ch["version"] = {"installed": __version__, "remote": f"v{__version__}", "status": "up_to_date", "status_label": f"Up to Date (v{__version__})", "status_dot": "#10b981", "repo": "github.com/FrankXLT/agy-nexus-mcp"}
     for sub_k in ("polyglot_health", "local_lsp", "ast_integrity"):
         if sub_k in ch:
             ch[sub_k] = scrub_obj(ch[sub_k])
     for sk in ("wire_telemetry", "model_drift_status", "subagent_list", "subagent_role_breakdown", "subagent_series"):
         if sk in b:
             b[sk] = scrub_obj(b[sk])
+    b["unmapped_models"], b["unmapped_issue_url"] = [], ""
+    if isinstance(b.get("catalog_sync"), dict):
+        rev = int(b["catalog_sync"].get("bundled_revision") or 2)
+        b["catalog_sync"] = {"status": "OK", "bundled_revision": rev, "effective_revision": rev, "upstream_revision": rev, "override_active": False, "update_available": False, "local_repo_dirty": False}
     bk = b.get("backup_321") or {}
     if bk.get("head_sha"):
-        bk["head_sha"] = dp.sha_alias(str(bk["head_sha"]))
-        bk["origin_sha"] = bk["head_sha"]
-        bk["gitlab_sha"] = bk["head_sha"]
+        bk["head_sha"] = bk["origin_sha"] = bk["gitlab_sha"] = dp.sha_alias(str(bk["head_sha"]))
         bk["short_sha"] = bk["head_sha"][:7]
-    rt = b.get("routing_telemetry") or {}
-    for sl in rt.get("slots") or []:
-        sl["conversation_id"] = dp.uuid_alias(str(sl.get("conversation_id") or ""))
-        sl["project_id"] = dp.uuid_alias(str(sl.get("project_id") or ""))
+    for sl in (b.get("routing_telemetry") or {}).get("slots") or []:
+        sl["conversation_id"], sl["project_id"] = dp.uuid_alias(str(sl.get("conversation_id") or "")), dp.uuid_alias(str(sl.get("project_id") or ""))
         sl["workspace"] = dp.alias_workspace_path(str(sl.get("workspace") or ""))
         sl["project_name"] = dp.alias_project_name(sl["project_id"], str(sl.get("project_name") or ""))
-        repo_s = Path(sl["workspace"]).name if sl["workspace"] else "agy-nexus-mcp"
-        sl["title"] = dp.alias_title(str(sl.get("title") or ""), repo_s, sl["conversation_id"])
+        sl["title"] = dp.alias_title(str(sl.get("title") or ""), Path(sl["workspace"]).name if sl["workspace"] else "scratch-prototypes", sl["conversation_id"])
+    b["quota_and_pools"] = sanitize_demo_quota_and_pools(b.get("quota_and_pools"), b.get("model_usage_vs_target"))
     return b
 
 
@@ -404,7 +403,9 @@ def _build_showcase_session_tree_ascii(dp: ShowcaseDepersonalizer) -> str:
 
 
 def _trim_bundle_for_snapshot(b: dict[str, Any], ascii_tree_str: str) -> dict[str, Any]:
+    from build_github_showcase import sanitize_demo_quota_and_pools
     out = {k: b.get(k) for k in ("period", "kpis", "quota_and_pools", "model_usage_vs_target", "subagent_role_breakdown", "subagent_list", "all_workspaces", "top_workspaces", "velocity_series", "model_series", "subagent_series", "project_hierarchy", "heatmap_series", "wire_telemetry", "hourly_whiskers", "billing_comparison", "model_drift_status")}
+    out["quota_and_pools"] = sanitize_demo_quota_and_pools(out.get("quota_and_pools"), out.get("model_usage_vs_target"))
     out.update({"server": b.get("server", "agy-nexus-mcp"), "version": __version__, "routing_telemetry": {"active_slots": 3, "pinned_calls": 24, "auto_resolved_calls": 11}, "project_session_tree": {"ascii_tree": ascii_tree_str}})
     out["backup_321"] = {k: v for k, v in (b.get("backup_321") or {}).items() if k in ("ok", "short_sha", "shas_match", "age", "bundle_size_kb", "status_label")}
     return out

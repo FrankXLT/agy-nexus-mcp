@@ -158,24 +158,25 @@ for (let i = 0; i < 364; i++) {
 const { cols, keepCols } = HM.buildWeeksMatrix(series, 53);
 assert.strictEqual(keepCols, 52);
 const mLabels = HM.buildMonthLabels(cols);
-assert.strictEqual(mLabels[48], "Nov", "Nov 1 (Sun) must label week col 48 (Oct 26 - Nov 1)");
-assert.strictEqual(mLabels[49], "", "Mon Nov 2 must not steal Nov label");
+assert.strictEqual(mLabels[49], "Nov", "First Monday of November (Nov 2, col 49) must anchor Nov label right of Oct divider");
+assert.strictEqual(mLabels[48], "", "Col 48 (Mon Oct 26) must not carry Nov label across divider");
 assert.strictEqual(mLabels[1], "Dec");
 assert.strictEqual(mLabels[0], "", "Col 0 mid-month stub cleared when col 1 starts Dec");
-assert.strictEqual(mLabels[5], "Jan");
+assert.strictEqual(mLabels[6], "Jan", "First Monday of Jan 2026 (Jan 5, col 6) must anchor Jan label");
+assert.strictEqual(mLabels[5], "");
 
-// Spacing guard >= 3 columns between visible month labels
+// Spacing guard >= 2 columns between visible month labels
 const labelCols = mLabels.map((lbl, idx) => (lbl ? idx : -1)).filter((x) => x >= 0);
 for (let i = 1; i < labelCols.length; i++) {
-  assert.ok(labelCols[i] - labelCols[i - 1] >= 3, `Labels too close at ${labelCols[i - 1]} and ${labelCols[i]}`);
+  assert.ok(labelCols[i] - labelCols[i - 1] >= 2, `Labels too close at ${labelCols[i - 1]} and ${labelCols[i]}`);
 }
 
 // 2. Quartiles prevent spike washout across Steps, Tokens, and $ Cost
 for (const metric of ["steps", "tokens", "cost"]) {
   ctx.window.AgyV9.state.metric = metric;
   HM.renderHeatmap({ heatmap_series: series });
-  assert.ok(hostEl.innerHTML.includes(`v9-heat-months" style="grid-template-columns:repeat(52,minmax(10px,1fr))"`));
-  assert.ok(hostEl.innerHTML.includes(`v9-heat-grid" style="grid-template-columns:repeat(52,minmax(10px,1fr))"`));
+  assert.ok(hostEl.innerHTML.includes(`v9-heat-months" style="inline-size:`));
+  assert.ok(hostEl.innerHTML.includes(`v9-heat-grid" style="grid-template-columns:repeat(52,16px)"`));
   const lvl3or4 = (hostEl.innerHTML.match(/data-level="(?:3|4)"/g) || []).length;
   assert.ok(lvl3or4 >= 12, `Metric ${metric} collapsed under spike day: only ${lvl3or4} level 3/4 cells`);
 }
@@ -193,7 +194,7 @@ assert.strictEqual(HM.computeMetricLevel({ cost_usd: 112 }, "cost", HM.computeQu
 ctx.window.innerWidth = 390;
 ctx.window.AgyV9.state.heatPinned = false;
 HM.renderHeatmap({ heatmap_series: series });
-assert.ok(hostEl.innerHTML.includes("grid-template-columns:repeat(26,minmax(10px,1fr))"));
+assert.ok(hostEl.innerHTML.includes("grid-template-columns:repeat(26,10px)"));
 console.log("V9_HEATMAP_OK");
 """,
         encoding="utf-8",
@@ -204,16 +205,16 @@ console.log("V9_HEATMAP_OK");
 
 
 def test_v402_heatmap_css_and_workflows_contracts() -> None:
-    """Verify v9_analytics.css zero !important, <=500L, .is-out dimming, full-width tracks, and WORKFLOWS.md v4.0.2."""
+    """Verify v9_analytics.css zero !important, <=500L, matched-lightness .is-out tokens, square pixel tracks, and WORKFLOWS.md."""
     css_txt = (V9_DIR / "v9_analytics.css").read_text(encoding="utf-8")
     assert len(css_txt.splitlines()) <= 500
     assert "!important" not in css_txt
     assert "justify-content: start;" not in css_txt
-    assert "grid-auto-columns: minmax(10px, 1fr);" in css_txt
-    assert "filter: grayscale(0.92); opacity: 0.28;" in css_txt
-    assert '.v9-heat-cell.is-out[data-level="0"] { opacity: 0.42; }' in css_txt
-    assert ".v9-heat-cell.is-out:hover { filter: grayscale(0.25); opacity: 0.85; }" in css_txt
-    assert re.search(r"@media \(max-width:\s*639px\)[\s\S]*\.v9-heat-grid\s*\{\s*gap:\s*2px;\s*\}", css_txt)
+    assert "var(--v9-heat-cell)" in css_txt
+    assert "opacity: 0.28;" not in css_txt
+    assert ".v9-heat-cell.is-out, .v9-heat-inspect-swatch.is-out { background: var(--v9-heat-out-0); }" in css_txt
+    assert '.v9-heat-cell.is-out[data-level="4"], .v9-heat-inspect-swatch.is-out[data-level="4"] { background: var(--v9-heat-out-4); }' in css_txt
+    assert re.search(r"@media \(max-width:\s*639px\)[\s\S]*--v9-heat-cell:\s*10px;\s*--v9-heat-gap:\s*3px;", css_txt)
 
     wf_txt = (REPO_ROOT / "docs" / "WORKFLOWS.md").read_text(encoding="utf-8")
     assert "Workflow 6:" in wf_txt and "v4.0.8" in wf_txt

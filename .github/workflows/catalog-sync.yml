@@ -1,0 +1,167 @@
+name: Catalog Price Book Sync
+
+on:
+  schedule:
+    - cron: "15 6 * * 1"
+  workflow_dispatch:
+  push:
+    branches:
+      - develop
+    paths:
+      - ".github/workflows/catalog-sync.yml"
+      - "scripts/catalog_sync.py"
+      - "src/agy_nexus/catalog_sync.py"
+      - "src/agy_nexus/catalog_validator.py"
+
+permissions:
+  contents: write
+  pull-requests: write
+  models: read
+
+concurrency:
+  group: catalog-sync-${{ github.ref_name || 'main' }}
+  cancel-in-progress: false
+
+jobs:
+  sync-catalog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name || 'main' }}
+          fetch-depth: 1
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Install test dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install --no-cache-dir . pytest pytest-asyncio jsonschema
+
+      - name: Run fail-closed numeric Price Book sync
+        run: |
+          python3 scripts/catalog_sync.py --sync-ci --pr-summary-out "$RUNNER_TEMP/catalog_sync_summary.json"
+
+      - name: Summarize numeric catalog diff via GitHub Models (conditional)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -s "$RUNNER_TEMP/catalog_sync_summary.json" ]; then
+            exit 0
+          fi
+          python3 - <<'PY' > "$RUNNER_TEMP/pr_body.md"
+          import json
+          import os
+          from pathlib import Path
+          data = json.loads((Path(os.environ["RUNNER_TEMP"]) / "catalog_sync_summary.json").read_text(encoding="utf-8"))
+          if not data.get("changed"):
+              print("NO_CHANGES")
+              raise SystemExit(0)
+          diff = data.get("diff") or {}
+          lines = [
+              f"## Automated Price Book Update (`rev {data.get('revision')}`)",
+              "",
+              f"Updated models: {', '.join(data.get('changed_models') or [])}",
+              "",
+              "### Numeric Deltas",
+              *[f"- {ln}" for ln in (diff.get("summary_lines") or [])],
+              "",
+              "### Guardrails Verified",
+              "- `antigravity_ide` tiers, placeholders & IDE context caps preserved untouched.",
+              "- Strict JSON schema (`--validate-strict`) and anti-injection allowlists verified.",
+              "- `docs/PRICING_HISTORY.md` regenerated deterministically via `scripts/catalog_sync.py --render-docs`.",
+          ]
+          print("\n".join(lines))
+          PY
+          if ! grep -q '^NO_CHANGES$' "$RUNNER_TEMP/pr_body.md" && gh models --help >/dev/null 2>&1; then
+            {
+              cat "$RUNNER_TEMP/pr_body.md"
+              echo ""
+              echo "### Change Note Summary (GitHub Models)"
+              gh models run openai/gpt-4o-mini "Summarize these pricing catalog changes concisely in 2 bullet points:" < "$RUNNER_TEMP/pr_body.md" || true
+            } > "$RUNNER_TEMP/pr_body_ai.md"
+            mv "$RUNNER_TEMP/pr_body_ai.md" "$RUNNER_TEMP/pr_body.md"
+          fi
+
+      - name: Validate schema, docs sync, path allowlist, and full pytest suite before opening PR
+        run: |
+          pytest
+          python3 scripts/catalog_sync.py --validate-strict --require-jsonschema
+          python3 scripts/catalog_sync.py --render-docs --check
+          python3 - <<'PY'
+          import subprocess, sys
+          from pathlib import Path
+          sys.path.insert(0, str(Path("src").resolve()))
+          from agy_nexus.catalog_sync import assert_antigravity_ide_untouched
+          from agy_nexus.catalog_validator import parse_catalog_json_bytes, read_bounded_regular_file, verify_catalog_bot_changed_paths
+          diff_out = subprocess.check_output(["git", "-c", "core.quotePath=false", "diff", "--no-renames", "--name-only", "-z", "HEAD"])
+          untracked = subprocess.check_output(["git", "-c", "core.quotePath=false", "ls-files", "--others", "--exclude-standard", "-z"])
+          paths = [p.decode("utf-8", errors="surrogateescape") for p in (diff_out + untracked).split(b"\x00") if p]
+          bad = verify_catalog_bot_changed_paths(paths)
+          if bad:
+              raise SystemExit(f"Blocked catalog-sync PR touching disallowed paths: {bad}")
+          for p in paths:
+              if Path(p).is_symlink():
+                  raise SystemExit(f"Blocked symlink at allowlisted path: {p}")
+          base_cat = parse_catalog_json_bytes(subprocess.check_output(["git", "show", "HEAD:src/agy_nexus/data/model_catalog.json"]))
+          cur_cat = parse_catalog_json_bytes(read_bounded_regular_file(Path("src/agy_nexus/data/model_catalog.json")))
+          if ide_diffs := assert_antigravity_ide_untouched(base_cat, cur_cat):
+              raise SystemExit(f"Blocked locked antigravity_ide change: {ide_diffs}")
+          print("catalog-sync path allowlist OK:", paths)
+          PY
+
+      - name: Push or update single reusable branch-aware Price Book PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_BRANCH: ${{ github.ref_name || 'main' }}
+        run: |
+          if [ -z "$(git status --porcelain src/agy_nexus/data/ docs/PRICING_HISTORY.md)" ]; then
+            echo "No numeric Price Book changes detected; skipping PR creation."
+            exit 0
+          fi
+          case "$BASE_BRANCH" in
+            main) BOT_BRANCH="bot/catalog-sync" ;;
+            develop) BOT_BRANCH="bot/catalog-sync-develop" ;;
+            *) echo "Blocked unsupported base branch: $BASE_BRANCH" >&2; exit 1 ;;
+          esac
+          git config user.name "agy-catalog-bot[bot]"
+          git config user.email "agy-catalog-bot[bot]@users.noreply.github.com"
+          git fetch origin "+refs/heads/$BOT_BRANCH:refs/remotes/origin/$BOT_BRANCH" || true
+          git checkout -B "$BOT_BRANCH"
+          git add src/agy_nexus/data/model_catalog.json src/agy_nexus/data/cost_ledger.json docs/PRICING_HISTORY.md
+          python3 - <<'PY'
+          import subprocess, sys
+          from pathlib import Path
+          sys.path.insert(0, str(Path("src").resolve()))
+          from agy_nexus.catalog_validator import ALLOWED_CATALOG_BOT_PATHS
+          raw_entries = subprocess.check_output(["git", "-c", "core.quotePath=false", "diff", "--cached", "--raw", "--no-renames", "-z"])
+          tokens = raw_entries.split(b"\x00")
+          i = 0
+          while i < len(tokens):
+              if not tokens[i]:
+                  i += 1
+                  continue
+              meta = tokens[i].decode("utf-8", errors="surrogateescape")
+              path = tokens[i + 1].decode("utf-8", errors="surrogateescape") if i + 1 < len(tokens) else ""
+              i += 2
+              new_mode = meta.split()[1] if len(meta.split()) >= 2 else ""
+              if path not in ALLOWED_CATALOG_BOT_PATHS or new_mode != "100644":
+                  raise SystemExit(f"Blocked staged entry: path={path!r} mode={new_mode!r}")
+          PY
+          git commit -m "chore(catalog): sync public Price Book rates"
+          git push --force-with-lease origin "$BOT_BRANCH"
+          OPEN_PR=$(gh pr list --head "$BOT_BRANCH" --base "$BASE_BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$OPEN_PR" ]; then
+            gh pr edit "$OPEN_PR" --body-file "$RUNNER_TEMP/pr_body.md"
+          else
+            gh pr create --base "$BASE_BRANCH" --head "$BOT_BRANCH" --title "chore(catalog): sync public Price Book rates" --body-file "$RUNNER_TEMP/pr_body.md"
+          fi

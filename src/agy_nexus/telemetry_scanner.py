@@ -17,12 +17,13 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from agy_nexus.catalog_report import record_unmapped_model_hit
 from agy_nexus.model_pricing import (
-    classify_model_key, compute_step_cost_micros, get_canonical_model_keys,
-    get_placeholder_map, get_target_allocation_map, split_estimated_tokens,
+    classify_model_key, classify_model_key_status, compute_step_cost_micros, get_canonical_model_keys,
+    get_placeholder_map, get_pool_target_split, get_target_allocation_map, split_estimated_tokens,
 )
 
-CACHE_VERSION = 8
+CACHE_VERSION = 9
 _WIRE_RING_LOCK = threading.Lock()
 _CACHE_LOCK = threading.Lock()
 WIRE_TELEMETRY_RING: list[dict[str, Any]] = []
@@ -228,36 +229,38 @@ def extract_pending_approval(transcript_or_brain_dir: Path, conv_id: str = "") -
     return None
 
 
-def get_live_quota_and_pool_status(data_or_config_dir: Path, config_dir: Path | None = None) -> dict[str, Any]:
-    """Read live Dual-Pool Quota Pacing (`ultra-20x` vs `ultra-5x`), active Main-Chat model, 429 cooldowns, and Partner Pool weekly pace."""
+def _read_json_or_text(path: Path, is_json: bool = False) -> Any:
+    try:
+        return (json.loads if is_json else str.strip)(path.read_text(encoding="utf-8")) if path.exists() else None
+    except Exception:
+        return None
+
+def get_live_quota_and_pool_status(data_or_config_dir: Path, config_dir: Path | None = None, *, bg_dir: Path | None = None) -> dict[str, Any]:
+    """Read Dual-Pool Quota Pacing, active Main-Chat model, 429 cooldowns, and live LS/snapshot reset buckets."""
+    from agy_nexus.ls_quota_probe import enrich_quota_and_pools
+
     agy_config_dir = config_dir if config_dir is not None else data_or_config_dir
     data_dir = data_or_config_dir if config_dir is not None else None
     q_file = Path(os.getenv("QUOTA_STATE_FILE", str(Path.home() / ".cache/antigravity/quota_state.json"))).expanduser()
-    p_file = agy_config_dir / ".active-tier-profile"
-    active_profile = "ultra-20x"
-    if p_file.exists():
-        try:
-            active_profile = p_file.read_text(encoding="utf-8").strip() or "ultra-20x"
-        except Exception:
-            pass
-    state_data: dict[str, Any] = {"pools": {"google": {}, "claude": {}, "gpt_oss": {}}, "events": []}
-    if q_file.exists():
-        try:
-            state_data = json.loads(q_file.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+    active_profile = _read_json_or_text(agy_config_dir / ".active-tier-profile") or "ultra-20x"
+    state_data = _read_json_or_text(q_file, is_json=True) or {"pools": {"google": {}, "claude": {}, "gpt_oss": {}}, "events": []}
     now_epoch, pools_out = int(time.time()), {}
     for pk in ("google", "claude", "gpt_oss"):
         pi = (state_data.get("pools") or {}).get(pk) or {}
         rem = max(0, int(pi.get("cooldown_until", 0) or 0) - now_epoch)
         pools_out[pk] = {"status": "COOLDOWN_429" if rem > 0 else "HEALTHY", "cooldown_remaining_seconds": rem, "total_429_count": int(pi.get("count_429", 0) or 0), "last_reason": str(pi.get("last_reason", ""))}
+    env_bg = os.getenv("AGY_BG_DIR", "").strip()
+    resolved_bg = bg_dir or (Path(env_bg).expanduser() if env_bg else ((data_dir / "sidecar_data/ag-bridge-bg") if data_dir else None))
+    try:
+        live_quota = enrich_quota_and_pools(pools_out, bg_dir=resolved_bg)
+    except Exception:
+        live_quota = {"state": "UNAVAILABLE", "ls_alive": False, "is_fresh": False, "source": "error"}
     day_idx = datetime.now(timezone.utc).weekday() + 1
     return {
-        "active_tier_profile": active_profile,
-        "active_mainchat_model": get_active_mainchat_model(data_dir),
-        "pools": pools_out,
+        "active_tier_profile": active_profile, "active_mainchat_model": get_active_mainchat_model(data_dir),
+        "pools": pools_out, "live_quota": live_quota,
         "partner_weekly_pacing": {"day_of_week_index": day_idx, "daily_target_pct": 14.28, "recommended_cumulative_ceiling_pct": round(min(100.0, day_idx * 14.28), 1)},
-        "target_model_allocation": MODEL_TARGET_ALLOCATION.get(active_profile, MODEL_TARGET_ALLOCATION["ultra-20x"]),
+        "tier_target_split": get_pool_target_split(active_profile), "target_model_allocation": MODEL_TARGET_ALLOCATION.get(active_profile, MODEL_TARGET_ALLOCATION["ultra-20x"]),
         "recent_quota_events": (state_data.get("events") or [])[-8:],
     }
 
@@ -317,9 +320,11 @@ def _extract_tool_and_subagent_calls(
                     continue
                 subs_added += 1
                 raw_sm, role_s = str(s.get("Model") or ""), str(s.get("TypeName") or s.get("Role") or "")
-                is_inh = raw_sm.lower() in ("inherit", "") and not any(
-                    k in role_s.lower()
-                    for k in ("claude", "sonnet", "opus", "flash", "argon", "hydrogen", "neon", "carbon", "gpt")
+                is_inh = (raw_sm.lower() == "inherit") or (
+                    not raw_sm and not any(
+                        k in role_s.lower()
+                        for k in ("claude", "sonnet", "opus", "flash", "argon", "hydrogen", "neon", "carbon", "gpt")
+                    )
                 )
                 mk = cur_mk if is_inh else classify_model_key(raw_sm, role_s)
                 m_counts[mk] = m_counts.get(mk, 0) + 1
@@ -360,29 +365,15 @@ def _scan_single_transcript(
     main_switch_date: str,
     bg_dir: Path,
 ) -> dict[str, Any]:
-    """Parse one transcript JSONL into daily/1h counts, 8-model attribution, token splits, and cost."""
+    """Parse one transcript JSONL into daily/1h counts, 8-model attribution, token splits, cost & unmapped models."""
     m_keys = get_canonical_model_keys()
-    d_steps: dict[str, int] = {}
-    d_tools: dict[str, int] = {}
-    d_tokens: dict[str, int] = {}
-    d_cost: dict[str, int] = {}
-    slot_steps: dict[str, int] = {}
-    d_models: dict[str, dict[str, int]] = {}
-    d_mtoks: dict[str, dict[str, int]] = {}
-    d_mcost: dict[str, dict[str, int]] = {}
-    d_mfore: dict[str, dict[str, int]] = {}
-    d_msplits: dict[str, dict[str, list[int]]] = {}
-    s1_steps: dict[str, int] = {}
-    s1_toks: dict[str, int] = {}
-    s1_cost: dict[str, int] = {}
-    s1_psplits: dict[str, list[int]] = {}
-    s1_models: dict[str, dict[str, int]] = {}
-    s1_mtoks: dict[str, dict[str, int]] = {}
-    s1_mcost: dict[str, dict[str, int]] = {}
+    d_steps, d_tools, d_tokens, d_cost, slot_steps = {}, {}, {}, {}, {}
+    d_models, d_mtoks, d_mcost, d_mfore, d_msplits = {}, {}, {}, {}, {}
+    s1_steps, s1_toks, s1_cost, s1_psplits = {}, {}, {}, {}
+    s1_models, s1_mtoks, s1_mcost = {}, {}, {}
+    exp_models, unmapped = {}, {}
     m_counts = {k: 0 for k in m_keys}
-    m_tokens = {k: 0 for k in m_keys}
-    m_cost = {k: 0 for k in m_keys}
-    m_fore = {k: 0 for k in m_keys}
+    m_tokens, m_cost, m_fore = {k: 0 for k in m_keys}, {k: 0 for k in m_keys}, {k: 0 for k in m_keys}
     tok_split = [0, 0, 0]
     subs_cnt, active_conv_mk, last_mod_seen = 0, "", ""
 
@@ -391,20 +382,30 @@ def _scan_single_transcript(
             if not line.startswith("{"):
                 continue
             obj = json.loads(line)
-            day_s, s1, slot_s = to_1h_slot(str(obj.get("created_at") or ""), mtime)
+            created_raw = str(obj.get("created_at") or "")
+            day_s, s1, slot_s = to_1h_slot(created_raw, mtime)
             c_txt = str(obj.get("content") or "")
             if "Model Selection" in c_txt:
                 m_hits = MODEL_CHANGE_RE.findall(c_txt)
                 if m_hits:
-                    active_conv_mk = classify_model_key(m_hits[-1], "")
-            raw_m = str(obj.get("model") or "")
-            cur_mk = classify_model_key(raw_m, "") if raw_m else (active_conv_mk or (main_mk if (main_mk and main_switch_date and day_s >= main_switch_date) else "argon"))
-            last_mod_seen = cur_mk
+                    raw_sel = m_hits[-1].strip()
+                    active_conv_mk, sel_ok = classify_model_key_status(raw_sel, "")
+                    if not sel_ok:
+                        record_unmapped_model_hit(unmapped, raw_sel, 0, created_raw or day_s, day_s)
+            raw_m = str(obj.get("model") or "").strip()
+            if raw_m:
+                cur_mk, raw_m_ok = classify_model_key_status(raw_m, "")
+            else:
+                cur_mk, raw_m_ok = (active_conv_mk or (main_mk if (main_mk and main_switch_date and day_s >= main_switch_date) else "argon")), True
+            if raw_m_ok or not last_mod_seen:
+                last_mod_seen = cur_mk
             d_steps[day_s], slot_steps[slot_s], s1_steps[s1] = d_steps.get(day_s, 0) + 1, slot_steps.get(slot_s, 0) + 1, s1_steps.get(s1, 0) + 1
             extra_chars, subs_added = _extract_tool_and_subagent_calls(obj, cur_mk, day_s, d_tools, d_models, m_counts)
             subs_cnt += subs_added
             step_chars = len(c_txt) + len(str(obj.get("thinking") or "")) + extra_chars
             is_planner, est_tok, u_in, c_in, out_t, step_cost, step_fore = _compute_step_tokens_and_cost(obj, cur_mk, day_s, step_chars, bg_dir)
+            if raw_m and not raw_m_ok:
+                record_unmapped_model_hit(unmapped, raw_m, est_tok, created_raw or day_s, day_s)
 
             d_tokens[day_s], s1_toks[s1] = d_tokens.get(day_s, 0) + est_tok, s1_toks.get(s1, 0) + est_tok
             d_cost[day_s], s1_cost[s1] = d_cost.get(day_s, 0) + step_cost, s1_cost.get(s1, 0) + step_cost
@@ -417,6 +418,8 @@ def _scan_single_transcript(
                 sp_p = s1_psplits.setdefault(s1, [0, 0, 0])
                 sp_p[0], sp_p[1], sp_p[2] = sp_p[0] + u_in, sp_p[1] + c_in, sp_p[2] + out_t
                 d_models.setdefault(day_s, {})[cur_mk] = d_models.get(day_s, {}).get(cur_mk, 0) + 1
+                if raw_m or active_conv_mk:
+                    exp_models.setdefault(day_s, {})[cur_mk] = exp_models.get(day_s, {}).get(cur_mk, 0) + 1
                 d_mtoks.setdefault(day_s, {})[cur_mk] = d_mtoks.get(day_s, {}).get(cur_mk, 0) + est_tok
                 d_mcost.setdefault(day_s, {})[cur_mk] = d_mcost.get(day_s, {}).get(cur_mk, 0) + step_cost
                 d_mfore.setdefault(day_s, {})[cur_mk] = d_mfore.get(day_s, {}).get(cur_mk, 0) + step_fore
@@ -427,10 +430,10 @@ def _scan_single_transcript(
         "mtime": mtime, "size": fsize, "day_steps": d_steps, "day_tools": d_tools, "day_tokens": d_tokens, "day_cost_micros": d_cost,
         "slot_steps": slot_steps, "slot_1h_steps": s1_steps, "slot_1h_tokens": s1_toks, "slot_1h_cost_micros": s1_cost,
         "slot_1h_planner_splits": s1_psplits, "slot_1h_models": s1_models, "slot_1h_model_tokens": s1_mtoks,
-        "slot_1h_model_cost_micros": s1_mcost, "day_models": d_models, "day_model_tokens": d_mtoks, "day_model_cost_micros": d_mcost,
-        "day_model_forecast_micros": d_mfore, "day_model_token_splits": d_msplits, "model_counts": m_counts, "model_tokens": m_tokens,
-        "model_cost_micros": m_cost, "model_forecast_micros": m_fore, "token_breakdown": tok_split,
-        "subagents_spawned": subs_cnt, "last_conv_model": active_conv_mk or last_mod_seen,
+        "slot_1h_model_cost_micros": s1_mcost, "day_models": d_models, "explicit_day_models": exp_models, "unmapped_models": unmapped,
+        "day_model_tokens": d_mtoks, "day_model_cost_micros": d_mcost, "day_model_forecast_micros": d_mfore,
+        "day_model_token_splits": d_msplits, "model_counts": m_counts, "model_tokens": m_tokens, "model_cost_micros": m_cost,
+        "model_forecast_micros": m_fore, "token_breakdown": tok_split, "subagents_spawned": subs_cnt, "last_conv_model": active_conv_mk or last_mod_seen,
     }
 
 

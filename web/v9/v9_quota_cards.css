@@ -1,0 +1,189 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* AGY-Nexus /web/v9 — Card 3 Pool Split Tug-of-War & Card 4 Quota Pacing Race Bars */
+
+@layer views {
+  /* Balanced 4-Card Vertical Rhythm */
+  .v9-stage .va-kpi-gauge-card { container-type: inline-size; justify-content: flex-start; }
+  .v9-stage .va-kpi-gauge-card > .va-kpi-gauge-stats:last-child { margin-block-start: auto; }
+  .v9-stage .va-kpi-gauge-head { flex-wrap: nowrap; min-inline-size: 0; gap: 0.35rem; }
+  .v9-stage .va-kpi-gauge-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-inline-size: 0; }
+  .v9-pace-offline-note { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); line-height: 1.35; }
+  .v9-kpi-foot {
+    flex-wrap: nowrap;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .v9-kpi-foot > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Card 3: Pool Split Hero & Opposing Dual-Fill Track */
+  .v9-split-hero {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.35rem;
+    white-space: nowrap;
+    min-inline-size: 0;
+    overflow: hidden;
+  }
+  .v9-split-side { display: inline-flex; align-items: baseline; gap: 0.24rem; min-inline-size: 0; white-space: nowrap; }
+  .v9-split-pct {
+    font-family: var(--font-mono);
+    font-variant-numeric: var(--font-nums);
+    font-size: clamp(0.94rem, 1.1vw, 1.15rem);
+    font-weight: 700;
+    line-height: 1.15;
+  }
+  .v9-split-side.is-gemini .v9-split-pct { color: var(--v9-pool-gemini); }
+  .v9-split-side.is-partner .v9-split-pct { color: var(--v9-pool-partner); }
+  .v9-split-lbl { font-size: var(--ts-xs); font-weight: 600; color: var(--text-secondary); }
+
+  .v9-split-bar-wrap { position: relative; padding-block-start: 6px; margin-block: 0.05rem; }
+  .v9-split-track {
+    position: relative;
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    inline-size: 100%;
+    block-size: 8px;
+    border-radius: var(--radius-pill, 999px);
+    background: var(--v9-pace-clock-bg, var(--bg-elevated));
+    border: 1px solid var(--border-hairline);
+    overflow: hidden;
+  }
+  .v9-split-fill-g, .v9-split-fill-p { block-size: 100%; transition: flex-basis 0.25s ease, inline-size 0.25s ease; }
+  .v9-split-fill-g { background: var(--v9-pool-gemini); }
+  .v9-split-fill-p { background: var(--v9-pool-partner); margin-inline-start: auto; }
+  .v9-split-guide {
+    position: absolute;
+    inset-block-start: 4px;
+    block-size: 12px;
+    inline-size: 2px;
+    margin-inline-start: -1px;
+    background: var(--text-primary);
+    border-radius: 1px;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .v9-split-caret {
+    position: absolute;
+    inset-block-start: -1px;
+    inline-size: 8px;
+    block-size: 5px;
+    margin-inline-start: -4px;
+    color: var(--text-primary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 3;
+  }
+  .v9-split-24h {
+    font-family: var(--font-mono);
+    font-variant-numeric: var(--font-nums);
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Card 4: Quota Pacing Status Pill & Paired Clock-vs-Quota Race Rows */
+  .v9-pace-pill { flex-shrink: 0; white-space: nowrap; }
+  .v9-pace-pill.is-cool::before { background: var(--v9-pace-cool); }
+  .v9-pace-pill[data-state="muted"] {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    padding-inline: 0.42rem;
+    color: var(--text-muted);
+  }
+  .v9-pace-pill[data-state="muted"]::before { display: none; }
+  .v9-pace-list { display: flex; flex-direction: column; gap: 0.32rem; }
+  .v9-pace-list.is-dimmed .v9-pace-bars { opacity: 0.65; }
+  .v9-pace-row { display: flex; flex-direction: column; gap: 0.16rem; min-inline-size: 0; }
+  .v9-pace-lbl-row {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.28rem;
+    font-family: var(--font-mono);
+    font-variant-numeric: var(--font-nums);
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+  .v9-pace-lbl { overflow: hidden; text-overflow: ellipsis; min-inline-size: 0; }
+  .v9-pace-lbl strong { color: var(--text-primary); font-weight: 700; }
+  .v9-pace-rst { color: var(--text-muted); flex-shrink: 0; }
+
+  .v9-pace-bars { display: flex; flex-direction: column; gap: 2px; }
+  .v9-pace-clk-track {
+    inline-size: 100%;
+    block-size: 2px;
+    border-radius: var(--radius-pill, 999px);
+    background: var(--v9-pace-clock-bg, var(--bg-elevated));
+    overflow: hidden;
+  }
+  .v9-pace-clk-fill { block-size: 100%; background: var(--v9-pace-clock); transition: inline-size 0.3s ease; }
+
+  /* Semantic <progress> Quota Bar following modern-web-guidance */
+  progress.v9-pace-prog {
+    appearance: none;
+    display: block;
+    inline-size: 100%;
+    block-size: 4px;
+    border: 0 solid;
+    border-radius: var(--radius-pill, 999px);
+    background: var(--v9-pace-clock-bg, var(--bg-elevated));
+    overflow: clip;
+  }
+  progress.v9-pace-prog::-webkit-progress-bar { background: transparent; }
+  progress.v9-pace-prog::-webkit-progress-value {
+    background: var(--v9-prog-fill, var(--v9-pace-cool));
+    border-radius: var(--radius-pill, 999px);
+    transition: inline-size 0.3s;
+  }
+  progress.v9-pace-prog::-moz-progress-bar {
+    background: var(--v9-prog-fill, var(--v9-pace-cool));
+    border-radius: var(--radius-pill, 999px);
+    transition: inline-size 0.3s;
+  }
+  progress.v9-pace-prog[data-zone="cool"] { --v9-prog-fill: var(--v9-pace-cool); }
+  progress.v9-pace-prog[data-zone="warm"] { --v9-prog-fill: var(--v9-pace-warm); }
+  progress.v9-pace-prog[data-zone="hot"] { --v9-prog-fill: var(--v9-pace-hot); }
+  progress.v9-pace-prog[data-zone="standby"] { --v9-prog-fill: transparent; }
+
+  @container (max-width: 215px) {
+    .v9-split-hero { gap: 0.2rem; }
+    .v9-split-side { gap: 0.16rem; }
+    .v9-split-pct { font-size: 11.5px; }
+    .v9-split-lbl { font-size: 9.5px; }
+    .v9-tier-pfx, .v9-pace-gap, .v9-pace-clk-txt, .v9-pace-rst-pfx, .v9-24h-word, .v9-p-standby-full, .v9-off-pfx { display: none; }
+    .v9-pace-lbl-row, .v9-split-24h { font-size: 10.5px; }
+    .v9-pace-pill[data-state="muted"] { font-size: 10px; padding-inline: 0.32rem; }
+  }
+
+  @media (forced-colors: active) {
+    .v9-split-fill-g { forced-color-adjust: none; background: Highlight; border: 1px solid CanvasText; }
+    .v9-split-fill-p { forced-color-adjust: none; background: CanvasText; border: 1px solid CanvasText; }
+    .v9-split-guide { background: CanvasText; }
+    .v9-split-caret { color: CanvasText; }
+    .v9-pace-clk-track { forced-color-adjust: none; block-size: 4px; background: Canvas; border: 1px solid GrayText; }
+    .v9-pace-clk-fill { forced-color-adjust: none; background: GrayText; }
+    progress.v9-pace-prog { forced-color-adjust: none; background: Canvas; border: 1px solid CanvasText; }
+    progress.v9-pace-prog::-webkit-progress-value { background: Highlight; }
+    progress.v9-pace-prog::-moz-progress-bar { background: Highlight; }
+  }
+}
+
+@layer utilities {
+  @media (max-width: 479px) {
+    .v9-stage .v9-split-pct { font-size: 11.5px; }
+    .v9-stage .v9-split-lbl { font-size: 9.5px; }
+    .v9-stage .v9-tier-pfx, .v9-stage .v9-pace-gap, .v9-stage .v9-pace-clk-txt, .v9-stage .v9-pace-rst-pfx, .v9-stage .v9-24h-word, .v9-stage .v9-p-standby-full, .v9-stage .v9-off-pfx { display: none; }
+    .v9-stage .v9-pace-lbl-row, .v9-stage .v9-split-24h { font-size: 10.5px; }
+    .v9-stage .v9-pace-pill[data-state="muted"] { font-size: 10px; padding-inline: 0.32rem; }
+  }
+}

@@ -2,20 +2,64 @@
 """agy_nexus.model_pricing — 8-Model Catalog, Effective-Dated Micro-USD Pricing & Billing Math."""
 from __future__ import annotations
 
-import functools
 import json
 import os
 from pathlib import Path
 from typing import Any
 
-CATALOG_PATH = Path(__file__).resolve().parent / "data" / "model_catalog.json"
+from agy_nexus.catalog_sync import (
+    REPO_CATALOG_PATH as CATALOG_PATH,
+    REPO_LEDGER_PATH as COST_LEDGER_DATA_PATH,
+    _resolve_data_dir,
+    get_effective_catalog_pair,
+    merge_catalog_and_ledger,
+)
+import threading
+
 DEFAULT_SPLIT = (0.05, 0.94, 0.01)
+_CATALOG_CACHE: dict[tuple[str, tuple[int, int], tuple[int, int], tuple[int, int]], dict[str, Any]] = {}
+_CACHE_EPOCH = 0
+_CACHE_LOCK = threading.Lock()
 
 
-@functools.lru_cache(maxsize=1)
-def load_model_catalog() -> dict[str, Any]:
-    """Load and cache the git-tracked model_catalog.json."""
-    return json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+def _safe_file_sig(p: Path) -> tuple[int, int]:
+    try:
+        st = p.stat()
+        return (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return (0, 0)
+
+
+def clear_model_catalog_cache() -> None:
+    """Clear in-memory merged catalog cache after override accept/reset."""
+    global _CACHE_EPOCH
+    with _CACHE_LOCK:
+        _CATALOG_CACHE.clear()
+        _CACHE_EPOCH += 1
+
+
+def load_model_catalog(data_dir: Path | None = None) -> dict[str, Any]:
+    """Load merged repo Price Book (model_catalog + cost_ledger) plus newer validated AGY_DATA_DIR/catalog_override.json."""
+    d_dir = _resolve_data_dir(data_dir)
+    ov_p = d_dir / "catalog_override.json"
+    ck = (str(d_dir), _safe_file_sig(ov_p), _safe_file_sig(CATALOG_PATH), _safe_file_sig(COST_LEDGER_DATA_PATH))
+    with _CACHE_LOCK:
+        cached = _CATALOG_CACHE.get(ck)
+        if cached is not None:
+            return cached
+        epoch_before = _CACHE_EPOCH
+    cat, led, meta = get_effective_catalog_pair(d_dir)
+    merged = merge_catalog_and_ledger(
+        cat, led, override_active=bool(meta["override_active"]), bundled_revision=int(meta["bundled_revision"])
+    )
+    ck_after = (str(d_dir), _safe_file_sig(ov_p), _safe_file_sig(CATALOG_PATH), _safe_file_sig(COST_LEDGER_DATA_PATH))
+    if ck_after == ck or (meta.get("retired_stale_override") and ck_after[1] == (0, 0)):
+        with _CACHE_LOCK:
+            if _CACHE_EPOCH == epoch_before:
+                if len(_CATALOG_CACHE) > 8:
+                    _CATALOG_CACHE.clear()
+                _CATALOG_CACHE[ck_after] = merged
+    return merged
 
 
 def get_canonical_model_keys() -> tuple[str, ...]:
@@ -67,39 +111,62 @@ def get_target_allocation_map(profile: str = "ultra-20x") -> dict[str, dict[str,
     return out
 
 
-def classify_model_key(raw_model: str, agent_name: str = "") -> str:
-    """Resolve placeholder ID, model slug, or agent name to one of the 8 canonical model keys."""
+def get_pool_target_split(profile: str = "ultra-20x") -> dict[str, Any]:
+    """Return dynamic Google vs Partner target split totals derived from active model catalog."""
+    targets = get_target_allocation_map(profile)
+    g_pct = round(sum(float(v.get("target_pct", 0.0)) for v in targets.values() if v.get("pool_key") == "google"), 1)
+    p_pct = round(sum(float(v.get("target_pct", 0.0)) for v in targets.values() if v.get("pool_key") != "google"), 1)
+    fmt = lambda n: str(int(round(n))) if abs(n - round(n)) < 0.05 else f"{n:.1f}"
+    return {"google_target_pct": g_pct, "partner_target_pct": p_pct, "label": f"{fmt(g_pct)}/{fmt(p_pct)}"}
+
+
+_FAMILY_TOKEN_TABLE: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("claude_opus_5_5", ("opus",)),
+    ("claude_sonnet_5_5", ("sonnet", "claude")),
+    ("gpt_oss_120b", ("gpt", "120b")),
+    ("neon", ("neon",)),
+    ("hydrogen", ("hydrogen",)),
+    ("flash_3_8", ("flash", "3.8", "3.6", "m318", "m319", "m320", "m322")),
+    ("carbon", ("carbon", "m427", "m437", "m438")),
+    ("argon", ("argon", "m417", "m418", "m419")),
+)
+
+
+def classify_model_key_status(raw_model: str, agent_name: str = "") -> tuple[str, bool]:
+    """Resolve raw model ID/slug/agent to (canonical_key, is_mapped) without hiding unknown M* barcodes."""
     raw_up = (raw_model or "").strip().upper()
     ph_map = get_placeholder_map()
     if raw_up in ph_map:
-        return ph_map[raw_up]["model_key"]
+        return ph_map[raw_up]["model_key"], True
     specs = get_model_specs_map()
     raw_low = (raw_model or "").strip().lower()
     if raw_low in specs:
-        return raw_low
+        return raw_low, True
     for m in specs.values():
         mids = {str(x).lower() for x in (m.get("model_ids") or [])}
         aliases = {str(x).lower() for x in (m.get("aliases") or [])}
         if raw_low in mids or raw_low in aliases:
-            return str(m["key"])
+            return str(m["key"]), True
+    if raw_up.startswith(("MODEL_PLACEHOLDER_", "MODEL_OPENAI_")):
+        return "argon", False
     s = f"{raw_model or ''} {agent_name or ''}".lower()
-    if "opus" in s:
-        return "claude_opus_5_5"
-    if "sonnet" in s or "claude" in s:
-        return "claude_sonnet_5_5"
-    if "gpt" in s or "120b" in s:
-        return "gpt_oss_120b"
-    if "neon" in s:
-        return "neon"
-    if "hydrogen" in s:
-        return "hydrogen"
-    if "flash" in s or "3.8" in s or "3.6" in s or "m318" in s or "m319" in s or "m320" in s or "m322" in s:
-        return "flash_3_8"
-    if "carbon" in s or "m427" in s or "m437" in s or "m438" in s:
-        return "carbon"
-    if "argon" in s or "m417" in s or "m418" in s or "m419" in s:
-        return "argon"
-    return "argon"
+    for mk, toks in _FAMILY_TOKEN_TABLE:
+        if any(tok in s for tok in toks):
+            return mk, True
+    return "argon", False
+
+
+def is_mapped_model_identifier(raw_model: str) -> bool:
+    """Return True if raw_model matches a known placeholder, catalog ID, alias, or family token."""
+    if not (raw_model or "").strip():
+        return True
+    _mk, mapped = classify_model_key_status(raw_model, "")
+    return mapped
+
+
+def classify_model_key(raw_model: str, agent_name: str = "") -> str:
+    """Resolve placeholder ID, model slug, or agent name to one of the 8 canonical model keys."""
+    return classify_model_key_status(raw_model, agent_name)[0]
 
 
 def _load_price_overrides(bg_dir: Path | None = None) -> dict[str, dict[str, int]]:

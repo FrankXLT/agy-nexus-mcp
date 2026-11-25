@@ -173,6 +173,68 @@ def build_demo_sessions(dp: Any, ws_tree: dict[str, Any], bundles: dict[str, Any
     return out
 
 
+def _sanitized_burn(raw: Any, fb_steps: int, fb_tok: int, fb_usd: float, src: str) -> dict[str, Any]:
+    r = raw if isinstance(raw, dict) else {}
+    return {
+        "steps": int(r.get("steps") if r.get("steps") is not None else fb_steps),
+        "tokens": int(r.get("tokens") if r.get("tokens") is not None else fb_tok),
+        "cost_usd": round(float(r.get("cost_usd") if r.get("cost_usd") is not None else fb_usd), 2),
+        "window_source": src,
+    }
+
+
+def sanitize_demo_quota_and_pools(qp: dict[str, Any] | None, models: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Return a clean, zero-PII quota_and_pools object with relative 5h/Weekly demo countdown offsets."""
+    from agy_nexus.model_pricing import get_pool_target_split
+
+    raw_src = qp if isinstance(qp, dict) else {}
+    src = {k: raw_src[k] for k in ("active_tier_profile", "partner_weekly_pacing") if k in raw_src}
+    tier_prof = str(src.get("active_tier_profile") or "ultra-20x")
+    src["tier_target_split"] = get_pool_target_split(tier_prof)
+    if isinstance(raw_src.get("active_mainchat_model"), dict):
+        am = raw_src["active_mainchat_model"]
+        src["active_mainchat_model"] = {k: am[k] for k in ("model_key", "label", "state_updated_date") if k in am}
+    pools = raw_src.get("pools") if isinstance(raw_src.get("pools"), dict) else {}
+    mod_list = list(models or [])
+    g_src = pools.get("google") if isinstance(pools.get("google"), dict) else {}
+    p_src = pools.get("claude") if isinstance(pools.get("claude"), dict) else {}
+    g_share = g_src.get("call_share_pct")
+    if g_share is None:
+        g_share = sum(float(m.get("actual_pct") or 0) for m in mod_list if "google" in str(m.get("pool") or "").lower()) if mod_list else 86.4
+    p_share = p_src.get("call_share_pct")
+    if p_share is None:
+        p_share = sum(float(m.get("actual_pct") or 0) for m in mod_list if "partner" in str(m.get("pool") or "").lower()) if mod_list else max(0.0, 100.0 - float(g_share))
+    g5 = g_src.get("bucket_5h") if isinstance(g_src.get("bucket_5h"), dict) else {}
+    g_wk = g_src.get("bucket_weekly") if isinstance(g_src.get("bucket_weekly"), dict) else {}
+    p_wk = p_src.get("bucket_weekly") if isinstance(p_src.get("bucket_weekly"), dict) else {}
+    g5_used = round(float(g5.get("used_pct") if g5.get("used_pct") is not None else 14.2), 1)
+    g_wk_used = round(float(g_wk.get("used_pct") if g_wk.get("used_pct") is not None else 44.7), 1)
+    p_wk_used = round(float(p_wk.get("used_pct") if p_wk.get("used_pct") is not None else 18.5), 1)
+    src["live_quota"] = {
+        "state": "LIVE", "ls_alive": True, "is_fresh": True, "source": "demo_showcase",
+        "tier_id": "g1-ultra-tier", "tier_label": "Google AI Ultra (20x)", "snapshot_age_seconds": 12,
+    }
+    src["pools"] = {
+        "google": {
+            "status": "HEALTHY", "cooldown_remaining_seconds": 0, "total_429_count": int(g_src.get("total_429_count") or 0),
+            "call_share_pct": round(float(g_share), 1),
+            "bucket_5h": {"window": "5h", "window_seconds": 18000, "used_pct": g5_used, "remaining_pct": round(100.0 - g5_used, 1), "elapsed_pct": 42.7, "has_active_reset": True, "offset_seconds": 10320, "description": "Gemini Models"},
+            "bucket_weekly": {"window": "weekly", "window_seconds": 604800, "used_pct": g_wk_used, "remaining_pct": round(100.0 - g_wk_used, 1), "elapsed_pct": 41.1, "has_active_reset": True, "offset_seconds": 356400, "description": "Gemini Models"},
+            "burn_5h": _sanitized_burn(g_src.get("burn_5h"), 640, 41_200_000, 14.8, "demo_5h"),
+            "burn_7d": _sanitized_burn(g_src.get("burn_7d"), 14_820, 942_000_000, 318.4, "demo_7d"),
+        },
+        "claude": {
+            "status": "HEALTHY", "cooldown_remaining_seconds": 0, "total_429_count": int(p_src.get("total_429_count") or 0),
+            "call_share_pct": round(float(p_share), 1),
+            "bucket_5h": {"window": "5h", "window_seconds": 18000, "used_pct": 0.0, "remaining_pct": 100.0, "elapsed_pct": 0.0, "has_active_reset": False, "description": "Claude and GPT models"},
+            "bucket_weekly": {"window": "weekly", "window_seconds": 604800, "used_pct": p_wk_used, "remaining_pct": round(100.0 - p_wk_used, 1), "elapsed_pct": 41.1, "has_active_reset": True, "offset_seconds": 356400, "description": "Claude and GPT models"},
+            "burn_5h": _sanitized_burn(p_src.get("burn_5h"), 0, 0, 0.0, "demo_5h"),
+            "burn_7d": _sanitized_burn(p_src.get("burn_7d"), 1_840, 118_500_000, 49.2, "demo_7d"),
+        },
+    }
+    return src
+
+
 def strip_png_metadata(src_path: Path, dst_path: Path) -> None:
     """Copy a PNG while stripping tEXt/zTXt/iTXt/eXIf/tIME ancillary metadata chunks."""
     data = src_path.read_bytes()
@@ -202,7 +264,7 @@ def strip_png_metadata(src_path: Path, dst_path: Path) -> None:
 def _load_extra_banned_literals() -> set[str]:
     banned: set[str] = set()
     home_user = Path.home().name
-    if len(home_user) >= 3:
+    if len(home_user) >= 3 and home_user.lower() not in {"dev", "root", "user", "runner", "ubuntu", "actions", "docker"}:
         banned.add(home_user.lower())
     sec_p = Path.home() / ".config/ag-bridge-mcp/secrets.env"
     if sec_p.is_file():

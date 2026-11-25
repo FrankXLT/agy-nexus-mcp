@@ -3,34 +3,51 @@
 (() => {
   const V9 = window.AgyV9;
 
+  function formatResetCountdown(bucket, kind) {
+    if (!bucket || typeof bucket !== "object") return "No LS data";
+    if (!bucket.has_active_reset || !bucket.reset_time) {
+      return Number(bucket.used_pct || 0) > 0.05 ? "Active · no timer" : "Standby · 100% left";
+    }
+    const targetMs = Date.parse(String(bucket.reset_time));
+    if (!Number.isFinite(targetMs)) return "Timer active";
+    const diffMs = targetMs - Date.now();
+    if (diffMs <= 0) return "Reset due";
+    const totalMin = Math.max(1, Math.floor(diffMs / 60000));
+    const totalHr = Math.floor(totalMin / 60);
+    const remMin = totalMin % 60;
+    const days = Math.floor(totalHr / 24);
+    const remHr = totalHr % 24;
+    const rel = days >= 1 ? `in ${days}d ${remHr}h` : (totalHr >= 1 ? `in ${totalHr}h ${remMin}m` : `in ${totalMin}m`);
+    let clock = "";
+    try {
+      const fmtOpts = (kind === "weekly" || days >= 1)
+        ? { weekday: "short", hour: "numeric", minute: "2-digit" }
+        : { hour: "numeric", minute: "2-digit" };
+      clock = new Intl.DateTimeFormat(undefined, fmtOpts).format(new Date(targetMs));
+    } catch (_err) { clock = ""; }
+    return clock ? `${rel} (${clock})` : rel;
+  }
+
+  function formatSnapshotAge(ageSec) {
+    if (ageSec == null || !Number.isFinite(Number(ageSec))) return "offline";
+    const s = Math.max(0, Number(ageSec));
+    if (s < 90) return "live";
+    if (s < 3600) return `${Math.round(s / 60)}m ago`;
+    if (s < 86400) return `${Math.round(s / 3600)}h ago`;
+    return `${Math.round(s / 86400)}d ago`;
+  }
+
   function renderKpiCards(b) {
     const grid = document.getElementById("v9KpiGrid");
     if (!grid) return;
     if (b && b.project_scope && V9.ProjectView && V9.ProjectView.renderProjectKpis(b)) return;
     const k = b.kpis || {};
     const p = b.period || {};
-    const qp = b.quota_and_pools || {};
-    const pools = qp.pools || {};
-    const gPool = pools.google || {};
-    const pPool = pools.claude || {};
-    const pacing = qp.partner_weekly_pacing || {};
-    const models = Array.isArray(b.model_usage_vs_target) ? b.model_usage_vs_target : [];
-
     const peak = k.peak_day || {};
-    const googlePct = models
-      .filter((m) => String(m.pool || "").toLowerCase().includes("google"))
-      .reduce((acc, m) => acc + Number(m.actual_pct || 0), 0);
-    const partnerPct = models
-      .filter((m) => String(m.pool || "").toLowerCase().includes("partner"))
-      .reduce((acc, m) => acc + Number(m.actual_pct || 0), 0);
-
-    const hasCeiling = pacing.recommended_cumulative_ceiling_pct != null;
-    const partnerCeiling = hasCeiling ? Number(pacing.recommended_cumulative_ceiling_pct) : 0;
-    const partnerFillPct = Math.min(100, Math.max(0, partnerPct));
-    const partnerPinPct = Math.min(100, Math.max(0, partnerCeiling));
-    const googleWarn = gPool.status && gPool.status !== "HEALTHY";
-    const partnerWarn = (pPool.status && pPool.status !== "HEALTHY") || (hasCeiling && partnerPct > partnerCeiling);
-    const mainModel = (qp.active_mainchat_model && qp.active_mainchat_model.label) || "Gemini 4 Carbon";
+    const metric = (V9.state && V9.state.metric) || "steps";
+    const qc = V9.QuotaCards;
+    const splitCardHtml = qc && qc.renderPoolSplitCard ? qc.renderPoolSplitCard(b, metric) : "";
+    const pacingCardHtml = qc && qc.renderQuotaPacingCard ? qc.renderQuotaPacingCard(b) : "";
 
     grid.innerHTML = `
       <div class="va-kpi-gauge-card" data-state="nominal">
@@ -57,33 +74,8 @@
           <span>${Number(k.total_conversations || 0)}c · ${Number(k.total_subagents_spawned || 0)}r</span>
         </div>
       </div>
-      <div class="va-kpi-gauge-card" data-state="${googleWarn ? "warn" : "nominal"}">
-        <div class="va-kpi-gauge-head">
-          <span class="va-kpi-gauge-label">Google 20x Pool</span>
-          <span class="va-pill" data-variant="status" data-state="${googleWarn ? "warn" : "nominal"}">${V9.escHtml(gPool.status || "HEALTHY")}</span>
-        </div>
-        <div class="va-kpi-gauge-val">${googlePct.toFixed(1)}% <span class="va-meta-inline">call share</span></div>
-        <div class="va-kpi-gauge-track"><div class="va-kpi-gauge-fill" style="inline-size:${Math.min(100, Math.max(0, googlePct)).toFixed(1)}%"></div></div>
-        <div class="va-kpi-gauge-stats">
-          <span>Main: ${V9.escHtml(mainModel)}</span>
-          <span>${V9.escHtml(qp.active_tier_profile || "ultra-20x")}</span>
-        </div>
-      </div>
-      <div class="va-kpi-gauge-card" data-state="${partnerWarn ? "warn" : "nominal"}">
-        <div class="va-kpi-gauge-head">
-          <span class="va-kpi-gauge-label">Partner Weekly Pacing</span>
-          <span class="va-pill" data-variant="status" data-state="${partnerWarn ? "warn" : "nominal"}">${V9.escHtml(pPool.status || "HEALTHY")}</span>
-        </div>
-        <div class="va-kpi-gauge-val">${partnerPct.toFixed(1)}%</div>
-        <div class="va-kpi-gauge-track">
-          <div class="va-kpi-gauge-fill" style="inline-size:${partnerFillPct.toFixed(1)}%"></div>
-          ${hasCeiling && partnerCeiling < 99.5 ? `<span class="va-kpi-gauge-target" style="inset-inline-start:${partnerPinPct.toFixed(1)}%" title="Cumulative ceiling ${Number(partnerCeiling)}% (${Number(pacing.daily_target_pct || 14.28)}%/d)"></span>` : ""}
-        </div>
-        <div class="va-kpi-gauge-stats">
-          ${hasCeiling ? `<span>Ceiling ${Number(partnerCeiling)}%</span><span>${Number(pacing.daily_target_pct || 14.28)}%/d</span>` : ""}
-          <span>429s: ${Number(pPool.total_429_count || 0)}</span>
-        </div>
-      </div>`;
+      ${splitCardHtml}
+      ${pacingCardHtml}`;
   }
 
   function sumLayerTokens(modelSeries, modelKey, fallback) {
@@ -245,9 +237,13 @@
       const barHtml = SB && entry.sm
         ? SB.renderSubagentWhisker(entry.sm, scaleMax, metric, col)
         : `<span class="v9-inline-share"><span class="va-inline-bar" role="img" aria-label="${pct}%"><span class="va-inline-bar-fill" style="inline-size:${Math.min(100, pct)}%;background:${col}"></span></span><span class="v9-inline-pct">${pct.toFixed(1)}%</span></span>`;
+      const adjStatus = String(item.adjudication_status || (item.model_diverged ? "diverged" : "aligned")).toLowerCase();
+      const adjText = item.adjudication_text || item.dominant_model_label || item.dominant_model_key || "—";
+      const adjDesktop = `<span class="v9-adj-pill" data-adj="${V9.escHtml(adjStatus)}">${V9.escHtml(adjText)}</span>`;
+      const adjMobile = adjText && adjText !== "—" ? `<span class="v9-sub-adj-mobile" data-adj="${V9.escHtml(adjStatus)}">${V9.escHtml(adjText)}</span>` : "";
       return `<tr class="${cls}" data-solo-sub="${V9.escHtml(item.role)}">
-        <td><span class="v9-swatch-dot" style="background:${col}"></span><span class="v9-cell-main">${V9.escHtml(item.role)}</span></td>
-        <td class="v9-col-secondary"><span class="v9-cell-sub">${V9.escHtml(item.dominant_model_label || item.dominant_model_key || "—")}</span></td>
+        <td><span class="v9-swatch-dot" style="background:${col}"></span><span class="v9-cell-main">${V9.escHtml(item.role)}</span>${adjMobile}</td>
+        <td class="v9-col-secondary">${adjDesktop}</td>
         <td class="v9-bar-cell">${barHtml}</td>
         <td class="num">${runs}</td>
         <td class="num">${V9.fmtNum(item.tokens)}</td>
@@ -329,7 +325,7 @@
     const watch = Array.isArray(mh.watchlist_and_exceptions) ? mh.watchlist_and_exceptions.slice(0, 12) : [];
     bodyEl.innerHTML = `
       <div class="v9-health-strip" style="padding-block:0.5rem">
-        <span>Release: ${V9.escHtml((ch.version && ch.version.status_label) || b.version || "4.0.8")}</span>
+        <span>Release: ${V9.escHtml((ch.version && ch.version.status_label) || b.version || "4.0.9")}</span>
         <span>Praxis Symbols: ${(ch.polyglot_health && ch.polyglot_health.total_symbols) || 0}</span>
         <span>Pinned Slots: ${rt.active_slots || 0} (${rt.pinned_calls || 0} pinned / ${rt.auto_resolved_calls || 0} auto)</span>
         <span>3-2-1 Backup: ${V9.escHtml(bk.status_label || "—")} (${V9.escHtml(bk.age || "—")})</span>
@@ -395,6 +391,9 @@
   }
 
   function renderAnalytics(b, rerenderFn, actions) {
+    if (V9.CatalogBanner && V9.CatalogBanner.render) {
+      V9.CatalogBanner.render(b, { onReload: actions && actions.reloadStats });
+    }
     renderKpiCards(b);
     renderModelTable(b, rerenderFn);
     renderSubagentTable(b, rerenderFn);
@@ -416,5 +415,5 @@
     if (trigBtn) trigBtn.title = fmt.fullTitle;
   }
 
-  V9.Analytics = { renderAnalytics };
+  V9.Analytics = { renderAnalytics, renderKpiCards, formatResetCountdown, formatSnapshotAge };
 })();

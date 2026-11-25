@@ -253,13 +253,29 @@ def format_workflow_baseline_for_wire(wf_data: dict[str, Any], max_chars: int = 
     out = "\n".join(lines)
     if len(out) <= max_chars:
         return out
-    # Drop summaries before ever truncating a WF-XX heading or Common Term name
-    compact = [header]
-    if terms:
-        compact.append("**Common Terms**: " + "; ".join(f"**{t['term']}**" for t in terms))
-    if workflows:
-        compact.append("**Workflow Index**:\n" + "\n".join(f"- **{w['id']}** — {w['title']}" for w in workflows))
-    res = "\n".join(compact)
+    # Drop summaries before ever truncating a WF-XX heading
+    wf_lines = [f"- **{w['id']}** — {w['title']}" for w in workflows]
+    wf_block = ("**Workflow Index**:\n" + "\n".join(wf_lines)) if wf_lines else ""
+    terms_hdr = "**Common Terms**: "
+    terms_joined = "; ".join(f"**{t['term']}**" for t in terms)
+    fallback_terms = "**Common Terms**: see `docs/WORKFLOWS.md`"
+    avail_terms = max_chars - len(header) - (len(wf_block) + 1 if wf_block else 0) - 1
+    if terms and avail_terms > len(terms_hdr) + 12:
+        t_txt = terms_joined if len(terms_hdr) + len(terms_joined) <= avail_terms else terms_joined[:avail_terms - len(terms_hdr) - 3].rstrip(" ;") + "..."
+        compact = [header, f"{terms_hdr}{t_txt}", wf_block]
+    elif terms and max_chars >= len(header) + (len(wf_block) + 1 if wf_block else 0) + len(fallback_terms) + 1:
+        compact = [header, fallback_terms, wf_block]
+    else:
+        short_wf_lines = [f"- **{w['id']}** — {w['title'][:36]}" for w in workflows]
+        short_wf_block = ("**Workflow Index**:\n" + "\n".join(short_wf_lines)) if short_wf_lines else ""
+        overhead = len(header) + (len(short_wf_block) + 1 if short_wf_block else 0) + (len(terms_hdr) + 1 if terms else 0)
+        rem = max(0, max_chars - overhead)
+        compact = [header]
+        if terms and rem > 0:
+            compact.append(f"{terms_hdr}{terms_joined[:rem]}")
+        if short_wf_block:
+            compact.append(short_wf_block)
+    res = "\n".join(p for p in compact if p)
     return res[:max_chars] if len(res) > max_chars else res
 
 

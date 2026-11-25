@@ -88,7 +88,7 @@ def _read_package_version(src_root: Path) -> str:
         m = re.search(r'^version\s*=\s*"([^"]+)"', pyproject.read_text(encoding="utf-8"), re.M)
         if m:
             return m.group(1).strip()
-    return "4.0.8"
+    return "4.0.9"
 
 
 def _extract_changelog_section(src_root: Path, version: str) -> str:
@@ -219,7 +219,7 @@ def main() -> int:
     parser.add_argument("--repo", default="agy-nexus-mcp", help="Target GitHub repository name")
     parser.add_argument(
         "--description",
-        default="AGY-Nexus v4.0.8: Zero-stdout --stdio & GHCR OCI MCP Server + GitHub OIDC Registry Publishing, Quiet UI v9.3.0 Studio, 1-Tap Reply Chips, Range Whiskers, Caret Bars, Sortable Tables, 8-Model Cost Ledger, Praxis Semantic Gateway & 12-Agent Orchestrator.",
+        default="AGY-Nexus v4.0.9: Shared Two-File Price Book & 1-Click Overrides, Intended-vs-Actual Subagent Adjudication, Unmapped M* Barcode Alerts, bot/catalog-sync PRs, Zero-stdout --stdio & GHCR OCI MCP Server, Quiet UI v9.3.0 Studio, Praxis Semantic Gateway & 12-Agent Orchestrator.",
         help="GitHub repository description",
     )
     parser.add_argument("--private", action="store_true", help="Create repository as private (default: public)")

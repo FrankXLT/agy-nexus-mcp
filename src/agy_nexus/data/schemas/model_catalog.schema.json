@@ -1,0 +1,352 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/FrankXLT/agy-nexus-mcp/blob/main/src/agy_nexus/data/schemas/model_catalog.schema.json",
+  "title": "AGY-Nexus Model Catalog Price Book",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "catalog_revision",
+    "updated_at",
+    "catalog_version",
+    "currency",
+    "micros_per_usd",
+    "tokens_per_rate_unit",
+    "subscription_tiers",
+    "fallback_token_split",
+    "models"
+  ],
+  "properties": {
+    "catalog_revision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000
+    },
+    "updated_at": {
+      "type": "string",
+      "pattern": "^(?!.*\\n)\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "catalog_version": {
+      "type": "string",
+      "pattern": "^(?!.*\\n)\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "currency": {
+      "type": "string",
+      "const": "USD"
+    },
+    "micros_per_usd": {
+      "type": "integer",
+      "const": 1000000
+    },
+    "tokens_per_rate_unit": {
+      "type": "integer",
+      "const": 1000000
+    },
+    "subscription_tiers": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/subscriptionTier"
+      }
+    },
+    "fallback_token_split": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uncached_input_ratio",
+        "cached_input_ratio",
+        "output_ratio"
+      ],
+      "properties": {
+        "uncached_input_ratio": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "cached_input_ratio": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "output_ratio": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        }
+      }
+    },
+    "models": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/modelEntry"
+      }
+    }
+  },
+  "$defs": {
+    "safeHttpsUrl": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 512,
+      "pattern": "^(?!.*\\n)https://[A-Za-z0-9.-]+(?:[/?#][^\\s<>\\[\\]()|`\"'\\\\;]*)?$"
+    },
+    "subscriptionTier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "monthly_usd_micros",
+        "included_credits_usd_micros",
+        "pool_multiplier",
+        "storage",
+        "notes"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^(?!.*\\n)[a-z][a-z0-9_]{1,47}$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "monthly_usd_micros": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500000000
+        },
+        "included_credits_usd_micros": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500000000
+        },
+        "pool_multiplier": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "storage": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 240
+        }
+      }
+    },
+    "modelEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "label",
+        "short_label",
+        "short_11",
+        "short_7",
+        "model_ids",
+        "aliases",
+        "public_api",
+        "antigravity_ide"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^(?!.*\\n)[a-z][a-z0-9_]{1,47}$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "short_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "short_11": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16
+        },
+        "short_7": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12
+        },
+        "model_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "pattern": "^(?!.*\\n)[a-z0-9][a-z0-9._/-]{1,95}$"
+          }
+        },
+        "aliases": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "public_api": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "api_context_window",
+            "api_max_output_tokens",
+            "source_url",
+            "verified_at"
+          ],
+          "properties": {
+            "api_context_window": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 100000000
+            },
+            "api_max_output_tokens": {
+              "type": "integer",
+              "minimum": 256,
+              "maximum": 10000000
+            },
+            "source_url": {
+              "$ref": "#/$defs/safeHttpsUrl"
+            },
+            "verified_at": {
+              "type": "string",
+              "pattern": "^(?!.*\\n)\\d{4}-\\d{2}-\\d{2}$"
+            }
+          }
+        },
+        "antigravity_ide": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pool_key",
+            "pool_label",
+            "quota_group",
+            "context_window",
+            "max_output_tokens",
+            "reasoning_tiers",
+            "placeholders",
+            "tier_placeholders",
+            "target_pct"
+          ],
+          "properties": {
+            "pool_key": {
+              "type": "string",
+              "enum": [
+                "google",
+                "claude",
+                "gpt_oss"
+              ]
+            },
+            "pool_label": {
+              "type": "string",
+              "enum": [
+                "Google 20x",
+                "Partner 1x"
+              ]
+            },
+            "quota_group": {
+              "type": "string",
+              "enum": [
+                "Gemini Models",
+                "Claude and GPT models"
+              ]
+            },
+            "context_window": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 100000000
+            },
+            "max_output_tokens": {
+              "type": "integer",
+              "minimum": 256,
+              "maximum": 10000000
+            },
+            "reasoning_tiers": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 12,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Low",
+                  "Medium",
+                  "High",
+                  "XHigh",
+                  "Tiered"
+                ]
+              }
+            },
+            "placeholders": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "pattern": "^(?!.*\\n)MODEL_(?:PLACEHOLDER_M\\d{1,6}|OPENAI_[A-Z0-9_]{3,64})$"
+              }
+            },
+            "tier_placeholders": {
+              "type": "object",
+              "additionalProperties": false,
+              "minProperties": 1,
+              "properties": {
+                "Low": {
+                  "$ref": "#/$defs/placeholderCode"
+                },
+                "Medium": {
+                  "$ref": "#/$defs/placeholderCode"
+                },
+                "High": {
+                  "$ref": "#/$defs/placeholderCode"
+                },
+                "XHigh": {
+                  "$ref": "#/$defs/placeholderCode"
+                },
+                "Tiered": {
+                  "$ref": "#/$defs/placeholderCode"
+                }
+              }
+            },
+            "target_pct": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "ultra-20x",
+                "ultra-5x"
+              ],
+              "properties": {
+                "ultra-20x": {
+                  "type": "number",
+                  "minimum": 0.0,
+                  "maximum": 100.0
+                },
+                "ultra-5x": {
+                  "type": "number",
+                  "minimum": 0.0,
+                  "maximum": 100.0
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "placeholderCode": {
+      "type": "string",
+      "pattern": "^(?!.*\\n)MODEL_(?:PLACEHOLDER_M\\d{1,6}|OPENAI_[A-Z0-9_]{3,64})$"
+    }
+  }
+}

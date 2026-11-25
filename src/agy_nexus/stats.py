@@ -21,9 +21,11 @@ from agy_nexus.cost_ledger import (
 )
 from agy_nexus.model_pricing import (
     build_billing_comparison,
+    compute_step_cost_micros,
     get_canonical_model_keys,
     get_model_specs_map,
     resolve_rate_epoch,
+    split_estimated_tokens,
 )
 from agy_nexus.project_stats import (
     build_fleet_project_index,
@@ -33,23 +35,28 @@ from agy_nexus.project_stats import (
     filter_project_conversations,
     resolve_target_project_id,
 )
+from agy_nexus.catalog_report import build_unmapped_issue_url, finalize_unmapped_models
+from agy_nexus.catalog_sync import get_catalog_sync_status
 from agy_nexus.retirement import is_session_retired
 from agy_nexus.stats_aggregator import (
     fold_live_conversations,
     fold_orphaned_and_archived,
     init_agg_state,
+    load_agent_role_specs,
     load_agent_target_map,
     load_db_conversations,
 )
 from agy_nexus.stats_metrics import (
     build_model_comparison_rows,
     build_subagent_list_rows,
+    compute_pool_window_burn,
     compute_trailing_24h_slots,
 )
 from agy_nexus.stats_series import (
     MODEL_SHORT_LABELS,
     build_series_and_project_hierarchy,
     load_projects_meta,
+    resolve_root_conversation,
     resolve_subagent_model,
 )
 from agy_nexus.telemetry_scanner import (
@@ -162,6 +169,7 @@ def _build_heatmap_and_tables(
     agg: dict[str, Any], *, start_d: date, end_d: date, today: date, now_hour: int, hm: str,
     quota_info: dict[str, Any], parent_model_map: dict[str, str], main_mk: str,
     main_switch_date: str, agent_target_map: dict[str, str], bg_dir: Path,
+    agent_role_specs: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     cur, win_st, win_tl, win_tk, win_cs, act_days, peak = start_d, 0, 0, 0, 0, 0, {"date": "", "steps": 0}
     while cur <= end_d:
@@ -212,7 +220,7 @@ def _build_heatmap_and_tables(
         agg, act_d, act_w, l24_slots, has_l24,
         resolve_model_fn=resolve_subagent_model, short_labels=MODEL_SHORT_LABELS, e_iso=e_iso,
         parent_model_map=parent_model_map, main_mk=main_mk, main_switch_date=main_switch_date,
-        agent_target_map=agent_target_map,
+        agent_target_map=agent_target_map, agent_role_specs=agent_role_specs,
     )
     model_comp = build_model_comparison_rows(
         agg, quota_info, e_iso, l24_slots, has_l24,
@@ -225,6 +233,30 @@ def _build_heatmap_and_tables(
         "has_last_24h": has_l24, "l24_slots": l24_slots,
         "heatmap_series": heatmap_series, "all_ws_list": all_ws_list, "subagent_list": subagent_list, "model_comp": model_comp,
     }
+
+
+def _attach_pool_burn_and_shares(
+    quota_info: dict[str, Any], full_conv_cache: dict[str, dict[str, Any]], full_db_convs: dict[str, dict[str, Any]],
+    model_comp: list[dict[str, Any]], now_loc: datetime, parent_model_map: dict[str, str],
+    main_mk: str, main_switch_date: str, agent_target_map: dict[str, str], bg_dir: Path,
+) -> None:
+    specs = get_model_specs_map()
+    burn_map = compute_pool_window_burn(
+        full_conv_cache, full_db_convs, quota_info, now_loc,
+        specs=specs, classify_fn=classify_model_key, compute_cost_fn=compute_step_cost_micros,
+        split_fn=split_estimated_tokens, resolve_root_fn=resolve_root_conversation,
+        resolve_subagent_fn=resolve_subagent_model, parent_model_map=parent_model_map,
+        main_mk=main_mk, main_switch_date=main_switch_date, agent_target_map=agent_target_map,
+        display_tz=DISPLAY_TZ, bg_dir=bg_dir,
+    )
+    g_shr = round(sum(float(m.get("actual_pct", 0.0)) for m in model_comp if str(m.get("pool_key") or "").lower() == "google"), 1)
+    p_raw = sum(float(m.get("actual_pct", 0.0)) for m in model_comp if str(m.get("pool_key") or "").lower() != "google")
+    p_shr = round(max(0.0, 100.0 - g_shr), 1) if (g_shr + p_raw) > 0.0 else 0.0
+    pools = quota_info.setdefault("pools", {})
+    for pk, shr in (("google", g_shr), ("claude", p_shr)):
+        po = pools.setdefault(pk, {})
+        po["call_share_pct"] = shr
+        po.update(burn_map.get(pk) or {})
 
 
 def build_nexus_stats_bundle(
@@ -245,7 +277,7 @@ def build_nexus_stats_bundle(
 
     start_d, end_d, p_label, pk, tf, hm, anchor = _resolve_window_bounds(period, timeframe, horizon_mode, offset, anchor_date, today)
     s_iso, e_iso = start_d.strftime("%Y-%m-%d"), end_d.strftime("%Y-%m-%d")
-    quota_info = get_live_quota_and_pool_status(base_data, agy_config_dir)
+    quota_info = get_live_quota_and_pool_status(base_data, agy_config_dir, bg_dir=bg_dir)
     main_info = quota_info.get("active_mainchat_model") or {}
     main_mk, main_switch_date = str(main_info.get("model_key") or "argon"), str(main_info.get("state_updated_date") or "")
 
@@ -253,6 +285,7 @@ def build_nexus_stats_bundle(
     full_db_convs = load_db_conversations(db_file)
     projects_map = load_projects_meta(agy_config_dir)
     agent_target_map = load_agent_target_map(agy_config_dir)
+    agent_role_specs = load_agent_role_specs(agy_config_dir)
     default_live_bg = (Path.home() / ".gemini/antigravity/sidecar_data/ag-bridge-bg").resolve()
     can_persist = (bg_dir.resolve() != default_live_bg) or any((brain_dir / cid).is_dir() for cid in full_conv_cache)
     parent_model_map = {cid: str(cd.get("last_conv_model") or "") for cid, cd in full_conv_cache.items() if cd.get("last_conv_model")}
@@ -285,8 +318,9 @@ def build_nexus_stats_bundle(
     tbl = _build_heatmap_and_tables(
         agg, start_d=start_d, end_d=end_d, today=today, now_hour=now_loc.hour, hm=hm, quota_info=quota_info,
         parent_model_map=parent_model_map, main_mk=main_mk, main_switch_date=main_switch_date,
-        agent_target_map=agent_target_map, bg_dir=bg_dir,
+        agent_target_map=agent_target_map, bg_dir=bg_dir, agent_role_specs=agent_role_specs,
     )
+    _attach_pool_burn_and_shares(quota_info, full_conv_cache, full_db_convs, tbl["model_comp"], now_loc, parent_model_map, main_mk, main_switch_date, agent_target_map, bg_dir)
     heatmap_series = tbl["heatmap_series"]
     chart_days = [x for x in heatmap_series if not x.get("future") and s_iso <= x["date"] <= e_iso]
     if tf == "year":
@@ -320,7 +354,8 @@ def build_nexus_stats_bundle(
         tree_bundle=tree_bundle, quota_info=quota_info, db_convs=db_convs, projects_map=projects_map, fleet_idx=fleet_idx,
         target_pid=target_pid, archived_convs=archived_convs, sess_s1_steps=sess_s1_steps, sess_s1_toks=sess_s1_toks,
         sess_s1_cost=sess_s1_cost, start_d=start_d, end_d=end_d, today=today, now_loc=now_loc, anchor=anchor, pk=pk,
-        p_label=p_label, s_iso=s_iso, e_iso=e_iso, tf=tf, hm=hm, offset=offset, style=style, bg_dir=bg_dir, include_ascii=include_ascii,
+        p_label=p_label, s_iso=s_iso, e_iso=e_iso, tf=tf, hm=hm, offset=offset, style=style, bg_dir=bg_dir,
+        include_ascii=include_ascii, base_data=base_data,
     )
 
 
@@ -332,13 +367,15 @@ def _assemble_stats_output(
     sess_s1_toks: dict[str, dict[str, int]], sess_s1_cost: dict[str, dict[str, int]],
     start_d: date, end_d: date, today: date, now_loc: datetime, anchor: date,
     pk: str, p_label: str, s_iso: str, e_iso: str, tf: str, hm: str, offset: int,
-    style: str, bg_dir: Path, include_ascii: bool,
+    style: str, bg_dir: Path, include_ascii: bool, base_data: Path | None = None,
 ) -> dict[str, Any]:
     win_cost_micros = max(int(tbl["win_cost_sum"]), sum(int(v) for v in agg["model_cost"].values()))
     win_fore_micros = max(win_cost_micros, sum(int(v) for v in agg["model_fore"].values()))
     parent_cnt = (agg["active_parent_convs"] + archived_convs) or sum(1 for v in db_convs.values() if not v.get("is_subagent"))
     act_d, act_w = tbl["act_d"], tbl["act_w"]
     drift_status = read_model_drift_status(bg_dir)
+    unmapped_models = finalize_unmapped_models(agg.get("unmapped_models") or {}, drift_status=drift_status)
+    cat_sync = get_catalog_sync_status(data_dir=base_data, bg_dir=bg_dir, allow_network=False)
     hourly_whiskers = compute_hourly_whiskers(agg["s1_tot_steps"], agg["s1_tot_toks"], agg["s1_tot_cost"], start_d, end_d, today, now_loc.hour)
     billing_cmp = build_billing_comparison(
         win_cost_micros, win_fore_micros, window_days=max(1, (end_d - start_d).days + 1),
@@ -368,6 +405,8 @@ def _assemble_stats_output(
         },
         "kpis": kpis_obj, "summary": kpis_obj, "quota_and_pools": quota_info, "model_usage_vs_target": tbl["model_comp"],
         "subagent_role_breakdown": agg["subagent_roles"], "subagent_list": tbl["subagent_list"],
+        "unmapped_models": unmapped_models, "unmapped_issue_url": build_unmapped_issue_url(unmapped_models),
+        "catalog_sync": cat_sync,
         "all_workspaces": tbl["all_ws_list"], "top_workspaces": tbl["all_ws_list"][:10],
         "velocity_series": series_pkg["velocity_series"], "model_series": series_pkg["model_series"],
         "workspace_series": series_pkg["workspace_series"], "subagent_series": series_pkg["subagent_series"],

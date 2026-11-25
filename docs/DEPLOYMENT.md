@@ -228,23 +228,30 @@ journalctl --user -u ag-bridge.service -f
 
 ## 7. Automated Test Suite & Public GitHub Pages Showcase
 
-Run the `pytest` unit/regression suites (`120+` checks), built-in self-tests, and end-to-end permutation runner anytime to verify all 11 `agy-nexus-mcp` tools, all 6 `agy-praxis-mcp` tools, `PWA_ASSETS` parity, `405` Streamable HTTP compliance, passphrase locking, virtual URIs, and git diff pagination:
+Run the `pytest` unit/regression suites (`140+` checks), built-in self-tests, and end-to-end permutation runner anytime to verify all 11 `agy-nexus-mcp` tools, all 6 `agy-praxis-mcp` tools, `PWA_ASSETS` parity, `405` Streamable HTTP compliance, passphrase locking, virtual URIs, and git diff pagination:
 ```bash
 uv run --with pytest --with pytest-asyncio pytest
 python3 ag_bridge.py --self-test
 python3 -m agy_nexus.tools_praxis --self-test
 python3 scripts/sync_agents.py --check
+python3 scripts/catalog_sync.py --render-docs --check
 
 AG_BRIDGE_URL="http://127.0.0.1:8765/${PATH_SECRET}/mcp" \
 AG_BRIDGE_PASSPHRASE="<your passphrase>" \
 uv run python3 tests/run_permutation_suite.py
 ```
 
-### Build & Publish Interactive GitHub Pages Showcase (`v4.0.8`)
+### Shared Price Book Sync (`catalog_override.json` & `bot/catalog-sync` PR Bot)
+- **User Opt-In Overrides (`/web` & `${AGY_DATA_DIR}/catalog_override.json`)**: Live `/web` checks `raw.githubusercontent.com/FrankXLT/agy-nexus-mcp/main/src/agy_nexus/data/` at most once per 24h (failing open offline). Accepting an update writes strictly to `${AGY_DATA_DIR}/catalog_override.json` (`chmod 600`) without touching repo checkouts and automatically retires the override once the bundled `catalog_revision` catches up.
+- **Automated Upstream PRs (`.github/workflows/catalog-sync.yml`)**: Runs weekly (`contents: write`, `pull-requests: write`, `models: read`) against public rate feeds, updates only changed `public_api` / `cost_ledger.json` fields (`antigravity_ide` stays locked), regenerates `docs/PRICING_HISTORY.md`, runs `pytest`, and updates one `bot/catalog-sync` PR targeting `main`.
+- **Required GitHub Repository Settings**: Enable **Settings -> Actions -> General -> Allow GitHub Actions to create and approve pull requests** and protect `main` via **Settings -> Rules -> Rulesets** requiring PR approval plus the **`verify`** status check.
+
+### Build & Publish Interactive GitHub Pages Showcase (`v4.0.9`)
 Generate a zero-leak depersonalized static showcase in `build/gh-pages/` (stripping PNG metadata, aliasing private identifiers via SHA-256, and running `scan_showcase_privacy()`), preview locally, or dry-run/sync GitHub `main` + `gh-pages` + Release:
 ```bash
 python3 scripts/build_github_showcase.py --refresh
 python3 scripts/publish_to_github.py --dry-run
 python3 scripts/publish_to_github.py   # Pushes main + orphan gh-pages + configures GitHub Pages + Release
 ```
+
 
