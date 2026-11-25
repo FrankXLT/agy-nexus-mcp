@@ -219,9 +219,9 @@ def test_wave5_pool_window_burn_and_ascii_rich_width() -> None:
         "heatmap_series": [], "sub_daily_series": [], "model_usage_vs_target": [], "top_workspaces": [], "subagent_list": [],
     }
     rich_out = ascii_rich.render_ascii_rich(bundle)
-    assert "QUOTA PACING & POOL SPLIT" in rich_out
-    assert "G 5h: 14/c" in rich_out
-    assert "90/10" in rich_out
+    assert "QUOTA & RESETS & POOL SPLIT" in rich_out
+    assert "G 5h: 86% lft" in rich_out
+    assert "P:Wk 82%" in rich_out and "G85/15" in rich_out
     for ln in rich_out.splitlines():
         assert len(ln) == 76, f"Rich box line not 76 cols ({len(ln)}): {ln!r}"
 
@@ -352,16 +352,20 @@ const bundleCoolAndWarm = {
   },
   model_usage_vs_target: sampleModels20x,
 };
+const assertNoLegacyPacing = (html) => {
+  assert.ok(!html.includes("Quota Pacing") && !html.includes("ON PACE") && !html.includes(">WARM<") && !html.includes(">HOT<"), "Legacy Quota Pacing text leaked");
+};
 ctx.window.AgyV9.state.metric = "steps";
 AN.renderKpiCards(bundleCoolAndWarm);
 assert.ok(kpiGrid.innerHTML.includes("Pool Split") && kpiGrid.innerHTML.includes("Target 90/10"));
 assert.ok(kpiGrid.innerHTML.includes("90.0%</strong>") && kpiGrid.innerHTML.includes("10.0%</strong>"));
 assert.ok(kpiGrid.innerHTML.includes('class="v9-split-caret" style="inset-inline-start:90.0%"'));
 assert.ok(kpiGrid.innerHTML.includes("Carbon 4") && kpiGrid.innerHTML.includes("429s: 0"));
-assert.ok(kpiGrid.innerHTML.includes("Quota Pacing") && kpiGrid.innerHTML.includes(">WARM<"));
-assert.ok(kpiGrid.innerHTML.includes('class="v9-pace-prog" data-zone="cool" value="15.0"'));
-assert.ok(kpiGrid.innerHTML.includes('class="v9-pace-prog" data-zone="warm" value="47.3"'));
-assert.ok(kpiGrid.innerHTML.includes('Partner: </span>Standby · 0% Wk') && !kpiGrid.innerHTML.includes("P Wk"));
+assert.ok(kpiGrid.innerHTML.includes("Quota &amp; Resets") && kpiGrid.innerHTML.includes(">OK<"));
+assert.ok(kpiGrid.innerHTML.includes("v9-qr-prog") && kpiGrid.innerHTML.includes('data-level="ok"'));
+assert.ok(kpiGrid.innerHTML.includes("Google 5h") && kpiGrid.innerHTML.includes("85% left"));
+assert.ok(kpiGrid.innerHTML.includes('Partner: </span>100% left<span class="v9-qr-standby-word"> · Standby</span>') && !kpiGrid.innerHTML.includes("Partner Wk"));
+assertNoLegacyPacing(kpiGrid.innerHTML);
 
 ctx.window.AgyV9.state.metric = "cost";
 AN.renderKpiCards(bundleCoolAndWarm);
@@ -375,22 +379,34 @@ bundlePartnerActive.model_usage_vs_target = [
   Object.assign({}, sampleModels20x[0], { target_pct: 75.0 }),
   Object.assign({}, sampleModels20x[1], { target_pct: 25.0 }),
 ];
-bundlePartnerActive.quota_and_pools.pools.google.bucket_weekly.used_pct = 20.0; // cool
-bundlePartnerActive.quota_and_pools.pools.claude.bucket_weekly.used_pct = 18.5; // cool & >0 -> expands P Wk!
+bundlePartnerActive.quota_and_pools.pools.google.bucket_weekly.used_pct = 20.0;
+bundlePartnerActive.quota_and_pools.pools.google.bucket_weekly.remaining_pct = 80.0;
+bundlePartnerActive.quota_and_pools.pools.claude.bucket_weekly.used_pct = 18.5;
+bundlePartnerActive.quota_and_pools.pools.claude.bucket_weekly.remaining_pct = 81.5;
 AN.renderKpiCards(bundlePartnerActive);
 assert.ok(kpiGrid.innerHTML.includes("Target 75/25") && kpiGrid.innerHTML.includes('inset-inline-start:75.0%'));
-assert.ok(kpiGrid.innerHTML.includes(">ON PACE<") && kpiGrid.innerHTML.includes("<strong>P Wk</strong>"));
+assert.ok(kpiGrid.innerHTML.includes(">OK<") && kpiGrid.innerHTML.includes("Partner Wk") && kpiGrid.innerHTML.includes("82% left"));
+assertNoLegacyPacing(kpiGrid.innerHTML);
 
-const bundleHot = JSON.parse(JSON.stringify(bundleCoolAndWarm));
-bundleHot.quota_and_pools.pools.google.bucket_5h.used_pct = 86.0;
-AN.renderKpiCards(bundleHot);
-assert.ok(kpiGrid.innerHTML.includes(">HOT<") && kpiGrid.innerHTML.includes('data-zone="hot"'));
+const bundleLow = JSON.parse(JSON.stringify(bundleCoolAndWarm));
+bundleLow.quota_and_pools.pools.google.bucket_5h.used_pct = 82.0;
+bundleLow.quota_and_pools.pools.google.bucket_5h.remaining_pct = 18.0;
+AN.renderKpiCards(bundleLow);
+assert.ok(kpiGrid.innerHTML.includes(">LOW LEFT<") && kpiGrid.innerHTML.includes('data-level="low"'));
+assertNoLegacyPacing(kpiGrid.innerHTML);
+
+const bundleNear = JSON.parse(JSON.stringify(bundleCoolAndWarm));
+bundleNear.quota_and_pools.pools.google.bucket_5h.used_pct = 94.0;
+bundleNear.quota_and_pools.pools.google.bucket_5h.remaining_pct = 6.0;
+AN.renderKpiCards(bundleNear);
+assert.ok(kpiGrid.innerHTML.includes(">NEAR LIMIT<") && kpiGrid.innerHTML.includes('data-level="near"'));
+assertNoLegacyPacing(kpiGrid.innerHTML);
 
 const bundleCachedOff = JSON.parse(JSON.stringify(bundleCoolAndWarm));
 bundleCachedOff.quota_and_pools.live_quota = { state: "IDE_OFFLINE", ls_alive: false, is_fresh: false, snapshot_age_seconds: null };
 AN.renderKpiCards(bundleCachedOff);
 assert.ok(!kpiGrid.innerHTML.includes("· offline"), "Must never append '· offline' when snapshot_age_seconds is null");
-assert.ok(kpiGrid.innerHTML.includes("v9-pace-list is-dimmed"));
+assert.ok(kpiGrid.innerHTML.includes("v9-qr-list is-dimmed"));
 
 AN.renderKpiCards({
   period: { total_days: 30 }, kpis: {},

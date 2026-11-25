@@ -239,6 +239,7 @@
     V9.Hierarchy.renderHierarchy(b, appActions);
     syncActiveProjChip(b);
     syncControlButtons();
+    requestAnimationFrame(() => V9.Charts.syncChartsOnLayout?.(st.bundle));
   }
 
   async function loadStats() {
@@ -303,6 +304,7 @@
       requestAnimationFrame(() => {
         V9.Heatmap.renderHeatmap(st.bundle);
         V9.Charts.renderAllCharts(st.bundle);
+        V9.Charts.syncChartsOnLayout?.(st.bundle);
       });
     }
   }

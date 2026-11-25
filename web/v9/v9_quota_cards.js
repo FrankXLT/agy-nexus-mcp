@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* AGY-Nexus /web/v9 — Card 3 Pool Split & Card 4 Quota Pacing Race Cards */
+/* AGY-Nexus /web/v9 — Card 3 Pool Split & Card 4 Quota & Resets */
 (() => {
   const V9 = (window.AgyV9 = window.AgyV9 || {});
   const CARET_SVG = '<svg width="8" height="5" viewBox="0 0 8 6" aria-hidden="true"><path d="M4 6L0.4 0.5H7.6L4 6Z" fill="currentColor"/></svg>';
@@ -9,6 +9,26 @@
   };
 
   const clampPct = (v) => Math.max(0, Math.min(100, Number.isFinite(Number(v)) ? Number(v) : 0));
+  const fmtRemText = (remPct) => {
+    const r = clampPct(remPct);
+    return r > 0 && r < 10 ? r.toFixed(1).replace(/\.0$/, "") : String(Math.round(r));
+  };
+  function resolveRemainingPct(bucket) {
+    if (!bucket || typeof bucket !== "object") return 100;
+    const rawRem = bucket.remaining_pct;
+    const hasFiniteRem = typeof rawRem === "number"
+      ? Number.isFinite(rawRem)
+      : (typeof rawRem === "string" && rawRem.trim() !== "" && Number.isFinite(Number(rawRem)));
+    if (hasFiniteRem) return clampPct(Number(rawRem));
+    const used = Number(bucket.used_pct);
+    return clampPct(100 - (Number.isFinite(used) ? used : 0));
+  }
+  function classifyRemainingLevel(remPct, isCooldown) {
+    const rem = Number(remPct);
+    if (isCooldown || (Number.isFinite(rem) && rem < 10)) return "near";
+    if (Number.isFinite(rem) && rem < 25) return "low";
+    return "ok";
+  }
   const fmtSplitPair = (g, p) => {
     const f = (n) => (Math.abs(n - Math.round(n)) < 0.05 ? String(Math.round(n)) : n.toFixed(1));
     return `${f(g)}/${f(p)}`;
@@ -32,7 +52,7 @@
 
   function formatCompactReset(bucket) {
     if (!bucket || typeof bucket !== "object" || !bucket.has_active_reset || !bucket.reset_time) {
-      return { short: Number(bucket?.used_pct || 0) > 0.05 ? "Active" : "Standby", clock: "" };
+      return { short: resolveRemainingPct(bucket) < 99.95 ? "Active" : "Standby", clock: "" };
     }
     const ms = Date.parse(String(bucket.reset_time));
     if (!Number.isFinite(ms)) return { short: "Active", clock: "" };
@@ -151,50 +171,45 @@
       </div>`;
   }
 
-  function classifyZone(usedPct, clkPct, hasReset, isCooldown) {
-    if (!hasReset && usedPct <= 0.05) return "standby";
-    const lead = hasReset ? (usedPct - clkPct) : 0;
-    if (isCooldown || usedPct >= 85 || (hasReset && lead > 15)) return "hot";
-    if (hasReset && lead > 0) return "warm";
-    return "cool";
-  }
-
-  function renderPaceRow({ label, fullName, bucket, defaultWinSec, burn, isCooldown }) {
-    const used = clampPct(Number(bucket?.used_pct || 0));
+  function renderQuotaWindowRow({ fullPrefix, shortPrefix, fullName, bucket, defaultWinSec, burn, isCooldown }) {
+    const rem = resolveRemainingPct(bucket);
     const hasReset = Boolean(bucket && bucket.has_active_reset);
-    const standby = !hasReset && used <= 0.05;
-    const clk = standby ? 0 : computeClockPct(bucket, defaultWinSec);
-    const zone = classifyZone(used, clk, hasReset, isCooldown);
+    const standby = !hasReset && rem >= 99.95 && !isCooldown;
+    const level = classifyRemainingLevel(rem, isCooldown);
     const rst = formatCompactReset(bucket);
-    const uRnd = Math.round(used);
-    const cRnd = Math.round(clk);
     const burnTxt = burn && Number(burn.steps || 0) > 0
       ? ` · Burn: ${V9.fmtNum(burn.steps)}s · ${V9.fmtUsd(burn.cost_usd || 0)}` : "";
-    const leadStr = hasReset ? `${used - clk >= 0 ? "+" : ""}${(used - clk).toFixed(1)}pp` : "";
-    const tip = standby
-      ? `${fullName}: Standby (0% used · untouched rolling timer)${burnTxt}`
-      : `${fullName}: ${used.toFixed(1)}% used${hasReset ? ` vs ${clk.toFixed(1)}% elapsed (${leadStr})` : ""} · Resets ${rst.short}${rst.clock ? ` (${rst.clock})` : ""}${burnTxt}`;
-    const lblHtml = standby
-      ? `<strong>${V9.escHtml(label)}</strong> · Standby`
+    const reason = standby
+      ? "Standby · 100% left"
       : (hasReset
-        ? `<strong>${V9.escHtml(label)}</strong> · ${uRnd}%<span class="v9-pace-gap"> </span>/<span class="v9-pace-gap"> </span>${cRnd}%<span class="v9-pace-clk-txt"> clk</span>`
-        : `<strong>${V9.escHtml(label)}</strong> · ${uRnd}% used`);
-    const rstHtml = standby ? "Ready" : (rst.short === "Due" ? "Due" : `<span class="v9-pace-rst-pfx">rst </span>${V9.escHtml(rst.short)}`);
+        ? `Resets in ${rst.short}${rst.clock ? ` (${rst.clock})` : ""}`
+        : (isCooldown ? "Cooldown active" : "Active window"));
+    const tip = `${fullName}: ${rem.toFixed(1)}% remaining (${(100 - rem).toFixed(1)}% used) · ${reason}${burnTxt}`;
+    const prefixHtml = `<span class="v9-qr-prefix-full">${V9.escHtml(fullPrefix)}</span><span class="v9-qr-prefix-short">${V9.escHtml(shortPrefix)}</span>`;
+    const lblHtml = standby
+      ? `<strong>${prefixHtml}</strong>`
+      : `<strong>${prefixHtml}</strong> · ${V9.escHtml(fmtRemText(rem))}% left`;
+    const rstHtml = standby
+      ? "Standby · 100% left"
+      : (!hasReset && isCooldown
+        ? "Cooldown"
+        : (rst.short === "Due"
+          ? "Due"
+          : (hasReset && rst.short !== "Active" && rst.short !== "Standby"
+            ? `<span class="v9-qr-rst-pfx">resets in </span>${V9.escHtml(rst.short)}`
+            : "Active")));
     return `
-      <div class="v9-pace-row" title="${V9.escHtml(tip)}">
-        <div class="v9-pace-lbl-row">
-          <span class="v9-pace-lbl">${lblHtml}</span>
-          <span class="v9-pace-rst">${rstHtml}</span>
+      <div class="v9-qr-row" title="${V9.escHtml(tip)}">
+        <div class="v9-qr-lbl-row">
+          <span class="v9-qr-lbl">${lblHtml}</span>
+          <span class="v9-qr-rst">${rstHtml}</span>
         </div>
-        <div class="v9-pace-bars">
-          <div class="v9-pace-clk-track" aria-hidden="true"><div class="v9-pace-clk-fill" style="inline-size:${clk.toFixed(1)}%"></div></div>
-          <progress class="v9-pace-prog" data-zone="${zone}" value="${used.toFixed(1)}" max="100" aria-label="${V9.escHtml(tip)}"></progress>
-        </div>
+        <progress class="v9-qr-prog" data-level="${level}" value="${rem.toFixed(1)}" max="100" aria-label="${V9.escHtml(tip)}"></progress>
       </div>`;
   }
 
-  function renderQuotaPacingCard(bundle) {
-    const qp = bundle.quota_and_pools || {};
+  function renderQuotaResetsCard(bundle) {
+    const qp = (bundle && bundle.quota_and_pools) || {};
     const pools = qp.pools || {};
     const gPool = pools.google || {};
     const pPool = pools.claude || {};
@@ -202,67 +217,72 @@
     const stateCode = String(lq.state || (lq.ls_alive ? "LIVE" : "IDE_OFFLINE"));
     const ageFmt = (V9.Analytics && V9.Analytics.formatSnapshotAge) ? V9.Analytics.formatSnapshotAge(lq.snapshot_age_seconds) : "";
     const ageShort = (ageFmt && ageFmt !== "live" && ageFmt !== "offline") ? ageFmt.replace(" ago", "") : "";
-    const hasG = Boolean((gPool.bucket_5h && gPool.bucket_5h.used_pct != null) || (gPool.bucket_weekly && gPool.bucket_weekly.used_pct != null));
+    const hasBucket = (b) => Boolean(b && (b.remaining_pct != null || b.used_pct != null));
+    const hasG = hasBucket(gPool.bucket_5h) || hasBucket(gPool.bucket_weekly);
     if (!hasG) {
       return `
         <div class="va-kpi-gauge-card" data-state="nominal">
           <div class="va-kpi-gauge-head">
-            <span class="va-kpi-gauge-label">Quota Pacing</span>
-            <span class="va-pill v9-pace-pill" data-variant="status" data-state="muted" aria-label="IDE OFFLINE"><span class="v9-off-pfx">IDE </span>OFFLINE</span>
+            <span class="va-kpi-gauge-label">Quota &amp; Resets</span>
+            <span class="va-pill v9-qr-pill" data-variant="status" data-state="muted" aria-label="IDE OFFLINE"><span class="v9-off-pfx">IDE </span>OFFLINE</span>
           </div>
           <div class="va-kpi-gauge-val v9-quota-main"><span>IDE Offline</span></div>
-          <div class="v9-pace-offline-note">Run IDE or quota sync for 5h/Wk clock meters</div>
-          <div class="va-kpi-gauge-stats v9-kpi-foot"><span>Partner: Standby · 0% Wk</span></div>
+          <div class="v9-qr-offline-note">Run IDE or quota sync for 5h/Wk reset windows</div>
+          <div class="va-kpi-gauge-stats v9-kpi-foot"><span>Partner: 100% left · Standby</span></div>
         </div>`;
     }
-    const g5 = gPool.bucket_5h || { used_pct: 0, has_active_reset: false };
-    const gw = gPool.bucket_weekly || { used_pct: 0, has_active_reset: false };
-    const p5 = pPool.bucket_5h || { used_pct: 0, has_active_reset: false };
-    const pw = pPool.bucket_weekly || { used_pct: 0, has_active_reset: false };
-    const p5Used = clampPct(Number(p5.used_pct || 0));
-    const pWkUsed = clampPct(Number(pw.used_pct || 0));
-    const partnerActive = p5Used > 0.05 || pWkUsed > 0.05;
+    const g5 = gPool.bucket_5h || { remaining_pct: 100, used_pct: 0, has_active_reset: false };
+    const gw = gPool.bucket_weekly || { remaining_pct: 100, used_pct: 0, has_active_reset: false };
+    const p5 = pPool.bucket_5h || { remaining_pct: 100, used_pct: 0, has_active_reset: false };
+    const pw = pPool.bucket_weekly || { remaining_pct: 100, used_pct: 0, has_active_reset: false };
+    const p5Rem = resolveRemainingPct(p5);
+    const pWkRem = resolveRemainingPct(pw);
+    const showP5 = p5Rem < 99.95 || pPool.status === "COOLDOWN_429";
+    const showPWk = pWkRem < 99.95;
+    const partnerActive = showP5 || showPWk;
     const rows = [
-      { label: "G 5h", fullName: "Gemini 5h", bucket: g5, defaultWinSec: 18000, burn: gPool.burn_5h, isCooldown: gPool.status === "COOLDOWN_429" },
-      { label: "G Wk", fullName: "Gemini Weekly", bucket: gw, defaultWinSec: 604800, burn: gPool.burn_7d, isCooldown: false },
+      { fullPrefix: "Google 5h", shortPrefix: "G 5h", fullName: "Google 5h", bucket: g5, defaultWinSec: 18000, burn: gPool.burn_5h, isCooldown: gPool.status === "COOLDOWN_429" },
+      { fullPrefix: "Google Wk", shortPrefix: "G Wk", fullName: "Google Weekly", bucket: gw, defaultWinSec: 604800, burn: gPool.burn_7d, isCooldown: false },
     ];
-    if (p5Used > 0.05) rows.push({ label: "P 5h", fullName: "Partner 5h", bucket: p5, defaultWinSec: 18000, burn: pPool.burn_5h, isCooldown: pPool.status === "COOLDOWN_429" });
-    if (pWkUsed > 0.05) rows.push({ label: "P Wk", fullName: "Partner Weekly", bucket: pw, defaultWinSec: 604800, burn: pPool.burn_7d, isCooldown: false });
+    if (showP5) rows.push({ fullPrefix: "Partner 5h", shortPrefix: "P 5h", fullName: "Partner 5h", bucket: p5, defaultWinSec: 18000, burn: pPool.burn_5h, isCooldown: pPool.status === "COOLDOWN_429" });
+    if (showPWk) rows.push({ fullPrefix: "Partner Wk", shortPrefix: "P Wk", fullName: "Partner Weekly", bucket: pw, defaultWinSec: 604800, burn: pPool.burn_7d, isCooldown: false });
 
-    const zones = rows.map((r) => classifyZone(clampPct(Number(r.bucket?.used_pct || 0)), computeClockPct(r.bucket, r.defaultWinSec), Boolean(r.bucket?.has_active_reset), r.isCooldown));
+    const levels = rows.map((r) => classifyRemainingLevel(resolveRemainingPct(r.bucket), r.isCooldown));
     const isStale = stateCode === "STALE";
     const isOff = stateCode === "IDE_OFFLINE" || lq.ls_alive === false;
-    let pillHtml = "ON PACE", pillAria = "", pillState = "nominal", pillCls = "v9-pace-pill is-cool", cardState = "nominal";
+    let pillHtml = "OK", pillAria = "", pillState = "nominal", pillCls = "v9-qr-pill is-ok", cardState = "nominal";
     if (isStale) {
       pillHtml = ageShort ? `STALE · ${V9.escHtml(ageShort)}` : "STALE";
-      pillState = "warn"; pillCls = "v9-pace-pill"; cardState = "warn";
+      pillState = "warn"; pillCls = "v9-qr-pill"; cardState = "warn";
     } else if (isOff && !lq.is_fresh) {
       pillAria = ageShort ? `IDE OFFLINE · ${ageShort}` : "IDE OFFLINE";
       pillHtml = ageShort ? `<span class="v9-off-pfx">IDE </span>OFFLINE · ${V9.escHtml(ageShort)}` : `<span class="v9-off-pfx">IDE </span>OFFLINE`;
-      pillState = "muted"; pillCls = "v9-pace-pill";
-    } else if (zones.includes("hot") || gPool.status === "COOLDOWN_429" || pPool.status === "COOLDOWN_429") {
-      pillHtml = "HOT"; pillState = "fault"; pillCls = "v9-pace-pill"; cardState = "warn";
-    } else if (zones.includes("warm")) {
-      pillHtml = "WARM"; pillState = "warn"; pillCls = "v9-pace-pill"; cardState = "warn";
+      pillState = "muted"; pillCls = "v9-qr-pill";
+    } else if (levels.includes("near") || gPool.status === "COOLDOWN_429" || pPool.status === "COOLDOWN_429") {
+      pillHtml = "NEAR LIMIT"; pillState = "fault"; pillCls = "v9-qr-pill"; cardState = "warn";
+    } else if (levels.includes("low")) {
+      pillHtml = "LOW LEFT"; pillState = "warn"; pillCls = "v9-qr-pill"; cardState = "warn";
     }
     const pWkRst = formatCompactReset(pw);
-    const pWkClk = pw.has_active_reset ? ` (${computeClockPct(pw, 604800).toFixed(0)}% clk${pWkRst.clock ? ` · ${pWkRst.clock}` : ""})` : "";
+    const burn7dUsd = V9.fmtUsd(Number(gPool.burn_7d?.cost_usd || 0) + Number(pPool.burn_7d?.cost_usd || 0));
     const pFootText = partnerActive
-      ? (p5Used <= 0.05 ? `P 5h: Standby · 7d burn ${V9.fmtUsd((gPool.burn_7d?.cost_usd || 0) + (pPool.burn_7d?.cost_usd || 0))}` : `7d burn ${V9.fmtUsd((gPool.burn_7d?.cost_usd || 0) + (pPool.burn_7d?.cost_usd || 0))}`)
-      : `<span class="v9-p-standby-full">Partner: </span>Standby · 0% Wk${pw.has_active_reset ? ` · <span class="v9-pace-rst-pfx">rst </span>${V9.escHtml(pWkRst.short)}` : ""}`;
-    const pFootTip = partnerActive ? "Active quota window burn" : `Partner Pool Standby: 5h 0% · Wk 0% used${pWkClk}`;
+      ? (!showP5 ? `P 5h: 100% left · Standby · 7d burn ${burn7dUsd}` : `7d burn ${burn7dUsd}`)
+      : `<span class="v9-p-standby-full">Partner: </span>${V9.escHtml(fmtRemText(pWkRem))}% left<span class="v9-qr-standby-word"> · Standby</span>${pw.has_active_reset && pWkRst.short !== "Standby" && pWkRst.short !== "Active" ? ` · Wk ${V9.escHtml(pWkRst.short)}` : ""}`;
+    const pFootTip = partnerActive
+      ? "Active quota window burn"
+      : `Partner Pool Standby: 5h ${fmtRemText(p5Rem)}% left · Wk ${fmtRemText(pWkRem)}% left${pw.has_active_reset && pWkRst.short !== "Standby" && pWkRst.short !== "Active" ? ` (Wk resets in ${pWkRst.short}${pWkRst.clock ? ` · ${pWkRst.clock}` : ""})` : ""}`;
     return `
       <div class="va-kpi-gauge-card" data-state="${cardState}">
         <div class="va-kpi-gauge-head">
-          <span class="va-kpi-gauge-label">Quota Pacing</span>
+          <span class="va-kpi-gauge-label">Quota &amp; Resets</span>
           <span class="va-pill ${pillCls}" data-variant="status" data-state="${pillState}"${pillAria ? ` aria-label="${V9.escHtml(pillAria)}"` : ""}>${pillHtml}</span>
         </div>
-        <div class="v9-pace-list${(isStale || (isOff && !lq.is_fresh)) ? " is-dimmed" : ""}">
-          ${rows.map((r) => renderPaceRow(r)).join("")}
+        <div class="v9-qr-list${(isStale || (isOff && !lq.is_fresh)) ? " is-dimmed" : ""}">
+          ${rows.map((r) => renderQuotaWindowRow(r)).join("")}
         </div>
         <div class="va-kpi-gauge-stats v9-kpi-foot" title="${V9.escHtml(pFootTip)}"><span>${pFootText}</span></div>
       </div>`;
   }
 
-  V9.QuotaCards = { renderPoolSplitCard, renderQuotaPacingCard, derivePoolSplit, computeClockPct, classifyZone };
+  V9.QuotaCards = { renderPoolSplitCard, renderQuotaResetsCard, derivePoolSplit, resolveRemainingPct, classifyRemainingLevel, formatCompactReset, computeClockPct };
 })();

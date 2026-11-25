@@ -47,7 +47,7 @@
     const metric = (V9.state && V9.state.metric) || "steps";
     const qc = V9.QuotaCards;
     const splitCardHtml = qc && qc.renderPoolSplitCard ? qc.renderPoolSplitCard(b, metric) : "";
-    const pacingCardHtml = qc && qc.renderQuotaPacingCard ? qc.renderQuotaPacingCard(b) : "";
+    const quotaCardHtml = qc && qc.renderQuotaResetsCard ? qc.renderQuotaResetsCard(b) : "";
 
     grid.innerHTML = `
       <div class="va-kpi-gauge-card" data-state="nominal">
@@ -75,7 +75,7 @@
         </div>
       </div>
       ${splitCardHtml}
-      ${pacingCardHtml}`;
+      ${quotaCardHtml}`;
   }
 
   function sumLayerTokens(modelSeries, modelKey, fallback) {
@@ -185,6 +185,87 @@
     }
   }
 
+  const REGISTERED_SUBAGENT_ROLES = new Set([
+    "flash-scout", "argon-architect", "flash-surgeon", "hydrogen-surgeon",
+    "neon-surgeon", "argon-surgeon", "flash-auditor", "argon-sentinel",
+    "carbon-sentinel", "claude-specialist", "claude-sentinel", "pool-failover",
+  ]);
+
+  function isRegisteredRole(item) {
+    if (item && item.is_registered !== undefined) return Boolean(item.is_registered);
+    return REGISTERED_SUBAGENT_ROLES.has(String((item && item.role) || "").trim().toLowerCase());
+  }
+
+  function renderSubagentRow(entry, scaleMax, metric, SB, extraCls) {
+    const item = entry.item;
+    const col = V9.getSeriesColor(entry.origIdx);
+    const pct = Number(item.share_pct || 0);
+    const solo = V9.state.soloSubagent === item.role;
+    const cls = ["v9-row-click", "va-row-compact", extraCls || "", solo ? "is-solo" : (V9.state.soloSubagent ? "is-dim" : "")].filter(Boolean).join(" ");
+    const barHtml = SB && entry.sm
+      ? SB.renderSubagentWhisker(entry.sm, scaleMax, metric, col)
+      : `<span class="v9-inline-share"><span class="va-inline-bar" role="img" aria-label="${pct}%"><span class="va-inline-bar-fill" style="inline-size:${Math.min(100, pct)}%;background:${col}"></span></span><span class="v9-inline-pct">${pct.toFixed(1)}%</span></span>`;
+    const adjStatus = String(item.adjudication_status || (item.model_diverged ? "diverged" : "aligned")).toLowerCase();
+    const adjText = item.adjudication_text || item.dominant_model_label || item.dominant_model_key || "—";
+    const adjDesktop = `<span class="v9-adj-pill" data-adj="${V9.escHtml(adjStatus)}">${V9.escHtml(adjText)}</span>`;
+    const adjMobile = adjText && adjText !== "—" ? `<span class="v9-sub-adj-mobile" data-adj="${V9.escHtml(adjStatus)}">${V9.escHtml(adjText)}</span>` : "";
+    return `<tr class="${cls}" data-solo-sub="${V9.escHtml(item.role)}">
+      <td><span class="v9-swatch-dot" style="background:${col}"></span><span class="v9-cell-main">${V9.escHtml(item.role)}</span>${adjMobile}</td>
+      <td class="v9-col-secondary">${adjDesktop}</td>
+      <td class="v9-bar-cell">${barHtml}</td>
+      <td class="num">${entry.runs}</td>
+      <td class="num">${V9.fmtNum(item.tokens)}</td>
+      <td class="num v9-col-secondary v9-mono-num">${V9.fmtNum(entry.avgTok)}</td>
+      <td class="num v9-mono-num">${V9.fmtUsd(item.est_cost_usd || 0)}</td>
+    </tr>`;
+  }
+
+  function buildUnregSummaryRow(unregEntries, scaleMax, metric, fleetMeanTok, SB, isExpanded, isDim) {
+    let runs = 0, tokens = 0, steps = 0, cost = 0, sharePct = 0, over120Runs = 0, maxSteps = 0;
+    let min = Infinity, max = 0, latest = null, weightedSmSum = 0;
+    unregEntries.forEach((e) => {
+      const it = e.item || {};
+      const r = Number(e.runs || 0);
+      runs += r;
+      tokens += Number(it.tokens || 0);
+      steps += Number(it.steps || 0);
+      cost += Number(it.est_cost_usd || 0);
+      sharePct += Number(it.share_pct || 0);
+      over120Runs += Number(it.over_120_runs || 0);
+      const sm = e.sm;
+      maxSteps = Math.max(maxSteps, Number(it.max_steps_per_run || (sm && sm.maxSteps) || 0));
+      if (sm) {
+        weightedSmSum += Number(sm.avg || 0) * r;
+        if (Number.isFinite(sm.min)) min = Math.min(min, sm.min);
+        if (Number.isFinite(sm.max)) max = Math.max(max, sm.max);
+        if (sm.latest != null && Number.isFinite(sm.latest) && (latest === null || sm.latest > 0)) latest = sm.latest;
+      }
+    });
+    const avgTok = runs > 0 ? Math.round(tokens / runs) : 0;
+    const totMetric = metric === "cost" ? cost : (metric === "tokens" ? tokens : steps);
+    const avg = totMetric > 0 ? totMetric / Math.max(1, runs) : (runs > 0 ? weightedSmSum / runs : 0);
+    const burnRatio = fleetMeanTok > 0 ? avgTok / fleetMeanTok : 0;
+    const isStepCapOver = over120Runs > 0 || maxSteps > 120;
+    const aggSm = {
+      min: Number.isFinite(min) ? min : 0, avg, max, latest: latest != null ? latest : avg,
+      isStepCapOver, isHeavyBurn: !isStepCapOver && burnRatio > 2.5, over120Runs, maxSteps, burnRatio, runs,
+    };
+    const barHtml = SB && SB.renderSubagentWhisker
+      ? SB.renderSubagentWhisker(aggSm, scaleMax, metric, "var(--text-muted)")
+      : `<span class="v9-inline-share"><span class="va-inline-bar" role="img" aria-label="${sharePct.toFixed(1)}%"><span class="va-inline-bar-fill" style="inline-size:${Math.min(100, sharePct)}%;background:var(--text-muted)"></span></span><span class="v9-inline-pct">${sharePct.toFixed(1)}%</span></span>`;
+    const roleLbl = `${unregEntries.length} ${unregEntries.length === 1 ? "role" : "roles"}`;
+    const chev = '<svg class="v9-sub-chev" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M3 2l4 3-4 3z" fill="currentColor"/></svg>';
+    return `<tr class="va-row-compact v9-sub-rollup-row${isDim ? " is-dim" : ""}" data-sub-rollup="unregistered">
+      <td><button type="button" class="v9-sub-rollup-btn" aria-expanded="${isExpanded ? "true" : "false"}">${chev}<span>Unregistered / Ad-hoc (${roleLbl})</span></button></td>
+      <td class="v9-col-secondary"><span class="v9-adj-pill">Historical ad-hoc</span></td>
+      <td class="v9-bar-cell">${barHtml}</td>
+      <td class="num">${runs}</td>
+      <td class="num">${V9.fmtNum(tokens)}</td>
+      <td class="num v9-col-secondary v9-mono-num">${V9.fmtNum(avgTok)}</td>
+      <td class="num v9-mono-num">${V9.fmtUsd(cost)}</td>
+    </tr>`;
+  }
+
   function renderSubagentTable(b, rerenderFn) {
     const tbody = document.getElementById("v9SubagentTableBody");
     const subEl = document.getElementById("v9SubPlotSub");
@@ -194,7 +275,6 @@
     const totalRuns = list.reduce((s, r) => s + Number(r.runs || 0), 0);
     const totalTok = list.reduce((s, r) => s + Number(r.tokens || 0), 0);
     const fleetMeanTok = totalRuns > 0 ? totalTok / totalRuns : 0;
-    if (subEl) subEl.textContent = `${totalRuns} runs · ${list.length} roles`;
 
     const table = tbody.closest && tbody.closest("table");
     ensureSubagentTableHead(table);
@@ -225,41 +305,40 @@
           cost: (e) => Number(e.item.est_cost_usd || 0),
         })
       : enriched;
-
-    tbody.innerHTML = sorted.map((entry) => {
-      const item = entry.item;
-      const col = V9.getSeriesColor(entry.origIdx);
-      const pct = Number(item.share_pct || 0);
-      const runs = entry.runs;
-      const avgTok = entry.avgTok;
-      const solo = V9.state.soloSubagent === item.role;
-      const cls = ["v9-row-click", "va-row-compact", solo ? "is-solo" : (V9.state.soloSubagent ? "is-dim" : "")].filter(Boolean).join(" ");
-      const barHtml = SB && entry.sm
-        ? SB.renderSubagentWhisker(entry.sm, scaleMax, metric, col)
-        : `<span class="v9-inline-share"><span class="va-inline-bar" role="img" aria-label="${pct}%"><span class="va-inline-bar-fill" style="inline-size:${Math.min(100, pct)}%;background:${col}"></span></span><span class="v9-inline-pct">${pct.toFixed(1)}%</span></span>`;
-      const adjStatus = String(item.adjudication_status || (item.model_diverged ? "diverged" : "aligned")).toLowerCase();
-      const adjText = item.adjudication_text || item.dominant_model_label || item.dominant_model_key || "—";
-      const adjDesktop = `<span class="v9-adj-pill" data-adj="${V9.escHtml(adjStatus)}">${V9.escHtml(adjText)}</span>`;
-      const adjMobile = adjText && adjText !== "—" ? `<span class="v9-sub-adj-mobile" data-adj="${V9.escHtml(adjStatus)}">${V9.escHtml(adjText)}</span>` : "";
-      return `<tr class="${cls}" data-solo-sub="${V9.escHtml(item.role)}">
-        <td><span class="v9-swatch-dot" style="background:${col}"></span><span class="v9-cell-main">${V9.escHtml(item.role)}</span>${adjMobile}</td>
-        <td class="v9-col-secondary">${adjDesktop}</td>
-        <td class="v9-bar-cell">${barHtml}</td>
-        <td class="num">${runs}</td>
-        <td class="num">${V9.fmtNum(item.tokens)}</td>
-        <td class="num v9-col-secondary v9-mono-num">${V9.fmtNum(avgTok)}</td>
-        <td class="num v9-mono-num">${V9.fmtUsd(item.est_cost_usd || 0)}</td>
-      </tr>`;
-    }).join("");
+    const regEntries = [], unregEntries = [];
+    sorted.forEach((e) => (isRegisteredRole(e.item) ? regEntries : unregEntries).push(e));
+    if (subEl) {
+      subEl.textContent = unregEntries.length
+        ? `${totalRuns} runs · ${regEntries.length} canonical + ${unregEntries.length} ad-hoc`
+        : `${totalRuns} runs · ${regEntries.length} roles`;
+    }
+    const isExpanded = Boolean(V9.state.showUnregSubagents);
+    const hasSoloUnreg = Boolean(V9.state.soloSubagent && unregEntries.some((e) => e.item.role === V9.state.soloSubagent));
+    const rowsHtml = regEntries.map((entry) => renderSubagentRow(entry, scaleMax, metric, SB, ""));
+    if (unregEntries.length > 0) {
+      rowsHtml.push(buildUnregSummaryRow(unregEntries, scaleMax, metric, fleetMeanTok, SB, isExpanded, Boolean(V9.state.soloSubagent && !hasSoloUnreg)));
+      if (isExpanded) {
+        unregEntries.forEach((entry) => rowsHtml.push(renderSubagentRow(entry, scaleMax, metric, SB, "v9-sub-unreg-child")));
+      }
+    }
+    tbody.innerHTML = rowsHtml.join("");
     tbody.querySelectorAll("tr[data-solo-sub]").forEach((tr) => {
       tr.addEventListener("click", () => {
         const role = tr.getAttribute("data-solo-sub") || "";
         V9.state.soloSubagent = V9.state.soloSubagent === role ? "" : role;
-        rerenderFn();
+        if (typeof rerenderFn === "function") rerenderFn();
+      });
+    });
+    tbody.querySelectorAll(".v9-sub-rollup-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const hadFocus = typeof document !== "undefined" && document.activeElement === btn;
+        V9.state.showUnregSubagents = !V9.state.showUnregSubagents;
+        renderSubagentTable(V9.state.bundle || b, rerenderFn);
+        if (hadFocus) tbody.querySelector?.(".v9-sub-rollup-btn")?.focus?.();
       });
     });
     if (TS && table) {
-      TS.bindSortHeaders(table, "subagents", () => renderSubagentTable(V9.state.bundle || b, rerenderFn), () => sorted.length);
+      TS.bindSortHeaders(table, "subagents", () => renderSubagentTable(V9.state.bundle || b, rerenderFn), () => regEntries.length);
     }
   }
 

@@ -188,7 +188,7 @@ def sanitize_demo_quota_and_pools(qp: dict[str, Any] | None, models: list[dict[s
     from agy_nexus.model_pricing import get_pool_target_split
 
     raw_src = qp if isinstance(qp, dict) else {}
-    src = {k: raw_src[k] for k in ("active_tier_profile", "partner_weekly_pacing") if k in raw_src}
+    src = {k: raw_src[k] for k in ("active_tier_profile", "partner_weekly_window") if k in raw_src}
     tier_prof = str(src.get("active_tier_profile") or "ultra-20x")
     src["tier_target_split"] = get_pool_target_split(tier_prof)
     if isinstance(raw_src.get("active_mainchat_model"), dict):

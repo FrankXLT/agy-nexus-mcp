@@ -336,7 +336,7 @@ def unwrap_staged_handoff_markdown(staged_text: str) -> str:
     txt = re.sub(r"^(?:<!--[^\n]*-->\s*\n)+", "", txt).lstrip()
     txt = re.sub(r"^>\s*\[!IMPORTANT\]\s*\n(?:>[^\n]*\n)+\s*", "", txt).lstrip()
     txt = re.sub(r"^## Prior Session Baton[\s\S]*?\n---\s*\n+", "", txt).lstrip()
-    txt = re.sub(r"\n---\s*\n+## Mandatory 4-Step Execution Lifecycle[\s\S]*$", "", txt).rstrip()
+    txt = re.sub(r"\n---\s*\n+## (?:Mandatory 4-Step Execution Lifecycle|Surgical Fast-Path Lifecycle)[\s\S]*$", "", txt).rstrip()
     txt = re.sub(r"\n### Mandatory Modular Architecture[\s\S]*$", "", txt).rstrip()
     txt = re.sub(r"\n---\s*\n+## Antigravity Skill, Agent Role & Customization Scope Directive[\s\S]*$", "", txt).rstrip()
     return txt.strip()

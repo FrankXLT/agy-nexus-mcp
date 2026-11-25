@@ -193,7 +193,7 @@ function renderAllTimePlots(b) {
 
 function renderDashboard(b) {
   const q = b.quota_and_pools || {}, pools = q.pools || {};
-  const gPool = pools.google || q.google_pool || {}, pPace = q.partner_weekly_pacing || q.partner_pool || {};
+  const gPool = pools.google || q.google_pool || {}, pWin = q.partner_weekly_window || q.partner_pool || {};
   const kpis = b.kpis || b.summary || {}, w = b.wire_telemetry || {};
   const periodObj = typeof b.period === "object" ? b.period : { key: b.period || "last_90d", active_days: kpis.active_days || 0 };
 
@@ -219,16 +219,16 @@ function renderDashboard(b) {
   if (ftrG) ftrG.textContent = googleTot.toFixed(1) + "%";
   if (ftrP) ftrP.textContent = partnerTot.toFixed(1) + "%";
 
-  const ceilPct = pPace.recommended_cumulative_ceiling_pct ?? 28.6;
+  const ceilPct = pWin.recommended_cumulative_ceiling_pct ?? 28.6;
   const wRem = Math.max(0, 100 - partnerTot), idealRem = Math.max(0, Number((100 - ceilPct).toFixed(1)));
-  const dayIdx = pPace.day_of_week_index || 2;
+  const dayIdx = pWin.day_of_week_index || 2;
   document.getElementById("kpiResetDays").textContent = Math.max(1, 8 - dayIdx) + "d left";
   document.getElementById("kpiPartnerRem").textContent = wRem.toFixed(1) + "%";
-  document.getElementById("kpiPartnerPaceBadge").textContent = (pools.claude && pools.claude.status === "HEALTHY") ? "ON PACE" : "COOLDOWN";
+  document.getElementById("kpiPartnerPaceBadge").textContent = (pools.claude && pools.claude.status === "HEALTHY") ? "OK" : "COOLDOWN";
   document.getElementById("kpiPartnerBar").style.width = Math.min(100, wRem) + "%";
   document.getElementById("kpiIdealMarker").style.left = Math.min(100, idealRem) + "%";
   document.getElementById("kpiIdealRem").textContent = idealRem.toFixed(1) + "%";
-  document.getElementById("kpiFiveHour").textContent = (pPace.daily_target_pct ?? 14.3).toFixed(1) + "%/d";
+  document.getElementById("kpiFiveHour").textContent = (pWin.daily_target_pct ?? 14.3).toFixed(1) + "%/d";
 
   const totSteps = Number(kpis.window_steps ?? kpis.period_steps ?? 0);
   const totTools = Number(kpis.window_tool_calls ?? kpis.period_tool_calls ?? 0);

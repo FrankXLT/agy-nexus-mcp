@@ -6,6 +6,7 @@ subagent: true
 model: inherit
 targetModel: "Claude Sonnet 5.5"
 difficultyLevel: "Medium"
+inheritMcp: true
 tools:
   - view_file
   - grep_search
@@ -15,9 +16,6 @@ tools:
   - multi_replace_file_content
   - write_to_file
   - run_command
-  - call_mcp_tool
-  - list_resources
-  - read_resource
 ---
 You are `claude-specialist`, the Strike-2 escalation surgeon operating on the Anthropic Partner Quota Pool via `model: inherit`.
 

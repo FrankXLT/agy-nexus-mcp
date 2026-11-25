@@ -83,7 +83,7 @@ def test_v408_server_json_manifest_and_github_oidc_workflow() -> None:
 
 
 def test_v408_readme_pyproject_workflows_agent_parity_and_budgets() -> None:
-    """Verify README mcp-name & v4.0.9 headings, pyproject URLs, WF-07, 12/12 agent sync, and <=500L/<=100L budgets."""
+    """Verify README mcp-name & v4.0.9 headings, pyproject URLs, WF-07, 13/13 agent sync, and <=500L/<=100L budgets."""
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     assert "<!-- mcp-name: io.github.FrankXLT/agy-nexus-mcp -->" in readme
     assert "ghcr.io/frankxlt/agy-nexus-mcp:4.0.9" in readme and "--stdio" in readme
@@ -102,15 +102,15 @@ def test_v408_readme_pyproject_workflows_agent_parity_and_budgets() -> None:
         assert banned not in wf_doc.lower(), f"Banned term '{banned}' in docs/WORKFLOWS.md"
 
     agent_files = [p for p in (REPO_ROOT / "agents").glob("*.md") if p.name.upper() != "README.MD"]
-    assert len(agent_files) == 12
+    assert len(agent_files) == 13
     sync_proc = subprocess.run(
         [sys.executable, str(REPO_ROOT / "scripts" / "sync_agents.py"), "--check"],
         cwd=str(REPO_ROOT), capture_output=True, text=True, check=False,
     )
     assert sync_proc.returncode == 0, sync_proc.stdout + sync_proc.stderr
     global_agents = Path.home() / ".gemini" / "config" / "agents"
-    if global_agents.is_dir() and len([p for p in global_agents.glob("*.md") if p.name.upper() != "README.MD"]) >= 12:
-        assert "12/12 synced" in sync_proc.stdout
+    if global_agents.is_dir() and len([p for p in global_agents.glob("*.md") if p.name.upper() != "README.MD"]) >= 13:
+        assert "13/13 synced" in sync_proc.stdout
 
     v408_strict_modules = {
         "server.py", "hygiene.py", "tools_workspace.py", "ascii_models.py",
@@ -242,7 +242,7 @@ def test_v408_stdio_subprocess_zero_stdout_noise_and_deadbolt(tmp_path: Path) ->
     assert {"list_models_and_agents", "list_saved_sessions", "inspect_visual_artifacts", "send_handoff_and_resume"} <= {t["name"] for t in tools}
 
     models_text = "\n".join(part.get("text", "") for part in parsed[3]["result"]["content"])
-    assert "SUBAGENT ROSTER (12)" in models_text and "Gemini 4 Carbon" in models_text
+    assert "SUBAGENT ROSTER (13)" in models_text and "Gemini 4 Carbon" in models_text
 
     locked_text = "\n".join(part.get("text", "") for part in parsed[4]["result"]["content"])
     assert '"locked": true' in locked_text and "Security Deadbolt Active" in locked_text

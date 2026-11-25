@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-agy-nexus-mcp — Wire Telemetry Ledger, Quota Pool Pacing & Transcript Mtime Scanner
+agy-nexus-mcp — Wire Telemetry Ledger, Quota & Resets & Transcript Mtime Scanner
 """
 
 from __future__ import annotations
@@ -236,7 +236,7 @@ def _read_json_or_text(path: Path, is_json: bool = False) -> Any:
         return None
 
 def get_live_quota_and_pool_status(data_or_config_dir: Path, config_dir: Path | None = None, *, bg_dir: Path | None = None) -> dict[str, Any]:
-    """Read Dual-Pool Quota Pacing, active Main-Chat model, 429 cooldowns, and live LS/snapshot reset buckets."""
+    """Read Dual-Pool Quota & Resets, active Main-Chat model, 429 cooldowns, and live LS/snapshot reset buckets."""
     from agy_nexus.ls_quota_probe import enrich_quota_and_pools
 
     agy_config_dir = config_dir if config_dir is not None else data_or_config_dir
@@ -259,7 +259,7 @@ def get_live_quota_and_pool_status(data_or_config_dir: Path, config_dir: Path | 
     return {
         "active_tier_profile": active_profile, "active_mainchat_model": get_active_mainchat_model(data_dir),
         "pools": pools_out, "live_quota": live_quota,
-        "partner_weekly_pacing": {"day_of_week_index": day_idx, "daily_target_pct": 14.28, "recommended_cumulative_ceiling_pct": round(min(100.0, day_idx * 14.28), 1)},
+        "partner_weekly_window": {"day_of_week_index": day_idx, "daily_target_pct": 14.28, "recommended_cumulative_ceiling_pct": round(min(100.0, day_idx * 14.28), 1)},
         "tier_target_split": get_pool_target_split(active_profile), "target_model_allocation": MODEL_TARGET_ALLOCATION.get(active_profile, MODEL_TARGET_ALLOCATION["ultra-20x"]),
         "recent_quota_events": (state_data.get("events") or [])[-8:],
     }
