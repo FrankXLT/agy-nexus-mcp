@@ -46,6 +46,11 @@
     const raw = snap.bundles[spec.key] || snap.bundles.current_month || Object.values(snap.bundles)[0];
     if (!raw) return null;
     const bundle = cloneJson(raw);
+    const pools = bundle.quota_and_pools && bundle.quota_and_pools.pools ? Object.values(bundle.quota_and_pools.pools) : [];
+    pools.forEach((p) => ["bucket_5h", "bucket_weekly"].forEach((bk) => {
+      const bkt = p && p[bk];
+      if (bkt && bkt.has_active_reset && bkt.offset_seconds) bkt.reset_time = new Date(Date.now() + Number(bkt.offset_seconds) * 1000).toISOString();
+    }));
     if (!bundle.code_health && snap.code_health) bundle.code_health = cloneJson(snap.code_health);
     return bundle;
   }

@@ -403,7 +403,9 @@ def _build_showcase_session_tree_ascii(dp: ShowcaseDepersonalizer) -> str:
 
 
 def _trim_bundle_for_snapshot(b: dict[str, Any], ascii_tree_str: str) -> dict[str, Any]:
+    from build_github_showcase import sanitize_demo_quota_and_pools
     out = {k: b.get(k) for k in ("period", "kpis", "quota_and_pools", "model_usage_vs_target", "subagent_role_breakdown", "subagent_list", "all_workspaces", "top_workspaces", "velocity_series", "model_series", "subagent_series", "project_hierarchy", "heatmap_series", "wire_telemetry", "hourly_whiskers", "billing_comparison", "model_drift_status")}
+    out["quota_and_pools"] = sanitize_demo_quota_and_pools(out.get("quota_and_pools"), out.get("model_usage_vs_target"))
     out.update({"server": b.get("server", "agy-nexus-mcp"), "version": __version__, "routing_telemetry": {"active_slots": 3, "pinned_calls": 24, "auto_resolved_calls": 11}, "project_session_tree": {"ascii_tree": ascii_tree_str}})
     out["backup_321"] = {k: v for k, v in (b.get("backup_321") or {}).items() if k in ("ok", "short_sha", "shas_match", "age", "bundle_size_kb", "status_label")}
     return out

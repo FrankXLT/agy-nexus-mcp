@@ -21,9 +21,11 @@ from agy_nexus.cost_ledger import (
 )
 from agy_nexus.model_pricing import (
     build_billing_comparison,
+    compute_step_cost_micros,
     get_canonical_model_keys,
     get_model_specs_map,
     resolve_rate_epoch,
+    split_estimated_tokens,
 )
 from agy_nexus.project_stats import (
     build_fleet_project_index,
@@ -47,12 +49,14 @@ from agy_nexus.stats_aggregator import (
 from agy_nexus.stats_metrics import (
     build_model_comparison_rows,
     build_subagent_list_rows,
+    compute_pool_window_burn,
     compute_trailing_24h_slots,
 )
 from agy_nexus.stats_series import (
     MODEL_SHORT_LABELS,
     build_series_and_project_hierarchy,
     load_projects_meta,
+    resolve_root_conversation,
     resolve_subagent_model,
 )
 from agy_nexus.telemetry_scanner import (
@@ -231,6 +235,28 @@ def _build_heatmap_and_tables(
     }
 
 
+def _attach_pool_burn_and_shares(
+    quota_info: dict[str, Any], full_conv_cache: dict[str, dict[str, Any]], full_db_convs: dict[str, dict[str, Any]],
+    model_comp: list[dict[str, Any]], now_loc: datetime, parent_model_map: dict[str, str],
+    main_mk: str, main_switch_date: str, agent_target_map: dict[str, str], bg_dir: Path,
+) -> None:
+    specs = get_model_specs_map()
+    burn_map = compute_pool_window_burn(
+        full_conv_cache, full_db_convs, quota_info, now_loc,
+        specs=specs, classify_fn=classify_model_key, compute_cost_fn=compute_step_cost_micros,
+        split_fn=split_estimated_tokens, resolve_root_fn=resolve_root_conversation,
+        resolve_subagent_fn=resolve_subagent_model, parent_model_map=parent_model_map,
+        main_mk=main_mk, main_switch_date=main_switch_date, agent_target_map=agent_target_map,
+        display_tz=DISPLAY_TZ, bg_dir=bg_dir,
+    )
+    g_shr = round(sum(float(m.get("actual_pct", 0.0)) for m in model_comp if str(m.get("pool_key") or "").lower() == "google"), 1)
+    pools = quota_info.setdefault("pools", {})
+    for pk, shr in (("google", g_shr), ("claude", round(max(0.0, 100.0 - g_shr), 1))):
+        po = pools.setdefault(pk, {})
+        po["call_share_pct"] = shr
+        po.update(burn_map.get(pk) or {})
+
+
 def build_nexus_stats_bundle(
     brain_dir: Path | None = None, db_file: Path | None = None, agy_config_dir: Path | None = None,
     bg_dir: Path | None = None, period: str = "last_90d", *, style: str = "default",
@@ -249,7 +275,7 @@ def build_nexus_stats_bundle(
 
     start_d, end_d, p_label, pk, tf, hm, anchor = _resolve_window_bounds(period, timeframe, horizon_mode, offset, anchor_date, today)
     s_iso, e_iso = start_d.strftime("%Y-%m-%d"), end_d.strftime("%Y-%m-%d")
-    quota_info = get_live_quota_and_pool_status(base_data, agy_config_dir)
+    quota_info = get_live_quota_and_pool_status(base_data, agy_config_dir, bg_dir=bg_dir)
     main_info = quota_info.get("active_mainchat_model") or {}
     main_mk, main_switch_date = str(main_info.get("model_key") or "argon"), str(main_info.get("state_updated_date") or "")
 
@@ -292,6 +318,7 @@ def build_nexus_stats_bundle(
         parent_model_map=parent_model_map, main_mk=main_mk, main_switch_date=main_switch_date,
         agent_target_map=agent_target_map, bg_dir=bg_dir, agent_role_specs=agent_role_specs,
     )
+    _attach_pool_burn_and_shares(quota_info, full_conv_cache, full_db_convs, tbl["model_comp"], now_loc, parent_model_map, main_mk, main_switch_date, agent_target_map, bg_dir)
     heatmap_series = tbl["heatmap_series"]
     chart_days = [x for x in heatmap_series if not x.get("future") and s_iso <= x["date"] <= e_iso]
     if tf == "year":

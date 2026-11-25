@@ -165,7 +165,7 @@ def _dispatch_models_action(style_clean: str) -> str:
             "Sequential read-only follow-up calls are permitted (one call at a time, never in parallel). "
             + REPLY_PROMPT_GUIDANCE
         ),
-        "quota_and_pools": get_live_quota_and_pool_status(AGY_DATA_DIR, AGY_CONFIG_DIR),
+        "quota_and_pools": get_live_quota_and_pool_status(AGY_DATA_DIR, AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR),
         "model_drift_status": drift,
         "catalog_sync": get_catalog_sync_status(data_dir=AGY_DATA_DIR, bg_dir=AGY_BG_DIR, allow_network=False),
         "unmapped_models": unmapped,
@@ -299,14 +299,14 @@ def manage_background_run(
             "ok": True, "action": "telemetry",
             "assistant_guidance": f"Wire telemetry and quota summary retrieved below. Sequential read-only follow-up calls are permitted (one call at a time, never in parallel). {REPLY_PROMPT_GUIDANCE}",
             "wire_telemetry": get_wire_telemetry_summary(AGY_BG_DIR, limit=25),
-            "quota_and_pools": get_live_quota_and_pool_status(AGY_DATA_DIR, AGY_CONFIG_DIR),
+            "quota_and_pools": get_live_quota_and_pool_status(AGY_DATA_DIR, AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR),
         }, serializer=_compact_json)
     return _handle_job_status_or_tail(action_clean, job_id, tail_lines, period)
 def _build_models_ascii_response() -> str:
     """Build deadbolt-safe <=76-col 8-model, subagent, pricing & drift report payload."""
     from agy_nexus.ascii_models import render_ascii_models_status
 
-    quota_status = get_live_quota_and_pool_status(AGY_DATA_DIR, AGY_CONFIG_DIR)
+    quota_status = get_live_quota_and_pool_status(AGY_DATA_DIR, AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR)
     active_profile = quota_status.get("active_tier_profile", quota_status.get("active_profile", "ultra-20x"))
     return compact_payload_to_wire_budget({
         "ok": True,
@@ -440,7 +440,7 @@ def list_models_and_agents(
     plugin_bundles = collect_plugin_bundles_summary(AGY_CONFIG_DIR) if include_skills else []
     rules_inv = collect_rules_inventory(AGY_CONFIG_DIR, ws_path) if include_rules else {}
     session_scope = evaluate_session_customization_scope(ws_str, AGY_CONFIG_DIR, AGY_GITLAB_DIR)
-    quota_status = get_live_quota_and_pool_status(AGY_DATA_DIR, AGY_CONFIG_DIR)
+    quota_status = get_live_quota_and_pool_status(AGY_DATA_DIR, AGY_CONFIG_DIR, bg_dir=AGY_BG_DIR)
     inspected_item = _inspect_customization_item(inspect_name, ws_path) if inspect_name.strip() else {}
     active_profile = quota_status.get("active_tier_profile", quota_status.get("active_profile", "ultra-20x"))
     runtime_audit = _collect_runtime_model_audit()

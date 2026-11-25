@@ -106,6 +106,55 @@ def _build_rich_model_and_tables(
     return lines
 
 
+def _fmt_reset_short(bucket: dict[str, Any] | None, now_ep: float) -> str:
+    if not isinstance(bucket, dict) or not bucket.get("has_active_reset"):
+        return "idle"
+    rt_ep = bucket.get("reset_epoch")
+    if not isinstance(rt_ep, (int, float)):
+        return "actv"
+    rem_s = max(0, int(round(float(rt_ep) - now_ep)))
+    if rem_s <= 60:
+        return "soon"
+    if rem_s < 3600:
+        return f"{rem_s // 60}m"
+    if rem_s < 86400:
+        return f"{rem_s // 3600}h{(rem_s % 3600) // 60:02d}"
+    return f"{rem_s // 86400}d{(rem_s % 86400) // 3600}h"
+
+
+def _format_rich_quota_lines(quota: dict[str, Any], models: list[dict[str, Any]], now_ep: float) -> list[str]:
+    pools = quota.get("pools") or {}
+    g_p, c_p = pools.get("google") or {}, pools.get("claude") or {}
+    g_429 = int(g_p.get("total_429_count", 0) or 0)
+    g_shr = sum(float(m.get("actual_pct", 0.0)) for m in models if is_google_pool_model(m))
+    p_shr = max(0.0, 100.0 - g_shr)
+    lq = quota.get("live_quota") or {}
+    g5, gw = g_p.get("bucket_5h") or {}, g_p.get("bucket_weekly") or {}
+    c5, cw = c_p.get("bucket_5h") or {}, c_p.get("bucket_weekly") or {}
+    if lq.get("is_fresh") and (g5 or gw):
+        g5_u, gw_u = float(g5.get("used_pct", 0.0)), float(gw.get("used_pct", 0.0))
+        c5_u, cw_u = float(c5.get("used_pct", 0.0)), float(cw.get("used_pct", 0.0))
+        g_bar = build_quota_bar_with_pin(g5_u, gw_u, 7)
+        p_bar = build_quota_bar_with_pin(c5_u, cw_u, 7)
+        return [
+            f"G 5h:{g5_u:>3.0f}%u [{g_bar}] Wk:{gw_u:>2.0f}%u {_fmt_reset_short(g5, now_ep):>4}"[:35],
+            f"P 5h:{c5_u:>3.0f}%u [{p_bar}] Wk:{cw_u:>2.0f}%u {_fmt_reset_short(c5, now_ep):>4}"[:35],
+            f"429s:{g_429} | Shr G:{g_shr:.0f}% | WkRst:{_fmt_reset_short(gw, now_ep)}"[:35],
+        ]
+    b5g, b7g = g_p.get("burn_5h") or {}, g_p.get("burn_7d") or {}
+    b5c, b7c = c_p.get("burn_5h") or {}, c_p.get("burn_7d") or {}
+    state_lbl = "IDE Off" if lq.get("state") == "IDE_OFFLINE" else "No LS"
+    tok_5h = fmt_tok(int(b5g.get("tokens", 0)) + int(b5c.get("tokens", 0)), False)
+    usd_5h = format_usd(float(b5g.get("cost_usd", 0.0) or 0.0) + float(b5c.get("cost_usd", 0.0) or 0.0))
+    usd_7d = format_usd(float(b7g.get("cost_usd", 0.0) or 0.0) + float(b7c.get("cost_usd", 0.0) or 0.0))
+    g_bar, p_bar = build_quota_bar_with_pin(g_shr, 90.0, 9), build_quota_bar_with_pin(p_shr, 10.0, 9)
+    return [
+        f"G-20x:{g_shr:>4.0f}% [{g_bar}] {state_lbl}"[:35],
+        f"P-1x :{p_shr:>4.0f}% [{p_bar}] 5h:{tok_5h}"[:35],
+        f"429s:{g_429} | 5h:{usd_5h} | 7d:{usd_7d}"[:35],
+    ]
+
+
 def render_ascii_rich(bundle: dict[str, Any]) -> str:
     """Render Rich 76-Column Box-Drawn TUI Telemetry Rig."""
     kpis, period = bundle.get("kpis") or {}, bundle.get("period") or {}
@@ -125,12 +174,8 @@ def render_ascii_rich(bundle: dict[str, Any]) -> str:
     fore_cost = float(kpis.get("forecast_cost_usd", tot_cost) or tot_cost)
     cost_d = float(kpis.get("cost_per_day_usd", tot_cost / act_days) or 0.0)
 
-    g_pct = sum(float(m.get("actual_pct", 0.0)) for m in models if is_google_pool_model(m))
-    p_used = max(0.0, 100.0 - g_pct)
-    p_rem = max(0.0, 100.0 - p_used)
-    g_bar, p_bar = build_quota_bar_with_pin(g_pct, 90.0, 10), build_quota_bar_with_pin(p_used, 10.0, 10)
-    g_429 = int(((quota.get("pools") or {}).get("google") or {}).get("total_429_count", 0))
-    wk_left = round(max(0.0, 100.0 - float((quota.get("partner_weekly_pacing") or {}).get("recommended_cumulative_ceiling_pct", 14.3))), 1)
+    import time as _time
+    q_lines = _format_rich_quota_lines(quota, models, _time.time())
     w_calls, w_avg, w_max = int(wire.get("total_recorded_calls", 0)), float(wire.get("avg_kb", 0.0)), float(wire.get("max_kb", 0.0))
     w_tok, w_pct = fmt_tok(int(wire.get("total_mcp_tokens", 0)), False), int(round(float(wire.get("budget_compliance_pct", 100.0))))
     by_prod = wire.get("by_product") or {}
@@ -149,10 +194,10 @@ def render_ascii_rich(bundle: dict[str, Any]) -> str:
         _box_full(f"▄▀█ █▀▀ █▄█ ▄▄ █▄░█ █▀▀ ▀▄▀ █░█ █▀   v{__version__} // RICH TELEMETRY RIG"),
         _box_full(f"█▀█ █▄█ ░█░ ░░ █░▀█ ██▄ █░█ █▄█ ▄█   WINDOW: {cal_days}d ({e_dt} ◄── {s_dt})"),
         "╠════════════════════════════════════╦═════════════════════════════════════╣",
-        _box_split("QUOTA POOLS & 429 COOLDOWNS", "STEP & TOOL VELOCITY"),
-        _box_split(f"G-20x: {g_pct:>5.1f}% [{g_bar}] OK", f"Total : {tot_steps:,} steps | {tot_tools:,} tools"),
-        _box_split(f"P-1x : {p_rem:>5.1f}% [{p_bar}] OK", f"Active: {tot_steps // act_days:,} s/act-d ({act_days}d active)"),
-        _box_split(f"429s : {g_429} events | {wk_left:.1f}% Wk Left", f"Calend: {tot_steps // cal_days:,} s/cal-d ({tot_chats}c, {tot_subs}r)"),
+        _box_split("QUOTA USED vs RESET WINDOWS", "STEP & TOOL VELOCITY"),
+        _box_split(q_lines[0], f"Total : {tot_steps:,} steps | {tot_tools:,} tools"),
+        _box_split(q_lines[1], f"Active: {tot_steps // act_days:,} s/act-d ({act_days}d active)"),
+        _box_split(q_lines[2], f"Calend: {tot_steps // cal_days:,} s/cal-d ({tot_chats}c, {tot_subs}r)"),
         "╠════════════════════════════════════╬═════════════════════════════════════╣",
         _box_split("TOKEN BURN & API COST LEDGER", "MCP WIRE & CLIENT SURFACES"),
         _box_split(f"Total : {fmt_tok(tot_tok)} | ${tot_cost:,.2f}", f"Wire  : {w_pct}% <20KB (avg {w_avg:.1f}/{w_max:.1f}KB)"),

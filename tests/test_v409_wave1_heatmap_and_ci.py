@@ -36,11 +36,12 @@ def test_v409_wave1_theme_tokens_and_heatmap_css_budgets() -> None:
     for rule in (
         ".v9-heat-row { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; }",
         ".v9-heat-cell.is-selected",
-        ".v9-heat-cell.has-month-left::before",
-        ".v9-heat-cell.has-month-top::after",
+        ".v9-heat-divider-svg",
+        ".v9-heat-divider-path",
+        ".v9-heat-cell.is-future { visibility: hidden;",
         ".v9-heat-inspect-swatch",
         "forced-colors: active",
-        "button.v9-heat-cell { min-block-size: 14px;",
+        "min-block-size: var(--v9-heat-cell);",
     ):
         assert rule in an_css, f"Missing CSS rule: {rule}"
 
@@ -181,9 +182,10 @@ HM.renderHeatmap({ period: mtdPeriod, heatmap_series: series });
 const nov1 = cells.find((c) => c.getAttribute("data-date") === "2026-11-01");
 const nov2 = cells.find((c) => c.getAttribute("data-date") === "2026-11-02");
 const oct31 = cells.find((c) => c.getAttribute("data-date") === "2026-10-31");
-assert.ok(nov1.classList.contains("has-month-left") && nov1.classList.contains("has-month-top") && nov1.classList.contains("is-row-bot"));
-assert.ok(nov2.classList.contains("has-month-left") && nov2.classList.contains("is-row-top"));
-assert.ok(!oct31.classList.contains("has-month-left") && !oct31.classList.contains("has-month-top"));
+assert.ok(nov1 && nov2 && oct31);
+assert.ok(hostEl.innerHTML.includes('class="v9-heat-divider-svg"') && hostEl.innerHTML.includes('class="v9-heat-divider-path" d="'));
+assert.ok(!hostEl.innerHTML.includes("has-month-left") && !hostEl.innerHTML.includes("has-month-top"));
+assert.ok(!hostEl.innerHTML.includes("Upcoming calendar day"));
 
 const nov24 = cells.find((c) => c.getAttribute("data-date") === "2026-11-24");
 assert.ok(nov24.classList.contains("is-selected") && nov24.getAttribute("aria-selected") === "true");

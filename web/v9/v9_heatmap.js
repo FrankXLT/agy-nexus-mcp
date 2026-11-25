@@ -22,24 +22,118 @@
 
   function buildMonthLabels(cols) {
     const out = new Array(cols.length).fill("");
+    let lastMonthKey = "";
     let lastShownCol = -4;
     cols.forEach((week, colIdx) => {
-      const firstOfMonth = week.find((d) => d && d.date && String(d.date).endsWith("-01"));
-      const targetDay = firstOfMonth || (colIdx === 0 ? week.find((d) => d && d.date) : null);
-      if (!targetDay) return;
-      const m = Number(String(targetDay.date).slice(5, 7)) - 1;
-      const lbl = MONTHS[m] || "";
+      const mon = week[0] && week[0].date ? week[0] : week.find((d) => d && d.date);
+      if (!mon || !mon.date || mon.future) return;
+      const mKey = String(mon.date).slice(0, 7);
+      if (mKey === lastMonthKey) return;
+      lastMonthKey = mKey;
+      const lbl = MONTHS[Number(mKey.slice(5, 7)) - 1] || "";
       if (!lbl) return;
-      if (colIdx > 0 && colIdx < 3 && lastShownCol === 0 && out[0]) {
+      if (colIdx > 0 && lastShownCol === 0 && colIdx < 2) {
         out[0] = "";
         out[colIdx] = lbl;
         lastShownCol = colIdx;
-      } else if (colIdx - lastShownCol >= 3 && (cols.length < 2 || cols.length - colIdx >= 2)) {
+      } else if (colIdx - lastShownCol >= 2 && (cols.length < 3 || cols.length - colIdx >= 2)) {
         out[colIdx] = lbl;
         lastShownCol = colIdx;
       }
     });
     return out;
+  }
+
+  function resolveGridGeometry(colsCount, host) {
+    const count = Math.max(1, Number(colsCount || 52));
+    const vw = Number(window.innerWidth || 1280);
+    const isNarrow = vw <= 639;
+    const gapPx = isNarrow ? 4 : 5;
+    const dowReserve = isNarrow ? 22 : 36;
+    const rawHostW = host && Number(host.clientWidth) > 0 ? Number(host.clientWidth) : 0;
+    const fallbackW = isNarrow ? Math.max(280, vw - 30) : Math.min(1380, Math.max(320, vw - 56));
+    const availGridW = Math.max(160, (rawHostW || fallbackW) - dowReserve);
+    const rawCell = Math.floor((availGridW - Math.max(0, count - 1) * gapPx) / count);
+    const cellPx = Math.max(8, Math.min(12, rawCell));
+    const pitch = cellPx + gapPx;
+    const gridW = count * cellPx + Math.max(0, count - 1) * gapPx;
+    const gridH = 7 * cellPx + 6 * gapPx;
+    return { cellPx, gapPx, pitch, gridW, gridH };
+  }
+
+  function stitchSegmentsToPath(segments) {
+    const fmt = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, ""));
+    const key = (pt) => `${pt[0].toFixed(2)},${pt[1].toFixed(2)}`;
+    const used = new Array(segments.length).fill(false);
+    const adj = new Map();
+    segments.forEach((seg, idx) => {
+      [seg[0], seg[1]].forEach((pt) => {
+        const k = key(pt);
+        if (!adj.has(k)) adj.set(k, []);
+        adj.get(k).push(idx);
+      });
+    });
+    const nextAt = (pt) => (adj.get(key(pt)) || []).find((i) => !used[i]);
+    const parts = [];
+    for (let i = 0; i < segments.length; i += 1) {
+      if (used[i]) continue;
+      used[i] = true;
+      const pts = [segments[i][0], segments[i][1]];
+      let n;
+      while ((n = nextAt(pts[pts.length - 1])) !== undefined) {
+        used[n] = true;
+        const [a, b] = segments[n];
+        pts.push(key(a) === key(pts[pts.length - 1]) ? b : a);
+      }
+      while ((n = nextAt(pts[0])) !== undefined) {
+        used[n] = true;
+        const [a, b] = segments[n];
+        pts.unshift(key(a) === key(pts[0]) ? b : a);
+      }
+      parts.push(`M${fmt(pts[0][0])} ${fmt(pts[0][1])}` + pts.slice(1).map((p) => `L${fmt(p[0])} ${fmt(p[1])}`).join(""));
+    }
+    return parts.join("");
+  }
+
+  function buildMonthDividerPath(cols, cellPx, gapPx) {
+    const C = Array.isArray(cols) ? cols.length : 0;
+    if (!C) return "";
+    const pitch = cellPx + gapPx;
+    const gridW = C * cellPx + Math.max(0, C - 1) * gapPx;
+    const gridH = 7 * cellPx + 6 * gapPx;
+    const m = (c, r) => {
+      if (c < 0 || c >= C || r < 0 || r >= 7) return "";
+      const d = cols[c][r];
+      return d && !d.future && d.date ? String(d.date).slice(0, 7) : "";
+    };
+    const vOn = (c, r) => c > 0 && c < C && Boolean(m(c - 1, r) && m(c, r) && m(c - 1, r) !== m(c, r));
+    const hOn = (c, r) => r > 0 && r < 7 && Boolean(m(c, r - 1) && m(c, r) && m(c, r - 1) !== m(c, r));
+    const segs = [];
+    for (let c = 1; c < C; c += 1) {
+      for (let r = 0; r < 7; r += 1) {
+        if (!vOn(c, r)) continue;
+        let r1 = r;
+        while (r1 + 1 < 7 && vOn(c, r1 + 1)) r1 += 1;
+        const vx = c * pitch - gapPx / 2;
+        const y0 = (hOn(c - 1, r) || hOn(c, r)) ? r * pitch - gapPx / 2 : (r === 0 ? 0 : r * pitch);
+        const y1 = (r1 < 6 && (hOn(c - 1, r1 + 1) || hOn(c, r1 + 1))) ? (r1 + 1) * pitch - gapPx / 2 : (r1 === 6 ? gridH : r1 * pitch + cellPx);
+        segs.push([[vx, y0], [vx, y1]]);
+        r = r1;
+      }
+    }
+    for (let r = 1; r < 7; r += 1) {
+      for (let c = 0; c < C; c += 1) {
+        if (!hOn(c, r)) continue;
+        let c1 = c;
+        while (c1 + 1 < C && hOn(c1 + 1, r)) c1 += 1;
+        const hy = r * pitch - gapPx / 2;
+        const x0 = (c > 0 && (vOn(c, r - 1) || vOn(c, r))) ? c * pitch - gapPx / 2 : (c === 0 ? 0 : c * pitch);
+        const x1 = (c1 < C - 1 && (vOn(c1 + 1, r - 1) || vOn(c1 + 1, r))) ? (c1 + 1) * pitch - gapPx / 2 : (c1 === C - 1 ? gridW : c1 * pitch + cellPx);
+        segs.push([[x0, hy], [x1, hy]]);
+        c = c1;
+      }
+    }
+    return stitchSegmentsToPath(segs);
   }
 
   function getMetricValue(cell, metric) {
@@ -145,32 +239,14 @@
     return parts.join(" · ");
   }
 
-  function buildCellHtml(d, colIdx, r, cols, ctx) {
-    if (!d) return `<span class="v9-heat-cell is-future" aria-hidden="true"></span>`;
-    const curMonth = d.date ? String(d.date).slice(0, 7) : "";
-    const leftDay = colIdx > 0 ? cols[colIdx - 1][r] : null;
-    const topDay = r > 0 ? cols[colIdx][r - 1] : null;
-    const hasMonthLeft = Boolean(curMonth && leftDay && leftDay.date && String(leftDay.date).slice(0, 7) !== curMonth);
-    const hasMonthTop = Boolean(curMonth && topDay && topDay.date && String(topDay.date).slice(0, 7) !== curMonth);
+  function buildCellHtml(d, ctx) {
+    if (!d || d.future) {
+      return `<span class="v9-heat-cell is-future" data-level="0" aria-hidden="true"></span>`;
+    }
     const cls = ["v9-heat-cell"];
-    if (d.future) cls.push("is-future");
-    else if (!d.in_window) cls.push("is-out");
-    const isSel = !d.future && ctx.selectedDate === d.date;
+    if (!d.in_window) cls.push("is-out");
+    const isSel = ctx.selectedDate === d.date;
     if (isSel) cls.push("is-selected");
-    if (hasMonthLeft) {
-      cls.push("has-month-left");
-      if (r === 0) cls.push("is-row-top");
-      else if (r === 6) cls.push("is-row-bot");
-    }
-    if (hasMonthTop) {
-      cls.push("has-month-top");
-      if (colIdx === 0) cls.push("is-col-first");
-      if (colIdx === cols.length - 1) cls.push("is-col-last");
-    }
-    if (d.future) {
-      const fTitle = `${formatCalendarDate(d.date)}: Upcoming calendar day`;
-      return `<span class="${cls.join(" ")}" data-level="0" title="${V9.escHtml(fTitle)}" aria-hidden="true"></span>`;
-    }
     const lvl = computeMetricLevel(d, ctx.metric, ctx.quartiles);
     const readout = formatReadoutText(d, ctx.metric, ctx.winTag);
     const outTitle = d.in_window ? "" : " (outside window)";
@@ -184,7 +260,7 @@
     for (let r = 0; r < 7; r += 1) {
       let rowCells = "";
       for (let colIdx = 0; colIdx < cols.length; colIdx += 1) {
-        rowCells += buildCellHtml(cols[colIdx][r], colIdx, r, cols, ctx);
+        rowCells += buildCellHtml(cols[colIdx][r], ctx);
       }
       rowsHtml += `<div class="v9-heat-row" role="row">${rowCells}</div>`;
     }
@@ -285,17 +361,41 @@
     });
   }
 
+  let lastHeatBundle = null;
+  let lastHeatWidth = 0;
+  let heatResizeTimer = null;
+
+  function ensureHeatResizeHook(host) {
+    if (!host || !host.dataset || host.dataset.v9HeatResizeBound) return;
+    host.dataset.v9HeatResizeBound = "1";
+    const onResize = () => {
+      if (!lastHeatBundle) return;
+      const curW = Number(host.clientWidth || 0) || Number(window.innerWidth || 0);
+      if (Math.abs(curW - lastHeatWidth) < 2) return;
+      clearTimeout(heatResizeTimer);
+      heatResizeTimer = setTimeout(() => { if (lastHeatBundle) renderHeatmap(lastHeatBundle); }, 80);
+    };
+    if (typeof ResizeObserver === "function") {
+      new ResizeObserver(onResize).observe(host);
+    } else if (typeof window.addEventListener === "function") {
+      window.addEventListener("resize", onResize);
+    }
+  }
+
   function renderHeatmap(b) {
     const host = document.getElementById("v9HeatHost");
     const summaryEl = document.getElementById("v9HeatSummary");
     const weeksBtn = document.getElementById("v9HeatWeeksBtn");
     if (!host) return;
+    lastHeatBundle = b;
+    lastHeatWidth = Number(host.clientWidth || 0) || Number(window.innerWidth || 0);
+    ensureHeatResizeHook(host);
     const raw = Array.isArray(b && b.heatmap_series) ? b.heatmap_series : [];
     if (!raw.length) {
       host.innerHTML = `<div class="v9-empty">No activity history recorded yet.</div>`;
       return;
     }
-    const isMobile = window.innerWidth <= 560;
+    const isMobile = Number(window.innerWidth || 1280) <= 639;
     if (isMobile && !V9.state.heatPinned) V9.state.heatWeeks = 26;
     if (weeksBtn) {
       if (!weeksBtn.dataset.v9PinBound) {
@@ -306,6 +406,7 @@
       weeksBtn.textContent = V9.state.heatWeeks <= 26 ? "Show 53w" : "Show 26w";
     }
     const { cols, keepCols } = buildWeeksMatrix(raw, isMobile ? V9.state.heatWeeks : 53);
+    const { cellPx, gapPx, pitch, gridW, gridH } = resolveGridGeometry(keepCols, host);
     const monthLabels = buildMonthLabels(cols);
     const metric = V9.state.metric || "steps";
     const nonFuture = raw.filter((d) => d && !d.future);
@@ -318,17 +419,23 @@
     const winTag = resolveWindowTag(b && b.period);
     const periodKey = resolvePeriodKey(b, raw);
     const { selectedDate, tabAnchorDate } = resolveSelectedAndTabAnchor(cols, periodKey);
-    const monthCellsHtml = monthLabels.map((lbl) => `<span class="v9-heat-month-cell">${V9.escHtml(lbl)}</span>`).join("");
+    const monthCellsHtml = monthLabels
+      .map((lbl, idx) => (lbl && idx * pitch <= Math.max(0, gridW - 20) ? `<span class="v9-heat-month-lbl" style="inset-inline-start:${idx * pitch}px">${V9.escHtml(lbl)}</span>` : ""))
+      .join("");
     const gridHtml = buildGridRowsHtml(cols, { metric, quartiles, winTag, selectedDate, tabAnchorDate });
-    const trackCols = `grid-template-columns:repeat(${keepCols},minmax(10px,1fr))`;
+    const dividerPath = buildMonthDividerPath(cols, cellPx, gapPx);
+    const svgPath = dividerPath ? `<path class="v9-heat-divider-path" d="${dividerPath}"></path>` : "";
 
     host.innerHTML = `
       <div class="v9-heat-scroll">
-        <div class="v9-heat-layout">
+        <div class="v9-heat-layout" style="--v9-heat-cell:${cellPx}px;--v9-heat-gap:${gapPx}px">
           <div class="v9-heat-dow" aria-hidden="true"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
           <div class="v9-heat-main">
-            <div class="v9-heat-months" style="${trackCols}">${monthCellsHtml}</div>
-            <div class="v9-heat-grid" style="${trackCols}" role="grid" aria-label="Activity heatmap calendar">${gridHtml}</div>
+            <div class="v9-heat-months" style="inline-size:${gridW}px">${monthCellsHtml}</div>
+            <div class="v9-heat-grid-wrap" style="inline-size:${gridW}px;block-size:${gridH}px">
+              <div class="v9-heat-grid" style="grid-template-columns:repeat(${keepCols},${cellPx}px)" role="grid" aria-label="Activity heatmap calendar">${gridHtml}</div>
+              <svg class="v9-heat-divider-svg" viewBox="0 0 ${gridW} ${gridH}" width="${gridW}" height="${gridH}" aria-hidden="true">${svgPath}</svg>
+            </div>
           </div>
         </div>
       </div>
@@ -352,7 +459,7 @@
   }
 
   V9.Heatmap = {
-    renderHeatmap, buildWeeksMatrix, buildMonthLabels, computeQuartiles, computeMetricLevel,
-    formatCalendarDate, resolveWindowTag, findSpatialCandidate,
+    renderHeatmap, buildWeeksMatrix, buildMonthLabels, resolveGridGeometry, buildMonthDividerPath,
+    computeQuartiles, computeMetricLevel, formatCalendarDate, resolveWindowTag, findSpatialCandidate,
   };
 })();

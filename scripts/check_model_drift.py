@@ -24,6 +24,7 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+from agy_nexus.ls_quota_probe import probe_or_read_quota_snapshot  # noqa: E402
 from agy_nexus.model_pricing import (  # noqa: E402
     classify_model_key,
     get_placeholder_map,
@@ -76,55 +77,26 @@ def _http_get_json(url: str, timeout: float = 4.0, headers: dict[str, str] | Non
         return False, None, str(exc)[:140]
 
 
-def _check_local_language_server(cat: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, str]]]:
+def _check_local_language_server(cat: dict[str, Any], bg_dir: Path | None = None) -> tuple[dict[str, Any], list[dict[str, str]]]:
     ph_map = get_placeholder_map()
     findings: list[dict[str, str]] = []
     try:
-        ps_out = subprocess.run(
-            ["ps", "-u", str(os.getuid()), "-o", "args"], capture_output=True, text=True, timeout=2.0, check=False
-        ).stdout
-        csrf = ""
-        for line in ps_out.splitlines():
-            if "language_server" in line and "--csrf_token" in line:
-                m = re.search(r"--csrf_token[=\s]+([^\s]+)", line)
-                if m:
-                    csrf = m.group(1).strip()
-                    break
-        if not csrf:
-            return {"status": "SKIPPED_NO_LS", "checked_models": 0}, findings
-        ss_out = subprocess.run(["ss", "-tlnp"], capture_output=True, text=True, timeout=2.0, check=False).stdout
-        ports = [int(m.group(1)) for ln in ss_out.splitlines() if "language_server" in ln for m in re.finditer(r"127\.0\.0\.1:(\d+)", ln)]
-        cfgs: list[dict[str, Any]] = []
-        no_proxy_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        for port in ports[:4]:
-            try:
-                req = urllib.request.Request(
-                    f"http://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/GetUserStatus",
-                    data=b"{}",
-                    headers={"Content-Type": "application/json", "Connect-Protocol-Version": "1", "X-Codeium-Csrf-Token": csrf},
-                    method="POST",
-                )
-                with no_proxy_opener.open(req, timeout=2.0) as resp:
-                    data = json.loads(resp.read().decode("utf-8", errors="replace"))
-                cfgs = ((data.get("userStatus") or {}).get("cascadeModelConfigData") or {}).get("clientModelConfigs") or []
-                if cfgs:
-                    break
-            except Exception:
-                continue
-        if not cfgs:
-            return {"status": "UNREACHABLE", "checked_models": 0}, findings
+        snap = probe_or_read_quota_snapshot(bg_dir or AGY_BG_DIR, allow_subprocess=True, write_if_live=True)
+        cfgs = snap.get("client_model_configs") or []
+        if not cfgs or not snap.get("is_fresh"):
+            status_tag = "SKIPPED_NO_LS" if snap.get("source") == "none" else "UNREACHABLE"
+            return {"status": status_tag, "checked_models": 0}, findings
         seen_ids: set[str] = set()
+        known_mids = {str(x) for m in (cat.get("models") or []) for x in (m.get("model_ids") or [])}
         for c in cfgs:
             mid = str((c.get("modelOrAlias") or {}).get("model") or "").strip()
             lbl = str(c.get("label") or "").strip()
             if not mid:
                 continue
             seen_ids.add(mid)
-            if mid.upper() not in ph_map:
-                known_mids = {str(x) for m in (cat.get("models") or []) for x in (m.get("model_ids") or [])}
-                if mid not in known_mids:
-                    findings.append({"source": "antigravity_ls", "type": "UNKNOWN_MODEL_ID", "model": mid, "detail": f"Unmapped live LS model '{lbl}' ({mid})"})
-        return {"status": "OK", "checked_models": len(seen_ids)}, findings
+            if mid.upper() not in ph_map and mid not in known_mids:
+                findings.append({"source": "antigravity_ls", "type": "UNKNOWN_MODEL_ID", "model": mid, "detail": f"Unmapped live LS model '{lbl}' ({mid})"})
+        return {"status": "OK", "checked_models": len(seen_ids), "source": str(snap.get("source") or "ls")}, findings
     except Exception as exc:
         return {"status": "ERROR", "detail": str(exc)[:120]}, findings
 

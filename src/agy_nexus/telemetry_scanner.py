@@ -229,34 +229,37 @@ def extract_pending_approval(transcript_or_brain_dir: Path, conv_id: str = "") -
     return None
 
 
-def get_live_quota_and_pool_status(data_or_config_dir: Path, config_dir: Path | None = None) -> dict[str, Any]:
-    """Read live Dual-Pool Quota Pacing (`ultra-20x` vs `ultra-5x`), active Main-Chat model, 429 cooldowns, and Partner Pool weekly pace."""
+def _read_json_or_text(path: Path, is_json: bool = False) -> Any:
+    try:
+        return (json.loads if is_json else str.strip)(path.read_text(encoding="utf-8")) if path.exists() else None
+    except Exception:
+        return None
+
+
+def get_live_quota_and_pool_status(data_or_config_dir: Path, config_dir: Path | None = None, *, bg_dir: Path | None = None) -> dict[str, Any]:
+    """Read Dual-Pool Quota Pacing, active Main-Chat model, 429 cooldowns, and live LS/snapshot reset buckets."""
+    from agy_nexus.ls_quota_probe import enrich_quota_and_pools
+
     agy_config_dir = config_dir if config_dir is not None else data_or_config_dir
     data_dir = data_or_config_dir if config_dir is not None else None
     q_file = Path(os.getenv("QUOTA_STATE_FILE", str(Path.home() / ".cache/antigravity/quota_state.json"))).expanduser()
-    p_file = agy_config_dir / ".active-tier-profile"
-    active_profile = "ultra-20x"
-    if p_file.exists():
-        try:
-            active_profile = p_file.read_text(encoding="utf-8").strip() or "ultra-20x"
-        except Exception:
-            pass
-    state_data: dict[str, Any] = {"pools": {"google": {}, "claude": {}, "gpt_oss": {}}, "events": []}
-    if q_file.exists():
-        try:
-            state_data = json.loads(q_file.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+    active_profile = _read_json_or_text(agy_config_dir / ".active-tier-profile") or "ultra-20x"
+    state_data = _read_json_or_text(q_file, is_json=True) or {"pools": {"google": {}, "claude": {}, "gpt_oss": {}}, "events": []}
     now_epoch, pools_out = int(time.time()), {}
     for pk in ("google", "claude", "gpt_oss"):
         pi = (state_data.get("pools") or {}).get(pk) or {}
         rem = max(0, int(pi.get("cooldown_until", 0) or 0) - now_epoch)
         pools_out[pk] = {"status": "COOLDOWN_429" if rem > 0 else "HEALTHY", "cooldown_remaining_seconds": rem, "total_429_count": int(pi.get("count_429", 0) or 0), "last_reason": str(pi.get("last_reason", ""))}
+    env_bg = os.getenv("AGY_BG_DIR", "").strip()
+    resolved_bg = bg_dir or (Path(env_bg).expanduser() if env_bg else ((data_dir / "sidecar_data/ag-bridge-bg") if data_dir else None))
+    try:
+        live_quota = enrich_quota_and_pools(pools_out, bg_dir=resolved_bg)
+    except Exception:
+        live_quota = {"state": "UNAVAILABLE", "ls_alive": False, "is_fresh": False, "source": "error"}
     day_idx = datetime.now(timezone.utc).weekday() + 1
     return {
-        "active_tier_profile": active_profile,
-        "active_mainchat_model": get_active_mainchat_model(data_dir),
-        "pools": pools_out,
+        "active_tier_profile": active_profile, "active_mainchat_model": get_active_mainchat_model(data_dir),
+        "pools": pools_out, "live_quota": live_quota,
         "partner_weekly_pacing": {"day_of_week_index": day_idx, "daily_target_pct": 14.28, "recommended_cumulative_ceiling_pct": round(min(100.0, day_idx * 14.28), 1)},
         "target_model_allocation": MODEL_TARGET_ALLOCATION.get(active_profile, MODEL_TARGET_ALLOCATION["ultra-20x"]),
         "recent_quota_events": (state_data.get("events") or [])[-8:],

@@ -3,6 +3,101 @@
 (() => {
   const V9 = window.AgyV9;
 
+  function formatResetCountdown(bucket, kind) {
+    if (!bucket || typeof bucket !== "object") return "No LS data";
+    if (!bucket.has_active_reset || !bucket.reset_time) {
+      return Number(bucket.used_pct || 0) > 0.05 ? "Active · no timer" : "Standby · 100% left";
+    }
+    const targetMs = Date.parse(String(bucket.reset_time));
+    if (!Number.isFinite(targetMs)) return "Timer active";
+    const diffMs = targetMs - Date.now();
+    if (diffMs <= 0) return "Reset due";
+    const totalMin = Math.max(1, Math.floor(diffMs / 60000));
+    const totalHr = Math.floor(totalMin / 60);
+    const remMin = totalMin % 60;
+    const days = Math.floor(totalHr / 24);
+    const remHr = totalHr % 24;
+    const rel = days >= 1 ? `in ${days}d ${remHr}h` : (totalHr >= 1 ? `in ${totalHr}h ${remMin}m` : `in ${totalMin}m`);
+    let clock = "";
+    try {
+      const fmtOpts = (kind === "weekly" || days >= 1)
+        ? { weekday: "short", hour: "numeric", minute: "2-digit" }
+        : { hour: "numeric", minute: "2-digit" };
+      clock = new Intl.DateTimeFormat(undefined, fmtOpts).format(new Date(targetMs));
+    } catch (_err) { clock = ""; }
+    return clock ? `${rel} (${clock})` : rel;
+  }
+
+  function formatSnapshotAge(ageSec) {
+    if (ageSec == null || !Number.isFinite(Number(ageSec))) return "offline";
+    const s = Math.max(0, Number(ageSec));
+    if (s < 90) return "live";
+    if (s < 3600) return `${Math.round(s / 60)}m ago`;
+    if (s < 86400) return `${Math.round(s / 3600)}h ago`;
+    return `${Math.round(s / 86400)}d ago`;
+  }
+
+  function formatBurnCompact(burn, label) {
+    if (!burn || typeof burn !== "object") return "";
+    const steps = Number(burn.steps || 0);
+    const cost = Number(burn.cost_usd || 0);
+    const tok = Number(burn.tokens || 0);
+    if (!steps && !tok) return `${label}: 0s`;
+    return `${label}: ${V9.fmtNum(steps)}s · ${V9.fmtUsd(cost)}`;
+  }
+
+  function renderPoolQuotaCard(cfg) {
+    const { title, pool, liveQuota, sharePct, extraStatsHtml, ceilingPct, ceilingTitle } = cfg;
+    const lq = liveQuota || {};
+    const stateCode = String(lq.state || (lq.ls_alive ? "LIVE" : "IDE_OFFLINE"));
+    const b5 = pool.bucket_5h || {};
+    const bW = pool.bucket_weekly || {};
+    const has5h = b5.used_pct != null && Number.isFinite(Number(b5.used_pct));
+    const hasWk = bW.used_pct != null && Number.isFinite(Number(bW.used_pct));
+    const used5h = has5h ? Math.min(100, Math.max(0, Number(b5.used_pct))) : null;
+    const usedWk = hasWk ? Math.min(100, Math.max(0, Number(bW.used_pct))) : null;
+    const rem5h = has5h ? (Number.isFinite(Number(b5.remaining_pct)) ? Number(b5.remaining_pct) : Math.max(0, 100 - used5h)) : null;
+    const poolStatus = String(pool.status || "HEALTHY");
+    const isCooldown = poolStatus !== "HEALTHY";
+    const overWarn = isCooldown || (used5h != null && used5h >= 85) || (usedWk != null && usedWk >= 85) || (ceilingPct != null && usedWk != null && usedWk > ceilingPct);
+    const pillLabel = isCooldown ? poolStatus : (stateCode === "STALE" ? `STALE ${formatSnapshotAge(lq.snapshot_age_seconds)}` : (stateCode === "LIVE" ? poolStatus : "IDE OFFLINE"));
+    const pillState = (isCooldown || stateCode === "STALE" || (overWarn && has5h)) ? "warn" : "nominal";
+    const b5h = formatBurnCompact(pool.burn_5h, "5h");
+    const b7d = formatBurnCompact(pool.burn_7d, "7d");
+    const lbl5h = b5.has_active_reset ? `5h rst ${formatResetCountdown(b5, "5h")}` : `5h: ${formatResetCountdown(b5, "5h")}`;
+
+    const heroHtml = has5h
+      ? `<div class="va-kpi-gauge-val v9-quota-main"><span>${used5h.toFixed(1)}% <span class="v9-quota-sub">used (5h)</span></span><span class="v9-quota-sub">${rem5h.toFixed(1)}% left</span></div>
+         <div class="va-kpi-gauge-track" role="progressbar" aria-label="${V9.escHtml(title)} 5h quota used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${used5h.toFixed(1)}"><div class="va-kpi-gauge-fill" style="inline-size:${used5h.toFixed(1)}%"></div></div>
+         <div class="v9-quota-win-row"><span>${V9.escHtml(lbl5h)}</span>${b5h ? `<span class="v9-quota-rst">${V9.escHtml(b5h)}</span>` : ""}</div>`
+      : `<div class="va-kpi-gauge-val v9-quota-main"><span>IDE Offline</span><span class="v9-quota-sub">${sharePct.toFixed(1)}% share</span></div>
+         <div class="v9-quota-win-row"><span>Run IDE or quota sync for 5h/Wk meters</span>${b5h ? `<span class="v9-quota-rst">${V9.escHtml(b5h)}</span>` : ""}</div>`;
+
+    const pinHtml = ceilingPct != null && ceilingPct < 99.5
+      ? `<span class="va-kpi-gauge-target" style="inset-inline-start:${Math.min(100, Math.max(0, ceilingPct)).toFixed(1)}%" title="${V9.escHtml(ceilingTitle || "")}"></span>`
+      : "";
+    const wkHtml = hasWk
+      ? `<div class="v9-quota-wk-wrap">
+           <div class="v9-quota-win-row"><span>Wk ${usedWk.toFixed(1)}% used</span><span class="v9-quota-rst">${V9.escHtml(formatResetCountdown(bW, "weekly"))}</span></div>
+           <div class="va-kpi-gauge-track is-mini" role="progressbar" aria-label="${V9.escHtml(title)} Weekly quota used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${usedWk.toFixed(1)}"><div class="va-kpi-gauge-fill" style="inline-size:${usedWk.toFixed(1)}%"></div>${pinHtml}</div>
+         </div>`
+      : "";
+
+    return `
+      <div class="va-kpi-gauge-card" data-state="${overWarn ? "warn" : "nominal"}">
+        <div class="va-kpi-gauge-head">
+          <span class="va-kpi-gauge-label">${V9.escHtml(title)}</span>
+          <span class="va-pill" data-variant="status" data-state="${pillState}">${V9.escHtml(pillLabel)}</span>
+        </div>
+        ${heroHtml}${wkHtml}
+        <div class="va-kpi-gauge-stats">
+          ${b7d ? `<span>${V9.escHtml(b7d)}</span>` : ""}
+          <span>Share ${sharePct.toFixed(1)}%</span>
+          ${extraStatsHtml || ""}
+        </div>
+      </div>`;
+  }
+
   function renderKpiCards(b) {
     const grid = document.getElementById("v9KpiGrid");
     if (!grid) return;
@@ -13,24 +108,20 @@
     const pools = qp.pools || {};
     const gPool = pools.google || {};
     const pPool = pools.claude || {};
+    const liveQuota = qp.live_quota || {};
     const pacing = qp.partner_weekly_pacing || {};
     const models = Array.isArray(b.model_usage_vs_target) ? b.model_usage_vs_target : [];
-
     const peak = k.peak_day || {};
-    const googlePct = models
-      .filter((m) => String(m.pool || "").toLowerCase().includes("google"))
-      .reduce((acc, m) => acc + Number(m.actual_pct || 0), 0);
-    const partnerPct = models
-      .filter((m) => String(m.pool || "").toLowerCase().includes("partner"))
-      .reduce((acc, m) => acc + Number(m.actual_pct || 0), 0);
-
-    const hasCeiling = pacing.recommended_cumulative_ceiling_pct != null;
-    const partnerCeiling = hasCeiling ? Number(pacing.recommended_cumulative_ceiling_pct) : 0;
-    const partnerFillPct = Math.min(100, Math.max(0, partnerPct));
-    const partnerPinPct = Math.min(100, Math.max(0, partnerCeiling));
-    const googleWarn = gPool.status && gPool.status !== "HEALTHY";
-    const partnerWarn = (pPool.status && pPool.status !== "HEALTHY") || (hasCeiling && partnerPct > partnerCeiling);
+    const sumPoolShare = (key, fallbackPool) => (Number.isFinite(Number(fallbackPool.call_share_pct))
+      ? Number(fallbackPool.call_share_pct)
+      : models.filter((m) => String(m.pool || "").toLowerCase().includes(key)).reduce((a, m) => a + (Number.isFinite(Number(m.actual_pct)) ? Number(m.actual_pct) : 0), 0));
+    const googleShare = sumPoolShare("google", gPool);
+    const partnerShare = sumPoolShare("partner", pPool);
+    const hasCeiling = Number.isFinite(Number(pacing.recommended_cumulative_ceiling_pct));
+    const partnerCeiling = hasCeiling ? Number(pacing.recommended_cumulative_ceiling_pct) : null;
+    const dailyPace = Number.isFinite(Number(pacing.daily_target_pct)) ? Number(pacing.daily_target_pct) : 14.28;
     const mainModel = (qp.active_mainchat_model && qp.active_mainchat_model.label) || "Gemini 4 Carbon";
+    const snapHint = (!liveQuota.is_fresh && liveQuota.snapshot_age_seconds != null) ? `<span>LS ${V9.escHtml(formatSnapshotAge(liveQuota.snapshot_age_seconds))}</span>` : "";
 
     grid.innerHTML = `
       <div class="va-kpi-gauge-card" data-state="nominal">
@@ -57,33 +148,15 @@
           <span>${Number(k.total_conversations || 0)}c · ${Number(k.total_subagents_spawned || 0)}r</span>
         </div>
       </div>
-      <div class="va-kpi-gauge-card" data-state="${googleWarn ? "warn" : "nominal"}">
-        <div class="va-kpi-gauge-head">
-          <span class="va-kpi-gauge-label">Google 20x Pool</span>
-          <span class="va-pill" data-variant="status" data-state="${googleWarn ? "warn" : "nominal"}">${V9.escHtml(gPool.status || "HEALTHY")}</span>
-        </div>
-        <div class="va-kpi-gauge-val">${googlePct.toFixed(1)}% <span class="va-meta-inline">call share</span></div>
-        <div class="va-kpi-gauge-track"><div class="va-kpi-gauge-fill" style="inline-size:${Math.min(100, Math.max(0, googlePct)).toFixed(1)}%"></div></div>
-        <div class="va-kpi-gauge-stats">
-          <span>Main: ${V9.escHtml(mainModel)}</span>
-          <span>${V9.escHtml(qp.active_tier_profile || "ultra-20x")}</span>
-        </div>
-      </div>
-      <div class="va-kpi-gauge-card" data-state="${partnerWarn ? "warn" : "nominal"}">
-        <div class="va-kpi-gauge-head">
-          <span class="va-kpi-gauge-label">Partner Weekly Pacing</span>
-          <span class="va-pill" data-variant="status" data-state="${partnerWarn ? "warn" : "nominal"}">${V9.escHtml(pPool.status || "HEALTHY")}</span>
-        </div>
-        <div class="va-kpi-gauge-val">${partnerPct.toFixed(1)}%</div>
-        <div class="va-kpi-gauge-track">
-          <div class="va-kpi-gauge-fill" style="inline-size:${partnerFillPct.toFixed(1)}%"></div>
-          ${hasCeiling && partnerCeiling < 99.5 ? `<span class="va-kpi-gauge-target" style="inset-inline-start:${partnerPinPct.toFixed(1)}%" title="Cumulative ceiling ${Number(partnerCeiling)}% (${Number(pacing.daily_target_pct || 14.28)}%/d)"></span>` : ""}
-        </div>
-        <div class="va-kpi-gauge-stats">
-          ${hasCeiling ? `<span>Ceiling ${Number(partnerCeiling)}%</span><span>${Number(pacing.daily_target_pct || 14.28)}%/d</span>` : ""}
-          <span>429s: ${Number(pPool.total_429_count || 0)}</span>
-        </div>
-      </div>`;
+      ${renderPoolQuotaCard({
+        title: "Google 20x Pool", pool: gPool, liveQuota, sharePct: googleShare,
+        extraStatsHtml: `<span>${V9.escHtml(mainModel)}</span>${snapHint || `<span>${V9.escHtml(qp.active_tier_profile || "ultra-20x")}</span>`}`,
+      })}
+      ${renderPoolQuotaCard({
+        title: "Partner Pool", pool: pPool, liveQuota, sharePct: partnerShare, ceilingPct: partnerCeiling,
+        ceilingTitle: hasCeiling ? `Cumulative ceiling ${partnerCeiling}% (${dailyPace}%/d)` : "",
+        extraStatsHtml: `<span>429s: ${Number(pPool.total_429_count || 0)}</span>${hasCeiling ? `<span>Pace ${dailyPace}%/d</span>` : ""}`,
+      })}`;
   }
 
   function sumLayerTokens(modelSeries, modelKey, fallback) {
@@ -423,5 +496,5 @@
     if (trigBtn) trigBtn.title = fmt.fullTitle;
   }
 
-  V9.Analytics = { renderAnalytics };
+  V9.Analytics = { renderAnalytics, renderKpiCards, formatResetCountdown, formatSnapshotAge };
 })();
