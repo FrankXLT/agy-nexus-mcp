@@ -88,7 +88,7 @@ def _read_package_version(src_root: Path) -> str:
         m = re.search(r'^version\s*=\s*"([^"]+)"', pyproject.read_text(encoding="utf-8"), re.M)
         if m:
             return m.group(1).strip()
-    return "4.1.0"
+    return "4.2.0"
 
 
 def _extract_changelog_section(src_root: Path, version: str) -> str:
@@ -103,12 +103,12 @@ def _extract_changelog_section(src_root: Path, version: str) -> str:
     return f"## AGY Nexus v{version}"
 
 
-def _ensure_repo(gh_login: str, repo_name: str, description: str, private: bool, token: str) -> int:
+def _ensure_repo(gh_login: str, repo_name: str, description: str, homepage: str, private: bool, token: str) -> int:
     st_repo, _ = _github_api("GET", f"/repos/{gh_login}/{repo_name}", token)
     if st_repo == 200:
         _github_api("PATCH", f"/repos/{gh_login}/{repo_name}", token, {
             "name": repo_name, "description": description, "private": bool(private),
-            "homepage": f"https://{gh_login}.github.io/{repo_name}/",
+            "homepage": homepage,
         })
         print(f"[✓] Verified GitHub repo: https://github.com/{gh_login}/{repo_name}")
         return 0
@@ -116,7 +116,7 @@ def _ensure_repo(gh_login: str, repo_name: str, description: str, private: bool,
         st_cr, cr_data = _github_api("POST", "/user/repos", token, {
             "name": repo_name, "description": description, "private": bool(private),
             "auto_init": False, "has_issues": True, "has_projects": False, "has_wiki": False,
-            "homepage": f"https://{gh_login}.github.io/{repo_name}/",
+            "homepage": homepage,
         })
         if st_cr not in (200, 201):
             print(f"ERROR: Failed creating repository (HTTP {st_cr}): {cr_data.get('message')}", file=sys.stderr)
@@ -125,6 +125,17 @@ def _ensure_repo(gh_login: str, repo_name: str, description: str, private: bool,
         return 0
     print(f"ERROR: Unexpected HTTP {st_repo} inspecting repo.", file=sys.stderr)
     return 1
+
+
+def _sync_topics(gh_login: str, repo_name: str, topics: list[str], token: str) -> int:
+    if not topics:
+        return 0
+    st, data = _github_api("PUT", f"/repos/{gh_login}/{repo_name}/topics", token, {"names": topics})
+    if st not in (200, 201):
+        print(f"ERROR: Failed updating repository topics (HTTP {st}): {data.get('message')}", file=sys.stderr)
+        return 1
+    print(f"[✓] Synced {len(topics)} repository topics")
+    return 0
 
 
 def _git_auth_env(auth_header_value: str) -> dict[str, str]:
@@ -219,8 +230,18 @@ def main() -> int:
     parser.add_argument("--repo", default="agy-nexus-mcp", help="Target GitHub repository name")
     parser.add_argument(
         "--description",
-        default="AGY-Nexus v4.1.0: Quota & Resets (% Left), 13-Agent Dual-Pool Sync & carbon-sentinel, Thin-Coordinator Handoffs, Collapsible Unregistered Subagent Rollup, Price Book Sync, Zero-Stdout --stdio & GHCR OCI MCP Server, Quiet UI v9.3.0 Studio & Praxis Gateway.",
+        default="Two-doorway MCP server to steer your IDE from Gemini, track quota % left, and route helper models.",
         help="GitHub repository description",
+    )
+    parser.add_argument(
+        "--homepage",
+        default="https://projects.oaworkbench.org/agy-nexus-mcp/",
+        help="GitHub repository homepage URL",
+    )
+    parser.add_argument(
+        "--topics",
+        default="mcp,model-context-protocol,mcp-server,gemini,antigravity-ide,claude-code,ai-coding-assistant,multi-agent-orchestration,subagents,token-usage-tracker,quota-tracker,developer-tools,self-hosted,progressive-web-app",
+        help="Comma-separated GitHub repository topics",
     )
     parser.add_argument("--private", action="store_true", help="Create repository as private (default: public)")
     parser.add_argument("--author-name", default="", help="Override Git author name")
@@ -235,13 +256,17 @@ def main() -> int:
     src_root = Path(__file__).resolve().parent.parent
     pkg_version = _read_package_version(src_root)
     tag_name = f"v{pkg_version}"
-    rel_title = args.release_title.strip() or f"{tag_name} — Quota & Resets, 13-Agent Sync & Thin-Coordinator Handoffs"
+    homepage = args.homepage.strip()
+    topics = [t.strip() for t in args.topics.split(",") if t.strip()]
+    rel_title = args.release_title.strip() or f"{tag_name} — Plain-Language Docs, Three-Route Project Site & Quota Resets"
     showcase_dir = src_root / "build" / "gh-pages"
     pages_res = build_showcase(showcase_dir, refresh=False) if not args.no_pages else {"files": 0, "bytes": 0, "privacy_findings": 0}
     if args.dry_run:
         print(f"[✓] DRY RUN: version={tag_name}, repo={args.repo}, showcase={showcase_dir} ({pages_res['files']} files, 0 leaks)")
+        print(f"[✓] DRY RUN Homepage: {homepage}")
+        print(f"[✓] DRY RUN Topics ({len(topics)}): {', '.join(topics)}")
         print(f"[✓] DRY RUN Release Title: {rel_title}")
-        print("[✓] DRY RUN Plan: push main + orphan gh-pages -> POST/PUT /repos/<owner>/<repo>/pages -> publish release")
+        print("[✓] DRY RUN Plan: push main + orphan gh-pages -> POST/PUT /repos/<owner>/<repo>/pages -> PUT topics -> publish release")
         return 0
 
     token = _load_token_from_env_files()
@@ -253,7 +278,9 @@ def main() -> int:
         print(f"ERROR: GitHub auth failed (HTTP {status}): {user_info.get('message', 'Unknown error')}", file=sys.stderr)
         return 1
     gh_login = str(user_info["login"])
-    if _ensure_repo(gh_login, args.repo.strip(), args.description.strip(), args.private, token) != 0:
+    if _ensure_repo(gh_login, args.repo.strip(), args.description.strip(), homepage, args.private, token) != 0:
+        return 1
+    if _sync_topics(gh_login, args.repo.strip(), topics, token) != 0:
         return 1
     author_name = args.author_name.strip() or gh_login
     author_email = args.author_email.strip() or f"{gh_login}@users.noreply.github.com"

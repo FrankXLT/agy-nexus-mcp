@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-scripts/export_depersonalized_showcase.py — Export Live Telemetry to Public v4.1.0 Showcases.
+scripts/export_depersonalized_showcase.py — Export Live Telemetry to Public v4.2.0 Showcases.
 
 Reads live workstation bundles (current_month, last_month, qtd, ytd, last_30d, last_90d, last_year),
 Workspace Explorer tree, bundled demo docs, and Code Health, applies deterministic 1-to-1 SHA-256-keyed
@@ -443,8 +443,8 @@ def _update_readme_blocks(tree_ascii: str, def_ascii: str, qck_ascii: str, rich_
     readme_p = REPO_ROOT / "README.md"
     txt = readme_p.read_text(encoding="utf-8")
     blocks = [tree_ascii, def_ascii, qck_ascii, rich_ascii]
-    pat = re.compile(r"```text\n[\s\S]*?\n```")
-    matches = list(pat.finditer(txt))
+    all_m = list(re.compile(r"```text\n([\s\S]*?)```").finditer(txt))
+    matches = sc if len(sc := [m for m in all_m if "═══" in m.group(0)]) >= 4 else all_m
     assert len(matches) >= 4, f"Expected at least 4 ```text blocks in README.md, found {len(matches)}"
     parts, pos = [], 0
     for idx in range(4):

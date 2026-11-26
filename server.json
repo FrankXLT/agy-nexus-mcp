@@ -2,17 +2,17 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.FrankXLT/agy-nexus-mcp",
   "title": "AGY-Nexus MCP",
-  "description": "Dual-doorway MCP server for Antigravity IDE telemetry, session handoffs, and Quiet UI studio.",
+  "description": "Two-doorway MCP server to steer your IDE from Gemini, track quota % left, and route helper models.",
   "repository": {
     "url": "https://github.com/FrankXLT/agy-nexus-mcp",
     "source": "github"
   },
-  "websiteUrl": "https://FrankXLT.github.io/agy-nexus-mcp/",
-  "version": "4.1.0",
+  "websiteUrl": "https://projects.oaworkbench.org/agy-nexus-mcp/",
+  "version": "4.2.0",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/frankxlt/agy-nexus-mcp:4.1.0",
+      "identifier": "ghcr.io/frankxlt/agy-nexus-mcp:4.2.0",
       "transport": {
         "type": "stdio"
       },

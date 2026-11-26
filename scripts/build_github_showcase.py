@@ -31,15 +31,32 @@ from agy_nexus import __version__
 _PNG_SIG = b"\x89PNG\r\n\x1a\n"
 _PNG_META_CHUNKS = frozenset({b"tEXt", b"zTXt", b"iTXt", b"eXIf", b"tIME"})
 _TEXT_EXTS = frozenset({".html", ".js", ".css", ".json", ".webmanifest", ".md", ".svg"})
+_PACING_SCAN_EXTS = frozenset({".html", ".js", ".css", ".md"})
+_BANNED_PACING_TERMS = ("quota pacing", "quota-pacing", "weekly pacing", "partner_weekly_pacing")
 _ALLOWED_PUBLIC_STRINGS = (
     "https://github.com/FrankXLT/agy-nexus-mcp",
     "github.com/FrankXLT/agy-nexus-mcp",
+    "raw.githubusercontent.com/FrankXLT/agy-nexus-mcp",
     "https://FrankXLT.github.io/agy-nexus-mcp",
     "FrankXLT.github.io/agy-nexus-mcp",
+    "io.github.FrankXLT/agy-nexus-mcp",
+    "ghcr.io/frankxlt/agy-nexus-mcp",
+    "FrankXLT/agy-nexus-mcp",
+    "https://github.com/FrankXLT/quiet-ui-skills",
+    "https://github.com/FrankXLT",
+    "@FrankXLT",
+    "https://projects.oaworkbench.org/quiet-ui-skills/",
+    "https://projects.oaworkbench.org",
+    "projects.oaworkbench.org",
+    "https://learn.oaworkbench.org",
+    "learn.oaworkbench.org",
+    "https://www.oaworkbench.org",
+    "www.oaworkbench.org",
     "@users.noreply.github.com",
     "/home/dev/",
     "/home/dev",
     "selftest_runner.py",
+    "google-nexus 27.8%",
 )
 _BANNED_HASHES = frozenset({
     "d3b2fffdf371", "7e4712893a83", "b69a2bdcf5ff", "c79698445329", "c96d8cec0414",
@@ -315,8 +332,41 @@ def _inspect_png_privacy(png_path: Path, banned_literals: set[str], rel: str) ->
     return findings
 
 
+def _scan_text_file_privacy(
+    fp: Path, rel: str, banned_lits: set[str], live_uuids: set[str], lan_pat: re.Pattern[str], ip_pat: re.Pattern[str],
+) -> list[str]:
+    findings: list[str] = []
+    txt = fp.read_text(encoding="utf-8", errors="ignore")
+    if fp.suffix.lower() in _PACING_SCAN_EXTS:
+        raw_low = txt.lower()
+        for term in _BANNED_PACING_TERMS:
+            if term in raw_low:
+                findings.append(f"{rel}: disallowed quota-pacing term `{term}`")
+    sanitized = txt
+    for allow in sorted(_ALLOWED_PUBLIC_STRINGS, key=len, reverse=True):
+        sanitized = sanitized.replace(allow, " ")
+    low = sanitized.lower()
+    for m in lan_pat.findall(sanitized):
+        findings.append(f"{rel}: disallowed .lan domain `{m}`")
+    for m in ip_pat.findall(sanitized):
+        if m not in {"10.0.0.10", "172.17.0.1"}:
+            findings.append(f"{rel}: private IP `{m}`")
+    for lit in banned_lits:
+        if re.search(rf"(?<![a-z0-9]){re.escape(lit)}(?![a-z0-9])", low):
+            findings.append(f"{rel}: matched banned host/secret literal")
+    for u in live_uuids:
+        if u in low:
+            findings.append(f"{rel}: un-aliased live UUID `{u[:8]}...`")
+    for tok in set(re.findall(r"[A-Za-z0-9][A-Za-z0-9._+-]{2,}", sanitized)):
+        for part in [tok] + [p for p in re.split(r"[-._/+]", tok) if len(p) >= 5]:
+            if _h12(part) in _BANNED_HASHES:
+                findings.append(f"{rel}: hashed private identifier matched `{part[:3]}***`")
+                break
+    return findings
+
+
 def scan_showcase_privacy(out_dir: Path) -> list[str]:
-    """Fail-closed scanner ensuring 0 leaked repos, domains, LAN IPs, UUIDs, secrets, or PNG metadata."""
+    """Fail-closed scanner ensuring 0 leaked repos, domains, LAN IPs, UUIDs, secrets, pacing terms, or PNG metadata."""
     findings: list[str] = []
     banned_lits = _load_extra_banned_literals()
     live_uuids = _live_brain_uuids()
@@ -328,37 +378,35 @@ def scan_showcase_privacy(out_dir: Path) -> list[str]:
         rel = fp.relative_to(out_dir).as_posix()
         if fp.suffix.lower() == ".png":
             findings.extend(_inspect_png_privacy(fp, banned_lits, rel))
-            continue
-        if fp.suffix.lower() not in _TEXT_EXTS and fp.name != ".nojekyll":
-            continue
-        txt = fp.read_text(encoding="utf-8", errors="ignore")
-        sanitized = txt
-        for allow in _ALLOWED_PUBLIC_STRINGS:
-            sanitized = sanitized.replace(allow, " ")
-        low = sanitized.lower()
-        for m in lan_pat.findall(sanitized):
-            findings.append(f"{rel}: disallowed .lan domain `{m}`")
-        for m in ip_pat.findall(sanitized):
-            if m != "10.0.0.10":
-                findings.append(f"{rel}: private IP `{m}`")
-        for lit in banned_lits:
-            if re.search(rf"(?<![a-z0-9]){re.escape(lit)}(?![a-z0-9])", low):
-                findings.append(f"{rel}: matched banned host/secret literal")
-        for u in live_uuids:
-            if u in low:
-                findings.append(f"{rel}: un-aliased live UUID `{u[:8]}...`")
-        for tok in set(re.findall(r"[A-Za-z0-9][A-Za-z0-9._+-]{2,}", sanitized)):
-            for part in [tok] + [p for p in re.split(r"[-._/+]", tok) if len(p) >= 5]:
-                if _h12(part) in _BANNED_HASHES:
-                    findings.append(f"{rel}: hashed private identifier matched `{part[:3]}***`")
-                    break
+        elif fp.suffix.lower() in _TEXT_EXTS or fp.name == ".nojekyll":
+            findings.extend(_scan_text_file_privacy(fp, rel, banned_lits, live_uuids, lan_pat, ip_pat))
     return findings
 
 
-def _rewrite_index_for_static(html_text: str) -> str:
-    out = html_text.replace('href="/web/', 'href="./').replace('src="/web/', 'src="./')
-    out = out.replace("content=\"/web/", "content=\"./")
-    marker = '<script src="./demo_snapshot.js'
+def _extract_demo_oaw_topbar(site_index_path: Path, version: str) -> str:
+    raw = site_index_path.read_text(encoding="utf-8")
+    m = re.search(r"<!-- OAW_UNIFIED_TOPBAR_START -->\s*([\s\S]*?)\s*<!-- OAW_UNIFIED_TOPBAR_END -->", raw)
+    assert m, "Missing OAW_UNIFIED_TOPBAR markers in web/site/index.html"
+    bar = m.group(1).replace('<header id="oawTopbar" class="oaw-topbar" role="banner">', '<nav id="v9ShowcaseBar" class="v9-showcase-bar oaw-topbar" aria-label="Open Agentic Workbench navigation">', 1)
+    assert bar.endswith("</header>"), "Missing closing </header> in OAW topbar"
+    bar = bar[:-len("</header>")] + "</nav>"
+    bar = bar.replace('href="./demo/"', 'href="__OAW_DEMO__"').replace('href="./docs/"', 'href="../docs/"').replace('href="./"', 'href="../"').replace('href="__OAW_DEMO__"', 'href="./"')
+    bar = bar.replace('class="oaw-context-tab is-active" href="../" aria-current="page" data-oaw-tab="overview"', 'class="oaw-context-tab" href="../" data-oaw-tab="overview"')
+    bar = bar.replace('class="oaw-context-tab" href="./" data-oaw-tab="demo"', 'class="oaw-context-tab is-active" href="./" aria-current="page" data-oaw-tab="demo"')
+    bar = bar.replace('class="oaw-pop-tab is-active" href="../" aria-current="page" data-oaw-tab="overview"', 'class="oaw-pop-tab" href="../" data-oaw-tab="overview"')
+    bar = bar.replace('class="oaw-pop-tab" href="./" data-oaw-tab="demo"', 'class="oaw-pop-tab is-active" href="./" aria-current="page" data-oaw-tab="demo"')
+    assert bar.count('aria-current="page" data-oaw-tab="demo"') == 2
+    return bar.replace('?v=4.2.0', f'?v={version}')
+
+
+def _rewrite_demo_index_for_static(html_text: str) -> str:
+    out = html_text.replace('href="/web/', 'href="../').replace('src="/web/', 'src="../').replace('content="/web/', 'content="../')
+    topbar_html = _extract_demo_oaw_topbar(REPO_ROOT / "web" / "site" / "index.html", __version__)
+    out, n = re.subn(r'<nav id="v9ShowcaseBar"[\s\S]*?</nav>', lambda _m: topbar_html, out, count=1)
+    assert n == 1, "Failed to replace #v9ShowcaseBar with unified OAW topbar"
+    out = out.replace('  <link rel="stylesheet" href="../v9/v9_shell.css?v=4.2.0" />', f'  <link rel="stylesheet" href="../v9/v9_shell.css?v={__version__}" />\n  <link rel="stylesheet" href="../assets/oaw_topbar.css?v={__version__}" />', 1)
+    out = out.replace('</body>', f'  <script defer src="../assets/site_shell.js?v={__version__}"></script>\n</body>', 1)
+    marker = '<script src="../demo_snapshot.js'
     flag_tag = '<script>window.AGY_STATIC_SHOWCASE = true;</script>\n  '
     if marker in out and "AGY_STATIC_SHOWCASE" not in out:
         out = out.replace(marker, f"{flag_tag}{marker}", 1)
@@ -377,50 +425,54 @@ def _rewrite_manifest_for_static(raw_manifest: str) -> str:
 
 
 def build_showcase(out_dir: Path, *, refresh: bool = False) -> dict[str, Any]:
-    """Assemble static GitHub Pages showcase in `out_dir` and enforce 0-leak privacy gate."""
+    """Assemble static Three-Route Public Project Site in `out_dir` and enforce 0-leak privacy gate."""
+    scripts_dir = str(REPO_ROOT / "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
     if refresh:
-        scripts_dir = str(REPO_ROOT / "scripts")
-        if scripts_dir not in sys.path:
-            sys.path.insert(0, scripts_dir)
         import export_depersonalized_showcase as eds
         eds.main()
+    import site_docs_builder
 
-    web_dir = REPO_ROOT / "web"
-    v9_dir = web_dir / "v9"
+    web_dir, v9_dir, demo_out, assets_out = REPO_ROOT / "web", REPO_ROOT / "web" / "v9", out_dir / "demo", out_dir / "assets"
     if out_dir.exists():
         shutil.rmtree(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    for d in (out_dir, demo_out, assets_out, out_dir / "v9"):
+        d.mkdir(parents=True, exist_ok=True)
     (out_dir / ".nojekyll").write_text("", encoding="utf-8")
 
     src_html = web_dir / "index.html" if (web_dir / "index.html").is_file() else v9_dir / "index.html"
-    (out_dir / "index.html").write_text(_rewrite_index_for_static(src_html.read_text(encoding="utf-8")), encoding="utf-8")
+    demo_html = _rewrite_demo_index_for_static(src_html.read_text(encoding="utf-8"))
+    assert "window.AGY_STATIC_SHOWCASE = true;" in demo_html, "Missing AGY_STATIC_SHOWCASE flag in demo/index.html"
+    (demo_out / "index.html").write_text(demo_html, encoding="utf-8")
     (out_dir / "manifest.webmanifest").write_text(
         _rewrite_manifest_for_static((web_dir / "manifest.webmanifest").read_text(encoding="utf-8")), encoding="utf-8",
     )
     for asset_name in ("demo_snapshot.js", "gallery_select.js", "sheet_builder.js", "icon.svg", "icon-192.png", "icon-512.png"):
         src = web_dir / asset_name
         if src.is_file():
-            if src.suffix.lower() == ".png":
-                strip_png_metadata(src, out_dir / asset_name)
-            else:
-                shutil.copy2(src, out_dir / asset_name)
+            strip_png_metadata(src, out_dir / asset_name) if src.suffix.lower() == ".png" else shutil.copy2(src, out_dir / asset_name)
     for png_file in sorted(web_dir.glob("demo_thumb_*.png")):
-        strip_png_metadata(png_file, out_dir / png_file.name)
+        strip_png_metadata(png_file, demo_out / png_file.name)
+    for png_file in sorted((REPO_ROOT / "docs" / "assets").glob("*.png")):
+        strip_png_metadata(png_file, assets_out / png_file.name)
 
-    v9_out = out_dir / "v9"
-    v9_out.mkdir(parents=True, exist_ok=True)
     for pattern in ("v9_*.css", "v9_*.js"):
         for fp in sorted(v9_dir.glob(pattern)):
-            shutil.copy2(fp, v9_out / fp.name)
-    shutil.copytree(v9_dir / "vendor", v9_out / "vendor", dirs_exist_ok=True)
+            shutil.copy2(fp, out_dir / "v9" / fp.name)
+    shutil.copytree(v9_dir / "vendor", out_dir / "v9" / "vendor", dirs_exist_ok=True)
 
+    site_meta = site_docs_builder.build_site_pages(REPO_ROOT, out_dir, __version__)
     findings = scan_showcase_privacy(out_dir)
     if findings:
         sample = "\n  - ".join(findings[:10])
         raise RuntimeError(f"Showcase privacy scan failed ({len(findings)} issue(s)):\n  - {sample}")
     file_count = sum(1 for p in out_dir.rglob("*") if p.is_file())
     total_bytes = sum(p.stat().st_size for p in out_dir.rglob("*") if p.is_file())
-    return {"ok": True, "version": __version__, "out_dir": str(out_dir), "files": file_count, "bytes": total_bytes, "privacy_findings": 0}
+    return {
+        "ok": True, "version": __version__, "out_dir": str(out_dir),
+        "files": file_count, "bytes": total_bytes, "privacy_findings": 0, **site_meta,
+    }
 
 
 def main() -> int:
