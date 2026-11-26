@@ -416,6 +416,10 @@
   @media (max-width: 960px) {
     .v9-active-filter { max-inline-size: 124px; }
   }
+
+  /* Static Showcase Topbar Integration (live /web keeps #v9ShowcaseBar hidden) */
+  #v9ShowcaseBar:not(.hidden) ~ .v9-topbar { position: static; }
+  #v9ShowcaseBar.oaw-topbar { z-index: 40; }
 }
 
 @layer utilities {

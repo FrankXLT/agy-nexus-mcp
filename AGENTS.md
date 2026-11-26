@@ -14,7 +14,7 @@ All server implementation code lives in `src/agy_nexus/`. The root `ag_bridge.py
 
 | Module | Lines | Responsibility |
 | :--- | :---: | :--- |
-| `src/agy_nexus/__init__.py` | ~5 | Package metadata and canonical `__version__` (`3.2.5`) |
+| `src/agy_nexus/__init__.py` | ~5 | Package metadata and canonical `__version__` (`4.2.0`) |
 | `src/agy_nexus/config.py` | ~472 | Environment/secrets loading (`secrets.env`), `PRAXIS_MCP_TOKEN` + legacy `POLYGLOT_MCP_TOKEN` derivation, SHA-256 voice passphrase normalization, sliding-TTL Deadbolt gate, `fcntl.flock` atomic `active_contexts` slots + `prune_stale_context_slots()`, Sequential Read-Only Governance instructions, and `FastMCP` initialization |
 | `src/agy_nexus/hygiene.py` | ~426 | `<= 18.5 KB` inner / `<= 19.8 KB` escaped outer `< 20 KB` progressive wire compaction (`within_wire_budget`, `compact_payload_to_wire_budget`), centralized `is_sensitive_filename()` filter, line-range file slicing (`slice_file_content`), diff pagination (`slice_git_diff`), and `<= 500L` (`650L` ceiling) modular auditing |
 | `src/agy_nexus/polyglot_lang_outliners.py` | ~376 | Markup, config, and comment-summary outliners for Markdown, JSON/JSONC, YAML (with scalar redaction), HTML, and CSS/SCSS alongside shared leading-comment extractors |
@@ -32,7 +32,7 @@ All server implementation code lives in `src/agy_nexus/`. The root `ag_bridge.py
 | `src/agy_nexus/ascii_default.py` | ~301 | `72-col` standard (`style="default"`) and `40-col` mobile (`style="quick"`) Unicode block (`░▒▓█`) ASCII telemetry renderers |
 | `src/agy_nexus/ascii_rich.py` | ~190 | `76-col` widescreen box-drawn ASCII telemetry rig (`style="rich"`) |
 | `src/agy_nexus/session_tree.py` | ~384 | 76-column copy-ready ASCII `Project -> Chat -> Session ID` + `[HANDOFF <slug>-NN]` hierarchy builder, strict recency sorting (`-last_updated_ts`), pruned & capped `8`-slot routing telemetry, and 3-2-1 backup manifest reader |
-| `src/agy_nexus/session_status.py` | ~464 | Session health warnings, traversal-safe compaction tracking, 5-posture continuity-aware rollover evaluator (`FRESH`, `SEAM_AWARE`, `HOLD_FOR_COMPLETION`, `CLOSEOUT_ONLY`, `HARD_ROLLOVER`), and in-flight handoff mutex |
+| `src/agy_nexus/session_status.py` | ~464 | Session health warnings, traversal-safe compaction tracking, 5-mode continuity-aware rollover evaluator (`FRESH`, `SEAM_AWARE`, `HOLD_FOR_COMPLETION`, `CLOSEOUT_ONLY`, `HARD_ROLLOVER`), and in-flight handoff mutex |
 | `src/agy_nexus/retirement.py` | ~203 | Terminal session closeout & in-place retirement manifest (`RETIRED.json`), deferred `retire_after_closeout` closeout directives, prior-session baton extractor, and job-first 1-tap `Yes` `suggested_actions` engine |
 | `src/agy_nexus/code_health.py` | ~324 | Cached GitHub `/releases/latest` + `/tags` highest-semver comparator (`installed` vs `remote`), `<= 500L` (`650L` ceiling) modular hygiene scanner, and Polyglot symbol health aggregator |
 | `src/agy_nexus/stats_series.py` | ~278 | `1h` adaptive base slot grids (`24h` daily for Year), stacked model/subagent/project velocity series, and canonical Top-10 project-to-session hierarchy bands |
@@ -67,9 +67,9 @@ All server implementation code lives in `src/agy_nexus/`. The root `ag_bridge.py
 | File | Lines | Responsibility |
 | :--- | :---: | :--- |
 | `web/index.html` | ~485 | Unified 42px Studio Topbar (`Analytics` \| `Workspace`), KPI & chart containers, 2-Pane Workspace shell with `#workspaceResizer`, Settings popover, Upload, Export & Lightbox dialogs |
-| `web/styles.css` | ~399 | 4 surface themes (`Obsidian`, `Dark Paper`, `Warm Paper`, `Pure White` with `#f8fafc`/`#ffffff` contrast + card shadows), `D1–D4` density tokens, `1960px` container, muted `.btn-focal:disabled`, and responsive Analytics rules |
+| `web/styles.css` | ~399 | 4 visual themes (`Obsidian`, `Dark Paper`, `Warm Paper`, `Pure White` with `#f8fafc`/`#ffffff` contrast + card shadows), `D1–D4` density tokens, `1960px` container, muted `.btn-focal:disabled`, and responsive Analytics rules |
 | `web/workspace.css` | ~261 | Edge-to-edge 2-Pane Workspace Explorer (`max-width: none`), thin tree scrollbar, `.workspace-resizer` splitter, 2-line session titles, responsive `248px`/`210px`/`145px` gallery cards, clean corner badges, and Lightbox |
-| `web/app.js` | ~496 | Dashboard controller, surface switcher, compact borderless tabular legends, guarded SW `controllerchange` reload, PWA deep-link handler, and Settings menu |
+| `web/app.js` | ~496 | Dashboard controller, theme switcher, compact borderless tabular legends, guarded SW `controllerchange` reload, PWA deep-link handler, and Settings menu |
 | `web/heatmap.js` | ~154 | `53w`/`26w` Mon–Sun activity heatmap renderer and collision-safe month header mapper (`Jan`..`Dec` without stub clipping) |
 | `web/workspace_resizer.js` | ~138 | Drag-to-resize Workspace sidebar splitter (`220–480px`, `localStorage.nexus_tree_width`, double-click reset, arrow-key accessible) |
 | `web/explorer.js` | ~478 | 2-Pane Workspace Explorer (collapsible/resizable `300px <-> 38px <-> 0px` Zen sidebar, strict recency tree, `.tree-age-pill`, direct `#workspace` version hydration, and main-stage readers) |
@@ -85,6 +85,14 @@ All server implementation code lives in `src/agy_nexus/`. The root `ag_bridge.py
 | `web/health.js` | ~195 | Row 6 Code Health, `#versionLabel` / `#versionDot` badge updater (`updateVersionBadge`), Praxis Semantic Index & Modular Hygiene watchlist renderer |
 | `web/palettes.js` | ~174 | Perceptual 10-hue OKLCH project palette & session shade generator |
 | `web/sw.js` | ~74 | Root-scoped network-first static asset Service Worker (`SHELL_ASSETS` & `SHELL_NAMES`, excluding `/web` HTML) |
+
+### Public Project Site & Static Docs Pipeline (`web/site/`, `scripts/`)
+
+| File / Path | Budget | Responsibility |
+| :--- | :---: | :--- |
+| `web/site/*` | `<= 500L` / file | Plain-language Three-Route Project Site assets powering the public Overview (`./`), Searchable Guide (`./docs/` with Search Topics and zero-match fallback), OAW Portfolio Header Switcher, and 4-theme parity matching `./demo/` |
+| `scripts/site_docs_builder.py` | `<= 500L` | Plain-language static docs compiler turning repo Markdown (`README.md`, `docs/WORKFLOWS.md`, `docs/DEPLOYMENT.md`, `docs/PRICING_HISTORY.md`) into searchable topic cards and index metadata for `./docs/` |
+| `scripts/build_github_showcase.py` | `<= 500L` | Zero-backend GitHub Pages static bundler (`build/gh-pages/`) assembling `./` Overview, `./demo/` Live Studio Demo, `./docs/` Searchable Guide, `1280x640` metadata-stripped social preview, `.nojekyll`, and fail-closed `0`-leak privacy audit |
 
 ---
 

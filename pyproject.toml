@@ -1,7 +1,7 @@
 [project]
 name = "agy-nexus-mcp"
-version = "4.1.0"
-description = "AGY-NEXUS-MCP & AGY-PRAXIS-MCP: Antigravity Mission Control, Local IDE Praxis Doorway, Repo-Prefixed Handoff Queue, Polyglot Semantic Index & Quiet UI v9.3.0 Studio"
+version = "4.2.0"
+description = "Two-doorway MCP server to steer your IDE from Gemini, track quota % left, and route helper models."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
@@ -22,9 +22,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://FrankXLT.github.io/agy-nexus-mcp/"
+Homepage = "https://projects.oaworkbench.org/agy-nexus-mcp/"
 Repository = "https://github.com/FrankXLT/agy-nexus-mcp"
-Documentation = "https://github.com/FrankXLT/agy-nexus-mcp/blob/main/docs/DEPLOYMENT.md"
+Documentation = "https://projects.oaworkbench.org/agy-nexus-mcp/docs/"
 Changelog = "https://github.com/FrankXLT/agy-nexus-mcp/blob/main/CHANGELOG.md"
 
 [project.scripts]

@@ -214,7 +214,7 @@ def test_wave5_pool_window_burn_and_ascii_rich_width() -> None:
         "period": {"label": "91d", "start_date": "2026-08-27", "end_date": "2026-11-25", "total_days": 91},
         "kpis": {"window_steps": 1200, "window_tool_calls": 400, "avg_daily_steps": 60, "active_days": 20, "total_conversations": 5, "total_subagents_spawned": 12, "window_tokens": 5000000, "window_cost_usd": 12.34, "tok_per_day": 250000, "cost_per_day_usd": 0.62},
         "quota_and_pools": quota_info,
-        "code_health": {"version": {"installed": "4.1.0", "remote_latest": "4.1.0", "status": "up_to_date"}, "files_total": 10, "files_compliant": 10, "polyglot_total_symbols": 100},
+        "code_health": {"version": {"installed": "4.2.0", "remote_latest": "4.2.0", "status": "up_to_date"}, "files_total": 10, "files_compliant": 10, "polyglot_total_symbols": 100},
         "wire_telemetry": {"pct_under_20kb": 100.0, "avg_inner_kb": 4.2, "max_inner_kb": 12.1, "total_calls": 10, "total_tokens": 5000, "client_breakdown": []},
         "heatmap_series": [], "sub_daily_series": [], "model_usage_vs_target": [], "top_workspaces": [], "subagent_list": [],
     }

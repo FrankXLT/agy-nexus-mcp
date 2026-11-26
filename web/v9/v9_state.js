@@ -83,11 +83,19 @@
   }
 
   function toAbsUrl(u) {
-    const s = String(u || "").trim();
-    if (!s) return "";
-    if (/^https?:\/\//i.test(s)) return s;
-    if (s.startsWith("./")) return `${window.location.href.split(/[?#]/)[0].replace(/[^/]*$/, "")}${s.slice(2)}`;
-    return `${window.location.origin}${s.startsWith("/") ? "" : "/"}${s}`;
+    const s = String(u || "").replace(/[\u0000-\u0020\u007f]+/g, "").trim();
+    if (!s || s.startsWith("//") || s.includes("\\")) return "";
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(s)) return /^https?:\/\//i.test(s) ? s : "";
+    const href = window.location && typeof window.location.href === "string" ? window.location.href : "";
+    if (typeof URL === "function" && href) {
+      try {
+        const resolved = new URL(s, href).href;
+        return /^https?:\/\//i.test(resolved) ? resolved : "";
+      } catch (_e) {}
+    }
+    if (s.startsWith("./") && href) return `${href.split(/[?#]/)[0].replace(/[^/]*$/, "")}${s.slice(2)}`;
+    const origin = window.location && typeof window.location.origin === "string" ? window.location.origin : "";
+    return origin ? `${origin}${s.startsWith("/") ? "" : "/"}${s}` : "";
   }
 
   function escHtml(val) {
@@ -258,17 +266,27 @@
     navigator.serviceWorker.register(`${getBasePath()}/web/sw.js`, { scope: `${getBasePath() || ""}/` }).catch(() => {});
     let swReloading = false;
     navigator.serviceWorker.addEventListener("controllerchange", () => {
-      if (swReloading || sessionStorage.getItem("nexus_sw_reloaded") === "4.1.0") return;
+      if (swReloading || sessionStorage.getItem("nexus_sw_reloaded") === "4.2.0") return;
       swReloading = true;
-      sessionStorage.setItem("nexus_sw_reloaded", "4.1.0");
+      sessionStorage.setItem("nexus_sw_reloaded", "4.2.0");
       window.location.reload();
     });
+  }
+
+  function syncShowcaseBar() {
+    const el = typeof document !== "undefined" && typeof document.getElementById === "function"
+      ? document.getElementById("v9ShowcaseBar")
+      : null;
+    if (el && el.classList && typeof el.classList.toggle === "function") {
+      el.classList.toggle("hidden", !isStaticShowcase());
+    }
   }
 
   window.AgyV9 = Object.assign(window.AgyV9 || {}, {
     state,
     urlParams,
     isStaticShowcase,
+    syncShowcaseBar,
     syncUrlState,
     getBasePath,
     toAssetUrl,
@@ -289,4 +307,9 @@
     bindDialogLightDismiss,
     initTabsA11y,
   });
+
+  syncShowcaseBar();
+  if (typeof document !== "undefined" && document.readyState === "loading" && typeof document.addEventListener === "function") {
+    document.addEventListener("DOMContentLoaded", syncShowcaseBar, { once: true });
+  }
 })();

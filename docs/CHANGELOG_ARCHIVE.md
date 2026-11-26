@@ -112,7 +112,7 @@ Historical release notes prior to the `v3.0.0` Overwatch & Workspace release. Se
 ## [2.0.0] — 2026-11-01
 
 ### Added
-- **AGY-Nexus Overwatch PWA (`/web`) & Dual-Pool Quota Pacing**.
+- **AGY-Nexus Overwatch PWA (`/web`) & Dual-Pool Usage & Reset Bars**.
 
 ---
 
