@@ -142,7 +142,7 @@ def sign_media_url(
     exp_val = int(exp_ts) if exp_ts is not None else int(time.time()) + int(ttl_seconds)
     clean_rel = rel_path.lstrip("/")
     sig = compute_media_hmac(exp_val, scope, clean_rel)
-    quoted_scope = urllib.parse.quote(scope, safe=":")
+    quoted_scope = urllib.parse.quote(scope, safe="")
     quoted_rel = urllib.parse.quote(clean_rel, safe="/")
     path_part = f"/web/media/{exp_val}/{sig}/{quoted_scope}/{quoted_rel}"
     if relative:
@@ -342,6 +342,8 @@ def discover_visual_buckets(
     db_file: Path | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Scan and separate session-owned captures ('session') from shared/committed repo assets ('repo_asset')."""
+    s_lim = min(60, max(0, 20 if session_limit is None else int(session_limit)))
+    r_lim = min(60, max(0, 30 if repo_limit is None else int(repo_limit)))
     session_cands: list[tuple[float, dict[str, Any]]] = []
     repo_cands: list[tuple[float, dict[str, Any]]] = []
     seen_realpaths: set[str] = set()
@@ -359,7 +361,7 @@ def discover_visual_buckets(
                     fpath, brain_dir, b_scope, safe_cid, relative, seen_realpaths, session_cands, category="session",
                 )
 
-    if workspace_path and is_allowed_workspace_dir(workspace_path):
+    if r_lim > 0 and workspace_path and is_allowed_workspace_dir(workspace_path):
         ws_res = Path(workspace_path).resolve()
         r_scope = f"repo:{ws_res.name}"
         git_paths = _collect_git_status_media(ws_res)
@@ -381,8 +383,6 @@ def discover_visual_buckets(
 
     session_cands.sort(key=lambda item: item[0], reverse=True)
     repo_cands.sort(key=lambda item: item[0], reverse=True)
-    s_lim = max(1, min(int(session_limit or 40), 60))
-    r_lim = max(1, min(int(repo_limit or 30), 60))
     return [i[1] for i in session_cands[:s_lim]], [i[1] for i in repo_cands[:r_lim]]
 
 
@@ -408,6 +408,9 @@ def discover_visual_artifacts(
 
 
 VISUAL_INSPECTION_HINT = (
+    "Always render `gallery_url` and any newly deployed or unindexed `verified_urls` inside a fenced ```text code block "
+    "so Gemini never rewrites them into Google Search queries and Android users get 1-tap Copy — never hide them solely "
+    "behind Markdown anchor text. "
     "Share clickable signed_url links at zero extra token cost, and prompt via a 1-tap choice before fetching "
     "screenshots or published HTML into Gemini's Linux VM (curl -A 'Mozilla/5.0 (compatible; Google-Agent; "
     "+https://developers.google.com/crawling/docs/crawlers-fetchers/google-agent)' + view_file; uses extra tokens)."

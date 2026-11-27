@@ -193,7 +193,7 @@ def test_bucket_and_file_resolve_sqlite_ignoring_selected_workspace(tmp_path: Pa
     assert status_code == 200
     assert file_payload["ok"] is True
     assert file_payload["content"].count("/web/media/") == 2
-    assert "/repo:quiet-ui-skills/screenshots_gate4/01_v01_icu_desktop_white.png" in file_payload["content"]
+    assert "/repo%3Aquiet-ui-skills/screenshots_gate4/01_v01_icu_desktop_white.png" in file_payload["content"]
 
 
 @pytest.mark.asyncio

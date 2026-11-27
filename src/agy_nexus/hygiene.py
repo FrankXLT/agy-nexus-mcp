@@ -395,6 +395,7 @@ def compact_payload_to_wire_budget(
         ("pinned_session_matches", 4), ("pinned_session_matches", 1), ("pinned_session_matches", 0),
         ("untracked_files", 20), ("untracked_files", 5), ("untracked_files", 0),
         ("available_repositories", 0), ("configured_mcp_servers", 0),
+        ("verified_urls", 6), ("verified_urls", 3), ("verified_urls", 0),
     )
     for key, keep in trim_stages:
         if within_wire_budget(out_str, max_raw_bytes, max_escaped_bytes):

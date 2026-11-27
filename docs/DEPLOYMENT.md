@@ -123,8 +123,8 @@ Create an `A` or `CNAME` record for `ag-{SUBDOMAIN_HASH}.<your-domain>` pointing
    - Certificate: `*.<your-domain>`
    - **Force SSL**: `ON`
    - **HTTP/2 Support**: `ON`
-3. **Advanced Tab (Allows `/mcp` + 7-Day Signed `/web/media/` Links & Disables Buffering)**:
-   Paste these Nginx rules so streamed MCP responses arrive right away, Gemini mobile query parameters like `?hl=en-US` pass through cleanly, and `/web` stays off the public MCP subdomain:
+3. **Advanced Tab (Allows `/mcp`, 7-Day Signed `/web/media/` & `/web/gallery/` Links & Disables Buffering)**:
+   Paste these Nginx rules so streamed MCP responses arrive right away, both `/web/media/` and `/web/gallery/` links (plus the gallery's stylesheet/script assets and Gemini `?hl=en-US` & `?theme=` query strings) pass through cleanly, and the interactive `/web` SPA and `/web/api/*` routes stay off the public MCP subdomain:
    ```nginx
    if ($request_method !~ ^(GET|HEAD|POST|DELETE|OPTIONS)$) {
        return 405;
@@ -132,7 +132,7 @@ Create an `A` or `CNAME` record for `ag-{SUBDOMAIN_HASH}.<your-domain>` pointing
    if ($request_uri ~* "(\.\.|%2e%2e)") {
        return 404;
    }
-   if ($request_uri !~ "^(/[0-9a-f]{48}/mcp([/?].*)?|/web/media/[0-9]+/[0-9a-f]{32}/[^?]+(\?.*)?)$") {
+   if ($request_uri !~ "^(/[0-9a-f]{48}/mcp([/?].*)?|/web/media/[0-9]+/[0-9a-f]{32}/[^?]+(\?.*)?|/web/gallery/[0-9]+/[0-9a-f]{32}/[A-Za-z0-9_-]+(\?.*)?|/web/(gallery_page\.(css|js)|v9/v9_layers\.css|v9/vendor/quiet-ui-tokens\.css)(\?.*)?)$") {
        return 404;
    }
 
@@ -194,10 +194,10 @@ Add it to `~/.gemini/config/mcp_config.json` (and `~/.gemini/antigravity/mcp_con
     google-chrome --app="https://agy-mcp.<your-domain>/web" --class="AGYNexusOverwatch" --window-size=1440,960
     ```
 
-### 7-Day Signed `/web/media/` Links & Screenshot Sharing
-- **7-Day Signed Links**: `/web/media/{exp}/{sig}/{scope}/{filename}` URLs (`604800s` / 7-day lifetime) and `workspace_url` deep links automatically use your verified public `https://` origin, keep `PATH_SECRET` out of media URLs, ignore trailing query parameters like `?hl=en-US`, and reject private `.lan` or container hostnames.
+### 7-Day Signed `/web/media/` & `/web/gallery/` Links & Screenshot Sharing
+- **7-Day Signed Media & Signed Session Gallery Links**: `/web/media/{exp}/{sig}/{scope}/{filename}` (generating `%3A`-encoded `brain%3A` / `repo%3A` scopes while remaining backward-compatible with unencoded colons), `/web/gallery/{exp}/{sig}/{conv_id}` (read-only **Signed Session Gallery Page** scoped to one session without deadbolt unlock), and `workspace_url` deep links automatically use your verified public `https://` origin, keep `PATH_SECRET` out of URLs, ignore trailing query parameters like `?hl=en-US` and `?theme=`, and reject private `.lan` or container hostnames. Both `ag-{SUBDOMAIN_HASH}.<your-domain>` (using the Section 4 Step 2.3 Nginx Proxy Manager allowlist for `/web/media/`, `/web/gallery/`, and gallery CSS/JS assets while keeping the interactive `/web` SPA and `/web/api/*` off the MCP host) and `agy-mcp.<your-domain>` (`^/(web([/?].*)?)?$`) serve **Signed Session Gallery Links** seamlessly.
 - **Multi-Select Gallery**: In `/web#workspace`, select captures with checkboxes, `Shift+Click`, or drag-select to share via **Web Share API v2**, copy a **`<canvas>` Contact Sheet**, or download a **`.zip` archive** (`POST /web/api/sessions/{conv_id}/download-zip`).
-- **In-Chat Visual Inspection**: `inspect_visual_artifacts(session_identifier="...", artifact_filter="...", max_images=2)` sends compact WebP previews (`max_edge=840px`) within the `< 20 KB` wire limit alongside 7-day HTTPS links.
+- **In-Chat Visual Inspection**: `inspect_visual_artifacts(session_identifier="...", artifact_filter="...", max_images=2)` sends compact WebP previews (`max_edge=840px`) within the `< 20 KB` wire limit alongside 7-day HTTPS media links, `gallery_url`, and `verified_urls`.
 
 ---
 

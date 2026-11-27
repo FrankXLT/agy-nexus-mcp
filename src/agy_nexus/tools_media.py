@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 from pathlib import Path
 import re
@@ -20,33 +21,23 @@ except ImportError:
 
 import agy_nexus.config as cfg
 from agy_nexus.config import (
-    AGY_BRAIN_DIR,
-    AGY_DATA_DIR,
-    AGY_GITLAB_DIR,
-    AGY_PROJECTS_DIR,
-    AGY_WORKSPACE_DIR,
-    LOCKED_RESPONSE,
-    READONLY_ANNOTATIONS, REPLY_PROMPT_GUIDANCE,
-    SESSION_STATE,
-    _compact_json,
-    get_umbrella_roots,
-    get_workspace_pillar_roots,
-    is_unlocked,
-    mcp,
-    pin_session_context,
+    AGY_BRAIN_DIR, AGY_DATA_DIR, AGY_GITLAB_DIR, AGY_PROJECTS_DIR, AGY_WORKSPACE_DIR,
+    LOCKED_RESPONSE, READONLY_ANNOTATIONS, REPLY_PROMPT_GUIDANCE, SESSION_STATE,
+    _compact_json, get_umbrella_roots, get_workspace_pillar_roots, is_unlocked, mcp, pin_session_context,
 )
 from agy_nexus.media import (
-    ALLOWED_MEDIA_EXTENSIONS, VISUAL_INSPECTION_HINT, discover_visual_artifacts, get_public_base_url,
-    record_verified_public_origin, sign_media_url,
+    ALLOWED_MEDIA_EXTENSIONS, VISUAL_INSPECTION_HINT, discover_visual_artifacts,
+    get_public_base_url, record_verified_public_origin, sign_media_url,
 )
 from agy_nexus.media_discovery import read_image_dimensions_fast
 from agy_nexus.retirement import build_suggested_actions
 from agy_nexus.routing import _resolve_session_identifier, _session_matches_workspace
+from agy_nexus.session_gallery import COPY_READY_LINK_GUIDANCE, build_tool_gallery_links
 from agy_nexus.telemetry_scanner import detect_product_name
 from agy_nexus.workspace import _resolve_workspace_str
 
 MAX_SOURCE_IMAGE_BYTES = 45 * 1024 * 1024
-MAX_TOTAL_RAW_WEBP_BYTES = 11_400  # <= 15.2 KB base64 + ~2.6 KB JSON/suggested_actions = <= 18.2 KB wire (<20 KB limit)
+MAX_TOTAL_RAW_WEBP_BYTES = 10_400  # <= 13.9 KB base64 + ~3.5 KB JSON/gallery/suggested_actions = <= 18.2 KB wire (<20 KB limit)
 
 _REGION_PRESETS: dict[str, tuple[float, float, float, float]] = {
     "full": (0.0, 0.0, 1.0, 1.0),
@@ -163,10 +154,7 @@ def _build_visual_catalog(conv_id: str, ws_path: Path, batch_folder: str = "") -
     catalog: list[dict[str, Any]] = []
     seen_real: set[str] = set()
     brain_root = AGY_BRAIN_DIR.resolve()
-    allowed_ws_roots = (
-        *get_workspace_pillar_roots(),
-        (AGY_DATA_DIR / "worktrees").resolve(),
-    )
+    allowed_ws_roots = (*get_workspace_pillar_roots(), (AGY_DATA_DIR / "worktrees").resolve())
     safe_cid = re.sub(r"[^a-zA-Z0-9_-]", "", conv_id)
 
     def _add_entry(fpath: Path, base_dir: Path, scope: str, seq_hint: int = 0, batch_name: str = "") -> None:
@@ -234,10 +222,7 @@ def _select_targets(catalog: list[dict[str, Any]], targets: str, conv_id: str, w
     picked: list[dict[str, Any]] = []
     seen_paths: set[str] = set()
     brain_root = AGY_BRAIN_DIR.resolve()
-    allowed_ws_roots = (
-        *get_workspace_pillar_roots(),
-        (AGY_DATA_DIR / "worktrees").resolve(),
-    )
+    allowed_ws_roots = (*get_workspace_pillar_roots(), (AGY_DATA_DIR / "worktrees").resolve())
     safe_cid = re.sub(r"[^a-zA-Z0-9_-]", "", conv_id)
 
     for tok in tokens:
@@ -281,7 +266,6 @@ def _resolve_conv_workspace(conv_id: str) -> str:
     if cfg.AGY_DB_FILE.is_file():
         try:
             from contextlib import closing
-            import json
             import sqlite3
             with closing(sqlite3.connect(f"file:{cfg.AGY_DB_FILE}?mode=ro", uri=True, timeout=3)) as con:
                 row = con.execute(
@@ -384,10 +368,13 @@ def inspect_visual_artifacts(
     eff_limit = max(1, min(int(limit or (1 if targets.strip() and "," not in targets and "-" not in targets else 2)), 4))
     catalog = _build_visual_catalog(conv_id, ws_path, batch_folder=batch_folder)
     selected = _select_targets(catalog, targets, conv_id, ws_path, offset=offset, limit=eff_limit)
+    gallery_links = build_tool_gallery_links(conv_id, str(ws_path) if ws_ok else "", max_urls=10)
+    guidance = f"{COPY_READY_LINK_GUIDANCE} {REPLY_PROMPT_GUIDANCE}"
     if not selected:
         return [TextContent(type="text", text=_compact_json({
-            "ok": False, "conversation_id": conv_id, "total_available": len(catalog), "assistant_guidance": REPLY_PROMPT_GUIDANCE,
-            "error": f"No matching visual artifacts found for targets='{targets}'.",
+            "ok": False, "conversation_id": conv_id, "total_available": len(catalog),
+            "gallery_url": gallery_links["gallery_url"], "verified_urls": gallery_links["verified_urls"],
+            "assistant_guidance": guidance, "error": f"No matching visual artifacts found for targets='{targets}'.",
             "available_preview": [{"seq": c["seq"], "name": c["name"], "rel_path": c["rel_path"]} for c in catalog[:10]],
         }))]
 
@@ -395,39 +382,52 @@ def inspect_visual_artifacts(
     reg_norm = (region or "full").strip().lower() or "full"
     skip_webp = bool(is_cloud_caller and (not include_thumbnails) and reg_norm == "full")
     count = len(selected)
-    per_img_budget = max(2_800, MAX_TOTAL_RAW_WEBP_BYTES // count)
+    verified_urls = list(gallery_links["verified_urls"])[:6] if (not skip_webp and count >= 3) else list(gallery_links["verified_urls"])
+    next_off = (max(0, int(offset or 0)) + count) if not targets.strip() else None
+    has_more = bool(next_off is not None and next_off < len(catalog))
+    summary_payload: dict[str, Any] = {
+        "ok": True, "conversation_id": conv_id, "returned_images": 0 if skip_webp else count,
+        "total_available": len(catalog), "has_more": has_more, "next_offset": next_off if has_more else None,
+        "gallery_url": gallery_links["gallery_url"], "verified_urls": verified_urls,
+        "assistant_guidance": guidance, "visual_inspection_hint": VISUAL_INSPECTION_HINT,
+        "suggested_actions": build_suggested_actions("inspect_visual_artifacts", target=Path(ws_path).name if ws_ok else "workspace", conv_id=conv_id, has_visuals=True),
+        "items": [],
+    }
+    if not skip_webp:
+        summary_payload["zoom_tip"] = "Pass region='top'|'middle'|'bottom' or 'x,y,w,h' with 1-2 targets for retina-level text legibility."
+        if count > 2 and reg_norm == "full":
+            summary_payload["zoom_warning"] = "Multi-image (count>2) full-frame thumbnails compress small UI text to stay <20 KB. Pass limit=1 or limit=2 with region='top'|'middle'|'bottom' for crisp legibility."
+    est_items = [{"seq": i["seq"], "name": i["name"], "rel_path": i["rel_path"], "batch_folder": i["batch_folder"], "signed_url": i["signed_url"], "original_px": "1920x1080", "thumb_px": "840x840", "region": region, "quality": 58, "source_bytes": 999999, "webp_bytes": 9999, "wire_b64_bytes": 99999} for i in selected]
+    overhead_b = len(json.dumps({"type": "text", "text": _compact_json({**summary_payload, "items": est_items})}, separators=(",", ":"), ensure_ascii=False).encode("utf-8")) + (120 * count)
+    avail_raw = max(2_000, min(MAX_TOTAL_RAW_WEBP_BYTES, ((19_200 - overhead_b) * 3) // 4))
+    per_img_budget = max(1_600, avail_raw // count)
     max_edge = 960 if count == 1 else (840 if count == 2 else (560 if count == 3 else 460))
     min_qual = 58 if count <= 2 else 22
     image_blocks: list[ImageContent] = []
     items_meta: list[dict[str, Any]] = []
     for item in selected:
-        meta, img_block = _build_visual_item(
-            item, skip_webp=skip_webp, per_img_budget=per_img_budget, max_edge=max_edge, region=region, min_qual=min_qual
-        )
+        meta, img_block = _build_visual_item(item, skip_webp=skip_webp, per_img_budget=per_img_budget, max_edge=max_edge, region=region, min_qual=min_qual)
         items_meta.append(meta)
         if img_block is not None:
             image_blocks.append(img_block)
-
-    next_off = (max(0, int(offset or 0)) + count) if not targets.strip() else None
-    has_more = bool(next_off is not None and next_off < len(catalog))
-    summary_payload: dict[str, Any] = {
-        "ok": True, "conversation_id": conv_id, "returned_images": len(image_blocks),
-        "total_available": len(catalog), "has_more": has_more, "next_offset": next_off if has_more else None,
-        "assistant_guidance": REPLY_PROMPT_GUIDANCE, "visual_inspection_hint": VISUAL_INSPECTION_HINT,
-        "suggested_actions": build_suggested_actions("inspect_visual_artifacts", target=Path(ws_path).name if ws_ok else "workspace", conv_id=conv_id, has_visuals=True),
-        "items": items_meta,
-    }
+    summary_payload["returned_images"], summary_payload["items"] = len(image_blocks), items_meta
     if skip_webp and any(isinstance(m, dict) and m.get("thumbnail_skipped") for m in items_meta):
-        summary_payload["cloud_fast_path"] = True
-        summary_payload["client_product"] = client_product
-        summary_payload["note"] = "Cloud MCP strips binary ImageContent on ingress; WebP encoding skipped (<2ms header metadata + 7-day signed_url links). Pass include_thumbnails=True if thumbnails are needed."
-    elif image_blocks:
-        summary_payload["zoom_tip"] = "Pass region='top'|'middle'|'bottom' or 'x,y,w,h' with 1-2 targets for retina-level text legibility."
-        if count > 2 and reg_norm == "full":
-            summary_payload["zoom_warning"] = (
-                "Multi-image (count>2) full-frame thumbnails compress small UI text to stay <20 KB. "
-                "Pass limit=1 or limit=2 with region='top'|'middle'|'bottom' for crisp legibility."
-            )
+        for k in ("zoom_tip", "zoom_warning"):
+            summary_payload.pop(k, None)
+        summary_payload.update({"cloud_fast_path": True, "client_product": client_product, "note": "Cloud MCP strips binary ImageContent on ingress; WebP encoding skipped (<2ms header metadata + 7-day signed_url links). Pass include_thumbnails=True if thumbnails are needed."})
+    elif not image_blocks:
+        for k in ("zoom_tip", "zoom_warning"):
+            summary_payload.pop(k, None)
+    def _wire_bytes() -> int:
+        return len(json.dumps([{"type": "text", "text": _compact_json(summary_payload)}, *[{"type": "image", "data": blk.data, "mimeType": "image/webp"} for blk in image_blocks]], separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
+    if _wire_bytes() > 19_500:
+        for m in items_meta:
+            if isinstance(m, dict):
+                m.pop("svg_excerpt", None)
+        for cap in (3, 0):
+            if _wire_bytes() <= 19_500:
+                break
+            summary_payload["verified_urls"] = list(summary_payload.get("verified_urls") or [])[:cap]
     return [TextContent(type="text", text=_compact_json(summary_payload)), *image_blocks]
 
 

@@ -38,10 +38,11 @@ from agy_nexus.hygiene import (
     compact_payload_to_wire_budget,
     within_wire_budget,
 )
-from .media import discover_visual_artifacts
+from .media import VISUAL_INSPECTION_HINT, discover_visual_artifacts
 from agy_nexus.retirement import build_suggested_actions, is_session_retired
 from agy_nexus.routing import _resolve_session_identifier
 from agy_nexus.search import _search_workspaces_and_history
+from agy_nexus.session_gallery import COPY_READY_LINK_GUIDANCE, build_tool_gallery_links
 from agy_nexus.session_status import (
     _get_selected_session_quick_status,
     generate_session_health_warning,
@@ -305,6 +306,14 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
         else {}
     )
     visual_artifacts = discover_visual_artifacts(conv_id, workspace, limit=6)
+    gallery_links = build_tool_gallery_links(
+        conv_id,
+        workspace,
+        raw_latest_assistant=raw_latest_assistant,
+        raw_walkthrough=walk_raw,
+        raw_task=task_raw,
+        max_urls=12,
+    )
     scratch_batches = list_scratch_upload_batches(conv_id, AGY_BRAIN_DIR)
     wf_info = discover_project_workflows(ws_path)
     project_workflows = {
@@ -329,11 +338,13 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
         "ok": True, "status": "LOADED",
         "conversation_id": conv_id, "title": conv_title, "project_id": project_id,
         "project_name": project_name, "workspace_path": workspace,
+        "gallery_url": gallery_links["gallery_url"],
+        "verified_urls": gallery_links["verified_urls"],
         "assistant_guidance": (
             "Session context loaded successfully. "
             "Synthesize your analysis or proceed with sequential read-only follow-up calls (e.g. paging a truncated transcript via ask_workspace_readonly(file_subpath='transcript:latest', start_line=..., end_line=...) or exploring code, one call at a time, never in parallel). "
             "Note: Hosted Gemini Web/Mobile strips binary MCP ImageContent blocks; share signed_url links with the user or let Antigravity inspect images locally. "
-            + REPLY_PROMPT_GUIDANCE
+            + COPY_READY_LINK_GUIDANCE + " " + REPLY_PROMPT_GUIDANCE
         ),
         "suggested_actions": build_suggested_actions(
             sess_phase, target=project_name or Path(workspace).name or "project",
@@ -353,8 +364,7 @@ def load_session_into_gemini(session_identifier: str, spoken_passphrase: str = "
     }
     if project_workflows:
         payload["project_workflows"] = project_workflows
-    if visual_artifacts or scratch_batches:
-        from agy_nexus.media import VISUAL_INSPECTION_HINT
+    if visual_artifacts or scratch_batches or gallery_links.get("gallery_url") or gallery_links.get("verified_urls"):
         payload["visual_inspection_hint"] = VISUAL_INSPECTION_HINT
     if included_files:
         payload["included_files"] = included_files
