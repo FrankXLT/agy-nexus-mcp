@@ -18,39 +18,16 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from agy_nexus import (
-    bucket_api as bapi_mod,
-    bucket_scanner as bscan_mod,
-    config as cfg,
-    handoff as handoff_mod,
-    media as media_mod,
-    media_discovery as mdisc_mod,
-    retirement as ret_mod,
-    routing as routing_mod,
-    search as search_mod,
-    session_gallery as sg_mod,
-    session_status as ss_mod,
-    session_tree as st_mod,
-    sessions as sess_mod,
-    target_resolver as tr_mod,
-    tools_media as tmedia_mod,
-    tools_ops as tops_mod,
-    tools_session as tsession_mod,
-    tools_workspace as tws_mod,
-    verified_urls as vurl_mod,
-    virtual_uris as vu_mod,
-    web_routes as wr_mod,
-    workflows as wf_mod,
-    workspace as ws_mod,
-)
-from agy_nexus.media import compute_media_hmac, discover_visual_buckets, sign_media_url, verify_and_resolve_media
-from agy_nexus.server import build_nexus_http_app
-from agy_nexus.session_gallery import compute_gallery_hmac, sign_gallery_url
-from agy_nexus.verified_urls import (
-    extract_verified_urls_from_texts,
-    normalize_github_remote_url,
-    resolve_repo_github_url,
-)
+from agy_nexus import bucket_api as bapi_mod, bucket_scanner as bscan_mod, config as cfg, handoff as handoff_mod, media as media_mod  # noqa: E402
+from agy_nexus import media_discovery as mdisc_mod, retirement as ret_mod, routing as routing_mod, search as search_mod  # noqa: E402
+from agy_nexus import session_gallery as sg_mod, session_status as ss_mod, session_tree as st_mod, sessions as sess_mod  # noqa: E402
+from agy_nexus import target_resolver as tr_mod, tools_media as tmedia_mod, tools_ops as tops_mod, tools_session as tsession_mod  # noqa: E402
+from agy_nexus import tools_workspace as tws_mod, verified_urls as vurl_mod, virtual_uris as vu_mod, web_routes as wr_mod  # noqa: E402
+from agy_nexus import workflows as wf_mod, workspace as ws_mod  # noqa: E402
+from agy_nexus.media import compute_media_hmac, discover_visual_buckets, sign_media_url, verify_and_resolve_media  # noqa: E402
+from agy_nexus.server import build_nexus_http_app  # noqa: E402
+from agy_nexus.session_gallery import compute_gallery_hmac, sign_gallery_url  # noqa: E402
+from agy_nexus.verified_urls import extract_verified_urls_from_texts, normalize_github_remote_url, resolve_repo_github_url  # noqa: E402
 
 
 def _setup_sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path, Path, Path, str, str]:
@@ -364,7 +341,8 @@ def test_v421_compaction_preservation_mcp_tools_and_hygiene(tmp_path: Path, monk
             assert u in load_pay["verified_urls"]
         assert "556677" not in load_pay["walkthrough"] and "PR #42" not in load_pay["task_content"]
         assert "#workspace" not in load_pay["latest_assistant_response"]
-        assert sg_mod.COPY_READY_LINK_GUIDANCE in load_pay["assistant_guidance"]
+        assert sg_mod.COPY_READY_LINK_GUIDANCE == sg_mod.EMBEDDED_LINK_GUIDANCE
+        assert sg_mod.EMBEDDED_LINK_GUIDANCE in load_pay["assistant_guidance"]
         assert cfg.REPLY_PROMPT_GUIDANCE in load_pay["assistant_guidance"]
         assert load_pay["visual_inspection_hint"] == media_mod.VISUAL_INSPECTION_HINT
 
@@ -374,7 +352,7 @@ def test_v421_compaction_preservation_mcp_tools_and_hygiene(tmp_path: Path, monk
         )
         assert cloud_pay["cloud_fast_path"] is True and cloud_pay["returned_images"] == 0 and len(cloud_blocks) == 1
         assert "/web/gallery/" in cloud_pay["gallery_url"] and "https://FrankXLT.github.io/demo-site/demo/" in cloud_pay["verified_urls"]
-        assert sg_mod.COPY_READY_LINK_GUIDANCE in cloud_pay["assistant_guidance"] and cfg.REPLY_PROMPT_GUIDANCE in cloud_pay["assistant_guidance"]
+        assert sg_mod.EMBEDDED_LINK_GUIDANCE in cloud_pay["assistant_guidance"] and cfg.REPLY_PROMPT_GUIDANCE in cloud_pay["assistant_guidance"]
 
         _, local_pay, local_blocks = _call_mcp(
             client, secret, 3, "inspect_visual_artifacts", {"session_identifier": cid, "targets": "1-2"},
@@ -382,13 +360,19 @@ def test_v421_compaction_preservation_mcp_tools_and_hygiene(tmp_path: Path, monk
         )
         assert local_pay["returned_images"] == 2 and len(local_blocks) == 3 and local_blocks[1]["type"] == "image"
         assert "/web/gallery/" in local_pay["gallery_url"] and local_pay["verified_urls"]
-        assert sg_mod.COPY_READY_LINK_GUIDANCE in local_pay["assistant_guidance"] and cfg.REPLY_PROMPT_GUIDANCE in local_pay["assistant_guidance"]
+        assert sg_mod.EMBEDDED_LINK_GUIDANCE in local_pay["assistant_guidance"] and cfg.REPLY_PROMPT_GUIDANCE in local_pay["assistant_guidance"]
 
-    assert "7. COPY-READY CODE BLOCK LINK RULE" in cfg.mcp.instructions and "gallery_url" in cfg.mcp.instructions
+    assert "7. EMBEDDED PLAIN-LABEL WEB LINKS" in cfg.mcp.instructions and "gallery_url" in cfg.mcp.instructions
+    assert "7. COPY-READY CODE BLOCK LINK RULE" not in cfg.mcp.instructions
+    for txt in (sg_mod.EMBEDDED_LINK_GUIDANCE, cfg.mcp.instructions, media_mod.VISUAL_INSPECTION_HINT):
+        low = txt.lower()
+        assert "never" in low and "code blocks" in low and "[...]" in txt
+        assert "Open Session Gallery" in txt and "Open in Antigravity Web" in txt
+    assert "Google-Agent" in media_mod.VISUAL_INSPECTION_HINT and "uses extra tokens" in media_mod.VISUAL_INSPECTION_HINT
     closeout_txt = ret_mod.get_closeout_directives(str(repo_dir), cid)
     assert "Full HTTPS Closeout Links" in closeout_txt and "https://" in closeout_txt
     wf_doc = (REPO_ROOT / "docs" / "WORKFLOWS.md").read_text(encoding="utf-8")
-    for term in ("Signed Session Gallery Page", "Top-Level Verified URL List", "Copy-Ready Code Block Link Rule", "Percent-Encoded Media Scope"):
+    for term in ("Signed Session Gallery Page", "Top-Level Verified URL List", "Embedded Plain-Label Web Links", "Percent-Encoded Media Scope"):
         assert term in wf_doc
     for banned in ("diurnal", "plain-english", "posture", "surface"):
         assert banned not in wf_doc.lower()

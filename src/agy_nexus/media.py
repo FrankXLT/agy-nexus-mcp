@@ -408,12 +408,11 @@ def discover_visual_artifacts(
 
 
 VISUAL_INSPECTION_HINT = (
-    "Always render `gallery_url` and any newly deployed or unindexed `verified_urls` inside a fenced ```text code block "
-    "so Gemini never rewrites them into Google Search queries and Android users get 1-tap Copy — never hide them solely "
-    "behind Markdown anchor text. "
-    "Share clickable signed_url links at zero extra token cost, and prompt via a 1-tap choice before fetching "
-    "screenshots or published HTML into Gemini's Linux VM (curl -A 'Mozilla/5.0 (compatible; Google-Agent; "
-    "+https://developers.google.com/crawling/docs/crawlers-fetchers/google-agent)' + view_file; uses extra tokens)."
+    "Render `gallery_url`, `workspace_url`, `verified_urls`, and `signed_url` as clickable Markdown links with "
+    "plain English labels (`[Open Session Gallery](...)`, `[Open in Antigravity Web](...)`); never put raw "
+    "domains/URLs in `[...]` or URLs in fenced code blocks. Share links at zero extra token cost, and prompt "
+    "via 1-tap choice before fetching into Gemini's VM (`curl -A 'Mozilla/5.0 (compatible; Google-Agent)'` "
+    "User-Agent + `view_file`; uses extra tokens)."
 )
 
 

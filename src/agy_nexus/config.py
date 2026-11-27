@@ -447,7 +447,7 @@ mcp = FastMCP(
         "6. OPT-IN GEMINI VM VISUAL AUDIT: Share clickable `signed_url` screenshot & showcase HTML links at zero extra token cost. "
         "Gemini's Linux workspace CAN fetch them (`curl -A 'Mozilla/5.0 (compatible; Google-Agent; +https://developers.google.com/crawling/docs/crawlers-fetchers/google-agent)'` + `view_file`), "
         "but NEVER auto-fetch images unprompted—ALWAYS prompt first with `<Elicitation label=\"Have Gemini audit screenshots in VM (uses extra tokens)\" ... />`.\n"
-        "7. COPY-READY CODE BLOCK LINK RULE: Whenever `gallery_url` or newly deployed/unindexed `verified_urls` are returned by `load_session_into_gemini` or `inspect_visual_artifacts`, ALWAYS place `gallery_url` and those unindexed HTTPS links inside a fenced ```text code block (never hidden solely behind Markdown anchor text, which Gemini's link grounder rewrites into Google Search queries on Android and Web)."
+        "7. EMBEDDED PLAIN-LABEL WEB LINKS: Whenever `gallery_url` or verified `verified_urls` are returned by `load_session_into_gemini` or `inspect_visual_artifacts`, ALWAYS present them as tappable embedded Markdown links using plain English labels (such as `[Open Session Gallery](<gallery_url>)`, `[Open in Antigravity Web](<workspace_url>)`, or `[Open Documentation](...)`). NEVER place raw domain names or URLs inside the `[...]` square brackets and NEVER dump URLs inside fenced code blocks."
     ),
 )
 

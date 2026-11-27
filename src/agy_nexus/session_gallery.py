@@ -22,11 +22,12 @@ from agy_nexus.sessions import _load_projects_map, pick_primary_workspace_uri, r
 from agy_nexus.uploads import validate_conv_id
 from agy_nexus.verified_urls import describe_verified_url, extract_verified_urls_for_session
 
-COPY_READY_LINK_GUIDANCE = (
-    "CRITICAL (Gemini Carbon / Gemini Tasks): Always present `gallery_url` and any newly "
-    "deployed or unindexed `verified_urls` inside a fenced ```text code block so Gemini never "
-    "rewrites URLs into Google Search queries and mobile users get 1-tap Copy."
+EMBEDDED_LINK_GUIDANCE = (
+    "Render `gallery_url`, `workspace_url`, and `verified_urls` as clickable Markdown links with "
+    "plain English labels (`[Open Session Gallery](...)`, `[Open in Antigravity Web](...)`). "
+    "Never put raw domains/URLs in `[...]` or URLs in fenced code blocks."
 )
+COPY_READY_LINK_GUIDANCE = EMBEDDED_LINK_GUIDANCE
 
 
 def _format_size_label(num_bytes: int) -> str:

@@ -95,7 +95,9 @@ All server implementation code lives in `src/agy_nexus/`. The root `ag_bridge.py
 | File / Path | Budget | Responsibility |
 | :--- | :---: | :--- |
 | `web/site/*` | `<= 500L` / file | Plain-language Three-Route Project Site assets powering the public Overview (`./`), Searchable Guide (`./docs/` with Search Topics and zero-match fallback), OAW Portfolio Header Switcher, and 4-theme parity matching `./demo/` |
+| `web/site/oaw_search.*` | `<= 450L` / file | Native `<dialog closedby="any">` `Ctrl+K` / `/` scoped-first universal search modal powered by `search-index.json` across Overview, Demo, and Docs |
 | `scripts/site_docs_builder.py` | `<= 500L` | Plain-language static docs compiler turning repo Markdown (`README.md`, `docs/WORKFLOWS.md`, `docs/DEPLOYMENT.md`, `docs/PRICING_HISTORY.md`) into searchable topic cards and index metadata for `./docs/` |
+| `scripts/site_search_index.py` | `<= 250L` | Builds `search-index.json` across Overview, Demo, and Docs for scoped-first `Ctrl+K` / `/` universal search |
 | `scripts/build_github_showcase.py` | `<= 500L` | Zero-backend GitHub Pages static bundler (`build/gh-pages/`) assembling `./` Overview, `./demo/` Live Studio Demo, `./docs/` Searchable Guide, `1280x640` metadata-stripped social preview, `.nojekyll`, and fail-closed `0`-leak privacy audit |
 
 ---

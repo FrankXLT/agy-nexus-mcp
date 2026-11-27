@@ -363,6 +363,7 @@
       if (periodWrap && !periodWrap.contains(e.target)) closePeriodPopover(false);
     });
     document.addEventListener("keydown", (e) => {
+      if (document.querySelector("dialog[open]")) return;
       if (e.key === "Escape") closePeriodPopover(true);
     });
     V9._periodPopover = { openPeriodPopover, closePeriodPopover };

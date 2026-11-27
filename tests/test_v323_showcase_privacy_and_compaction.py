@@ -7,7 +7,6 @@ demo asset parity, and <20 KB HTTP wire size for load_session_into_gemini with 6
 from __future__ import annotations
 
 import ast
-import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -110,7 +109,9 @@ def test_v323_showcase_zero_private_strings_and_hash_leak_guard() -> None:
         scan_txt = txt
         if fp.name == "README.md":
             for pub_url in (
+                "https://oaworkbench.org",
                 "https://www.oaworkbench.org",
+                "https://research.oaworkbench.org",
                 "https://projects.oaworkbench.org",
                 "https://learn.oaworkbench.org",
             ):

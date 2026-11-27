@@ -14,11 +14,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from pathlib import Path
 import re
 import shutil
 import struct
 import sys
+from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -26,7 +26,7 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from agy_nexus import __version__
+from agy_nexus import __version__  # noqa: E402
 
 _PNG_SIG = b"\x89PNG\r\n\x1a\n"
 _PNG_META_CHUNKS = frozenset({b"tEXt", b"zTXt", b"iTXt", b"eXIf", b"tIME"})
@@ -34,29 +34,18 @@ _TEXT_EXTS = frozenset({".html", ".js", ".css", ".json", ".webmanifest", ".md", 
 _PACING_SCAN_EXTS = frozenset({".html", ".js", ".css", ".md"})
 _BANNED_PACING_TERMS = ("quota pacing", "quota-pacing", "weekly pacing", "partner_weekly_pacing")
 _ALLOWED_PUBLIC_STRINGS = (
-    "https://github.com/FrankXLT/agy-nexus-mcp",
-    "github.com/FrankXLT/agy-nexus-mcp",
-    "raw.githubusercontent.com/FrankXLT/agy-nexus-mcp",
-    "https://FrankXLT.github.io/agy-nexus-mcp",
-    "FrankXLT.github.io/agy-nexus-mcp",
-    "io.github.FrankXLT/agy-nexus-mcp",
-    "ghcr.io/frankxlt/agy-nexus-mcp",
-    "FrankXLT/agy-nexus-mcp",
-    "https://github.com/FrankXLT/quiet-ui-skills",
-    "https://github.com/FrankXLT",
-    "@FrankXLT",
-    "https://projects.oaworkbench.org/quiet-ui-skills/",
-    "https://projects.oaworkbench.org",
-    "projects.oaworkbench.org",
-    "https://learn.oaworkbench.org",
-    "learn.oaworkbench.org",
-    "https://www.oaworkbench.org",
-    "www.oaworkbench.org",
-    "@users.noreply.github.com",
-    "/home/dev/",
-    "/home/dev",
-    "selftest_runner.py",
-    "google-nexus 27.8%",
+    "https://github.com/FrankXLT/agy-nexus-mcp.git", "https://github.com/FrankXLT/agy-nexus-mcp", "github.com/FrankXLT/agy-nexus-mcp", "raw.githubusercontent.com/FrankXLT/agy-nexus-mcp",
+    "https://FrankXLT.github.io/agy-nexus-mcp", "FrankXLT.github.io/agy-nexus-mcp", "io.github.FrankXLT/agy-nexus-mcp",
+    "ghcr.io/frankxlt/agy-nexus-mcp", "FrankXLT/agy-nexus-mcp", "https://github.com/FrankXLT/quiet-ui-skills",
+    "https://github.com/FrankXLT", "@FrankXLT",
+    "https://projects.oaworkbench.org/quiet-ui-skills/", "https://projects.oaworkbench.org/mcp-adv-netutils/",
+    "https://projects.oaworkbench.org/search-index.json", "https://projects.oaworkbench.org/quiet-ui-skills/search-index.json",
+    "https://projects.oaworkbench.org/mcp-adv-netutils/search-index.json", "https://projects.oaworkbench.org", "projects.oaworkbench.org",
+    "https://oaworkbench.org/search-index.json", "https://oaworkbench.org", "oaworkbench.org",
+    "https://learn.oaworkbench.org/search-index.json", "https://learn.oaworkbench.org", "learn.oaworkbench.org",
+    "https://research.oaworkbench.org/search-index.json", "https://research.oaworkbench.org", "research.oaworkbench.org",
+    "https://www.oaworkbench.org", "www.oaworkbench.org",
+    "@users.noreply.github.com", "/home/dev/", "/home/dev", "selftest_runner.py", "google-nexus 27.8%",
 )
 _BANNED_HASHES = frozenset({
     "d3b2fffdf371", "7e4712893a83", "b69a2bdcf5ff", "c79698445329", "c96d8cec0414",
@@ -298,7 +287,7 @@ def _live_brain_uuids() -> set[str]:
     brain_dir = Path.home() / ".gemini/antigravity/brain"
     if not brain_dir.is_dir():
         return set()
-    uuid_pat = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+    uuid_pat = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
     return {p.name.lower() for p in brain_dir.iterdir() if p.is_dir() and uuid_pat.match(p.name)}
 
 
@@ -344,7 +333,16 @@ def _scan_text_file_privacy(
                 findings.append(f"{rel}: disallowed quota-pacing term `{term}`")
     sanitized = txt
     for allow in sorted(_ALLOWED_PUBLIC_STRINGS, key=len, reverse=True):
-        sanitized = sanitized.replace(allow, " ")
+        if " " in allow:
+            sanitized = sanitized.replace(allow, " ")
+        elif allow.endswith("/"):
+            lead = "" if allow.startswith(("https://", "http://")) else r"(?<![A-Za-z0-9._-])"
+            sanitized = re.sub(rf"{lead}{re.escape(allow)}", " ", sanitized)
+        elif allow.startswith(("https://", "http://", "/", "@")):
+            lead = r"(?<![A-Za-z0-9._-])" if allow.startswith("/") else ""
+            sanitized = re.sub(rf"{lead}{re.escape(allow)}(?![A-Za-z0-9_-]|\.[A-Za-z0-9._-])", " ", sanitized)
+        else:
+            sanitized = re.sub(rf"(?<![A-Za-z0-9._-]){re.escape(allow)}(?![A-Za-z0-9_-]|\.[A-Za-z0-9._-])", " ", sanitized)
     low = sanitized.lower()
     for m in lan_pat.findall(sanitized):
         findings.append(f"{rel}: disallowed .lan domain `{m}`")
@@ -370,7 +368,7 @@ def scan_showcase_privacy(out_dir: Path) -> list[str]:
     findings: list[str] = []
     banned_lits = _load_extra_banned_literals()
     live_uuids = _live_brain_uuids()
-    lan_pat = re.compile(r"\b[a-z0-9-]+\.lan\b", re.I)
+    lan_pat = re.compile(r"\b[a-z0-9-]+\.lan\b", re.IGNORECASE)
     ip_pat = re.compile(r"\b(?:192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+)\b")
     for fp in sorted(out_dir.rglob("*")):
         if not fp.is_file():
@@ -387,16 +385,24 @@ def _extract_demo_oaw_topbar(site_index_path: Path, version: str) -> str:
     raw = site_index_path.read_text(encoding="utf-8")
     m = re.search(r"<!-- OAW_UNIFIED_TOPBAR_START -->\s*([\s\S]*?)\s*<!-- OAW_UNIFIED_TOPBAR_END -->", raw)
     assert m, "Missing OAW_UNIFIED_TOPBAR markers in web/site/index.html"
-    bar = m.group(1).replace('<header id="oawTopbar" class="oaw-topbar" role="banner">', '<nav id="v9ShowcaseBar" class="v9-showcase-bar oaw-topbar" aria-label="Open Agentic Workbench navigation">', 1)
+    bar = m.group(1).replace('<header id="oawTopbar" class="oaw-topbar" role="banner">', '<div id="v9ShowcaseBar" class="v9-showcase-bar oaw-topbar">', 1)
     assert bar.endswith("</header>"), "Missing closing </header> in OAW topbar"
-    bar = bar[:-len("</header>")] + "</nav>"
-    bar = bar.replace('href="./demo/"', 'href="__OAW_DEMO__"').replace('href="./docs/"', 'href="../docs/"').replace('href="./"', 'href="../"').replace('href="__OAW_DEMO__"', 'href="./"')
-    bar = bar.replace('class="oaw-context-tab is-active" href="../" aria-current="page" data-oaw-tab="overview"', 'class="oaw-context-tab" href="../" data-oaw-tab="overview"')
-    bar = bar.replace('class="oaw-context-tab" href="./" data-oaw-tab="demo"', 'class="oaw-context-tab is-active" href="./" aria-current="page" data-oaw-tab="demo"')
-    bar = bar.replace('class="oaw-pop-tab is-active" href="../" aria-current="page" data-oaw-tab="overview"', 'class="oaw-pop-tab" href="../" data-oaw-tab="overview"')
-    bar = bar.replace('class="oaw-pop-tab" href="./" data-oaw-tab="demo"', 'class="oaw-pop-tab is-active" href="./" aria-current="page" data-oaw-tab="demo"')
-    assert bar.count('aria-current="page" data-oaw-tab="demo"') == 2
-    return bar.replace('?v=4.2.0', f'?v={version}')
+    bar = bar[:-len("</header>")] + "</div>"
+    for old, new in (('href="./demo/"', 'href="__OAW_DEMO__"'), ('href="./docs/"', 'href="../docs/"'), ('href="./"', 'href="../"'), ('href="__OAW_DEMO__"', 'href="./"'), ('data-search-index="./search-index.json"', 'data-search-index="../search-index.json"')):
+        bar = bar.replace(old, new)
+    bar = re.sub(r'(<button\b[^>]*\bid="btnViewSwitcher"[^>]*>[\s\S]*?<span\s+class="oaw-pill-label">)Overview(</span>)', r"\1Demo\2", bar, count=1)
+
+    def _flip_tab(tm: re.Match[str]) -> str:
+        tag_html, tab = tm.group(0), tm.group(1)
+        tag_html = re.sub(r'\s*aria-current="page"', "", tag_html)
+        if tab == "overview":
+            return re.sub(r'class="([^"]+)"', lambda cm: 'class="' + " ".join(c for c in cm.group(1).split() if c != "is-active") + '"', tag_html)
+        tag_html = re.sub(r'class="([^"]+)"', lambda cm: cm.group(0) if "is-active" in cm.group(1).split() else f'class="{cm.group(1)} is-active"', tag_html)
+        return tag_html.replace('data-oaw-tab="demo"', 'aria-current="page" data-oaw-tab="demo"') if "oaw-context-tab" in tag_html else tag_html
+
+    bar = re.sub(r'<a\b[^>]*data-oaw-tab="(overview|demo)"[^>]*>', _flip_tab, bar)
+    assert bar.count('aria-current="page" data-oaw-tab="demo"') == 1
+    return bar.replace("?v=4.2.0", f"?v={version}")
 
 
 def _rewrite_demo_index_for_static(html_text: str) -> str:
@@ -404,10 +410,10 @@ def _rewrite_demo_index_for_static(html_text: str) -> str:
     topbar_html = _extract_demo_oaw_topbar(REPO_ROOT / "web" / "site" / "index.html", __version__)
     out, n = re.subn(r'<nav id="v9ShowcaseBar"[\s\S]*?</nav>', lambda _m: topbar_html, out, count=1)
     assert n == 1, "Failed to replace #v9ShowcaseBar with unified OAW topbar"
-    out = out.replace('  <link rel="stylesheet" href="../v9/v9_shell.css?v=4.2.0" />', f'  <link rel="stylesheet" href="../v9/v9_shell.css?v={__version__}" />\n  <link rel="stylesheet" href="../assets/oaw_topbar.css?v={__version__}" />', 1)
-    out = out.replace('</body>', f'  <script defer src="../assets/site_shell.js?v={__version__}"></script>\n</body>', 1)
-    marker = '<script src="../demo_snapshot.js'
-    flag_tag = '<script>window.AGY_STATIC_SHOWCASE = true;</script>\n  '
+    css_extra = f'  <link rel="stylesheet" href="../assets/oaw_topbar.css?v={__version__}" />\n  <link rel="stylesheet" href="../assets/oaw_search.css?v={__version__}" />'
+    out = re.sub(r'  <link rel="stylesheet" href="\.\./v9/v9_shell\.css\?v=[^"]+" />', lambda m: f"{m.group(0)}\n{css_extra}", out, count=1)
+    out = out.replace("</body>", f'  <script defer src="../assets/site_shell.js?v={__version__}"></script>\n  <script src="../assets/oaw_search.js?v={__version__}" defer></script>\n</body>', 1)
+    marker, flag_tag = '<script src="../demo_snapshot.js', '<script>window.AGY_STATIC_SHOWCASE = true;</script>\n  '
     if marker in out and "AGY_STATIC_SHOWCASE" not in out:
         out = out.replace(marker, f"{flag_tag}{marker}", 1)
     return out
@@ -433,6 +439,7 @@ def build_showcase(out_dir: Path, *, refresh: bool = False) -> dict[str, Any]:
         import export_depersonalized_showcase as eds
         eds.main()
     import site_docs_builder
+    import site_search_index
 
     web_dir, v9_dir, demo_out, assets_out = REPO_ROOT / "web", REPO_ROOT / "web" / "v9", out_dir / "demo", out_dir / "assets"
     if out_dir.exists():
@@ -463,6 +470,8 @@ def build_showcase(out_dir: Path, *, refresh: bool = False) -> dict[str, Any]:
     shutil.copytree(v9_dir / "vendor", out_dir / "v9" / "vendor", dirs_exist_ok=True)
 
     site_meta = site_docs_builder.build_site_pages(REPO_ROOT, out_dir, __version__)
+    docs_data = site_docs_builder.build_docs_data(REPO_ROOT, __version__)
+    site_search_index.write_search_index(REPO_ROOT, out_dir, docs_data, __version__)
     findings = scan_showcase_privacy(out_dir)
     if findings:
         sample = "\n  - ".join(findings[:10])

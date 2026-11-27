@@ -445,7 +445,10 @@ def build_docs_data(repo_root: Path, version: str) -> dict[str, Any]:
     used_ids: set[str] = {
         "doc-overview", "doc-quickstart", "doc-common-terms", "doc-architecture", "doc-how-it-is-built",
         "doc-deployment", "doc-pricing", "doc-workflows", "doc-discoverability", "doc-changelog",
-        "docsTocList", "docsArticleHost",
+        "oawTopbar", "btnContextSwitcher", "oawContextPopover", "btnViewSwitcher", "oawViewMenu",
+        "btnGlobalSearch", "oawSearchDialog", "btnPillarSwitcher", "oawPillarPopover", "btnUserMenu",
+        "oawUserPopover", "mainContent", "docsMobileSubbar", "docsCurrentChapterTitle",
+        "docsTocNav", "docsTocList", "docsArticleHost",
         "docsTocDialog", "docsTocDialogTitle", "docsTocModalNav", "docsTocModalList", "docsTocToggle",
         "docsSearchInput", "docsSearchClearBtn", "docsSearchStatus", "docsEmptyState", "docsEmptyQuery",
         "docsResetSearchBtn", "docsHeroMeta", "docsPager",
@@ -472,9 +475,10 @@ def build_site_pages(repo_root: Path, out_dir: Path, version: str) -> dict[str, 
     assets_out.mkdir(parents=True, exist_ok=True)
     docs_out.mkdir(parents=True, exist_ok=True)
 
-    (out_dir / "index.html").write_text((site_dir / "index.html").read_text(encoding="utf-8"), encoding="utf-8")
-    (docs_out / "index.html").write_text((site_dir / "docs.html").read_text(encoding="utf-8"), encoding="utf-8")
-    for asset_name in ("oaw_topbar.css", "site_shell.css", "site_shell.js", "docs.css", "docs_app.js"):
+    ver_pat = re.compile(r"((?:v9_layers|quiet-ui-tokens|oaw_topbar|oaw_search|site_shell|docs|docs_data|docs_app)\.(?:css|js))\?v=[^\"'\s>]+")
+    (out_dir / "index.html").write_text(ver_pat.sub(rf"\1?v={version}", (site_dir / "index.html").read_text(encoding="utf-8")), encoding="utf-8")
+    (docs_out / "index.html").write_text(ver_pat.sub(rf"\1?v={version}", (site_dir / "docs.html").read_text(encoding="utf-8")), encoding="utf-8")
+    for asset_name in ("oaw_topbar.css", "oaw_search.css", "oaw_search.js", "site_shell.css", "site_shell.js", "docs.css", "docs_app.js"):
         shutil.copy2(site_dir / asset_name, assets_out / asset_name)
 
     data = build_docs_data(repo_root, version)

@@ -451,8 +451,9 @@
     });
     document.getElementById("v9WsBackdrop")?.addEventListener("click", () => applyRailVisibility(false));
     document.addEventListener("keydown", (e) => {
+      if (document.querySelector("dialog[open]")) return;
       if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === "b") {
-        if ((!V9.state.passphrase && !V9.state.demoMode) || document.querySelector("dialog[open]")) return;
+        if (!V9.state.passphrase && !V9.state.demoMode) return;
         e.preventDefault();
         if (isDesktopPinned()) applyRailVisibility(false);
         else applyRailVisibility(!V9.state.railOpen);
