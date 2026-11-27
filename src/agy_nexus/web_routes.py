@@ -22,12 +22,19 @@ from agy_nexus.config import (
     verify_passphrase,
 )
 from agy_nexus.media import verify_and_resolve_media
+from agy_nexus.session_gallery import (
+    build_session_gallery_payload,
+    render_gallery_error_html,
+    render_session_gallery_html,
+    verify_and_resolve_gallery,
+)
 from agy_nexus.stats import build_nexus_stats_bundle
 from agy_nexus.uploads import handle_session_upload_request
 
 PWA_ASSETS: dict[str, bytes] = {
     "styles.css": b"text/css; charset=utf-8",
     "workspace.css": b"text/css; charset=utf-8",
+    "gallery_page.css": b"text/css; charset=utf-8",
     "palettes.js": b"application/javascript; charset=utf-8",
     "demo_snapshot.js": b"application/javascript; charset=utf-8",
     "demo_data.js": b"application/javascript; charset=utf-8",
@@ -41,6 +48,7 @@ PWA_ASSETS: dict[str, bytes] = {
     "explorer.js": b"application/javascript; charset=utf-8",
     "gallery_select.js": b"application/javascript; charset=utf-8",
     "gallery_view.js": b"application/javascript; charset=utf-8",
+    "gallery_page.js": b"application/javascript; charset=utf-8",
     "sheet_builder.js": b"application/javascript; charset=utf-8",
     "markdown_renderer.js": b"application/javascript; charset=utf-8",
     "manifest.webmanifest": b"application/manifest+json; charset=utf-8",
@@ -254,6 +262,33 @@ async def _handle_web_stats(headers: list[tuple[bytes, bytes]], raw_qs: str, t0:
     return True
 
 
+async def _handle_gallery_request(req_path: str, method: str, send: Any) -> bool:
+    """Serve HMAC-signed SSR session gallery HTML without requiring passphrase unlock."""
+    conv_id, status_code, msg_text = verify_and_resolve_gallery(req_path)
+    if status_code == 200:
+        gallery_data = await anyio.to_thread.run_sync(build_session_gallery_payload, conv_id)
+        body_b = render_session_gallery_html(gallery_data).encode("utf-8")
+    else:
+        body_b = render_gallery_error_html(status_code, msg_text).encode("utf-8")
+    await send({
+        "type": "http.response.start",
+        "status": status_code,
+        "headers": [
+            (b"content-type", b"text/html; charset=utf-8"),
+            (b"content-length", str(len(body_b)).encode("ascii")),
+            (b"cache-control", b"no-store, no-cache, private"),
+            (b"x-content-type-options", b"nosniff"),
+            (b"referrer-policy", b"no-referrer"),
+            (
+                b"content-security-policy",
+                b"default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'",
+            ),
+        ],
+    })
+    await send({"type": "http.response.body", "body": b"" if method == "HEAD" else body_b})
+    return True
+
+
 async def handle_web_request(
     scope: dict[str, Any], receive: Any, send: Any, web_dir: Path,
     req_path: str, method: str, headers: list[tuple[bytes, bytes]], raw_qs: str = "",
@@ -287,6 +322,9 @@ async def handle_web_request(
 
     if "/web/api/catalog/" in req_path:
         return await _handle_catalog_api(headers, req_path, method, raw_qs, send)
+
+    if method in ("GET", "HEAD") and ("/web/gallery/" in req_path or req_path.endswith("/web/gallery")):
+        return await _handle_gallery_request(req_path, method, send)
 
     if method in ("GET", "HEAD") and "/web/" in req_path and not req_path.endswith("/web/api/stats"):
         if await _serve_static_or_media(web_dir, req_path, method, send):

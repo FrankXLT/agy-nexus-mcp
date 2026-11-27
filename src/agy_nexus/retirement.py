@@ -91,11 +91,7 @@ def infer_continuity_intent(
     return "new_topic" if (is_clean_seam and (raw.startswith("#") or "handshake" in raw)) else "continuation"
 
 
-def get_closeout_directives(
-    ws_path: str = "",
-    conv_id: str = "",
-    retire_after_closeout: bool = False,
-) -> str:
+def get_closeout_directives(ws_path: str = "", conv_id: str = "", retire_after_closeout: bool = False) -> str:
     """Generate Markdown directives for terminal session closeout and workspace cleanup."""
     cid_hint = conv_id or "<conv_id>"
     retire_line = (
@@ -108,6 +104,7 @@ def get_closeout_directives(
         "- **Worktree Pruning**: Run `git worktree prune` to purge any detached or stale worktree references.",
         "- **Temp Cleanup**: Remove untracked verification temp files (e.g. scratch scripts and temporary logs).",
         "- **Mark Tickets Completed**: Ensure all active staged handoff tickets for this repository are marked `COMPLETED`.",
+        "- **Full HTTPS Closeout Links**: Write full `https://` URLs in your final summary, `walkthrough.md`, and `task.md` for all deployed routes (Overview, Demo, Docs), Pull Requests, Releases, and CI runs—never relative shorthand like `./demo/`, `PR #N`, or `run #N`.",
         retire_line,
     ]
     if ws_path:
