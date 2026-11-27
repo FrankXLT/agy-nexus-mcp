@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
-from pathlib import Path
 import re
 import struct
 import subprocess
 import sys
 import tomllib
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS_DIR = REPO_ROOT / "scripts"
@@ -17,20 +17,15 @@ SITE_DIR = WEB_DIR / "site"
 V9_DIR = WEB_DIR / "v9"
 
 OAW_URLS = (
-    "https://www.oaworkbench.org/",
+    "https://oaworkbench.org/",
     "https://projects.oaworkbench.org/",
     "https://learn.oaworkbench.org/",
+    "https://research.oaworkbench.org/",
 )
 QUIET_THEMES = ("white", "paper", "dark-paper", "dark")
 REQUIRED_DOC_IDS = ("doc-quickstart", "doc-common-terms", "doc-architecture", "doc-how-it-is-built")
 BANNED_PACING_TERMS = (
-    "quota pacing",
-    "quota-pacing",
-    "weekly pacing",
-    "partner_weekly_pacing",
-    "ON PACE",
-    ">WARM<",
-    ">HOT<",
+    "quota pacing", "quota-pacing", "weekly pacing", "partner_weekly_pacing", "ON PACE", ">WARM<", ">HOT<",
 )
 
 
@@ -97,7 +92,7 @@ def test_v420_showcase_bar_visibility_and_node_vm_toggle(tmp_path: Path) -> None
         assert '<nav id="v9ShowcaseBar" class="v9-showcase-bar hidden"' in live_html
 
     demo_html = (out_dir / "demo" / "index.html").read_text(encoding="utf-8")
-    assert '<nav id="v9ShowcaseBar" class="v9-showcase-bar oaw-topbar"' in demo_html
+    assert '<div id="v9ShowcaseBar" class="v9-showcase-bar oaw-topbar">' in demo_html
     assert '<nav id="v9ShowcaseBar" class="v9-showcase-bar hidden"' not in demo_html
 
     vm_script = tmp_path / "showcase_bar_probe.cjs"
@@ -194,7 +189,7 @@ def test_v420_social_preview_metadata_topics_and_dry_run(tmp_path: Path, monkeyp
     assert pyp["project"]["urls"]["Documentation"] == "https://projects.oaworkbench.org/agy-nexus-mcp/docs/"
 
     disc_txt = (REPO_ROOT / "docs" / "DISCOVERABILITY.md").read_text(encoding="utf-8")
-    topics = re.findall(r"^\d+\.\s+`([a-z0-9-]+)`\s*$", disc_txt, flags=re.M)
+    topics = re.findall(r"^\d+\.\s+`([a-z0-9-]+)`\s*$", disc_txt, flags=re.MULTILINE)
     assert len(topics) == 14 and len(set(topics)) == 14
 
     monkeypatch.setattr(ptg, "_load_token_from_env_files", lambda: "")
@@ -261,7 +256,7 @@ process.stdout.write(JSON.stringify(ctx.window.AGY_DOCS_DATA));
         for href in re.findall(r'href="([^"]+)"', html_str):
             if href.startswith(("http://", "https://", "mailto:", "#")):
                 continue
-            assert not re.search(r"\.md(?:$|[?#])", href, flags=re.I), f"Unrewritten relative .md link in {ch['id']}: {href}"
+            assert not re.search(r"\.md(?:$|[?#])", href, flags=re.IGNORECASE), f"Unrewritten relative .md link in {ch['id']}: {href}"
 
     arch_html = by_id["doc-architecture"]["html"]
     svgs = re.findall(r"<svg[\s\S]*?</svg>", arch_html)
@@ -279,25 +274,29 @@ def test_v420_oaw_switcher_themes_and_empty_state_targets(tmp_path: Path) -> Non
     out_dir = tmp_path / "gh-pages"
     bgs.build_showcase(out_dir, refresh=False)
 
-    for html_path in (
-        SITE_DIR / "index.html",
-        SITE_DIR / "docs.html",
-        WEB_DIR / "index.html",
-        V9_DIR / "index.html",
-        out_dir / "index.html",
-        out_dir / "demo" / "index.html",
-        out_dir / "docs" / "index.html",
-        out_dir / "docs" / "docs_data.js",
-    ):
+    for html_path in (WEB_DIR / "index.html", V9_DIR / "index.html"):
         txt = html_path.read_text(encoding="utf-8")
-        assert "research.oaworkbench.org" not in txt, f"Unconfigured research domain present in {html_path}"
-        if html_path.suffix == ".html":
-            for url in OAW_URLS:
-                assert url in txt, f"Missing OAW URL {url} in {html_path}"
+        for url in OAW_URLS[:3]:
+            assert url in txt, f"Missing OAW URL {url} in {html_path}"
+
+    for html_path in (SITE_DIR / "index.html", SITE_DIR / "docs.html", out_dir / "index.html", out_dir / "demo" / "index.html", out_dir / "docs" / "index.html"):
+        txt = html_path.read_text(encoding="utf-8")
+        for url in OAW_URLS:
+            assert url in txt, f"Missing OAW URL {url} in {html_path}"
+        assert "oaw-pop-stage1-back" not in txt
+        res_m = re.search(r'<a\b[^>]*href="https://research\.oaworkbench\.org/"[\s\S]*?</a>', txt)
+        assert res_m and "Preview" in res_m.group(0), f"Missing clickable Research Preview link in {html_path}"
+        ctx_m = re.search(r'<div id="oawContextPopover"[\s\S]*?</ul>', txt)
+        assert ctx_m, f"Missing #oawContextPopover in {html_path}"
+        ctx_items = re.findall(r"<li\b[\s\S]*?</li>", ctx_m.group(0))
+        assert ctx_items and "All Projects" in ctx_items[0], f"Row 1 must be All Projects in {html_path}"
+        assert "oaw-pop-check" in next((li for li in ctx_items if "Antigravity Nexus" in li), "")
+        for eid in ("btnViewSwitcher", "oawViewMenu", "btnGlobalSearch"):
+            assert f'id="{eid}"' in txt, f"Missing #{eid} in {html_path}"
 
     demo_html = (out_dir / "demo" / "index.html").read_text(encoding="utf-8")
     assert 'class="v9-showcase-bar oaw-topbar"' in demo_html
-    assert 'aria-current="page" data-oaw-tab="demo"' in demo_html
+    assert demo_html.count('aria-current="page" data-oaw-tab="demo"') == 1
     for route_path, active_tab in ((out_dir / "index.html", "overview"), (out_dir / "demo" / "index.html", "demo"), (out_dir / "docs" / "index.html", "docs")):
         rt_txt = route_path.read_text(encoding="utf-8")
         assert 'class="oaw-wordmark"' in rt_txt and "OAW Projects" in rt_txt
@@ -312,7 +311,7 @@ def test_v420_oaw_switcher_themes_and_empty_state_targets(tmp_path: Path) -> Non
     assert '<span class="bridge-term">Two-Doorway Setup</span>' in overview_html
     assert '<span class="bridge-term">ag-bridge-mcp</span>' not in overview_html
     assert "Steer Your Coding Workstation from Gemini &amp; Track Quota % Left" in overview_html
-    assert not re.search(r"<hr\b", overview_html, re.I), "Overview landing page must have zero <hr> dividers"
+    assert not re.search(r"<hr\b", overview_html, re.IGNORECASE), "Overview landing page must have zero <hr> dividers"
     for fpath in sorted(SITE_DIR.glob("*")):
         if fpath.is_file():
             assert len(fpath.read_text(encoding="utf-8").splitlines()) <= 500, f"{fpath.name} exceeds 500 lines"
@@ -423,29 +422,30 @@ const root = new Element("BODY"), byIdMap = new Map(), docEv = new Map(), mqlEv 
 add("UL", "docsTocList", add("NAV", "docsTocNav")); add("INPUT", "docsSearchInput"); add("BUTTON", "docsSearchClearBtn"); add("SPAN", "docsSearchStatus");
 const empty = add("SECTION", "docsEmptyState", root, { class: "hidden" }); empty.hidden = true; add("SPAN", "docsEmptyQuery", empty); add("BUTTON", "docsResetSearchBtn", empty, { "data-docs-reset": "1" });
 add("DIV", "docsHeroMeta"); add("ARTICLE", "docsArticleHost"); add("NAV", "docsPager");
-const toggleBtn = add("BUTTON", "docsTocToggle"), dialog = add("DIALOG", "docsTocDialog", root, { class: "va-modal-sheet", closedby: "any" });
+const subbar = add("DIV", "docsMobileSubbar"), toggleBtn = add("BUTTON", "docsTocToggle", subbar), curChap = add("SPAN", "docsCurrentChapterTitle", subbar);
+const dialog = add("DIALOG", "docsTocDialog", root, { class: "va-modal-sheet", closedby: "any" });
 dialog.showModal = () => { dialog.open = true; dialog.setAttribute("open", ""); dialog.dispatchEvent({ type: "open" }); }; dialog.close = () => { dialog.open = false; dialog.removeAttribute("open"); dialog.dispatchEvent({ type: "close" }); }; add("UL", "docsTocModalList", dialog);
 const loc = { hash: "", search: "", pathname: "/docs/", href: "https://example.test/docs/" }, hist = { replaceState: (_s, _t, u) => { loc.hash = u; } };
 const doc = { readyState: "complete", documentElement: { dataset: {} }, body: root, activeElement: null, getElementById: (id) => byIdMap.get(id) || root.querySelector(`#${id}`), createElement: (tag) => { const el = new Element(tag); if (tag.toLowerCase() === "template") { el.content = new Element("#FRAG"); Object.defineProperty(el, "innerHTML", { set(v) { el.content.children = []; parseHtmlInto(el.content, v); } }); } return el; }, createElementNS: (_ns, tag) => new Element(tag), createDocumentFragment: () => new Element("#FRAG"), createTreeWalker: (node) => { const flat = [], w = (n) => { for (const c of n.children) if (c.tagName !== "#TEXT") { flat.push(c); w(c); } }; w(node); let i = 0; return { nextNode: () => (i < flat.length ? flat[i++] : null) }; }, querySelector: (s) => root.querySelector(s), querySelectorAll: (s) => root.querySelectorAll(s), addEventListener: (t, fn) => { if (!docEv.has(t)) docEv.set(t, []); docEv.get(t).push(fn); } };
-const ctx = { window: { location: loc, history: hist, matchMedia: (q) => ({ matches: false, addEventListener: (_t, fn) => { if (q.includes("760px")) mqlEv.push(fn); } }), addEventListener: () => {} }, location: loc, history: hist, document: doc, Element, NodeFilter: { SHOW_ELEMENT: 1 }, requestAnimationFrame: (fn) => fn(), setTimeout: () => 1, clearTimeout: () => {} };
+const ctx = { window: { location: loc, history: hist, matchMedia: (q) => ({ matches: false, addEventListener: (_t, fn) => { if (q.includes("960px")) mqlEv.push(fn); } }), addEventListener: () => {} }, location: loc, history: hist, document: doc, Element, NodeFilter: { SHOW_ELEMENT: 1 }, requestAnimationFrame: (fn) => fn(), setTimeout: () => 1, clearTimeout: () => {} };
 ctx.window.document = doc; vm.runInNewContext(fs.readFileSync(process.argv[2], "utf-8"), ctx); vm.runInNewContext(fs.readFileSync(process.argv[3], "utf-8"), ctx);
 const fireClick = (el) => { const ev = { type: "click", target: el, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } }; for (let n = el; n; n = n.parentNode) n.dispatchEvent?.(ev); (docEv.get("click") || []).forEach((fn) => fn(ev)); };
-const tocTxt = byIdMap.get("docsTocList").children.map((li) => li.textContent).join("|"); assert(tocTxt.includes("QUICK JUMPS") && tocTxt.includes("GUIDES") && byIdMap.get("docsTocList").querySelectorAll(".docs-rail-sub").length >= 2 && byIdMap.get("docsTocModalList").querySelectorAll(".docs-rail-sub").length >= 2 && byIdMap.get("docsSearchClearBtn").hidden === false);
+const tocTxt = byIdMap.get("docsTocList").children.map((li) => li.textContent).join("|"); assert(tocTxt.includes("QUICK JUMPS") && tocTxt.includes("GUIDES") && byIdMap.get("docsTocList").querySelectorAll(".docs-rail-sub").length >= 2 && byIdMap.get("docsTocModalList").querySelectorAll(".docs-rail-sub").length >= 2 && byIdMap.get("docsSearchClearBtn").hidden === false && curChap.textContent.includes("Project Overview"));
 ctx.window.AgyDocsApp.applyFilter("PASS_HASH"); assert(ctx.window.AgyDocsApp.getState().visible > 0);
-ctx.window.AgyDocsApp.applyFilter("zzzz_unmatched_query_999"); assert.strictEqual(ctx.window.AgyDocsApp.getState().visible, 0); assert.strictEqual(empty.hidden, false);
+ctx.window.AgyDocsApp.applyFilter("zzzz_unmatched_query_999"); assert.strictEqual(ctx.window.AgyDocsApp.getState().visible, 0); assert.strictEqual(empty.hidden, false); assert.strictEqual(curChap.textContent, "No matching guides");
 fireClick(byIdMap.get("docsResetSearchBtn")); assert.strictEqual(ctx.window.AgyDocsApp.getState().visible, ctx.window.AgyDocsApp.getState().total); assert.strictEqual(empty.hidden, true);
-const clSub = byIdMap.get("docsTocList").querySelector('[data-doc-jump="changelog"]'); assert(clSub); fireClick(clSub); assert.strictEqual(ctx.window.AgyDocsApp.getState().activeTargetId, "changelog"); assert.strictEqual(doc.activeElement.id, "changelog");
+const clSub = byIdMap.get("docsTocList").querySelector('[data-doc-jump="changelog"]'); assert(clSub); fireClick(clSub); assert.strictEqual(ctx.window.AgyDocsApp.getState().activeTargetId, "changelog"); assert.strictEqual(doc.activeElement.id, "changelog"); assert(curChap.textContent.includes("Changelog"));
 ctx.window.AgyDocsApp.jumpToSlug("changelog"); assert.strictEqual(ctx.window.AgyDocsApp.getState().activeTargetId, "doc-changelog"); assert.strictEqual(doc.activeElement.id, "doc-changelog");
 toggleBtn.focus(); toggleBtn.dispatchEvent({ type: "click" }); assert.strictEqual(dialog.open, true); assert.strictEqual(toggleBtn.getAttribute("aria-expanded"), "true");
-const modalLink = byIdMap.get("docsTocModalList").querySelector('a[data-doc-jump="doc-architecture"]'); assert(modalLink); fireClick(modalLink); assert.strictEqual(dialog.open, false); assert.strictEqual(doc.activeElement.id, "doc-architecture");
+const modalLink = byIdMap.get("docsTocModalList").querySelector('a[data-doc-jump="doc-architecture"]'); assert(modalLink); fireClick(modalLink); assert.strictEqual(dialog.open, false); assert.strictEqual(doc.activeElement.id, "doc-architecture"); assert(curChap.textContent.includes("Architecture"));
 toggleBtn.dispatchEvent({ type: "click" }); assert.strictEqual(dialog.open, true); mqlEv.forEach((fn) => fn({ matches: true })); assert.strictEqual(dialog.open, false); assert.strictEqual(toggleBtn.getAttribute("aria-expanded"), "false"); console.log("DOCS_APP_VM_OK");
 """,
         encoding="utf-8",
     )
 
 
-def test_v420_docs_quiet_ui_760px_layout_inline_search_and_cache_bust(tmp_path: Path) -> None:
-    """Verify Quiet UI 760px sticky two-column docs layout, inline search, mobile dialog sheet, cache-bust, and VM runtime."""
+def test_v420_docs_quiet_ui_960px_layout_inline_search_and_cache_bust(tmp_path: Path) -> None:
+    """Verify Quiet UI 960px sticky two-column docs layout, 38px mobile subbar, search assets, cache-bust, and VM runtime."""
     bgs = _load_script_mod("build_github_showcase")
     out_dir = tmp_path / "gh-pages"
     bgs.build_showcase(out_dir, refresh=False)
@@ -453,43 +453,39 @@ def test_v420_docs_quiet_ui_760px_layout_inline_search_and_cache_bust(tmp_path: 
     raw_docs_html = (SITE_DIR / "docs.html").read_text(encoding="utf-8")
     built_docs_html = (out_dir / "docs" / "index.html").read_text(encoding="utf-8")
     expected_assets = (
-        "../v9/v9_layers.css?v=4.2.0.1", "../v9/vendor/quiet-ui-tokens.css?v=4.2.0.1",
-        "../assets/oaw_topbar.css?v=4.2.0.1", "../assets/site_shell.css?v=4.2.0.1",
-        "../assets/docs.css?v=4.2.0.1", "./docs_data.js?v=4.2.0.1",
-        "../assets/site_shell.js?v=4.2.0.1", "../assets/docs_app.js?v=4.2.0.1",
+        "../v9/v9_layers.css", "../v9/vendor/quiet-ui-tokens.css", "../assets/oaw_topbar.css", "../assets/oaw_search.css",
+        "../assets/site_shell.css", "../assets/docs.css", "./docs_data.js", "../assets/oaw_search.js", "../assets/site_shell.js", "../assets/docs_app.js",
     )
-    for html_txt in (raw_docs_html, built_docs_html):
-        assert not re.search(r'\?v=4\.2\.0(?=["\'])', html_txt), "Stale ?v=4.2.0 cache query string found"
+    for label, html_txt, v_pat in (("raw", raw_docs_html, r"4\.2\.\d+(?:\.\d+)?"), ("built", built_docs_html, re.escape(bgs.__version__))):
         for asset in expected_assets:
-            assert asset in html_txt, f"Missing cache-busted asset {asset}"
+            assert re.search(rf"{re.escape(asset)}\?v={v_pat}", html_txt), f"Missing cache-busted {asset} in {label} docs.html"
+        assert 'id="docsMobileSubbar"' in html_txt and 'id="docsCurrentChapterTitle"' in html_txt
         assert 'id="docsTocToggle"' in html_txt and 'aria-controls="docsTocDialog"' in html_txt
         assert '<dialog id="docsTocDialog" class="va-modal-sheet" closedby="any"' in html_txt
         dialog_open = html_txt.split('<dialog id="docsTocDialog"', 1)[1].split(">", 1)[0]
         assert 'role="dialog"' not in dialog_open and "aria-modal" not in dialog_open
-        assert html_txt.index('class="docs-rail"') < html_txt.index('class="docs-main"') < html_txt.index('class="docs-hero"') < html_txt.index('<search class="docs-searchbar"')
+        assert html_txt.index('id="docsMobileSubbar"') < html_txt.index('class="docs-rail"') < html_txt.index('class="docs-main"') < html_txt.index('class="docs-hero"') < html_txt.index('<search class="docs-searchbar"')
 
     docs_css = (SITE_DIR / "docs.css").read_text(encoding="utf-8")
     assert len(docs_css.splitlines()) <= 500 and "!important" not in docs_css
-    assert "@media (min-width: 760px)" in docs_css and "@media (min-width: 900px)" not in docs_css
+    assert "@media (min-width: 960px)" in docs_css and "@media (min-width: 760px)" not in docs_css
     assert "clamp(220px, 24vw, 260px) minmax(0, 1fr)" in docs_css and "border-inline-end:" in docs_css
-    assert ".docs-rail { display: none;" in docs_css and ".docs-toc-toggle { display: none; }" in docs_css
-    assert "#docsTocList" not in docs_css and "html:has(" not in docs_css
-    assert "dialog.va-modal-sheet:modal { overscroll-behavior: contain; }" in docs_css
+    assert ".docs-rail { display: none;" in docs_css and ".docs-mobile-subbar { display: none; }" in docs_css
+    assert ".docs-mobile-subbar {" in docs_css and "block-size: 38px;" in docs_css
+    assert "#docsTocList" not in docs_css and "html:has(" not in docs_css and "dialog.va-modal-sheet:modal { overscroll-behavior: contain; }" in docs_css
 
     docs_app_js = (SITE_DIR / "docs_app.js").read_text(encoding="utf-8")
     assert len(docs_app_js.splitlines()) <= 500
-    for marker in ("QUICK JUMPS", "GUIDES", "docs-rail-sub", "docsTocModalList", 'ev.key !== "/"', "dom.clearBtn.hidden = false", "(min-width: 760px)"):
+    for marker in ("QUICK JUMPS", "GUIDES", "docs-rail-sub", "docsTocModalList", 'ev.key !== "/"', "dom.clearBtn.hidden = false", "(min-width: 960px)", "docsCurrentChapterTitle"):
         assert marker in docs_app_js
 
     docs_data_raw = (out_dir / "docs" / "docs_data.js").read_text(encoding="utf-8")
     docs_data = json.loads(docs_data_raw.split("window.AGY_DOCS_DATA = ", 1)[1].rstrip(";\n"))
     arch_html = next(ch["html"] for ch in docs_data["chapters"] if ch["id"] == "doc-architecture")
-    assert '<h2 id="two-doorway-isolation-passphrase-deadbolt">' in arch_html
-    assert '<h2 id="dual-pool-quota-model-routing-check">' in arch_html
+    assert '<h2 id="two-doorway-isolation-passphrase-deadbolt">' in arch_html and '<h2 id="dual-pool-quota-model-routing-check">' in arch_html
 
-    wf_txt = (REPO_ROOT / "docs" / "WORKFLOWS.md").read_text(encoding="utf-8")
-    wf09 = wf_txt.split("## Workflow 9: WF-09", 1)[1]
-    for marker in ("760px", "860px", "Open Left Documentation Rail", "Inline Reading-Column Search Bar", "Mobile Chapters Sheet"):
+    wf09 = (REPO_ROOT / "docs" / "WORKFLOWS.md").read_text(encoding="utf-8").split("## Workflow 9: WF-09", 1)[1]
+    for marker in ("960px", "860px", "Open Left Documentation Rail", "Inline Reading-Column Search Bar", "Slim Mobile Docs Chapter Sub-Bar"):
         assert marker in wf09, f"Missing WF-09 docs layout marker: {marker}"
 
     probe_path = tmp_path / "docs_app_vm_probe.cjs"
@@ -497,4 +493,3 @@ def test_v420_docs_quiet_ui_760px_layout_inline_search_and_cache_bust(tmp_path: 
     proc = subprocess.run(["node", str(probe_path), str(out_dir / "docs" / "docs_data.js"), str(SITE_DIR / "docs_app.js")], cwd=str(REPO_ROOT), capture_output=True, text=True, check=False)
     assert proc.returncode == 0, f"{proc.stdout}\n{proc.stderr}"
     assert "DOCS_APP_VM_OK" in proc.stdout
-

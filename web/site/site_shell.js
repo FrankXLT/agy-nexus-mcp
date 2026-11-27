@@ -120,7 +120,9 @@
     clearPopoverPosition(pop);
     const rect = pop.getBoundingClientRect();
     const trig = trigger.getBoundingClientRect();
-    const anchored = hasAnchorCss();
+    const computedAnchor = typeof getComputedStyle === "function" ? getComputedStyle(pop).positionAnchor : "";
+    const hasComputedAnchor = Boolean(computedAnchor && computedAnchor !== "none" && computedAnchor !== "auto");
+    const anchored = hasAnchorCss() && hasComputedAnchor;
     const overflows = rect.right > window.innerWidth - VIEWPORT_PAD || rect.left < VIEWPORT_PAD;
     if (anchored && !overflows && rect.bottom <= window.innerHeight - VIEWPORT_PAD) return;
 
@@ -137,27 +139,92 @@
     });
   }
 
+  function isPopoverActive(entry) {
+    return !entry.responsiveMq || !entry.responsiveMq.matches;
+  }
+
+  function isPopoverOpen(entry, native) {
+    if (!isPopoverActive(entry)) return false;
+    if (native) {
+      try { return entry.el.hasAttribute("popover") && entry.el.matches(":popover-open"); } catch (_e) { return false; }
+    }
+    return entry.el.classList.contains("is-open");
+  }
+
+  function syncResponsiveViewMenu(entry, native) {
+    const { el: viewMenu, trigger: btnViewSwitcher, responsiveMq } = entry;
+    if (!responsiveMq) return;
+    if (responsiveMq.matches) {
+      if (native) {
+        try { if (viewMenu.matches(":popover-open")) viewMenu.hidePopover(); } catch (_e) {}
+      } else {
+        viewMenu.classList.remove("is-open");
+      }
+      viewMenu.removeAttribute("popover");
+      clearPopoverPosition(viewMenu);
+      btnViewSwitcher.setAttribute("aria-expanded", "false");
+      return;
+    }
+    if (viewMenu.getAttribute("popover") !== "auto") viewMenu.setAttribute("popover", "auto");
+    if (native && !btnViewSwitcher.hasAttribute("popovertarget")) {
+      btnViewSwitcher.setAttribute("popovertarget", entry.popId);
+    }
+  }
+
+  function bindPopoverEntry(entry, native, closeAll) {
+    if (entry.responsiveMq) {
+      syncResponsiveViewMenu(entry, native);
+      const onMqChange = () => syncResponsiveViewMenu(entry, native);
+      if (typeof entry.responsiveMq.addEventListener === "function") entry.responsiveMq.addEventListener("change", onMqChange);
+      else if (typeof entry.responsiveMq.addListener === "function") entry.responsiveMq.addListener(onMqChange);
+    }
+    if (!native) {
+      entry.trigger.addEventListener("click", () => {
+        if (!isPopoverActive(entry)) return;
+        const opening = !isPopoverOpen(entry, native);
+        closeAll(opening ? entry.el : null);
+        entry.el.classList.toggle("is-open", opening);
+        entry.trigger.setAttribute("aria-expanded", String(opening));
+        if (opening) clampPopover(entry.el, entry.trigger, entry.alignRight);
+        else clearPopoverPosition(entry.el);
+      });
+    }
+    entry.el.addEventListener("toggle", (ev) => {
+      if (!isPopoverActive(entry)) return;
+      const open = ev.newState === "open";
+      entry.trigger.setAttribute("aria-expanded", String(open));
+      if (open) requestAnimationFrame(() => clampPopover(entry.el, entry.trigger, entry.alignRight));
+      else clearPopoverPosition(entry.el);
+    });
+    entry.el.addEventListener("click", (ev) => {
+      const origin = ev.target instanceof Element ? ev.target : ev.target?.parentElement;
+      if (origin && origin.closest("a[href]") && isPopoverOpen(entry, native)) closeAll(null);
+    });
+  }
+
   function initTopbarPopovers() {
+    const viewMq = typeof window.matchMedia === "function" ? window.matchMedia("(min-width: 900px)") : null;
     const entries = [
-      { popId: "oawContextPopover", alignRight: false },
-      { popId: "oawPillarPopover", alignRight: true },
-      { popId: "oawUserPopover", alignRight: true },
+      { popId: "oawContextPopover", triggerId: "btnContextSwitcher", alignRight: false },
+      { popId: "oawViewMenu", triggerId: "btnViewSwitcher", alignRight: false, responsiveMq: viewMq },
+      { popId: "oawPillarPopover", triggerId: "btnPillarSwitcher", alignRight: true },
+      { popId: "oawUserPopover", triggerId: "btnUserMenu", alignRight: true },
     ]
       .map((item) => ({
         ...item,
         el: document.getElementById(item.popId),
-        trigger: document.querySelector(`[popovertarget="${item.popId}"]`),
+        trigger: document.querySelector(`[popovertarget="${item.popId}"]`) || document.getElementById(item.triggerId),
       }))
       .filter((item) => item.el && item.trigger);
     if (!entries.length) return;
 
     const native = hasNativePopover();
-    const isOpen = (el) => (native ? el.matches(":popover-open") : el.classList.contains("is-open"));
     const closeAll = (exceptEl = null) => {
-      entries.forEach(({ el, trigger }) => {
-        if (el === exceptEl) return;
+      entries.forEach((entry) => {
+        const { el, trigger } = entry;
+        if (el === exceptEl || !isPopoverActive(entry)) return;
         if (native) {
-          try { if (el.matches(":popover-open")) el.hidePopover(); } catch (_e) {}
+          try { if (el.hasAttribute("popover") && el.matches(":popover-open")) el.hidePopover(); } catch (_e) {}
           return;
         }
         el.classList.remove("is-open");
@@ -166,32 +233,12 @@
       });
     };
 
-    entries.forEach((entry) => {
-      if (!native) {
-        entry.trigger.addEventListener("click", () => {
-          const opening = !isOpen(entry.el);
-          closeAll(opening ? entry.el : null);
-          entry.el.classList.toggle("is-open", opening);
-          entry.trigger.setAttribute("aria-expanded", String(opening));
-          if (opening) clampPopover(entry.el, entry.trigger, entry.alignRight);
-          else clearPopoverPosition(entry.el);
-        });
-      }
-      entry.el.addEventListener("toggle", (ev) => {
-        const open = ev.newState === "open";
-        entry.trigger.setAttribute("aria-expanded", String(open));
-        if (open) requestAnimationFrame(() => clampPopover(entry.el, entry.trigger, entry.alignRight));
-        else clearPopoverPosition(entry.el);
-      });
-      entry.el.addEventListener("click", (ev) => {
-        const origin = ev.target instanceof Element ? ev.target : ev.target?.parentElement;
-        if (origin && origin.closest("a[href]")) closeAll(null);
-      });
-    });
+    entries.forEach((entry) => bindPopoverEntry(entry, native, closeAll));
 
     document.addEventListener("keydown", (ev) => {
       if (ev.key !== "Escape") return;
-      const openEntry = entries.find(({ el }) => isOpen(el));
+      if (document.querySelector("dialog[open]")) return;
+      const openEntry = entries.find((entry) => isPopoverOpen(entry, native));
       if (!openEntry) return;
       if (!native) closeAll(null);
       requestAnimationFrame(() => openEntry.trigger.focus({ preventScroll: true }));
@@ -199,12 +246,15 @@
     if (!native) {
       document.addEventListener("click", (ev) => {
         const path = typeof ev.composedPath === "function" ? ev.composedPath() : [ev.target];
-        if (!entries.some(({ el, trigger }) => path.includes(el) || path.includes(trigger))) closeAll(null);
+        if (!entries.some((entry) => isPopoverActive(entry) && (path.includes(entry.el) || path.includes(entry.trigger)))) {
+          closeAll(null);
+        }
       });
     }
     window.addEventListener("resize", () => {
       entries.forEach((entry) => {
-        if (isOpen(entry.el)) clampPopover(entry.el, entry.trigger, entry.alignRight);
+        if (entry.responsiveMq) syncResponsiveViewMenu(entry, native);
+        if (isPopoverOpen(entry, native)) clampPopover(entry.el, entry.trigger, entry.alignRight);
       });
     });
   }
@@ -298,5 +348,5 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot, { once: true });
   else boot();
 
-  window.AgySiteShell = { setTheme, getTheme: () => currentTheme };
+  window.AgySiteShell = { setTheme, applyTheme: setTheme, getTheme: () => currentTheme };
 })();

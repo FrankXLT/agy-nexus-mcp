@@ -2,19 +2,51 @@
 /* AGY-Nexus Public Docs — Quiet UI Two-Column Reader, Sticky Rail, Searchbar & Modal Sheet */
 
 @layer shell {
-  /* Open Left Rail (< 760px hidden behind Chapters modal trigger; >= 760px sticky open rail) */
+  /* Open Left Rail (< 960px hidden behind Chapters modal trigger; >= 960px sticky open rail) */
   .docs-rail { display: none; flex-direction: column; gap: 0.25rem; min-inline-size: 0; }
   .docs-toc-nav { min-inline-size: 0; max-inline-size: 100%; }
-  .docs-toc-toggle {
-    display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem;
-    justify-self: start; align-self: flex-start; min-block-size: 44px; padding: 0.45rem 0.9rem;
+
+  /* Slim 38px Sticky Mobile/Tablet Subbar (< 960px) */
+  .docs-mobile-subbar {
+    position: sticky; inset-block-start: 46px; z-index: 40;
+    block-size: 38px; min-block-size: 38px; max-block-size: 38px;
+    display: flex; align-items: center; gap: 0.55rem;
+    inline-size: 100%; min-inline-size: 0; padding-inline: 14px;
+    border-block-end: 1px solid var(--oaw-border, var(--border-subtle));
+    background: color-mix(in oklab, var(--oaw-elevated, var(--bg-elevated, var(--bg-surface))) 90%, transparent);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+  .docs-toc-toggle,
+  .docs-subbar-btn,
+  #docsTocToggle {
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
+    flex: 0 0 auto; align-self: center;
+    min-block-size: 30px; block-size: 30px; padding: 0.2rem 0.65rem;
     border: 1px solid var(--border-strong); border-radius: var(--radius-sm, 6px);
     background: var(--bg-surface); color: var(--text-primary);
-    font-size: var(--ts-sm); font-weight: 600; cursor: pointer;
+    font-size: var(--ts-sm); font-weight: 600; line-height: 1; white-space: nowrap; cursor: pointer;
   }
-  .docs-toc-toggle:hover { background: var(--bg-subtle); border-color: var(--accent-primary); color: var(--accent-primary); }
+  :is(.docs-toc-toggle, .docs-subbar-btn, #docsTocToggle) svg { flex: 0 0 auto; }
+  :is(.docs-toc-toggle, .docs-subbar-btn, #docsTocToggle):hover,
+  :is(.docs-toc-toggle, .docs-subbar-btn, #docsTocToggle)[aria-expanded="true"] {
+    background: var(--bg-subtle); border-color: var(--accent-primary); color: var(--accent-primary);
+  }
+  :is(.docs-toc-toggle, .docs-subbar-btn, #docsTocToggle):focus-visible {
+    outline: 2px solid var(--accent-primary); outline-offset: 2px; border-color: var(--accent-primary);
+  }
+  .docs-mobile-subbar-sep,
+  .docs-subbar-sep { flex: 0 0 auto; color: var(--text-muted); font-size: var(--ts-xs); user-select: none; }
+  .docs-subbar-chapter,
+  #docsCurrentChapterTitle {
+    flex: 1 1 auto; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: var(--font-sans); font-size: var(--ts-xs); font-weight: 500;
+    color: var(--text-muted); line-height: 1.3;
+  }
+  @media (max-width: 679px) {
+    .docs-mobile-subbar { padding-inline: 8px; gap: 0.45rem; }
+  }
 
-  @media (min-width: 760px) {
+  @media (min-width: 960px) {
     .docs-rail {
       display: flex; flex-direction: column; gap: 0.25rem; min-inline-size: 0;
       position: sticky; inset-block-start: 68px; max-block-size: calc(100dvh - 84px);
@@ -22,7 +54,8 @@
       border: 0; border-radius: 0; background: transparent;
       border-inline-end: 1px solid var(--border-hairline, var(--border-subtle));
     }
-    .docs-toc-toggle { display: none; }
+    .docs-mobile-subbar { display: none; }
+    .docs-toc-toggle, .docs-subbar-btn { display: none; }
   }
 
   /* Rail & Mobile Modal Chapter List */
@@ -62,18 +95,22 @@
     border-inline-start: 3px solid var(--accent-primary); font-weight: 600;
   }
 
-  /* Native <dialog id="docsTocDialog" class="va-modal-sheet" closedby="any"> */
-  dialog.va-modal-sheet {
+  /* Native <dialog id="docsTocDialog" class="va-modal-sheet docs-toc-dialog" closedby="any"> */
+  dialog.va-modal-sheet,
+  dialog.docs-toc-dialog {
     border: 1px solid var(--border-strong); border-radius: var(--radius-card, 8px);
     background-color: var(--bg-surface); color: var(--text-primary); padding: 0; margin: auto;
     inline-size: min(92vw, 720px); max-inline-size: calc(100dvw - 1.5rem); max-block-size: calc(100dvh - 3rem);
     box-shadow: 0 24px 56px color-mix(in oklab, var(--text-primary) 24%, transparent); overflow: hidden;
   }
-  dialog.va-modal-sheet[open] {
+  dialog.va-modal-sheet[open],
+  dialog.docs-toc-dialog[open] {
     display: flex; flex-direction: column; background-color: var(--bg-surface); color: var(--text-primary);
   }
   dialog.va-modal-sheet:modal { overscroll-behavior: contain; }
-  dialog.va-modal-sheet::backdrop {
+  dialog.docs-toc-dialog:modal { overscroll-behavior: contain; }
+  dialog.va-modal-sheet::backdrop,
+  dialog.docs-toc-dialog::backdrop {
     background: color-mix(in oklab, var(--hud-pod-bg, var(--bg-shell)) 80%, transparent);
     backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
     overflow: hidden; overscroll-behavior: contain;
@@ -95,29 +132,34 @@
     min-block-size: 0; flex: 1 1 auto;
   }
 
-  @media (max-width: 759px) {
-    dialog.va-modal-sheet {
-      margin: auto 0 0 0; inline-size: 100%; max-inline-size: 100%; max-block-size: 86dvh;
-      border-radius: var(--radius-card, 8px) var(--radius-card, 8px) 0 0; border-inline: 0; border-block-end: 0;
-    }
+  @media (max-width: 959px) {
     .docs-toc-modal-list a,
     .docs-toc-modal-list button,
     .docs-toc-modal-list .docs-rail-link.docs-rail-sub,
     .va-modal-sheet-hdr button { min-block-size: 44px; }
+  }
+  @media (max-width: 759px) {
+    dialog.va-modal-sheet,
+    dialog.docs-toc-dialog {
+      margin: auto 0 0 0; inline-size: 100%; max-inline-size: 100%; max-block-size: 86dvh;
+      border-radius: var(--radius-card, 8px) var(--radius-card, 8px) 0 0; border-inline: 0; border-block-end: 0;
+    }
   }
 }
 
 @layer views {
   /* 2-Column Static Documentation Grid (placed in @layer views to override .site-container) */
   .site-container.docs-layout,
-  .docs-layout {
+  .docs-layout,
+  .docs-shell {
     inline-size: 100%; max-inline-size: min(82rem, 100%); margin-inline: auto;
     padding: clamp(1rem, 2.5vw, 2rem) clamp(0.875rem, 2.5vw, 1.5rem) 3rem;
     display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.25rem; align-items: start; min-inline-size: 0;
   }
-  @media (min-width: 760px) {
+  @media (min-width: 960px) {
     .site-container.docs-layout,
-    .docs-layout { grid-template-columns: clamp(220px, 24vw, 260px) minmax(0, 1fr); gap: 2rem; }
+    .docs-layout,
+    .docs-shell { grid-template-columns: clamp(220px, 24vw, 260px) minmax(0, 1fr); gap: 2rem; }
   }
 
   /* Reading Column, Borderless Hero & Inline Searchbar */
@@ -187,12 +229,15 @@
 
   /* Chapters & Prose */
   #docsArticleHost { display: flex; flex-direction: column; gap: 2rem; min-inline-size: 0; }
-  .docs-chapter {
-    min-inline-size: 0; max-inline-size: 100%; scroll-margin-block-start: 4.5rem;
+  .docs-chapter,
+  .docs-section {
+    min-inline-size: 0; max-inline-size: 100%; scroll-margin-block-start: 96px;
     padding-block-end: 1.85rem; border-block-end: 1px solid var(--border-hairline, var(--border-subtle));
   }
-  .docs-chapter:last-child { border-block-end: 0; padding-block-end: 0.5rem; }
-  .docs-chapter[data-search-match="true"] {
+  .docs-chapter:last-child,
+  .docs-section:last-child { border-block-end: 0; padding-block-end: 0.5rem; }
+  .docs-chapter[data-search-match="true"],
+  .docs-section[data-search-match="true"] {
     padding: 0.85rem 0.95rem 1.35rem;
     border: 1px solid var(--border-subtle); border-inline-start: 3px solid var(--accent-primary);
     border-radius: var(--radius-card, 8px);
@@ -224,9 +269,16 @@
   }
   .docs-prose pre code { background: transparent; border: 0; padding: 0; color: inherit; font-size: inherit; overflow-wrap: normal; }
   .docs-prose > * + * { margin-block-start: 0.9rem; }
+  .docs-prose h2, .docs-prose h3, .docs-prose h4,
+  .docs-prose [id], #docsArticleHost [id] { scroll-margin-block-start: 96px; }
   .docs-prose h2, .docs-prose h3, .docs-prose h4 {
-    scroll-margin-block-start: 4.5rem; margin-block: 1.5rem 0.5rem;
+    margin-block: 1.5rem 0.5rem;
     line-height: 1.3; font-weight: 700; color: var(--text-primary); text-wrap: balance;
+  }
+  @media (min-width: 960px) {
+    .docs-chapter, .docs-section, .docs-prose :is(h2, h3, h4, [id]), #docsArticleHost [id] {
+      scroll-margin-block-start: 64px;
+    }
   }
   .docs-prose h2 {
     font-size: clamp(1.12rem, 1.04rem + 0.35vw, 1.32rem);
@@ -312,13 +364,17 @@
 
   @media (min-width: 680px) { .docs-pager { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (prefers-reduced-motion: no-preference) {
-    .docs-rail-link, .docs-toc-link, .docs-pager-link, .docs-chapter { transition: border-color 0.15s ease, background-color 0.15s ease; }
+    .docs-rail-link, .docs-toc-link, .docs-pager-link, .docs-chapter, .docs-section, .docs-toc-toggle, .docs-subbar-btn {
+      transition: border-color 0.15s ease, background-color 0.15s ease;
+    }
   }
   @media (prefers-reduced-motion: reduce) {
-    .docs-rail-link, .docs-toc-link, .docs-pager-link, .docs-chapter { transition: none; }
+    .docs-rail-link, .docs-toc-link, .docs-pager-link, .docs-chapter, .docs-section, .docs-toc-toggle, .docs-subbar-btn { transition: none; }
   }
   @media (forced-colors: active) {
-    .docs-rail, .docs-searchbar, #docsEmptyState, .doc-table-wrap, .doc-diagram-frame, .docs-pager-link, dialog.va-modal-sheet { border: 1px solid CanvasText; }
+    .docs-rail, .docs-searchbar, #docsEmptyState, .doc-table-wrap, .doc-diagram-frame, .docs-pager-link,
+    .docs-toc-toggle, .docs-subbar-btn, dialog.va-modal-sheet, dialog.docs-toc-dialog { border: 1px solid CanvasText; }
+    .docs-mobile-subbar { border-block-end: 1px solid CanvasText; }
     :is(.docs-rail-link, .docs-rail-list a, .docs-toc-modal-list a, .docs-toc-link):is([aria-current="location"], [aria-current="true"], [aria-current="page"], .is-active) {
       outline: 2px solid Highlight; background: Highlight; color: HighlightText;
     }
@@ -326,18 +382,21 @@
 }
 
 @layer utilities {
-  dialog.va-modal-sheet[open] { background-color: var(--bg-surface); color: var(--text-primary); }
+  dialog.va-modal-sheet[open],
+  dialog.docs-toc-dialog[open] { background-color: var(--bg-surface); color: var(--text-primary); }
   .hidden,
   [hidden]:not([hidden="until-found"]) { display: none; }
 }
 
 @media print {
   [hidden]:not([hidden="until-found"]),
-  .docs-rail, .docs-toc-toggle, .docs-searchbar, .docs-pager, #docsEmptyState, .copy-control, dialog.va-modal-sheet { display: none; }
+  .docs-rail, .docs-mobile-subbar, .docs-toc-toggle, .docs-subbar-btn, .docs-searchbar, .docs-pager,
+  #docsEmptyState, .copy-control, dialog.va-modal-sheet, dialog.docs-toc-dialog { display: none; }
   .site-container.docs-layout,
-  .docs-layout { display: block; inline-size: 100%; max-inline-size: 100%; padding-block: 0; padding-inline: max(1.5rem, 24px); }
+  .docs-layout,
+  .docs-shell { display: block; inline-size: 100%; max-inline-size: 100%; padding-block: 0; padding-inline: max(1.5rem, 24px); }
   .docs-main { max-inline-size: none; }
-  .docs-chapter { break-inside: avoid-page; }
+  .docs-chapter, .docs-section { break-inside: avoid-page; }
   .doc-table-wrap, .va-table-wrap { overflow-x: clip; overflow: visible; max-inline-size: 100%; border: 0; }
   .doc-table-wrap table, .va-table-wrap table { table-layout: fixed; inline-size: 100%; max-inline-size: 100%; font-size: 0.72rem; }
   .doc-table-wrap :is(th, td), .va-table-wrap :is(th, td), .doc-table-wrap td code, .va-table-wrap td code, .docs-prose td code {

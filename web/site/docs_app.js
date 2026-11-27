@@ -12,10 +12,9 @@
     { label: "Live Studio Demo", href: "../demo/", jumpId: "", slug: "" },
   ];
   const SVG_NS = "http://www.w3.org/2000/svg";
-  const mql = (q) => (typeof window.matchMedia === "function" ? window.matchMedia(q) : null);
   const byId = (id) => document.getElementById(id);
-  const reducedMotionMql = mql("(prefers-reduced-motion: reduce)");
-  const desktopMql = mql("(min-width: 760px)");
+  const reducedMotionMql = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+  const desktopMql = typeof window.matchMedia === "function" ? window.matchMedia("(min-width: 960px)") : null;
   const copyTimers = new WeakMap();
   let lastCopyMsg = "";
 
@@ -193,8 +192,9 @@
 
       const plain = String(ch.plainText || prose.textContent || "");
       records.push({
-        slug, anchorId, title, group, subsections: extractSubsections(prose),
-        sectionEl: section, haystack: `${title} ${group} ${summary} ${kw} ${plain} ${slug}`.toLowerCase(),
+        slug, anchorId, title, num: ch.num != null ? String(ch.num).trim() : "", group,
+        subsections: extractSubsections(prose), sectionEl: section,
+        haystack: `${title} ${group} ${summary} ${kw} ${plain} ${slug}`.toLowerCase(),
       });
     }
     articleHost.replaceChildren(fragHost);
@@ -204,20 +204,14 @@
   function buildOutlineList(listEl, records) {
     if (!listEl) return [];
     const useLi = /^(UL|OL)$/i.test(String(listEl.tagName || ""));
-    const frag = document.createDocumentFragment();
-    const jumpLinks = [];
+    const frag = document.createDocumentFragment(), jumpLinks = [];
     const addTitle = (label) => frag.appendChild(mk(useLi ? "li" : "div", "docs-rail-title", label));
     const addLink = (cls, label, href, jumpId, slug, railRole = "") => {
-      const attrs = { href };
-      if (jumpId) attrs["data-doc-jump"] = jumpId;
-      if (slug) attrs["data-slug"] = slug;
-      if (railRole) attrs["data-rail-role"] = railRole;
+      const attrs = { href, ...(jumpId ? { "data-doc-jump": jumpId } : {}), ...(slug ? { "data-slug": slug } : {}), ...(railRole ? { "data-rail-role": railRole } : {}) };
       const link = mk("a", cls, label, attrs);
       if (jumpId) jumpLinks.push(link);
-      if (useLi) { const li = mk("li"); li.appendChild(link); frag.appendChild(li); }
-      else frag.appendChild(link);
+      if (useLi) { const li = mk("li"); li.appendChild(link); frag.appendChild(li); } else frag.appendChild(link);
     };
-
     addTitle("QUICK JUMPS");
     for (const item of RAIL_QUICK_JUMPS) addLink("docs-rail-link", item.label, item.href, item.jumpId, item.slug, "quick");
     addTitle("GUIDES");
@@ -244,7 +238,7 @@
     const chapterMatch = records.find((r) => r.anchorId === clean);
     if (chapterMatch) return { rec: chapterMatch, el: chapterMatch.sectionEl, targetId: chapterMatch.anchorId };
     const targetEl = byId(clean);
-    const chapterEl = targetEl?.closest(".docs-chapter");
+    const chapterEl = targetEl?.closest(".docs-chapter, .docs-section");
     const rec = chapterEl ? records.find((r) => r.sectionEl === chapterEl) : null;
     if (rec) return { rec, el: targetEl, targetId: clean };
     const slugMatch = records.find((r) => r.slug === clean.replace(/^doc-/, ""));
@@ -256,10 +250,12 @@
     const total = records.length;
 
     function syncActiveUi(slug, targetId = "") {
+      const curTitleEl = dom.currentChapterTitle || byId("docsCurrentChapterTitle");
       if (!state.visible.length) {
         state.activeSlug = "";
         state.activeTargetId = "";
         for (const link of dom.outlineLinks) link.removeAttribute("aria-current");
+        if (curTitleEl) curTitleEl.textContent = "No matching guides";
         dom.pagerEl.hidden = true;
         return;
       }
@@ -271,6 +267,7 @@
         if (link.dataset.railRole !== "quick" && link.dataset.docJump === state.activeTargetId && !activeRec.sectionEl.hidden) link.setAttribute("aria-current", "location");
         else link.removeAttribute("aria-current");
       }
+      if (curTitleEl) curTitleEl.textContent = activeRec.num ? `${activeRec.num}. ${activeRec.title}` : activeRec.title;
       dom.pagerEl.hidden = false;
       dom.pagerEl.replaceChildren(
         makePagerLink("prev", "Previous chapter", idx > 0 ? state.visible[idx - 1] : null),
@@ -403,14 +400,23 @@
       });
     }
     if (dom.clearBtn) dom.clearBtn.addEventListener("click", () => ctrl.resetSearch(true));
-    document.addEventListener("keydown", (ev) => {
-      if (!dom.searchInput || ev.defaultPrevented || ev.key !== "/") return;
-      if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey || ev.isComposing) return;
+    function handleKey(ev) {
+      if (ev.key === "Escape") {
+        if (dom.tocDialog?.open || dom.tocDialog?.hasAttribute?.("open") || dom.tocNav?.classList.contains("is-open")) {
+          ev.preventDefault();
+          dom.closeTocDialog?.();
+          dom.tocToggle?.focus?.();
+        }
+        return;
+      }
+      if (ev.key !== "/" || window.AgyOawSearch) return;
+      if (!dom.searchInput || ev.defaultPrevented || ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey || ev.isComposing) return;
       if (document.querySelector("dialog[open]")) return;
       if (isEditableElement(document.activeElement) || (ev.target instanceof Element && isEditableElement(ev.target))) return;
       ev.preventDefault();
       dom.searchInput.focus();
-    });
+    }
+    document.addEventListener("keydown", handleKey);
     document.addEventListener("click", (ev) => {
       if (ev.defaultPrevented) return;
       const origin = ev.target instanceof Element ? ev.target : ev.target?.parentElement;
@@ -433,44 +439,29 @@
       }, { rootMargin: "-18% 0px -62% 0px", threshold: [0, 0.1] });
       for (const rec of records) observer.observe(rec.sectionEl);
     }
-    window.addEventListener("hashchange", () => {
-      if (location.hash.length > 1 && resolveTarget(records, location.hash)) ctrl.jumpToTarget(location.hash, false);
-    });
-    window.addEventListener("v9-theme-changed", (ev) => {
-      if (ev.detail?.theme) document.documentElement.dataset.docsTheme = ev.detail.theme;
-    });
+    window.addEventListener("hashchange", () => { if (location.hash.length > 1 && resolveTarget(records, location.hash)) ctrl.jumpToTarget(location.hash, false); });
+    window.addEventListener("v9-theme-changed", (ev) => { if (ev.detail?.theme) document.documentElement.dataset.docsTheme = ev.detail.theme; });
   }
 
   function boot() {
     ensureCopyFallback();
-    const tocList = byId("docsTocList");
-    const articleHost = byId("docsArticleHost");
+    const tocList = byId("docsTocList"), articleHost = byId("docsArticleHost");
     if (!tocList || !articleHost) return;
-    const modalList = byId("docsTocModalList");
-    const data = window.AGY_DOCS_DATA || { chapters: [] };
-    const heroMeta = byId("docsHeroMeta");
+    const modalList = byId("docsTocModalList"), data = window.AGY_DOCS_DATA || { chapters: [] }, heroMeta = byId("docsHeroMeta");
     if (heroMeta && (data.version || data.generatedAt)) {
-      const metaParts = [];
-      if (data.version) metaParts.push(`v${data.version}`);
-      if (data.generatedAt) metaParts.push(`Updated ${data.generatedAt}`);
-      heroMeta.textContent = metaParts.join(" · ");
+      heroMeta.textContent = [data.version ? `v${data.version}` : "", data.generatedAt ? `Updated ${data.generatedAt}` : ""].filter(Boolean).join(" · ");
     }
     if (byId("docsVersion") && data.version) byId("docsVersion").textContent = String(data.version);
     if (byId("docsGeneratedAt") && data.generatedAt) byId("docsGeneratedAt").textContent = String(data.generatedAt);
 
-    let pagerEl = byId("docsPager");
-    if (!pagerEl) {
-      pagerEl = mk("nav", "docs-pager", null, { id: "docsPager", "aria-label": "Chapter navigation" });
-      articleHost.insertAdjacentElement("afterend", pagerEl);
-    }
+    const pagerEl = byId("docsPager") || articleHost.insertAdjacentElement("afterend", mk("nav", "docs-pager", null, { id: "docsPager", "aria-label": "Chapter navigation" }));
     const records = buildChapters(data, articleHost);
     const outlineLinks = [...buildOutlineList(tocList, records), ...buildOutlineList(modalList, records)];
     const dom = {
-      searchInput: byId("docsSearchInput"), clearBtn: byId("docsSearchClearBtn"),
-      statusEl: byId("docsSearchStatus"), emptyState: byId("docsEmptyState"),
-      emptyQuery: byId("docsEmptyQuery"), tocNav: byId("docsTocNav") || tocList.closest("nav"),
-      tocToggle: byId("docsTocToggle") || byId("docsTocToggleBtn"),
-      tocDialog: byId("docsTocDialog"), pagerEl, outlineLinks,
+      searchInput: byId("docsSearchInput"), clearBtn: byId("docsSearchClearBtn"), statusEl: byId("docsSearchStatus"),
+      emptyState: byId("docsEmptyState"), emptyQuery: byId("docsEmptyQuery"), tocNav: byId("docsTocNav") || tocList.closest("nav"),
+      tocToggle: byId("docsTocToggle") || byId("docsTocToggleBtn"), tocDialog: byId("docsTocDialog"),
+      currentChapterTitle: byId("docsCurrentChapterTitle"), pagerEl, outlineLinks,
     };
     if (dom.clearBtn) dom.clearBtn.hidden = false;
     dom.closeTocDialog = bindDialogSheet(dom);
@@ -479,14 +470,8 @@
     ctrl.applyFilter(dom.searchInput ? dom.searchInput.value : "");
     if (location.hash.length > 1 && resolveTarget(records, location.hash)) ctrl.jumpToTarget(location.hash, false, false);
     window.AgyDocsApp = {
-      applyFilter: ctrl.applyFilter,
-      jumpToSlug: ctrl.jumpToSlug,
-      getState: () => ({
-        activeSlug: ctrl.state.activeSlug,
-        activeTargetId: ctrl.state.activeTargetId,
-        total: records.length,
-        visible: ctrl.state.visible.length,
-      }),
+      applyFilter: ctrl.applyFilter, jumpToSlug: ctrl.jumpToSlug,
+      getState: () => ({ activeSlug: ctrl.state.activeSlug, activeTargetId: ctrl.state.activeTargetId, total: records.length, visible: ctrl.state.visible.length }),
     };
   }
 

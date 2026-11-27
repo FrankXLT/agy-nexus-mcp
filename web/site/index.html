@@ -21,10 +21,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&amp;family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400&amp;display=swap" rel="stylesheet" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="./v9/v9_layers.css?v=4.2.0" />
-  <link rel="stylesheet" href="./v9/vendor/quiet-ui-tokens.css?v=4.2.0" />
-  <link rel="stylesheet" href="./assets/oaw_topbar.css?v=4.2.0" />
-  <link rel="stylesheet" href="./assets/site_shell.css?v=4.2.0" />
+  <link rel="stylesheet" href="./v9/v9_layers.css?v=4.2.1" />
+  <link rel="stylesheet" href="./v9/vendor/quiet-ui-tokens.css?v=4.2.1" />
+  <link rel="stylesheet" href="./assets/oaw_topbar.css?v=4.2.1" />
+  <link rel="stylesheet" href="./assets/oaw_search.css?v=4.2.1" />
+  <link rel="stylesheet" href="./assets/site_shell.css?v=4.2.1" />
 </head>
 <body>
   <a class="oaw-skip-link" href="#mainContent">Skip to content</a>
@@ -33,22 +34,27 @@
   <header id="oawTopbar" class="oaw-topbar" role="banner">
     <div class="oaw-topbar-left">
       <a class="oaw-wordmark" href="https://projects.oaworkbench.org/" rel="noopener noreferrer">OAW Projects</a>
+      <span class="oaw-crumb-sep" aria-hidden="true">/</span>
 
       <div class="oaw-context-switcher">
         <button type="button" id="btnContextSwitcher" class="oaw-pill-trigger" popovertarget="oawContextPopover" aria-controls="oawContextPopover" aria-expanded="false">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 2h7A2.5 2.5 0 0 1 14 4.5v7a2.5 2.5 0 0 1-2.5 2.5h-7A2.5 2.5 0 0 1 2 11.5v-7A2.5 2.5 0 0 1 4.5 2Z" stroke="currentColor" stroke-width="1.6" /><path d="M6.5 5.5h3a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1Z" fill="currentColor" /></svg>
           <span class="oaw-pill-label">Antigravity Nexus</span>
           <svg class="oaw-pill-chevron" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
         </button>
         <div id="oawContextPopover" class="oaw-popover oaw-context-popover" popover="auto" aria-label="Project Switcher">
-          <a class="oaw-pop-stage1-back" href="https://projects.oaworkbench.org/" rel="noopener noreferrer">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M12.5 8H3.5M7.5 4L3.5 8l4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg>
-            <span>All Projects</span>
-          </a>
-          <div class="oaw-pop-kicker">Open-Source Projects</div>
           <ul class="oaw-pop-list">
+            <li class="oaw-pop-row-sep">
+              <a class="oaw-pop-item" href="https://projects.oaworkbench.org/" rel="noopener noreferrer">
+                <span class="oaw-pop-icon-well" aria-hidden="true">
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M12.5 8H3.5M7.5 4L3.5 8l4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                </span>
+                <span class="oaw-pop-row-body">
+                  <span class="oaw-pop-row-title">All Projects</span>
+                </span>
+              </a>
+            </li>
             <li>
-              <a class="oaw-pop-row is-active" href="./" aria-current="page">
+              <a class="oaw-pop-item is-active" href="./" aria-current="page">
                 <span class="oaw-pop-icon-well" aria-hidden="true">
                   <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M4.5 2.5h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z" stroke="currentColor" stroke-width="1.6" /><path d="M6.5 5.5h3a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1Z" fill="currentColor" /></svg>
                 </span>
@@ -60,7 +66,7 @@
               </a>
             </li>
             <li>
-              <a class="oaw-pop-row" href="https://projects.oaworkbench.org/quiet-ui-skills/" rel="noopener noreferrer">
+              <a class="oaw-pop-item" href="https://projects.oaworkbench.org/quiet-ui-skills/" rel="noopener noreferrer">
                 <span class="oaw-pop-icon-well" aria-hidden="true">
                   <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5" /><path d="M8 2.5v11M2.5 8h11" stroke="currentColor" stroke-width="1.4" /></svg>
                 </span>
@@ -70,26 +76,43 @@
                 </span>
               </a>
             </li>
+            <li>
+              <a class="oaw-pop-item" href="https://projects.oaworkbench.org/mcp-adv-netutils/" rel="noopener noreferrer">
+                <span class="oaw-pop-icon-well" aria-hidden="true">
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="4" cy="4" r="1.8" stroke="currentColor" stroke-width="1.4" /><circle cx="12" cy="4" r="1.8" stroke="currentColor" stroke-width="1.4" /><circle cx="8" cy="12" r="1.8" stroke="currentColor" stroke-width="1.4" /><path d="M5.6 5.2 7.2 10.4M10.4 5.2 8.8 10.4M5.8 4h4.4" stroke="currentColor" stroke-width="1.3" /></svg>
+                </span>
+                <span class="oaw-pop-row-body">
+                  <span class="oaw-pop-row-title">Advanced Network Utilities</span>
+                  <span class="oaw-pop-row-sub">Diagnostic MCP tools for DNS, TLS, routing &amp; wake verification</span>
+                </span>
+              </a>
+            </li>
           </ul>
-          <div class="oaw-pop-mobile-tabs">
-            <div class="oaw-pop-kicker">Pages</div>
-            <div class="oaw-pop-tab-grid">
-              <a class="oaw-pop-tab is-active" href="./" aria-current="page" data-oaw-tab="overview">Overview</a>
-              <a class="oaw-pop-tab" href="./demo/" data-oaw-tab="demo">Demo</a>
-              <a class="oaw-pop-tab" href="./docs/" data-oaw-tab="docs">Docs</a>
-            </div>
-          </div>
         </div>
       </div>
 
-      <nav class="oaw-context-tabs" aria-label="Project sections">
-        <a class="oaw-context-tab is-active" href="./" aria-current="page" data-oaw-tab="overview">Overview</a>
-        <a class="oaw-context-tab" href="./demo/" data-oaw-tab="demo">Demo</a>
-        <a class="oaw-context-tab" href="./docs/" data-oaw-tab="docs">Docs</a>
+      <nav class="oaw-view-nav" aria-label="Antigravity Nexus views">
+        <button id="btnViewSwitcher" type="button" class="oaw-pill oaw-view-pill" popovertarget="oawViewMenu" aria-controls="oawViewMenu" aria-expanded="false" aria-label="Switch view">
+          <span class="oaw-pill-label">Overview</span>
+          <svg class="oaw-pill-chevron" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+        <div id="oawViewMenu" class="oaw-view-menu">
+          <ul class="oaw-view-list">
+            <li><a class="oaw-context-tab is-active" href="./" aria-current="page" data-oaw-tab="overview">Overview<svg class="oaw-pop-check" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" /></svg></a></li>
+            <li><a class="oaw-context-tab" href="./demo/" data-oaw-tab="demo">Demo<svg class="oaw-pop-check" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" /></svg></a></li>
+            <li><a class="oaw-context-tab" href="./docs/" data-oaw-tab="docs">Docs<svg class="oaw-pop-check" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" /></svg></a></li>
+          </ul>
+        </div>
       </nav>
     </div>
 
     <div class="oaw-topbar-right">
+      <button type="button" id="btnGlobalSearch" class="oaw-search-trigger" aria-haspopup="dialog" aria-controls="oawSearchDialog" data-search-index="./search-index.json" aria-label="Search site and documentation (Ctrl+K)">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.6" /><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+        <span class="oaw-search-text">Search</span>
+        <kbd class="oaw-search-kbd">Ctrl+K</kbd>
+      </button>
+
       <div class="oaw-pillar-launcher">
         <button type="button" id="btnPillarSwitcher" class="oaw-pillar-btn" popovertarget="oawPillarPopover" aria-controls="oawPillarPopover" aria-expanded="false" aria-label="Open Agentic Workbench Ecosystem" title="Open Agentic Workbench">
           <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
@@ -102,9 +125,9 @@
           <div class="oaw-pop-kicker">Open Agentic Workbench</div>
           <ul class="oaw-pop-list">
             <li>
-              <a class="oaw-pop-row" href="https://www.oaworkbench.org/" rel="noopener noreferrer">
+              <a class="oaw-pop-item" href="https://oaworkbench.org/" rel="noopener noreferrer">
                 <span class="oaw-pop-icon-well" aria-hidden="true">
-                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2.5 7.5 8 2.5l5.5 5v6H10V9.5H6v4H2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" /></svg>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2.5 7.5 8 2.5l5.5 5v6H10V9.5H6v4H2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" /></svg>
                 </span>
                 <span class="oaw-pop-row-body">
                   <span class="oaw-pop-row-title">Home</span>
@@ -113,20 +136,21 @@
               </a>
             </li>
             <li>
-              <a class="oaw-pop-row" href="https://learn.oaworkbench.org/" rel="noopener noreferrer">
+              <a class="oaw-pop-item" href="https://learn.oaworkbench.org/" rel="noopener noreferrer">
                 <span class="oaw-pop-icon-well" aria-hidden="true">
-                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2.5 3.5h4.2c1 0 1.3.5 1.3 1.2v8.5c-.4-.5-1-.7-1.7-.7H2.5zm11 0H9.3c-1 0-1.3.5-1.3 1.2v8.5c.4-.5 1-.7 1.7-.7h3.8z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /></svg>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2.5 3.5h4.2c1 0 1.3.5 1.3 1.2v8.5c-.4-.5-1-.7-1.7-.7H2.5zm11 0H9.3c-1 0-1.3.5-1.3 1.2v8.5c.4-.5 1-.7 1.7-.7h3.8z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /></svg>
                 </span>
                 <span class="oaw-pop-row-body">
                   <span class="oaw-pop-row-title">Learn</span>
                   <span class="oaw-pop-row-sub">Interactive engineering worlds &amp; equations</span>
                 </span>
+                <span class="oaw-pop-badge oaw-pop-badge--preview">Open Preview</span>
               </a>
             </li>
             <li>
-              <a class="oaw-pop-row is-active" href="https://projects.oaworkbench.org/" rel="noopener noreferrer">
+              <a class="oaw-pop-item is-active" href="https://projects.oaworkbench.org/" rel="noopener noreferrer" aria-current="true">
                 <span class="oaw-pop-icon-well" aria-hidden="true">
-                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 2 13 4.8v6.4L8 14 3 11.2V4.8z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /><path d="M8 8l5-3.2M8 8v6M8 8L3 4.8" stroke="currentColor" stroke-width="1.3" /></svg>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2 13 4.8v6.4L8 14 3 11.2V4.8z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /><path d="M8 8l5-3.2M8 8v6M8 8L3 4.8" stroke="currentColor" stroke-width="1.3" /></svg>
                 </span>
                 <span class="oaw-pop-row-body">
                   <span class="oaw-pop-row-title">Projects</span>
@@ -136,16 +160,16 @@
               </a>
             </li>
             <li>
-              <div class="oaw-pop-row is-soon" aria-disabled="true">
+              <a class="oaw-pop-item" href="https://research.oaworkbench.org/" rel="noopener noreferrer">
                 <span class="oaw-pop-icon-well" aria-hidden="true">
-                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2.5 13.5h11M3.5 11.5h9M4.5 6.5v5M8 6.5v5M11.5 6.5v5M2.5 6.5 8 2.5l5.5 4z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /></svg>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2.5 13.5h11M3.5 11.5h9M4.5 6.5v5M8 6.5v5M11.5 6.5v5M2.5 6.5 8 2.5l5.5 4z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /></svg>
                 </span>
                 <span class="oaw-pop-row-body">
                   <span class="oaw-pop-row-title">Research</span>
                   <span class="oaw-pop-row-sub">Long-form historical &amp; provenance studies</span>
                 </span>
-                <span class="oaw-pop-badge">Soon</span>
-              </div>
+                <span class="oaw-pop-badge oaw-pop-badge--preview">Preview</span>
+              </a>
             </li>
           </ul>
         </div>
@@ -402,13 +426,14 @@
         <a href="./">Overview</a>
         <a href="./demo/">Demo</a>
         <a href="./docs/">Docs</a>
-        <a href="https://www.oaworkbench.org/" rel="noopener noreferrer">Home</a>
+        <a href="https://oaworkbench.org/" rel="noopener noreferrer">Home</a>
         <a href="https://learn.oaworkbench.org/" rel="noopener noreferrer">Learn</a>
         <a href="https://github.com/FrankXLT/agy-nexus-mcp" target="_blank" rel="noopener noreferrer">GitHub</a>
       </nav>
     </div>
   </footer>
 
-  <script defer src="./assets/site_shell.js?v=4.2.0"></script>
+  <script src="./assets/oaw_search.js?v=4.2.1" defer></script>
+  <script src="./assets/site_shell.js?v=4.2.1" defer></script>
 </body>
 </html>
