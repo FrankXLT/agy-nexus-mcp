@@ -21,11 +21,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&amp;family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400&amp;display=swap" rel="stylesheet" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="../v9/v9_layers.css?v=4.2.0" />
-  <link rel="stylesheet" href="../v9/vendor/quiet-ui-tokens.css?v=4.2.0" />
-  <link rel="stylesheet" href="../assets/oaw_topbar.css?v=4.2.0" />
-  <link rel="stylesheet" href="../assets/site_shell.css?v=4.2.0" />
-  <link rel="stylesheet" href="../assets/docs.css?v=4.2.0" />
+  <link rel="stylesheet" href="../v9/v9_layers.css?v=4.2.0.1" />
+  <link rel="stylesheet" href="../v9/vendor/quiet-ui-tokens.css?v=4.2.0.1" />
+  <link rel="stylesheet" href="../assets/oaw_topbar.css?v=4.2.0.1" />
+  <link rel="stylesheet" href="../assets/site_shell.css?v=4.2.0.1" />
+  <link rel="stylesheet" href="../assets/docs.css?v=4.2.0.1" />
 </head>
 <body>
   <a class="oaw-skip-link" href="#mainContent">Skip to documentation</a>
@@ -215,23 +215,9 @@
 
   <main id="mainContent">
     <div class="site-container docs-layout">
-      <aside class="docs-rail" aria-label="Documentation chapters and search">
-        <div class="docs-rail-head">
-          <span class="docs-rail-kicker">Plain-Language Docs</span>
-          <button type="button" id="docsTocToggle" class="docs-toc-toggle" aria-expanded="false" aria-controls="docsTocNav">Chapters</button>
-        </div>
-
-        <search class="docs-search" role="search">
-          <label class="sr-only" for="docsSearchInput">Search documentation topics</label>
-          <div class="docs-search-row">
-            <input id="docsSearchInput" type="search" placeholder="Search docs (stdio, quota)" autocomplete="off" />
-            <button type="button" id="docsSearchClearBtn" hidden>Clear</button>
-          </div>
-          <div id="docsSearchStatus" role="status" aria-live="polite"></div>
-        </search>
-
-        <nav id="docsTocNav" class="docs-toc-nav" aria-label="Chapter contents">
-          <ul id="docsTocList"></ul>
+      <aside class="docs-rail" aria-label="Documentation outline">
+        <nav id="docsTocNav" class="docs-toc-nav" aria-label="Documentation chapters">
+          <ul id="docsTocList" class="docs-rail-list"></ul>
         </nav>
       </aside>
 
@@ -243,7 +229,21 @@
           <div id="docsHeroMeta" class="docs-meta-line"></div>
         </header>
 
-        <section id="docsEmptyState" class="hidden" aria-live="polite">
+        <button type="button" id="docsTocToggle" class="docs-toc-toggle" aria-haspopup="dialog" aria-controls="docsTocDialog" aria-expanded="false">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+            <path d="M2.5 4h11M2.5 8h11M2.5 12h7.5" />
+          </svg>
+          <span>Chapters</span>
+        </button>
+
+        <search class="docs-searchbar" role="search">
+          <label class="sr-only" for="docsSearchInput">Search documentation topics</label>
+          <input id="docsSearchInput" type="search" placeholder="Search guides (press /)" autocomplete="off" aria-label="Search documentation guides" />
+          <span id="docsSearchStatus" class="docs-search-count" role="status" aria-live="polite"></span>
+          <button type="button" id="docsSearchClearBtn" class="docs-search-clear">Clear</button>
+        </search>
+
+        <section id="docsEmptyState" class="hidden" hidden aria-live="polite">
           <h2 class="card-title">No documentation matched "<span id="docsEmptyQuery"></span>"</h2>
           <p class="card-body">Try broader keywords like <code>stdio</code>, <code>quota</code>, <code>PASS_HASH</code>, or jump straight to a starting chapter below:</p>
           <div class="docs-empty-actions">
@@ -261,6 +261,18 @@
     </div>
   </main>
 
+  <dialog id="docsTocDialog" class="va-modal-sheet" closedby="any" aria-labelledby="docsTocDialogTitle">
+    <div class="va-modal-sheet-hdr">
+      <strong id="docsTocDialogTitle">Chapters</strong>
+      <button type="button" data-close-dialog aria-label="Close chapters">Close</button>
+    </div>
+    <div class="va-modal-sheet-body">
+      <nav id="docsTocModalNav" class="docs-toc-modal-list" aria-label="Mobile chapters navigation">
+        <ul id="docsTocModalList" class="docs-rail-list"></ul>
+      </nav>
+    </div>
+  </dialog>
+
   <footer class="site-footer">
     <div class="site-footer-inner">
       <span>Antigravity Nexus Documentation &middot; AGPLv3 Open Source</span>
@@ -274,8 +286,8 @@
     </div>
   </footer>
 
-  <script defer src="./docs_data.js?v=4.2.0"></script>
-  <script defer src="../assets/site_shell.js?v=4.2.0"></script>
-  <script defer src="../assets/docs_app.js?v=4.2.0"></script>
+  <script defer src="./docs_data.js?v=4.2.0.1"></script>
+  <script defer src="../assets/site_shell.js?v=4.2.0.1"></script>
+  <script defer src="../assets/docs_app.js?v=4.2.0.1"></script>
 </body>
 </html>
