@@ -396,13 +396,13 @@ def _build_architecture_chapter(used_ids: set[str]) -> dict[str, Any]:
     doorway_svg, routing_svg = _build_architecture_svgs()
     intro_md = (
         "AGY-Nexus MCP splits remote control from local IDE indexing so neither surface carries unnecessary risk or token overhead.\n\n"
-        "### Two-Doorway Isolation & Passphrase Deadbolt\n"
+        "## Two-Doorway Isolation & Passphrase Deadbolt\n"
         "- **External Doorway (`ag-bridge-mcp`)**: Accepts stateless Streamable HTTP calls on `/{PATH_SECRET}/mcp` behind a 12-character subdomain hash and requires `PASS_HASH` verification (supporting spoken phrases) before private reads or handoffs execute.\n"
         "- **Internal IDE Doorway (`agy-praxis-mcp`)**: Serves `polyglot_map`, `polyglot_search`, `polyglot_outline`, and `<repo-slug>-NN` handoff queues locally on `/praxis/{PRAXIS_MCP_TOKEN}/mcp` or `--stdio`, rejecting reverse-proxy headers and browser origins with `403`.\n"
         "- **Host Companion (`127.0.0.1:8098`)**: Bridges Antigravity Language Server discovery, `CreateProject` RPC, and `agentapi` wakeups behind `X-Bridge-Token`."
     )
     routing_md = (
-        "### Dual-Pool Quota & Model Routing Check\n"
+        "## Dual-Pool Quota & Model Routing Check\n"
         "- **Google 20x Pool vs. Partner 1x Pool**: Keeps high-volume reconnaissance, documentation, and mechanical edits on `Flash 3.8`, `Hydrogen`, `Neon`, and `Argon` / `Carbon 4`, preserving `Claude Opus 5.5` and `Sonnet 5.5` for Strike-2 escalations and security review.\n"
         "- **Quota & Resets Gauges**: Tracks `100%` down to `0%` remaining capacity alongside reset countdowns and effective-dated two-file Price Book rates (`model_catalog.json` + `cost_ledger.json`).\n"
         "- **Next**: Dive into [How It Is Built](#doc-how-it-is-built) for module line budgets, `< 20 KB` wire compaction, and SQLite isolation internals."
@@ -446,6 +446,9 @@ def build_docs_data(repo_root: Path, version: str) -> dict[str, Any]:
         "doc-overview", "doc-quickstart", "doc-common-terms", "doc-architecture", "doc-how-it-is-built",
         "doc-deployment", "doc-pricing", "doc-workflows", "doc-discoverability", "doc-changelog",
         "docsTocList", "docsArticleHost",
+        "docsTocDialog", "docsTocDialogTitle", "docsTocModalNav", "docsTocModalList", "docsTocToggle",
+        "docsSearchInput", "docsSearchClearBtn", "docsSearchStatus", "docsEmptyState", "docsEmptyQuery",
+        "docsResetSearchBtn", "docsHeroMeta", "docsPager",
     }
     specs: list[Any] = [
         ("overview", "Project Overview", "Getting Started", "README.md", ["overview", "stdio", "mcp", "bridge", "agplv3"], "Three everyday payoffs, container quickstart, 17 MCP tools, and live Studio preview."),

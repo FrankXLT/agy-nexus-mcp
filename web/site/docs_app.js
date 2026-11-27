@@ -1,12 +1,21 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* AGY-Nexus Public Docs — TOC Builder, Live Search, Active Tracking & Copy Controls */
+/* AGY-Nexus Public Docs — Shared Outline Rail, Mobile Sheet, Search & Copy Controls */
 (() => {
-  const QUICK_JUMPS = [["quickstart", "Quickstart"], ["common-terms", "Common Terms"], ["architecture", "Architecture"], ["how-it-is-built", "How It Is Built"]];
+  const QUICK_JUMPS = [
+    ["quickstart", "Quickstart"],
+    ["common-terms", "Common Terms"],
+    ["architecture", "Architecture"],
+    ["how-it-is-built", "How It Is Built"],
+  ];
+  const RAIL_QUICK_JUMPS = [
+    ...QUICK_JUMPS.map(([slug, label]) => ({ label, href: `#doc-${slug}`, jumpId: `doc-${slug}`, slug })),
+    { label: "Live Studio Demo", href: "../demo/", jumpId: "", slug: "" },
+  ];
   const SVG_NS = "http://www.w3.org/2000/svg";
   const mql = (q) => (typeof window.matchMedia === "function" ? window.matchMedia(q) : null);
   const byId = (id) => document.getElementById(id);
   const reducedMotionMql = mql("(prefers-reduced-motion: reduce)");
-  const desktopMql = mql("(min-width: 900px)");
+  const desktopMql = mql("(min-width: 760px)");
   const copyTimers = new WeakMap();
   let lastCopyMsg = "";
 
@@ -28,6 +37,13 @@
       svg.appendChild(node);
     }
     return svg;
+  }
+
+  function isEditableElement(el) {
+    if (!el || el === document.body || el === document.documentElement) return false;
+    if (el.isContentEditable || el.getAttribute?.("contenteditable") === "true" || el.getAttribute?.("contenteditable") === "") return true;
+    const tag = String(el.tagName || "").toUpperCase();
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
   }
 
   function sanitizeFragment(htmlStr) {
@@ -127,20 +143,28 @@
     if (!emptyState || emptyState.querySelector('a[href="#doc-quickstart"]')) return;
     const row = mk("div", "docs-empty-actions");
     const clearBtn = mk("button", "site-btn site-btn-primary", "Clear search", { type: "button" });
-    clearBtn.addEventListener("click", onReset);
+    clearBtn.addEventListener("click", () => onReset(true));
     row.appendChild(clearBtn);
     for (const [slug, label] of QUICK_JUMPS) row.appendChild(mk("a", "docs-empty-jump", label, { href: `#doc-${slug}` }));
     emptyState.appendChild(row);
   }
 
-  function buildChapters(data, tocList, articleHost) {
+  function extractSubsections(prose) {
+    let headings = Array.from(prose.querySelectorAll("h2[id]"));
+    if (!headings.length) {
+      const h3s = Array.from(prose.querySelectorAll("h3[id]"));
+      if (h3s.length <= 6) headings = h3s;
+    }
+    return headings
+      .map((h) => ({ id: String(h.id || "").trim(), title: String(h.textContent || "").trim() }))
+      .filter((item) => item.id && item.title);
+  }
+
+  function buildChapters(data, articleHost) {
     const chapters = Array.isArray(data?.chapters) ? data.chapters : [];
     const records = [];
-    const groupNodes = new Map();
     const codeSeqRef = { n: 0 };
-    let lastGroup = "";
-    tocList.replaceChildren();
-    articleHost.replaceChildren();
+    const fragHost = document.createDocumentFragment();
 
     for (let i = 0; i < chapters.length; i += 1) {
       const ch = chapters[i] || {};
@@ -150,18 +174,6 @@
       const group = String(ch.group || "").trim();
       const summary = String(ch.summary || "").trim();
       const kw = Array.isArray(ch.keywords) ? ch.keywords.join(" ") : String(ch.keywords || "");
-
-      if (group && group !== lastGroup) {
-        lastGroup = group;
-        const grpLi = mk("li", "docs-toc-group-label", group, { "aria-hidden": "true" });
-        tocList.appendChild(grpLi);
-        groupNodes.set(group, grpLi);
-      }
-      const li = mk("li", null, null, { "data-slug": slug });
-      if (group) li.dataset.group = group;
-      const tocLink = mk("a", "docs-toc-link", title, { href: `#${anchorId}` });
-      li.appendChild(tocLink);
-      tocList.appendChild(li);
 
       const section = mk("section", "docs-chapter", null, { id: anchorId, "data-slug": slug, tabindex: "-1" });
       const header = mk("header", "docs-chapter-header");
@@ -177,38 +189,87 @@
       wrapBareTables(prose);
       enhanceCodeBlocks(prose, codeSeqRef);
       section.append(header, prose);
-      articleHost.appendChild(section);
+      fragHost.appendChild(section);
 
       const plain = String(ch.plainText || prose.textContent || "");
-      records.push({ slug, anchorId, title, group, tocItemEl: li, tocLink, sectionEl: section, haystack: `${title} ${group} ${summary} ${kw} ${plain} ${slug}`.toLowerCase() });
+      records.push({
+        slug, anchorId, title, group, subsections: extractSubsections(prose),
+        sectionEl: section, haystack: `${title} ${group} ${summary} ${kw} ${plain} ${slug}`.toLowerCase(),
+      });
     }
-    return { records, groupNodes };
+    articleHost.replaceChildren(fragHost);
+    return records;
+  }
+
+  function buildOutlineList(listEl, records) {
+    if (!listEl) return [];
+    const useLi = /^(UL|OL)$/i.test(String(listEl.tagName || ""));
+    const frag = document.createDocumentFragment();
+    const jumpLinks = [];
+    const addTitle = (label) => frag.appendChild(mk(useLi ? "li" : "div", "docs-rail-title", label));
+    const addLink = (cls, label, href, jumpId, slug, railRole = "") => {
+      const attrs = { href };
+      if (jumpId) attrs["data-doc-jump"] = jumpId;
+      if (slug) attrs["data-slug"] = slug;
+      if (railRole) attrs["data-rail-role"] = railRole;
+      const link = mk("a", cls, label, attrs);
+      if (jumpId) jumpLinks.push(link);
+      if (useLi) { const li = mk("li"); li.appendChild(link); frag.appendChild(li); }
+      else frag.appendChild(link);
+    };
+
+    addTitle("QUICK JUMPS");
+    for (const item of RAIL_QUICK_JUMPS) addLink("docs-rail-link", item.label, item.href, item.jumpId, item.slug, "quick");
+    addTitle("GUIDES");
+    for (const rec of records) {
+      addLink("docs-rail-link", rec.title, `#${rec.anchorId}`, rec.anchorId, rec.slug);
+      for (const sub of rec.subsections) addLink("docs-rail-link docs-rail-sub", sub.title, `#${sub.id}`, sub.id, rec.slug);
+    }
+    listEl.replaceChildren(frag);
+    return jumpLinks;
   }
 
   function makePagerLink(dir, label, rec) {
     const attrs = { "data-dir": dir };
-    if (rec) attrs.href = `#${rec.anchorId}`;
+    if (rec) { attrs.href = `#${rec.anchorId}`; attrs["data-doc-jump"] = rec.anchorId; attrs["data-slug"] = rec.slug; }
     else attrs["aria-disabled"] = "true";
     const el = mk(rec ? "a" : "span", "docs-pager-link", null, attrs);
     el.append(mk("span", "docs-pager-label", label), mk("span", "docs-pager-title", rec ? rec.title : "None"));
     return el;
   }
 
-  function createStateController(dom, records, groupNodes) {
-    const state = { visible: records.slice(), activeSlug: records[0]?.slug || "", scrollLockUntil: 0 };
+  function resolveTarget(records, rawTarget) {
+    const clean = String(rawTarget || "").replace(/^#/, "").trim();
+    if (!clean) return null;
+    const chapterMatch = records.find((r) => r.anchorId === clean);
+    if (chapterMatch) return { rec: chapterMatch, el: chapterMatch.sectionEl, targetId: chapterMatch.anchorId };
+    const targetEl = byId(clean);
+    const chapterEl = targetEl?.closest(".docs-chapter");
+    const rec = chapterEl ? records.find((r) => r.sectionEl === chapterEl) : null;
+    if (rec) return { rec, el: targetEl, targetId: clean };
+    const slugMatch = records.find((r) => r.slug === clean.replace(/^doc-/, ""));
+    return slugMatch ? { rec: slugMatch, el: slugMatch.sectionEl, targetId: slugMatch.anchorId } : null;
+  }
+
+  function createStateController(dom, records) {
+    const state = { visible: records.slice(), activeSlug: records[0]?.slug || "", activeTargetId: records[0]?.anchorId || "", scrollLockUntil: 0 };
     const total = records.length;
 
-    function syncActiveUi(slug) {
+    function syncActiveUi(slug, targetId = "") {
       if (!state.visible.length) {
-        for (const rec of records) rec.tocLink.removeAttribute("aria-current");
+        state.activeSlug = "";
+        state.activeTargetId = "";
+        for (const link of dom.outlineLinks) link.removeAttribute("aria-current");
         dom.pagerEl.hidden = true;
         return;
       }
       const idx = Math.max(0, state.visible.findIndex((r) => r.slug === slug));
-      state.activeSlug = state.visible[idx].slug;
-      for (const rec of records) {
-        if (rec.slug === state.activeSlug && !rec.sectionEl.hidden) rec.tocLink.setAttribute("aria-current", "true");
-        else rec.tocLink.removeAttribute("aria-current");
+      const activeRec = state.visible[idx];
+      state.activeSlug = activeRec.slug;
+      state.activeTargetId = targetId || activeRec.anchorId;
+      for (const link of dom.outlineLinks) {
+        if (link.dataset.railRole !== "quick" && link.dataset.docJump === state.activeTargetId && !activeRec.sectionEl.hidden) link.setAttribute("aria-current", "location");
+        else link.removeAttribute("aria-current");
       }
       dom.pagerEl.hidden = false;
       dom.pagerEl.replaceChildren(
@@ -221,48 +282,116 @@
       const raw = String(rawValue || "");
       const trimmed = raw.trim();
       const terms = trimmed ? trimmed.toLowerCase().split(/\s+/) : [];
-      if (dom.clearBtn) dom.clearBtn.hidden = trimmed.length === 0;
-      const activeGroups = new Set();
+      if (dom.clearBtn) dom.clearBtn.hidden = false;
       state.visible = [];
       for (const rec of records) {
         const matched = terms.length === 0 || terms.every((t) => rec.haystack.includes(t));
         rec.sectionEl.hidden = !matched;
-        rec.tocItemEl.hidden = !matched;
         if (trimmed && matched) rec.sectionEl.setAttribute("data-search-match", "true");
         else rec.sectionEl.removeAttribute("data-search-match");
-        if (matched) { state.visible.push(rec); if (rec.group) activeGroups.add(rec.group); }
+        if (matched) state.visible.push(rec);
       }
-      for (const [grp, grpEl] of groupNodes.entries()) grpEl.hidden = !activeGroups.has(grp);
       const matches = state.visible.length;
-      if (dom.statusEl) {
-        dom.statusEl.textContent = trimmed ? `Showing ${matches} of ${total} sections for "${trimmed}"` : `Showing ${total} of ${total} sections`;
+      if (dom.statusEl) dom.statusEl.textContent = matches === 0 ? "0 matching sections" : `${matches} of ${total} ${total === 1 ? "guide" : "guides"}`;
+      if (dom.emptyState) {
+        const hasMatches = matches > 0;
+        if (!hasMatches && dom.emptyQuery) dom.emptyQuery.textContent = trimmed || raw;
+        dom.emptyState.hidden = hasMatches;
+        dom.emptyState.classList.toggle("hidden", hasMatches);
       }
-      if (matches === 0) {
-        if (dom.emptyQuery) dom.emptyQuery.textContent = trimmed || raw;
-        if (dom.emptyState) { dom.emptyState.hidden = false; dom.emptyState.classList.remove("hidden"); }
-      } else if (dom.emptyState) {
-        dom.emptyState.hidden = true;
-      }
-      syncActiveUi(state.visible.some((r) => r.slug === state.activeSlug) ? state.activeSlug : (state.visible[0]?.slug || ""));
+      const kept = state.visible.some((r) => r.slug === state.activeSlug);
+      const nextSlug = kept ? state.activeSlug : (state.visible[0]?.slug || "");
+      syncActiveUi(nextSlug, kept ? state.activeTargetId : (nextSlug ? `doc-${nextSlug}` : ""));
     }
 
-    function jumpToSlug(rawSlug, updateHash = true) {
-      const slug = String(rawSlug || "").replace(/^#?doc-/, "").trim();
-      const targetRec = records.find((r) => r.slug === slug);
-      if (!targetRec) return;
-      if (targetRec.sectionEl.hidden) { if (dom.searchInput) dom.searchInput.value = ""; applyFilter(""); }
-      state.scrollLockUntil = Date.now() + 450;
-      syncActiveUi(targetRec.slug);
-      if (updateHash && location.hash !== `#${targetRec.anchorId}`) history.replaceState(null, "", `#${targetRec.anchorId}`);
-      targetRec.sectionEl.scrollIntoView({ behavior: reducedMotionMql?.matches ? "auto" : "smooth", block: "start" });
-      if (dom.tocToggle && dom.tocNav && !desktopMql?.matches) {
-        dom.tocNav.classList.remove("is-open");
-        dom.tocToggle.setAttribute("aria-expanded", "false");
+    function jumpToTarget(rawTarget, updateHash = true, moveFocus = true) {
+      const hit = resolveTarget(records, rawTarget);
+      if (!hit) return false;
+      if (hit.rec.sectionEl.hidden) { if (dom.searchInput) dom.searchInput.value = ""; applyFilter(""); }
+      state.scrollLockUntil = Date.now() + 550;
+      syncActiveUi(hit.rec.slug, hit.targetId);
+      if (updateHash && location.hash !== `#${hit.targetId}`) history.replaceState(null, "", `#${hit.targetId}`);
+      dom.closeTocDialog?.();
+      hit.el.scrollIntoView?.({ behavior: reducedMotionMql?.matches ? "auto" : "smooth", block: "start" });
+      if (moveFocus && typeof hit.el.focus === "function") {
+        if (!hit.el.hasAttribute("tabindex")) hit.el.setAttribute("tabindex", "-1");
+        hit.el.focus({ preventScroll: true });
       }
+      return true;
     }
 
-    const resetSearch = () => { if (dom.searchInput) { dom.searchInput.value = ""; dom.searchInput.focus(); } applyFilter(""); };
-    return { state, syncActiveUi, applyFilter, jumpToSlug, resetSearch };
+    const jumpToSlug = (rawSlug, updateHash = true, moveFocus = true) => {
+      const clean = String(rawSlug || "").replace(/^#/, "").trim();
+      if (!clean) return false;
+      const target = !String(rawSlug || "").startsWith("#") && !clean.startsWith("doc-") && records.some((r) => r.slug === clean)
+        ? `#doc-${clean}` : `#${clean}`;
+      return jumpToTarget(target, updateHash, moveFocus);
+    };
+
+    function resetSearch(focusInput = false) {
+      if (dom.searchInput) { dom.searchInput.value = ""; if (focusInput) dom.searchInput.focus(); }
+      applyFilter("");
+    }
+
+    return { state, syncActiveUi, applyFilter, jumpToSlug, jumpToTarget, resetSearch };
+  }
+
+  function bindDialogSheet(dom) {
+    const { tocDialog, tocToggle, tocNav } = dom;
+    const syncExpanded = (open) => { if (tocToggle) tocToggle.setAttribute("aria-expanded", String(Boolean(open))); };
+    if (!tocDialog) {
+      if (tocToggle && tocNav) {
+        tocNav.dataset.collapsible = "true";
+        syncExpanded(false);
+        tocToggle.addEventListener("click", () => {
+          const open = !tocNav.classList.contains("is-open");
+          tocNav.classList.toggle("is-open", open);
+          syncExpanded(open);
+        });
+      }
+      return () => { if (tocToggle && tocNav && !desktopMql?.matches) { tocNav.classList.remove("is-open"); syncExpanded(false); } };
+    }
+
+    const isOpen = () => Boolean(tocDialog.open || tocDialog.hasAttribute("open"));
+    const openDialog = () => {
+      if (isOpen()) return;
+      if (typeof tocDialog.showModal === "function") { try { tocDialog.showModal(); } catch (_e) { tocDialog.setAttribute("open", ""); } }
+      else tocDialog.setAttribute("open", "");
+      syncExpanded(true);
+    };
+    const closeDialog = () => {
+      if (isOpen()) {
+        if (typeof tocDialog.close === "function") { try { tocDialog.close(); } catch (_e) { tocDialog.removeAttribute("open"); } }
+        if (isOpen()) tocDialog.removeAttribute("open");
+      }
+      syncExpanded(false);
+    };
+
+    syncExpanded(isOpen());
+    if (tocToggle) tocToggle.addEventListener("click", () => (isOpen() ? closeDialog() : openDialog()));
+    tocDialog.addEventListener("open", () => syncExpanded(true));
+    tocDialog.addEventListener("close", () => { if ("returnValue" in tocDialog) tocDialog.returnValue = ""; syncExpanded(false); });
+    tocDialog.addEventListener("toggle", (ev) => syncExpanded(ev.newState ? ev.newState === "open" : isOpen()));
+    tocDialog.addEventListener("click", (ev) => {
+      const origin = ev.target instanceof Element ? ev.target : ev.target?.parentElement;
+      if (origin?.closest("[data-close-dialog], a[href]")) closeDialog();
+    });
+    if (typeof HTMLDialogElement === "undefined" || !("closedBy" in HTMLDialogElement.prototype)) {
+      const outside = (ev) => {
+        const r = tocDialog.getBoundingClientRect();
+        return ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom;
+      };
+      let pressedOut = false;
+      tocDialog.addEventListener("pointerdown", (ev) => { pressedOut = outside(ev); });
+      tocDialog.addEventListener("pointerup", (ev) => { if (pressedOut && outside(ev)) closeDialog(); pressedOut = false; });
+      tocDialog.addEventListener("pointercancel", () => { pressedOut = false; });
+    }
+    if (desktopMql) {
+      const onBp = (ev) => { if (ev?.matches ?? desktopMql.matches) closeDialog(); };
+      if (typeof desktopMql.addEventListener === "function") desktopMql.addEventListener("change", onBp);
+      else if (typeof desktopMql.addListener === "function") desktopMql.addListener(onBp);
+    }
+    return closeDialog;
   }
 
   function bindInteractions(dom, records, ctrl) {
@@ -270,41 +399,43 @@
     if (dom.searchInput) {
       dom.searchInput.addEventListener("input", () => ctrl.applyFilter(dom.searchInput.value));
       dom.searchInput.addEventListener("keydown", (ev) => {
-        if (ev.key === "Escape" && dom.searchInput.value) { ev.preventDefault(); ctrl.resetSearch(); }
+        if (ev.key === "Escape" && dom.searchInput.value) { ev.preventDefault(); ctrl.resetSearch(true); }
       });
     }
-    if (dom.clearBtn) dom.clearBtn.addEventListener("click", ctrl.resetSearch);
+    if (dom.clearBtn) dom.clearBtn.addEventListener("click", () => ctrl.resetSearch(true));
+    document.addEventListener("keydown", (ev) => {
+      if (!dom.searchInput || ev.defaultPrevented || ev.key !== "/") return;
+      if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey || ev.isComposing) return;
+      if (document.querySelector("dialog[open]")) return;
+      if (isEditableElement(document.activeElement) || (ev.target instanceof Element && isEditableElement(ev.target))) return;
+      ev.preventDefault();
+      dom.searchInput.focus();
+    });
     document.addEventListener("click", (ev) => {
       if (ev.defaultPrevented) return;
       const origin = ev.target instanceof Element ? ev.target : ev.target?.parentElement;
       if (!origin) return;
-      if (origin.closest("[data-docs-reset]")) { ev.preventDefault(); ctrl.resetSearch(); return; }
-      const href = origin.closest('a[href^="#doc-"]')?.getAttribute("href") || "";
-      if (href && records.some((r) => `#${r.anchorId}` === href)) { ev.preventDefault(); ctrl.jumpToSlug(href, true); }
+      if (origin.closest("[data-docs-reset]")) { ev.preventDefault(); ctrl.resetSearch(true); return; }
+      const jumpEl = origin.closest('[data-doc-jump], [data-docs-jump], a[href^="#"]');
+      if (!jumpEl) return;
+      const rawTarget = jumpEl.getAttribute("data-doc-jump") || jumpEl.getAttribute("data-docs-jump") || jumpEl.getAttribute("href") || "";
+      if (resolveTarget(records, rawTarget)) { ev.preventDefault(); ctrl.jumpToTarget(rawTarget, true); }
     });
-    if (dom.tocToggle && dom.tocNav) {
-      dom.tocNav.dataset.collapsible = "true";
-      dom.tocToggle.setAttribute("aria-expanded", "false");
-      dom.tocToggle.addEventListener("click", () => {
-        const nextOpen = !dom.tocNav.classList.contains("is-open");
-        dom.tocNav.classList.toggle("is-open", nextOpen);
-        dom.tocToggle.setAttribute("aria-expanded", String(nextOpen));
-      });
-    }
     if ("IntersectionObserver" in window && records.length) {
       const intersecting = new Set();
       const observer = new IntersectionObserver((entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) intersecting.add(entry.target);
-          else intersecting.delete(entry.target);
-        }
-        if (Date.now() < ctrl.state.scrollLockUntil || !intersecting.size) return;
+        for (const entry of entries) (entry.isIntersecting ? intersecting.add(entry.target) : intersecting.delete(entry.target));
+        if (Date.now() < ctrl.state.scrollLockUntil || !ctrl.state.visible.length || !intersecting.size) return;
         const hit = ctrl.state.visible.find((r) => intersecting.has(r.sectionEl));
-        if (hit && hit.slug !== ctrl.state.activeSlug) ctrl.syncActiveUi(hit.slug);
+        if (!hit) return;
+        const hasCurrent = dom.outlineLinks.some((a) => a.getAttribute("aria-current") === "location");
+        if (hit.slug !== ctrl.state.activeSlug || !hasCurrent) ctrl.syncActiveUi(hit.slug, hit.anchorId);
       }, { rootMargin: "-18% 0px -62% 0px", threshold: [0, 0.1] });
       for (const rec of records) observer.observe(rec.sectionEl);
     }
-    window.addEventListener("hashchange", () => { if (location.hash.startsWith("#doc-")) ctrl.jumpToSlug(location.hash, false); });
+    window.addEventListener("hashchange", () => {
+      if (location.hash.length > 1 && resolveTarget(records, location.hash)) ctrl.jumpToTarget(location.hash, false);
+    });
     window.addEventListener("v9-theme-changed", (ev) => {
       if (ev.detail?.theme) document.documentElement.dataset.docsTheme = ev.detail.theme;
     });
@@ -315,6 +446,7 @@
     const tocList = byId("docsTocList");
     const articleHost = byId("docsArticleHost");
     if (!tocList || !articleHost) return;
+    const modalList = byId("docsTocModalList");
     const data = window.AGY_DOCS_DATA || { chapters: [] };
     const heroMeta = byId("docsHeroMeta");
     if (heroMeta && (data.version || data.generatedAt)) {
@@ -331,21 +463,30 @@
       pagerEl = mk("nav", "docs-pager", null, { id: "docsPager", "aria-label": "Chapter navigation" });
       articleHost.insertAdjacentElement("afterend", pagerEl);
     }
+    const records = buildChapters(data, articleHost);
+    const outlineLinks = [...buildOutlineList(tocList, records), ...buildOutlineList(modalList, records)];
     const dom = {
       searchInput: byId("docsSearchInput"), clearBtn: byId("docsSearchClearBtn"),
       statusEl: byId("docsSearchStatus"), emptyState: byId("docsEmptyState"),
       emptyQuery: byId("docsEmptyQuery"), tocNav: byId("docsTocNav") || tocList.closest("nav"),
-      tocToggle: byId("docsTocToggle") || byId("docsTocToggleBtn"), pagerEl,
+      tocToggle: byId("docsTocToggle") || byId("docsTocToggleBtn"),
+      tocDialog: byId("docsTocDialog"), pagerEl, outlineLinks,
     };
-    const { records, groupNodes } = buildChapters(data, tocList, articleHost);
-    const ctrl = createStateController(dom, records, groupNodes);
+    if (dom.clearBtn) dom.clearBtn.hidden = false;
+    dom.closeTocDialog = bindDialogSheet(dom);
+    const ctrl = createStateController(dom, records);
     bindInteractions(dom, records, ctrl);
     ctrl.applyFilter(dom.searchInput ? dom.searchInput.value : "");
-    if (location.hash.startsWith("#doc-")) ctrl.jumpToSlug(location.hash, false);
+    if (location.hash.length > 1 && resolveTarget(records, location.hash)) ctrl.jumpToTarget(location.hash, false, false);
     window.AgyDocsApp = {
       applyFilter: ctrl.applyFilter,
       jumpToSlug: ctrl.jumpToSlug,
-      getState: () => ({ activeSlug: ctrl.state.activeSlug, total: records.length, visible: ctrl.state.visible.length }),
+      getState: () => ({
+        activeSlug: ctrl.state.activeSlug,
+        activeTargetId: ctrl.state.activeTargetId,
+        total: records.length,
+        visible: ctrl.state.visible.length,
+      }),
     };
   }
 

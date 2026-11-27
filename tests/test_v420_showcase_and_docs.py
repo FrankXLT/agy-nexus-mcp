@@ -345,3 +345,156 @@ def test_v420_oaw_switcher_themes_and_empty_state_targets(tmp_path: Path) -> Non
     for site_html_name in ("index.html", "docs.html"):
         site_txt = (SITE_DIR / site_html_name).read_text(encoding="utf-8")
         assert 'referrerpolicy="no-referrer"' in site_txt, f"Missing no-referrer on external font link in {site_html_name}"
+
+
+def _write_docs_app_vm_probe(probe_path: Path) -> None:
+    """Write a compact Node VM DOM harness exercising web/site/docs_app.js against docs_data.js."""
+    probe_path.write_text(
+        """
+const assert = require("assert"), fs = require("fs"), vm = require("vm");
+const VOID = new Set(["area","base","br","col","embed","hr","img","input","link","meta","param","source","track","wbr","path","circle","rect","line","polyline","polygon"]);
+const toCamel = (s) => s.replace(/^data-/, "").replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+function matchOne(el, sel) {
+  for (const part of sel.split(",").map((s) => s.trim()).filter(Boolean)) {
+    let rem = part, ok = true, m;
+    const tm = rem.match(/^([a-zA-Z0-9*]+)/);
+    if (tm) { if (tm[1] !== "*" && el.tagName !== tm[1].toUpperCase()) ok = false; rem = rem.slice(tm[0].length); }
+    while (ok && rem) {
+      if (rem[0] === "." && (m = rem.match(/^\\.([\\w-]+)/))) { ok = el.classList.contains(m[1]); rem = rem.slice(m[0].length); }
+      else if (rem[0] === "#" && (m = rem.match(/^#([\\w-]+)/))) { ok = el.id === m[1]; rem = rem.slice(m[0].length); }
+      else if (rem[0] === "[" && (m = rem.match(/^\\[([^=\\]^]+)(?:(\\^?=)"([^"]*)")?\\]/))) {
+        const v = el.getAttribute(m[1]);
+        ok = m[2] === "=" ? v === m[3] : m[2] === "^=" ? (typeof v === "string" && v.startsWith(m[3])) : v !== null;
+        rem = rem.slice(m[0].length);
+      } else { ok = false; break; }
+    }
+    if (ok) return true;
+  }
+  return false;
+}
+class Element {
+  constructor(tag) {
+    this.tagName = String(tag || "DIV").toUpperCase(); this.children = []; this.parentNode = null; this._attrs = new Map();
+    this.dataset = {}; this._text = ""; this.value = ""; this.hidden = false; this.open = false; this._ev = new Map();
+    this.classList = {
+      add: (...cs) => { const s = new Set(this.className.split(/\\s+/).filter(Boolean)); cs.forEach((c) => s.add(c)); this.className = [...s].join(" "); },
+      remove: (...cs) => { const s = new Set(this.className.split(/\\s+/).filter(Boolean)); cs.forEach((c) => s.delete(c)); this.className = [...s].join(" "); },
+      toggle: (c, f) => { const on = f === undefined ? !this.classList.contains(c) : Boolean(f); on ? this.classList.add(c) : this.classList.remove(c); return on; },
+      contains: (c) => this.className.split(/\\s+/).filter(Boolean).includes(c),
+    };
+  }
+  get id() { return this._attrs.get("id") || ""; } set id(v) { this.setAttribute("id", v); }
+  get className() { return this._attrs.get("class") || ""; } set className(v) { this.setAttribute("class", v); }
+  get firstElementChild() { return this.children[0] || null; }
+  get nextElementSibling() { const k = this.parentNode?.children; const i = k ? k.indexOf(this) : -1; return i >= 0 ? (k[i + 1] || null) : null; }
+  get parentElement() { return this.parentNode && this.parentNode.tagName !== "#FRAG" ? this.parentNode : null; }
+  get attributes() { return [...this._attrs.entries()].map(([name, value]) => ({ name, value })); }
+  get textContent() { return this.children.length ? this.children.map((c) => c.textContent).join("") : this._text; }
+  set textContent(v) { this.children = []; this._text = String(v ?? ""); }
+  setAttribute(k, v) { const key = String(k), val = String(v); this._attrs.set(key, val); if (key.startsWith("data-")) this.dataset[toCamel(key)] = val; }
+  getAttribute(k) { return this._attrs.has(String(k)) ? this._attrs.get(String(k)) : null; }
+  hasAttribute(k) { return this._attrs.has(String(k)); } removeAttribute(k) { this._attrs.delete(String(k)); }
+  appendChild(n) { if (!n) return n; if (n.tagName === "#FRAG") { n.children.slice().forEach((c) => this.appendChild(c)); return n; } n.parentNode = this; this.children.push(n); return n; }
+  append(...ns) { ns.forEach((n) => this.appendChild(typeof n === "string" ? Object.assign(new Element("#TEXT"), { _text: n }) : n)); }
+  replaceChildren(...ns) { this.children = []; this.append(...ns); }
+  insertBefore(n, r) { const i = this.children.indexOf(r); if (i < 0) return this.appendChild(n); n.parentNode = this; this.children.splice(i, 0, n); return n; }
+  insertAdjacentElement(p, n) { if (p === "afterend" && this.parentNode) { const i = this.parentNode.children.indexOf(this); n.parentNode = this.parentNode; this.parentNode.children.splice(i + 1, 0, n); } return n; }
+  remove() { if (this.parentNode) this.parentNode.children = this.parentNode.children.filter((c) => c !== this); }
+  closest(s) { for (let c = this; c && c.tagName !== "#FRAG"; c = c.parentNode) if (matchOne(c, s)) return c; return null; }
+  querySelectorAll(s) { const out = []; const w = (n) => { for (const c of n.children) if (c.tagName !== "#TEXT") { if (matchOne(c, s)) out.push(c); w(c); } }; w(this); return out; }
+  querySelector(s) { return this.querySelectorAll(s)[0] || null; }
+  addEventListener(t, fn) { if (!this._ev.has(t)) this._ev.set(t, []); this._ev.get(t).push(fn); }
+  dispatchEvent(ev) { const e = Object.assign({ defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } }, ev); if (!e.target) e.target = this; (this._ev.get(e.type) || []).forEach((fn) => fn(e)); }
+  focus() { doc.activeElement = this; } scrollIntoView() {}
+}
+function parseHtmlInto(frag, html) {
+  const st = [frag], re = /<(\\/?)([a-zA-Z0-9:-]+)([^>]*)>|([^<]+)/g;
+  for (let m; (m = re.exec(String(html || ""))); ) {
+    if (m[4] !== undefined) { st[st.length - 1].append(m[4]); continue; }
+    const tag = m[2].toLowerCase();
+    if (m[1]) { while (st.length > 1 && st[st.length - 1].tagName !== tag.toUpperCase()) st.pop(); if (st.length > 1) st.pop(); continue; }
+    const el = new Element(tag);
+    for (const am of m[3].matchAll(/([a-zA-Z0-9:-]+)(?:="([^"]*)")?/g)) el.setAttribute(am[1], am[2] ?? "");
+    st[st.length - 1].appendChild(el);
+    if (!VOID.has(tag) && !m[3].trim().endsWith("/")) st.push(el);
+  }
+}
+const root = new Element("BODY"), byIdMap = new Map(), docEv = new Map(), mqlEv = [], add = (tag, id, p = root, a = {}) => { const el = new Element(tag); el.id = id; Object.entries(a).forEach(([k, v]) => el.setAttribute(k, v)); p.appendChild(el); byIdMap.set(id, el); return el; };
+add("UL", "docsTocList", add("NAV", "docsTocNav")); add("INPUT", "docsSearchInput"); add("BUTTON", "docsSearchClearBtn"); add("SPAN", "docsSearchStatus");
+const empty = add("SECTION", "docsEmptyState", root, { class: "hidden" }); empty.hidden = true; add("SPAN", "docsEmptyQuery", empty); add("BUTTON", "docsResetSearchBtn", empty, { "data-docs-reset": "1" });
+add("DIV", "docsHeroMeta"); add("ARTICLE", "docsArticleHost"); add("NAV", "docsPager");
+const toggleBtn = add("BUTTON", "docsTocToggle"), dialog = add("DIALOG", "docsTocDialog", root, { class: "va-modal-sheet", closedby: "any" });
+dialog.showModal = () => { dialog.open = true; dialog.setAttribute("open", ""); dialog.dispatchEvent({ type: "open" }); }; dialog.close = () => { dialog.open = false; dialog.removeAttribute("open"); dialog.dispatchEvent({ type: "close" }); }; add("UL", "docsTocModalList", dialog);
+const loc = { hash: "", search: "", pathname: "/docs/", href: "https://example.test/docs/" }, hist = { replaceState: (_s, _t, u) => { loc.hash = u; } };
+const doc = { readyState: "complete", documentElement: { dataset: {} }, body: root, activeElement: null, getElementById: (id) => byIdMap.get(id) || root.querySelector(`#${id}`), createElement: (tag) => { const el = new Element(tag); if (tag.toLowerCase() === "template") { el.content = new Element("#FRAG"); Object.defineProperty(el, "innerHTML", { set(v) { el.content.children = []; parseHtmlInto(el.content, v); } }); } return el; }, createElementNS: (_ns, tag) => new Element(tag), createDocumentFragment: () => new Element("#FRAG"), createTreeWalker: (node) => { const flat = [], w = (n) => { for (const c of n.children) if (c.tagName !== "#TEXT") { flat.push(c); w(c); } }; w(node); let i = 0; return { nextNode: () => (i < flat.length ? flat[i++] : null) }; }, querySelector: (s) => root.querySelector(s), querySelectorAll: (s) => root.querySelectorAll(s), addEventListener: (t, fn) => { if (!docEv.has(t)) docEv.set(t, []); docEv.get(t).push(fn); } };
+const ctx = { window: { location: loc, history: hist, matchMedia: (q) => ({ matches: false, addEventListener: (_t, fn) => { if (q.includes("760px")) mqlEv.push(fn); } }), addEventListener: () => {} }, location: loc, history: hist, document: doc, Element, NodeFilter: { SHOW_ELEMENT: 1 }, requestAnimationFrame: (fn) => fn(), setTimeout: () => 1, clearTimeout: () => {} };
+ctx.window.document = doc; vm.runInNewContext(fs.readFileSync(process.argv[2], "utf-8"), ctx); vm.runInNewContext(fs.readFileSync(process.argv[3], "utf-8"), ctx);
+const fireClick = (el) => { const ev = { type: "click", target: el, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } }; for (let n = el; n; n = n.parentNode) n.dispatchEvent?.(ev); (docEv.get("click") || []).forEach((fn) => fn(ev)); };
+const tocTxt = byIdMap.get("docsTocList").children.map((li) => li.textContent).join("|"); assert(tocTxt.includes("QUICK JUMPS") && tocTxt.includes("GUIDES") && byIdMap.get("docsTocList").querySelectorAll(".docs-rail-sub").length >= 2 && byIdMap.get("docsTocModalList").querySelectorAll(".docs-rail-sub").length >= 2 && byIdMap.get("docsSearchClearBtn").hidden === false);
+ctx.window.AgyDocsApp.applyFilter("PASS_HASH"); assert(ctx.window.AgyDocsApp.getState().visible > 0);
+ctx.window.AgyDocsApp.applyFilter("zzzz_unmatched_query_999"); assert.strictEqual(ctx.window.AgyDocsApp.getState().visible, 0); assert.strictEqual(empty.hidden, false);
+fireClick(byIdMap.get("docsResetSearchBtn")); assert.strictEqual(ctx.window.AgyDocsApp.getState().visible, ctx.window.AgyDocsApp.getState().total); assert.strictEqual(empty.hidden, true);
+const clSub = byIdMap.get("docsTocList").querySelector('[data-doc-jump="changelog"]'); assert(clSub); fireClick(clSub); assert.strictEqual(ctx.window.AgyDocsApp.getState().activeTargetId, "changelog"); assert.strictEqual(doc.activeElement.id, "changelog");
+ctx.window.AgyDocsApp.jumpToSlug("changelog"); assert.strictEqual(ctx.window.AgyDocsApp.getState().activeTargetId, "doc-changelog"); assert.strictEqual(doc.activeElement.id, "doc-changelog");
+toggleBtn.focus(); toggleBtn.dispatchEvent({ type: "click" }); assert.strictEqual(dialog.open, true); assert.strictEqual(toggleBtn.getAttribute("aria-expanded"), "true");
+const modalLink = byIdMap.get("docsTocModalList").querySelector('a[data-doc-jump="doc-architecture"]'); assert(modalLink); fireClick(modalLink); assert.strictEqual(dialog.open, false); assert.strictEqual(doc.activeElement.id, "doc-architecture");
+toggleBtn.dispatchEvent({ type: "click" }); assert.strictEqual(dialog.open, true); mqlEv.forEach((fn) => fn({ matches: true })); assert.strictEqual(dialog.open, false); assert.strictEqual(toggleBtn.getAttribute("aria-expanded"), "false"); console.log("DOCS_APP_VM_OK");
+""",
+        encoding="utf-8",
+    )
+
+
+def test_v420_docs_quiet_ui_760px_layout_inline_search_and_cache_bust(tmp_path: Path) -> None:
+    """Verify Quiet UI 760px sticky two-column docs layout, inline search, mobile dialog sheet, cache-bust, and VM runtime."""
+    bgs = _load_script_mod("build_github_showcase")
+    out_dir = tmp_path / "gh-pages"
+    bgs.build_showcase(out_dir, refresh=False)
+
+    raw_docs_html = (SITE_DIR / "docs.html").read_text(encoding="utf-8")
+    built_docs_html = (out_dir / "docs" / "index.html").read_text(encoding="utf-8")
+    expected_assets = (
+        "../v9/v9_layers.css?v=4.2.0.1", "../v9/vendor/quiet-ui-tokens.css?v=4.2.0.1",
+        "../assets/oaw_topbar.css?v=4.2.0.1", "../assets/site_shell.css?v=4.2.0.1",
+        "../assets/docs.css?v=4.2.0.1", "./docs_data.js?v=4.2.0.1",
+        "../assets/site_shell.js?v=4.2.0.1", "../assets/docs_app.js?v=4.2.0.1",
+    )
+    for html_txt in (raw_docs_html, built_docs_html):
+        assert not re.search(r'\?v=4\.2\.0(?=["\'])', html_txt), "Stale ?v=4.2.0 cache query string found"
+        for asset in expected_assets:
+            assert asset in html_txt, f"Missing cache-busted asset {asset}"
+        assert 'id="docsTocToggle"' in html_txt and 'aria-controls="docsTocDialog"' in html_txt
+        assert '<dialog id="docsTocDialog" class="va-modal-sheet" closedby="any"' in html_txt
+        dialog_open = html_txt.split('<dialog id="docsTocDialog"', 1)[1].split(">", 1)[0]
+        assert 'role="dialog"' not in dialog_open and "aria-modal" not in dialog_open
+        assert html_txt.index('class="docs-rail"') < html_txt.index('class="docs-main"') < html_txt.index('class="docs-hero"') < html_txt.index('<search class="docs-searchbar"')
+
+    docs_css = (SITE_DIR / "docs.css").read_text(encoding="utf-8")
+    assert len(docs_css.splitlines()) <= 500 and "!important" not in docs_css
+    assert "@media (min-width: 760px)" in docs_css and "@media (min-width: 900px)" not in docs_css
+    assert "clamp(220px, 24vw, 260px) minmax(0, 1fr)" in docs_css and "border-inline-end:" in docs_css
+    assert ".docs-rail { display: none;" in docs_css and ".docs-toc-toggle { display: none; }" in docs_css
+    assert "#docsTocList" not in docs_css and "html:has(" not in docs_css
+    assert "dialog.va-modal-sheet:modal { overscroll-behavior: contain; }" in docs_css
+
+    docs_app_js = (SITE_DIR / "docs_app.js").read_text(encoding="utf-8")
+    assert len(docs_app_js.splitlines()) <= 500
+    for marker in ("QUICK JUMPS", "GUIDES", "docs-rail-sub", "docsTocModalList", 'ev.key !== "/"', "dom.clearBtn.hidden = false", "(min-width: 760px)"):
+        assert marker in docs_app_js
+
+    docs_data_raw = (out_dir / "docs" / "docs_data.js").read_text(encoding="utf-8")
+    docs_data = json.loads(docs_data_raw.split("window.AGY_DOCS_DATA = ", 1)[1].rstrip(";\n"))
+    arch_html = next(ch["html"] for ch in docs_data["chapters"] if ch["id"] == "doc-architecture")
+    assert '<h2 id="two-doorway-isolation-passphrase-deadbolt">' in arch_html
+    assert '<h2 id="dual-pool-quota-model-routing-check">' in arch_html
+
+    wf_txt = (REPO_ROOT / "docs" / "WORKFLOWS.md").read_text(encoding="utf-8")
+    wf09 = wf_txt.split("## Workflow 9: WF-09", 1)[1]
+    for marker in ("760px", "860px", "Open Left Documentation Rail", "Inline Reading-Column Search Bar", "Mobile Chapters Sheet"):
+        assert marker in wf09, f"Missing WF-09 docs layout marker: {marker}"
+
+    probe_path = tmp_path / "docs_app_vm_probe.cjs"
+    _write_docs_app_vm_probe(probe_path)
+    proc = subprocess.run(["node", str(probe_path), str(out_dir / "docs" / "docs_data.js"), str(SITE_DIR / "docs_app.js")], cwd=str(REPO_ROOT), capture_output=True, text=True, check=False)
+    assert proc.returncode == 0, f"{proc.stdout}\n{proc.stderr}"
+    assert "DOCS_APP_VM_OK" in proc.stdout
+
