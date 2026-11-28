@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="white">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="theme-color" content="#FFFFFF" />
+  <title>Antigravity Nexus</title>
+  <meta name="description" content="Two-doorway MCP server to steer your coding workstation from Gemini, track Gemini and Claude quota % left, and route routine edits to helper models." />
+  <link rel="canonical" href="https://projects.oaworkbench.org/agy-nexus-mcp/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Antigravity Nexus — Steer Your Coding Workstation &amp; Track Quota % Left" />
+  <meta property="og:description" content="Connect Gemini on your phone or browser to your home coding workstation, check quota percentages left, and route routine edits to fast helper models." />
+  <meta property="og:url" content="https://projects.oaworkbench.org/agy-nexus-mcp/" />
+  <meta property="og:image" content="https://projects.oaworkbench.org/agy-nexus-mcp/assets/social-preview.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://projects.oaworkbench.org/agy-nexus-mcp/assets/social-preview.png" />
+  <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <script>(function(){try{var a={white:1,paper:1,"dark-paper":1,dark:1};var p=new URLSearchParams(location.search).get("theme");var s=localStorage.getItem("nexus_v9_theme");var t=(p&&Object.hasOwn(a,p))?p:((s&&Object.hasOwn(a,s))?s:"white");document.documentElement.setAttribute("data-theme",t);var m=document.querySelector('meta[name="color-scheme"]');if(m)m.setAttribute("content",(t==="dark"||t==="dark-paper")?"dark":"light");}catch(_e){document.documentElement.setAttribute("data-theme","white");}})();</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&amp;family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400&amp;display=swap" rel="stylesheet" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="./v9/v9_layers.css?v=4.2.0" />
+  <link rel="stylesheet" href="./v9/vendor/quiet-ui-tokens.css?v=4.2.0" />
+  <link rel="stylesheet" href="./assets/oaw_topbar.css?v=4.2.0" />
+  <link rel="stylesheet" href="./assets/oaw_search.css?v=4.2.0" />
+  <link rel="stylesheet" href="./assets/site_shell.css?v=4.2.0" />
+</head>
+<body>
+  <a class="oaw-skip-link" href="#mainContent">Skip to content</a>
+
+  <!-- OAW_UNIFIED_TOPBAR_START -->
+  <header id="oawTopbar" class="oaw-topbar" role="banner">
+    <div class="oaw-topbar-left">
+      <a class="oaw-wordmark" href="https://projects.oaworkbench.org/" rel="noopener noreferrer">OAW Projects</a>
+      <span class="oaw-crumb-sep" aria-hidden="true">/</span>
+
+      <div class="oaw-context-switcher">
+        <button type="button" id="btnContextSwitcher" class="oaw-pill-trigger" popovertarget="oawContextPopover" aria-controls="oawContextPopover" aria-expanded="false">
+          <span class="oaw-pill-label">Antigravity Nexus</span>
+          <svg class="oaw-pill-chevron" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+        <div id="oawContextPopover" class="oaw-popover oaw-context-popover" popover="auto" aria-label="Project Switcher">
+          <ul class="oaw-pop-list">
+            <li class="oaw-pop-row-sep">
+              <a class="oaw-pop-item" href="https://projects.oaworkbench.org/" rel="noopener noreferrer">
+                <span class="oaw-pop-icon-well" aria-hidden="true">
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M12.5 8H3.5M7.5 4L3.5 8l4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                </span>
+                <span class="oaw-pop-row-body">
+                  <span class="oaw-pop-row-title">All Projects</span>
+                </span>
+              </a>
+            </li>
+            <li>
+              <a class="oaw-pop-item is-active" href="./" aria-current="page">
+                <span class="oaw-pop-icon-well" aria-hidden="true">
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M4.5 2.5h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z" stroke="currentColor" stroke-width="1.6" /><path d="M6.5 5.5h3a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1Z" fill="currentColor" /></svg>
+                </span>
+                <span class="oaw-pop-row-body">
+                  <span class="oaw-pop-row-title">Antigravity Nexus</span>
+                  <span class="oaw-pop-row-sub">Steer Antigravity IDE, track quota % &amp; route helper models</span>
+                </span>
+                <svg class="oaw-pop-check" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" /></svg>
+              </a>
+            </li>
+            <li>
+              <a class="oaw-pop-item" href="https://projects.oaworkbench.org/quiet-ui-skills/" rel="noopener noreferrer">
+                <span class="oaw-pop-icon-well" aria-hidden="true">
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5" /><path d="M8 2.5v11M2.5 8h11" stroke="currentColor" stroke-width="1.4" /></svg>
+                </span>
+                <span class="oaw-pop-row-body">
+                  <span class="oaw-pop-row-title">Quiet User Interface Skills</span>
+                  <span class="oaw-pop-row-sub">4-theme design system, SVG compilers &amp; layout checks</span>
+                </span>
+              </a>
+            </li>
+            <li>
+              <a class="oaw-pop-item" href="https://projects.oaworkbench.org/mcp-adv-netutils/" rel="noopener noreferrer">
+                <span class="oaw-pop-icon-well" aria-hidden="true">
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="4" cy="4" r="1.8" stroke="currentColor" stroke-width="1.4" /><circle cx="12" cy="4" r="1.8" stroke="currentColor" stroke-width="1.4" /><circle cx="8" cy="12" r="1.8" stroke="currentColor" stroke-width="1.4" /><path d="M5.6 5.2 7.2 10.4M10.4 5.2 8.8 10.4M5.8 4h4.4" stroke="currentColor" stroke-width="1.3" /></svg>
+                </span>
+                <span class="oaw-pop-row-body">
+                  <span class="oaw-pop-row-title">Advanced Network Utilities</span>
+                  <span class="oaw-pop-row-sub">Diagnostic MCP tools for DNS, TLS, routing &amp; wake verification</span>
+                </span>
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <nav class="oaw-view-nav" aria-label="Antigravity Nexus views">
+        <button id="btnViewSwitcher" type="button" class="oaw-pill oaw-view-pill" popovertarget="oawViewMenu" aria-controls="oawViewMenu" aria-expanded="false" aria-label="Switch view">
+          <span class="oaw-pill-label">Overview</span>
+          <svg class="oaw-pill-chevron" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+        <div id="oawViewMenu" class="oaw-view-menu">
+          <ul class="oaw-view-list">
+            <li><a class="oaw-context-tab is-active" href="./" aria-current="page" data-oaw-tab="overview">Overview<svg class="oaw-pop-check" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" /></svg></a></li>
+            <li><a class="oaw-context-tab" href="./demo/" data-oaw-tab="demo">Demo<svg class="oaw-pop-check" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" /></svg></a></li>
+            <li><a class="oaw-context-tab" href="./docs/" data-oaw-tab="docs">Docs<svg class="oaw-pop-check" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" /></svg></a></li>
+          </ul>
+        </div>
+      </nav>
+    </div>
+
+    <div class="oaw-topbar-right">
+      <button type="button" id="btnGlobalSearch" class="oaw-search-trigger" aria-haspopup="dialog" aria-controls="oawSearchDialog" data-search-index="./search-index.json" aria-label="Search site and documentation (Ctrl+K)">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.6" /><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+        <span class="oaw-search-text">Search</span>
+        <kbd class="oaw-search-kbd">Ctrl+K</kbd>
+      </button>
+
+      <div class="oaw-pillar-launcher">
+        <button type="button" id="btnPillarSwitcher" class="oaw-pillar-btn" popovertarget="oawPillarPopover" aria-controls="oawPillarPopover" aria-expanded="false" aria-label="Open Agentic Workbench Ecosystem" title="Open Agentic Workbench">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
+            <circle cx="3" cy="3" r="1.4" /><circle cx="8" cy="3" r="1.4" /><circle cx="13" cy="3" r="1.4" />
+            <circle cx="3" cy="8" r="1.4" /><circle cx="8" cy="8" r="1.4" /><circle cx="13" cy="8" r="1.4" />
+            <circle cx="3" cy="13" r="1.4" /><circle cx="8" cy="13" r="1.4" /><circle cx="13" cy="13" r="1.4" />
+          </svg>
+        </button>
+        <div id="oawPillarPopover" class="oaw-popover oaw-pillar-popover" popover="auto" aria-label="Open Agentic Workbench Properties">
+          <div class="oaw-pop-kicker">Open Agentic Workbench</div>
+          <ul class="oaw-pop-list">
+            <li>
+              <a class="oaw-pop-item" href="https://oaworkbench.org/" rel="noopener noreferrer">
+                <span class="oaw-pop-icon-well" aria-hidden="true">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2.5 7.5 8 2.5l5.5 5v6H10V9.5H6v4H2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" /></svg>
+                </span>
+                <span class="oaw-pop-row-body">
+                  <span class="oaw-pop-row-title">Home</span>
+                  <span class="oaw-pop-row-sub">Open Agentic Workbench overview</span>
+                </span>
+              </a>
+            </li>
+            <li>
+              <a class="oaw-pop-item" href="https://learn.oaworkbench.org/" rel="noopener noreferrer">
+                <span class="oaw-pop-icon-well" aria-hidden="true">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2.5 3.5h4.2c1 0 1.3.5 1.3 1.2v8.5c-.4-.5-1-.7-1.7-.7H2.5zm11 0H9.3c-1 0-1.3.5-1.3 1.2v8.5c.4-.5 1-.7 1.7-.7h3.8z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /></svg>
+                </span>
+                <span class="oaw-pop-row-body">
+                  <span class="oaw-pop-row-title">Learn</span>
+                  <span class="oaw-pop-row-sub">Interactive engineering worlds &amp; equations</span>
+                </span>
+                <span class="oaw-pop-badge oaw-pop-badge--preview">Open Preview</span>
+              </a>
+            </li>
+            <li>
+              <a class="oaw-pop-item is-active" href="https://projects.oaworkbench.org/" rel="noopener noreferrer" aria-current="true">
+                <span class="oaw-pop-icon-well" aria-hidden="true">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2 13 4.8v6.4L8 14 3 11.2V4.8z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /><path d="M8 8l5-3.2M8 8v6M8 8L3 4.8" stroke="currentColor" stroke-width="1.3" /></svg>
+                </span>
+                <span class="oaw-pop-row-body">
+                  <span class="oaw-pop-row-title">Projects</span>
+                  <span class="oaw-pop-row-sub">Open-source developer tools &amp; demos</span>
+                </span>
+                <span class="oaw-pop-badge">Active</span>
+              </a>
+            </li>
+            <li>
+              <a class="oaw-pop-item" href="https://research.oaworkbench.org/" rel="noopener noreferrer">
+                <span class="oaw-pop-icon-well" aria-hidden="true">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2.5 13.5h11M3.5 11.5h9M4.5 6.5v5M8 6.5v5M11.5 6.5v5M2.5 6.5 8 2.5l5.5 4z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /></svg>
+                </span>
+                <span class="oaw-pop-row-body">
+                  <span class="oaw-pop-row-title">Research</span>
+                  <span class="oaw-pop-row-sub">Long-form historical &amp; provenance studies</span>
+                </span>
+                <span class="oaw-pop-badge oaw-pop-badge--preview">Preview</span>
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="oaw-user-launcher">
+        <button type="button" id="btnUserMenu" class="oaw-user-btn" popovertarget="oawUserPopover" aria-controls="oawUserPopover" aria-expanded="false" aria-label="Color Theme and GitHub menu (@FrankXLT)">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1a7 7 0 0 0-2.21 13.64c.35.06.48-.15.48-.34v-1.2c-1.95.42-2.36-.94-2.36-.94-.32-.81-.78-1.03-.78-1.03-.64-.43.05-.42.05-.42.7.05 1.07.72 1.07.72.63 1.07 1.64.76 2.04.58.06-.45.24-.76.44-.93-1.56-.18-3.2-.78-3.2-3.47 0-.77.27-1.4.72-1.89-.07-.18-.31-.9.07-1.86 0 0 .59-.19 1.93.72a6.7 6.7 0 0 1 3.52 0c1.34-.91 1.93-.72 1.93-.72.38.96.14 1.68.07 1.86.45.49.72 1.12.72 1.89 0 2.7-1.64 3.29-3.2 3.46.25.22.48.64.48 1.3v1.92c0 .19.13.41.48.34A7 7 0 0 0 8 1z" /></svg>
+          <span class="oaw-user-label">@FrankXLT</span>
+          <svg class="oaw-pill-chevron oaw-user-chevron" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+        <div id="oawUserPopover" class="oaw-popover oaw-user-popover" popover="auto" aria-label="Color Theme and GitHub Links">
+          <div class="oaw-user-section">
+            <div class="oaw-pop-kicker">Color Theme</div>
+            <div class="oaw-theme-grid" role="group" aria-label="Color Theme">
+              <button type="button" class="oaw-theme-opt is-active" data-theme-opt="white" aria-pressed="true">
+                <span class="oaw-swatch-dot" data-swatch="white" aria-hidden="true"></span>
+                <span>Pure White</span>
+              </button>
+              <button type="button" class="oaw-theme-opt" data-theme-opt="paper" aria-pressed="false">
+                <span class="oaw-swatch-dot" data-swatch="paper" aria-hidden="true"></span>
+                <span>Warm Paper</span>
+              </button>
+              <button type="button" class="oaw-theme-opt" data-theme-opt="dark" aria-pressed="false">
+                <span class="oaw-swatch-dot" data-swatch="dark" aria-hidden="true"></span>
+                <span>Dark</span>
+              </button>
+              <button type="button" class="oaw-theme-opt" data-theme-opt="dark-paper" aria-pressed="false">
+                <span class="oaw-swatch-dot" data-swatch="dark-paper" aria-hidden="true"></span>
+                <span>Dark Paper</span>
+              </button>
+            </div>
+          </div>
+          <div class="oaw-user-section oaw-user-profile-wrap">
+            <div class="oaw-pop-kicker">GitHub</div>
+            <ul class="oaw-pop-list">
+              <li>
+                <a class="oaw-pop-row" href="https://github.com/FrankXLT/agy-nexus-mcp" target="_blank" rel="noopener noreferrer">
+                  <span class="oaw-pop-icon-well" aria-hidden="true">
+                    <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M5.5 5 2.5 8l3 3M10.5 5l3 3-3 3M9 3.5l-2 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  </span>
+                  <span class="oaw-pop-row-body">
+                    <span class="oaw-pop-row-title">Antigravity Nexus</span>
+                    <span class="oaw-pop-row-sub">Source repository &amp; container tags</span>
+                  </span>
+                  <svg class="oaw-pop-ext" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6.5 3.5h6v6M12.5 3.5 6 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                </a>
+              </li>
+              <li>
+                <a class="oaw-pop-row" href="https://github.com/FrankXLT" target="_blank" rel="noopener noreferrer">
+                  <span class="oaw-pop-icon-well" aria-hidden="true">
+                    <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 0 0-2.21 13.64c.35.06.48-.15.48-.34v-1.2c-1.95.42-2.36-.94-2.36-.94-.32-.81-.78-1.03-.78-1.03-.64-.43.05-.42.05-.42.7.05 1.07.72 1.07.72.63 1.07 1.64.76 2.04.58.06-.45.24-.76.44-.93-1.56-.18-3.2-.78-3.2-3.47 0-.77.27-1.4.72-1.89-.07-.18-.31-.9.07-1.86 0 0 .59-.19 1.93.72a6.7 6.7 0 0 1 3.52 0c1.34-.91 1.93-.72 1.93-.72.38.96.14 1.68.07 1.86.45.49.72 1.12.72 1.89 0 2.7-1.64 3.29-3.2 3.46.25.22.48.64.48 1.3v1.92c0 .19.13.41.48.34A7 7 0 0 0 8 1z" /></svg>
+                  </span>
+                  <span class="oaw-pop-row-body">
+                    <span class="oaw-pop-row-title">@FrankXLT</span>
+                    <span class="oaw-pop-row-sub">View repositories on GitHub</span>
+                  </span>
+                  <svg class="oaw-pop-ext" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6.5 3.5h6v6M12.5 3.5 6 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                </a>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+  <!-- OAW_UNIFIED_TOPBAR_END -->
+
+  <main id="mainContent">
+    <div class="site-container">
+      <section class="portal-hero" aria-labelledby="heroTitle">
+        <p class="portal-hero-kicker">OPEN AGENTIC WORKBENCH &middot; ANTIGRAVITY NEXUS</p>
+        <h1 id="heroTitle" class="portal-hero-title">Steer Your Coding Workstation from Gemini &amp; Track Quota % Left</h1>
+        <p class="portal-hero-subtitle">Connect Gemini on your phone or browser to your home coding workstation, see real Gemini and Claude quota percentages left before limits hit, and route routine edits to fast helper models.</p>
+        <div class="hero-cmd-strip" role="group" aria-label="Quickstart launch modes">
+          <button type="button" class="hero-cmd-pill is-selected" data-quickstart-mode="stdio" aria-pressed="true">
+            <span class="cmd-caret" aria-hidden="true">&gt;</span> agy-nexus-mcp --stdio<span class="cmd-cursor" aria-hidden="true">_</span>
+          </button>
+          <button type="button" class="hero-cmd-pill" data-quickstart-mode="http" aria-pressed="false">
+            <span class="cmd-caret" aria-hidden="true">&gt;</span> agy-nexus-mcp --http<span class="cmd-cursor" aria-hidden="true">_</span>
+          </button>
+        </div>
+        <div class="hero-cta-row">
+          <a class="site-btn site-btn-primary" href="./demo/">Explore Demo</a>
+          <a class="site-btn site-btn-secondary" href="./docs/">Read the Guide</a>
+        </div>
+      </section>
+
+      <section aria-label="Getting Started in Three Steps">
+        <div class="how-it-works-card">
+          <div class="how-steps-grid">
+            <div class="how-step-item">
+              <div class="step-icon-tile" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2 13 4.8v6.4L8 14 3 11.2V4.8z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" /><path d="M8 8l5-3.2M8 8v6M8 8L3 4.8" stroke="currentColor" stroke-width="1.3" /></svg>
+              </div>
+              <h2 class="how-step-title">1 &mdash; Run One Container</h2>
+              <p class="how-step-desc">Launch the safe terminal doorway in <code>--stdio</code> mode with zero secrets or host changes needed.</p>
+            </div>
+            <div class="how-step-item">
+              <div class="step-icon-tile" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2.5 12.5h11M4.5 9.5 7 6.5l2.2 2 3.3-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+              </div>
+              <h2 class="how-step-title">2 &mdash; Watch Quota % Left</h2>
+              <p class="how-step-desc">See Gemini 20x and Partner 1x remaining pool percentages, reset countdowns, and session activity live.</p>
+            </div>
+            <div class="how-step-item">
+              <div class="step-icon-tile" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 5l3 3-3 3M8 11h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+              </div>
+              <h2 class="how-step-title">3 &mdash; Steer From Anywhere</h2>
+              <p class="how-step-desc">Enable the passphrase-protected remote doorway to review diffs, screenshots, and handoffs on the go.</p>
+            </div>
+          </div>
+
+          <div id="quickstartBox" class="quickstart-box">
+            <div class="quickstart-box-top">
+              <span class="quickstart-kicker">One-Command Container Quickstart</span>
+              <div class="quickstart-toggle" role="group" aria-label="Container quickstart mode">
+                <button type="button" class="quickstart-toggle-btn" data-quickstart-mode="stdio" aria-pressed="true">Try Locally (--stdio)</button>
+                <button type="button" class="quickstart-toggle-btn" data-quickstart-mode="http" aria-pressed="false">Full Studio (/web)</button>
+              </div>
+            </div>
+            <div class="copy-box">
+              <pre tabindex="0"><code id="quickstart-cmd">docker run -i --rm ghcr.io/frankxlt/agy-nexus-mcp:4.2.0 --stdio</code></pre>
+              <button type="button" class="copy-btn" command="--copy" commandfor="quickstart-cmd" aria-label="Copy container quickstart command">
+                <svg class="icon-copy" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6.5 5H12a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 12 14H6.5A1.5 1.5 0 0 1 5 12.5v-6A1.5 1.5 0 0 1 6.5 5Z" stroke="currentColor" stroke-width="1.4" /><path d="M3 11V3.5A1.5 1.5 0 0 1 4.5 2H11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
+                <svg class="icon-check" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                <span>Copy</span>
+              </button>
+              <span class="copy-tip" role="status" aria-live="polite"></span>
+            </div>
+            <div class="quickstart-box-bottom">
+              <p id="quickstartCaption" class="quickstart-caption">Runs the Two-Doorway Setup locally in terminal mode &mdash; safe catalog tools work immediately without secrets.</p>
+              <div class="quickstart-box-links">
+                <a href="./demo/">Interactive Demo</a>
+                <a href="./docs/#doc-quickstart">Quickstart Guide</a>
+                <a href="https://github.com/FrankXLT/agy-nexus-mcp" target="_blank" rel="noopener noreferrer">GitHub</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="site-section" aria-labelledby="payoffsTitle">
+        <div class="section-header">
+          <span class="section-kicker">Everyday Value</span>
+          <h2 id="payoffsTitle" class="section-title">Three things Antigravity Nexus makes effortless</h2>
+          <p class="section-lead">Keep full control over your local workstation, model quotas, and code changes in clear, ordinary language.</p>
+        </div>
+        <div class="payoffs-grid">
+          <article class="payoff-card">
+            <div class="step-icon-tile" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="3" y="2" width="10" height="12" rx="2" stroke="currentColor" stroke-width="1.5" /><path d="M6.5 11.5h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+            </div>
+            <h3 class="card-title">Steer home coding from Gemini</h3>
+            <p class="card-body">Check live diffs, review mobile and desktop screenshots, and resume queued tasks right from Gemini on your phone or browser while private files stay protected by a <span class="bridge-term">Thirty-Minute Passphrase Lock</span>.</p>
+          </article>
+          <article class="payoff-card">
+            <div class="step-icon-tile" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5" /><path d="M8 4.5v3.5l2.5 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+            </div>
+            <h3 class="card-title">See real quota % left in one place</h3>
+            <p class="card-body">Track remaining Gemini 20x and Partner 1x pool percentages, reset countdowns, and equivalent API cost savings together before a long session hits a limit mid-edit.</p>
+          </article>
+          <article class="payoff-card">
+            <div class="step-icon-tile" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 4.5h6.5M9.5 4.5 7.5 2.5M9.5 4.5 7.5 6.5M13 11.5H6.5M6.5 11.5l2-2M6.5 11.5l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            </div>
+            <h3 class="card-title">Route routine edits to helper models</h3>
+            <p class="card-body">Reserve your primary seat for architecture and tricky fixes while dispatching scans, tests, and small edits to fast helper models verified by the <span class="bridge-term">Model Routing Check</span>.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="site-section" aria-labelledby="previewTitle">
+        <div class="section-header">
+          <span class="section-kicker">Demo Preview</span>
+          <h2 id="previewTitle" class="section-title">Inspect the live studio before installing anything</h2>
+          <p class="section-lead">Explore a real depersonalized snapshot in your browser with zero setup, no logins, and four instant surface themes.</p>
+        </div>
+        <div class="showcase-grid">
+          <a class="shot-card" href="./demo/">
+            <figure>
+              <div class="shot-frame">
+                <img src="./assets/dashboard-desktop.png" alt="Antigravity Nexus Analytics studio showing 8-model KPI tiles, quota % left gauges, and hourly step whiskers" width="1440" height="900" loading="eager" decoding="async" />
+              </div>
+              <figcaption class="shot-caption">
+                <strong>Analytics &amp; Quota Gauges</strong>
+                <span>8-model breakdown, remaining pool percentages, reset timers, and hourly step whiskers.</span>
+              </figcaption>
+            </figure>
+          </a>
+          <a class="shot-card" href="./demo/#workspace">
+            <figure>
+              <div class="shot-frame">
+                <img src="./assets/workspace-desktop.png" alt="Antigravity Nexus two-pane session explorer showing project tree alongside rendered Markdown plans" width="1440" height="900" loading="lazy" decoding="async" />
+              </div>
+              <figcaption class="shot-caption">
+                <strong>Session &amp; Artifact Reader</strong>
+                <span>Browse recent project plans, syntax-highlighted docs, and screenshot galleries side by side.</span>
+              </figcaption>
+            </figure>
+          </a>
+          <a class="shot-card" href="./demo/">
+            <figure>
+              <div class="shot-frame">
+                <img src="./assets/dashboard-mobile.png" alt="Antigravity Nexus mobile layout at 390px width showing compact KPI cards and quota meters" width="390" height="844" loading="lazy" decoding="async" />
+              </div>
+              <figcaption class="shot-caption">
+                <strong>Built for 390px Phones Too</strong>
+                <span>Zero horizontal scroll with touch-friendly step pickers and compact mobile quota bars.</span>
+              </figcaption>
+            </figure>
+          </a>
+        </div>
+      </section>
+
+      <section class="site-section" aria-labelledby="termsTitle">
+        <div class="section-header">
+          <span class="section-kicker">Plain-Language Concepts</span>
+          <h2 id="termsTitle" class="section-title">Clear everyday names for how the system works</h2>
+          <p class="section-lead">Every configuration file and panel maps to a clear concept documented in <a href="./docs/#doc-common-terms">Common Terms</a> and <a href="./docs/#doc-architecture">Architecture</a>.</p>
+        </div>
+        <div class="bridge-grid">
+          <div class="bridge-card">
+            <span class="bridge-term">Two-Doorway Setup</span>
+            <h3 class="card-title">Remote bridge stays separate from your IDE doorway</h3>
+            <p class="card-body">Remote HTTPS traffic enters through <code>/{PATH_SECRET}/mcp</code> with passphrase verification, while IDE code indexing stays LAN-only or <code>--stdio</code> with proxy and origin guards.</p>
+          </div>
+          <div class="bridge-card">
+            <span class="bridge-term">Thirty-Minute Passphrase Lock</span>
+            <h3 class="card-title">Private files stay sealed until you unlock</h3>
+            <p class="card-body">Every private file lookup, git diff, and screenshot stays fail-closed behind <code>PASS_HASH</code> and automatically locks again after idle timeout (<code>TTL_SECONDS=1800</code> default floor).</p>
+          </div>
+          <div class="bridge-card">
+            <span class="bridge-term">Quota &amp; Resets Percentage Left</span>
+            <h3 class="card-title">100% down to 0% remaining pool visibility</h3>
+            <p class="card-body">Shows how much quota remains per model family alongside countdown timers and comparable API costs across Plus, Pro, and Ultra plans.</p>
+          </div>
+          <div class="bridge-card">
+            <span class="bridge-term">Model Routing Check</span>
+            <h3 class="card-title">Spot inherited fallbacks before quota drifts</h3>
+            <p class="card-body">Checks pool readiness before spawning helper subagents and highlights whenever a task falls back to your main chat model instead of its target helper.</p>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="site-footer-inner">
+      <span>Antigravity Nexus &middot; AGPLv3 Open Source &middot; <a href="https://projects.oaworkbench.org/" rel="noopener noreferrer">Open Agentic Workbench Projects</a></span>
+      <nav class="site-footer-links" aria-label="Footer navigation">
+        <a href="./">Overview</a>
+        <a href="./demo/">Demo</a>
+        <a href="./docs/">Docs</a>
+        <a href="https://oaworkbench.org/" rel="noopener noreferrer">Home</a>
+        <a href="https://learn.oaworkbench.org/" rel="noopener noreferrer">Learn</a>
+        <a href="https://github.com/FrankXLT/agy-nexus-mcp" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script src="./assets/oaw_search.js?v=4.2.0" defer></script>
+  <script src="./assets/site_shell.js?v=4.2.0" defer></script>
+</body>
+</html>

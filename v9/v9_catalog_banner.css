@@ -1,0 +1,184 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* AGY-Nexus /web/v9 — Calm Price Book Sync Banner, Unmapped M* Alert & Subagent Adjudication Badges */
+
+@layer views {
+  .v9-catalog-alerts {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+  .v9-catalog-alerts:empty {
+    display: none;
+  }
+
+  .v9-cat-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.55rem 0.85rem;
+    padding: 0.55rem 0.78rem;
+    border: 1px solid var(--border-subtle);
+    border-inline-start: 3px solid var(--accent-primary);
+    border-radius: var(--radius-card);
+    background: var(--bg-surface);
+    box-shadow: var(--v9-shadow-card);
+  }
+  .v9-cat-banner[data-tone="warn"] {
+    border-inline-start-color: var(--v9-chart-4, #B45309);
+  }
+  .v9-cat-banner[data-tone="override"] {
+    border-inline-start-color: var(--v9-chart-2, #0F766E);
+  }
+
+  .v9-cat-banner-msg {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.35rem 0.55rem;
+    min-inline-size: 0;
+    flex: 1 1 240px;
+  }
+  .v9-cat-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.1rem 0.38rem;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xs);
+    background: var(--bg-elevated);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--text-primary);
+    text-transform: uppercase;
+  }
+  .v9-cat-title {
+    font-size: var(--ts-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .v9-cat-detail {
+    font-size: var(--ts-xs);
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .v9-cat-actions {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.38rem;
+  }
+  a.v9-nav-btn {
+    text-decoration: none;
+  }
+  .v9-btn-warn {
+    border-color: var(--v9-chart-4, #B45309);
+    color: var(--text-primary);
+  }
+
+  /* Native diff <dialog> scroll & backdrop lock */
+  dialog.v9-dialog,
+  dialog.v9-dialog .v9-dialog-body {
+    overscroll-behavior: contain;
+  }
+  dialog.v9-dialog::backdrop {
+    overscroll-behavior: contain;
+    overflow: hidden;
+  }
+
+  .v9-diff-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.75rem;
+    padding: 0.48rem 0.62rem;
+    margin-block-end: 0.55rem;
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-inner);
+    background: var(--bg-elevated);
+    font-size: var(--ts-xs);
+    color: var(--text-secondary);
+  }
+  .v9-diff-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.38rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .v9-diff-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.25rem 0.65rem;
+    padding: 0.42rem 0.55rem;
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-inner);
+    font-size: var(--ts-xs);
+    font-variant-numeric: tabular-nums;
+  }
+  .v9-diff-model {
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .v9-diff-delta {
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+  }
+
+  /* Intended vs Actual Subagent Adjudication Pills (Desktop + 390px Mobile) */
+  .v9-adj-pill {
+    display: inline-block;
+    padding: 0.1rem 0.38rem;
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-xs);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.3;
+    white-space: normal;
+  }
+  .v9-adj-pill[data-adj="redirected"],
+  .v9-adj-pill[data-adj="diverged"] {
+    border-color: var(--v9-chart-4, #B45309);
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+  .v9-sub-adj-mobile {
+    display: none;
+    margin-block-start: 0.18rem;
+    font-size: 10.5px;
+    line-height: 1.28;
+    color: var(--text-secondary);
+    white-space: normal;
+  }
+  .v9-sub-adj-mobile[data-adj="redirected"],
+  .v9-sub-adj-mobile[data-adj="diverged"] {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  @media (max-width: 639px) {
+    .v9-stage .v9-sub-adj-mobile {
+      display: block;
+    }
+    .v9-cat-banner {
+      padding: 0.5rem 0.62rem;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .v9-cat-banner,
+    .v9-adj-pill,
+    .v9-cat-tag {
+      border: 1px solid CanvasText;
+    }
+    .v9-cat-banner[data-tone="warn"],
+    .v9-adj-pill[data-adj="redirected"],
+    .v9-adj-pill[data-adj="diverged"] {
+      outline: 2px solid Highlight;
+    }
+  }
+}

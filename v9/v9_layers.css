@@ -1,0 +1,3 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Establish deterministic CSS Cascade Layer precedence before token/evidence sheets */
+@layer reset, tokens, shell, archetypes, evidence, views, utilities;
